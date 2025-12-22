@@ -37,5 +37,11 @@
 *.out
 *.app
 
+build*/
+.xmake/
+
 # debug information files
 *.dwo
+# pixi environments
+.pixi/*
+!.pixi/config.toml
