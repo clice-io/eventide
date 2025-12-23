@@ -9,6 +9,8 @@
 
 namespace eventide {
 
+class event_loop;
+
 template <typename T>
 class task;
 
@@ -39,6 +41,8 @@ struct promise_base {
     promise_base* next = nullptr;
 
     std::source_location location;
+
+    event_loop* loop;
 
     template <typename Promise>
     void set(std::coroutine_handle<Promise> handle) {

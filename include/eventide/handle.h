@@ -7,7 +7,7 @@
 namespace eventide {
 
 template <typename Derived>
-class handle : non_copyable, protected layout<Derived> {
+class handle : public uv_layout<Derived> {
 public:
     bool is_active() const;
 

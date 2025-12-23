@@ -38,7 +38,6 @@ void emit_layout(std::FILE* out, const entry& e) {
                  e.name.data());
     std::fprintf(out, "    constexpr static std::size_t size = %zu;\n", e.size);
     std::fprintf(out, "    constexpr static std::size_t align = %zu;\n", e.align);
-    std::fprintf(out, "    alignas(align) char storage[size];\n");
     std::fputs("};\n\n", out);
 }
 

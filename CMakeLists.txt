@@ -14,6 +14,9 @@ set(LIBUV_BUILD_BENCH OFF CACHE BOOL "" FORCE)
 set(LIBUV_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(LIBUV_BUILD_STATIC ON CACHE BOOL "" FORCE)
 
+add_compile_options("-fsanitize=address" "-g")
+add_link_options("-fsanitize=address" "-g")
+
 FetchContent_Declare(
     libuv
     URL https://dist.libuv.org/dist/v1.51.0/libuv-v1.51.0.tar.gz

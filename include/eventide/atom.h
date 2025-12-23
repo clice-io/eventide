@@ -4,26 +4,27 @@
 
 namespace eventide {
 
-struct non_copyable {
-    non_copyable() = default;
-    ~non_copyable() = default;
+template <typename T>
+class uv_layout : layout<T> {
+public:
+    void* native_handle() {
+        return storage;
+    }
 
-    non_copyable(const non_copyable&) = delete;
-    non_copyable& operator=(const non_copyable&) = delete;
+    const void* native_handle() const {
+        return storage;
+    }
 
-    non_copyable(non_copyable&&) = default;
-    non_copyable& operator=(non_copyable&&) = default;
-};
+    uv_layout(const uv_layout&) = delete;
+    uv_layout& operator=(const uv_layout&) = delete;
 
-struct non_moveable {
-    non_moveable() = default;
-    ~non_moveable() = default;
+    uv_layout(uv_layout&&) = delete;
+    uv_layout& operator=(uv_layout&&) = delete;
 
-    non_moveable(const non_moveable&) = delete;
-    non_moveable& operator=(const non_moveable&) = delete;
+public:
+    uv_layout() = default;
 
-    non_moveable(non_moveable&&) = delete;
-    non_moveable& operator=(non_moveable&&) = delete;
+    alignas(layout<T>::align) char storage[layout<T>::size];
 };
 
 }  // namespace eventide

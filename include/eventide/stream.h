@@ -4,27 +4,33 @@
 #include <cstddef>
 #include <span>
 #include <vector>
+#include <string>
 
 #include "handle.h"
 #include "ringbuffer.h"
+#include "task.h"
 
 namespace eventide {
 
 template <typename Derived>
 class stream : public handle<Derived> {
 public:
-    void read(std::span<char> buf);
+    task<std::string> read();
 
-    void write(std::span<const char> data);
+    task<> write(std::span<const char> data);
 
 protected:
     stream() = default;
 
-private:
+public:
     ring_buffer buffer;
+    promise_base* reader;
 };
 
-class pipe : public stream<pipe> {};
+class pipe : public stream<pipe> {
+public:
+    pipe(event_loop& loop, int fd);
+};
 
 class tcp_socket : public stream<tcp_socket> {};
 
