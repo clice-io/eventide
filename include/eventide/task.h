@@ -120,7 +120,7 @@ struct promise_base {
     }
 };
 
-namespace awaiter {
+namespace detail {
 
 /// The awaiter for the final suspend point of `Task`.
 struct final {
@@ -185,7 +185,7 @@ struct task {
     }
 };
 
-}  // namespace awaiter
+}  // namespace detail
 
 template <typename T = void>
 class task {
@@ -223,7 +223,7 @@ public:
         }
 
         auto final_suspend() noexcept {
-            return awaiter::final{continuation};
+            return detail::final{continuation};
         }
 
         void unhandled_exception() {
@@ -316,7 +316,7 @@ public:
     }
 
     auto operator co_await() const noexcept {
-        return awaiter::task<T, promise_type>{core};
+        return detail::task<T, promise_type>{core};
     }
 
     void stacktrace() {
