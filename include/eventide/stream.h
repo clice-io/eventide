@@ -26,6 +26,8 @@ class stream : public handle {
 protected:
     using handle::handle;
 
+    stream() = default;
+
     template <typename Tag>
     friend struct awaiter;
 
@@ -63,6 +65,8 @@ private:
 class pipe : public stream {
 private:
     using stream::stream;
+
+    friend class process;
 
 public:
     using acceptor = eventide::acceptor<pipe>;

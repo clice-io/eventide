@@ -24,6 +24,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(libuv)
 
 add_executable(unit_tests
+    "src/process.cpp"
     "src/error.cpp"
     "src/handle.cpp"
     "src/loop.cpp"

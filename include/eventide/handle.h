@@ -8,6 +8,8 @@ namespace eventide {
 
 class handle {
 protected:
+    handle() = default;
+
     handle(std::size_t size) noexcept;
 
     ~handle() noexcept;
@@ -54,8 +56,6 @@ private:
     void* raw_data() noexcept;
 
     const void* raw_data() const noexcept;
-
-    handle() = default;
 
     void* data;
 };
