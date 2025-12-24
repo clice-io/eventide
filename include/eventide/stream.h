@@ -15,24 +15,27 @@
 namespace eventide {
 
 class stream : public handle {
+protected:
+    using handle::handle;
+
 public:
     task<std::string> read();
 
     task<> write(std::span<const char> data);
 
-protected:
-    using handle::handle;
-
 public:
-    ring_buffer buffer;
+    /// a stream allows only one active reader at a time
     promise_base* reader;
+
+    ring_buffer buffer;
 };
 
 class pipe : public stream {
-public:
-    pipe(event_loop& loop, int fd);
+private:
+    using stream::stream;
 
-    static std::expected<pipe, std::error_code> open(int fd);
+public:
+    static std::expected<pipe, std::error_code> open(event_loop& loop, int fd);
 };
 
 class tcp_socket : public stream {};

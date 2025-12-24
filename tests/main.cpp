@@ -6,15 +6,19 @@
 
 namespace ev = eventide;
 
-ev::task<> echo(ev::pipe& pipe) {
+ev::task<> echo(ev::event_loop& loop) {
+    auto pipe = ev::pipe::open(loop, STDIN_FILENO);
+    if(!pipe) {
+        co_return;
+    }
+
     while(true) {
-        std::string content = co_await pipe.read();
+        std::string content = co_await pipe->read();
         std::println("echo: {}", content);
     }
 }
 
 int main() {
     ev::event_loop loop;
-    ev::pipe pipe(loop, STDIN_FILENO);
-    return loop.run(echo(pipe));
+    return loop.run(echo(loop));
 }

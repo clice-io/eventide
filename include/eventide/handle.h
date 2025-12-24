@@ -1,15 +1,16 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace eventide {
 
 class handle {
 protected:
-    handle(std::size_t size);
+    handle(std::size_t size) noexcept;
 
-    ~handle();
+    ~handle() noexcept;
 
 public:
     handle(const handle&) = delete;
@@ -19,7 +20,7 @@ public:
         other.data = nullptr;
     }
 
-    handle& operator=(handle&& other) {
+    handle& operator=(handle&& other) noexcept {
         if(this == &other) [[unlikely]] {
             return *this;
         }
@@ -29,22 +30,31 @@ public:
     }
 
     template <typename T>
-    T* as() {
-        return static_cast<T*>(data);
+    T* as() noexcept {
+        return static_cast<T*>(raw_data());
     }
 
     template <typename T>
-    const T* as() const {
-        return static_cast<const T*>(data);
+    const T* as() const noexcept {
+        return static_cast<const T*>(raw_data());
     }
 
-    bool is_active();
+    /// Mark the underlying storage as successfully initialized.
+    void mark_initialized() noexcept;
 
-    void ref();
+    bool initialized() const noexcept;
 
-    void unref();
+    bool is_active() const noexcept;
+
+    void ref() noexcept;
+
+    void unref() noexcept;
 
 private:
+    void* raw_data() noexcept;
+
+    const void* raw_data() const noexcept;
+
     handle() = default;
 
     void* data;

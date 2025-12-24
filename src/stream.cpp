@@ -80,12 +80,23 @@ task<> stream::write(std::span<const char> data) {
     return task<>();
 }
 
-pipe::pipe(event_loop& loop, int fd) : stream(sizeof(uv_pipe_t)) {
-    auto h = as<uv_pipe_t>();
-    uv_pipe_init((uv_loop_t*)loop.handle(), h, 0);
-    uv_pipe_open(h, fd);
-}
+std::expected<pipe, std::error_code> pipe::open(event_loop& loop, int fd) {
+    auto h = pipe(sizeof(uv_pipe_t));
 
-static std::expected<pipe, std::error_code> open(int fd);
+    auto handle = h.as<uv_pipe_t>();
+    int errc = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), handle, 0);
+    if(errc != 0) {
+        return std::unexpected(uv_error(errc));
+    }
+
+    h.mark_initialized();
+
+    errc = uv_pipe_open(handle, fd);
+    if(errc != 0) {
+        return std::unexpected(uv_error(errc));
+    }
+
+    return h;
+}
 
 }  // namespace eventide
