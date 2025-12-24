@@ -1,36 +1,25 @@
 #include "eventide/handle.h"
 
 #include "libuv.h"
-#include "eventide/stream.h"
 
 namespace eventide {
 
-template <typename Derived>
-bool handle<Derived>::is_active() const {
-    auto h = (const uv_handle_t*)this->native_handle();
-    return uv_is_active(h);
+handle::handle(std::size_t size) : data(std::malloc(size)) {}
+
+handle::~handle() {
+    uv_close(as<uv_handle_t>(), [](uv_handle_t* data) { std::free(data); });
 }
 
-template <typename Derived>
-void handle<Derived>::close() {
-    auto h = (uv_handle_t*)this->native_handle();
-    uv_close(h, nullptr);
+bool handle::is_active() {
+    return uv_is_active(as<uv_handle_t>());
 }
 
-template <typename Derived>
-void handle<Derived>::ref() {
-    auto h = (uv_handle_t*)this->native_handle();
-    uv_ref(h);
+void handle::ref() {
+    return uv_ref(as<uv_handle_t>());
 }
 
-template <typename Derived>
-void handle<Derived>::unref() {
-    auto h = (uv_handle_t*)this->native_handle();
-    uv_is_active(h);
+void handle::unref() {
+    return uv_unref(as<uv_handle_t>());
 }
-
-template class handle<pipe>;
-template class handle<tcp_socket>;
-template class handle<console>;
 
 }  // namespace eventide

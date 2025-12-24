@@ -42,7 +42,7 @@ struct promise_base {
 
     std::source_location location;
 
-    event_loop* loop;
+    void* loop;
 
     template <typename Promise>
     void set(std::coroutine_handle<Promise> handle) {

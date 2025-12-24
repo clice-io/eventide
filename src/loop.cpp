@@ -5,40 +5,49 @@
 
 namespace eventide {
 
+struct event_loop::impl {
+    uv_loop_t loop = {};
+    uv_idle_t idle = {};
+    bool idle_running = false;
+    std::deque<promise_base*> tasks;
+};
+
 void each(uv_idle_t* idle) {
-    auto loop = (event_loop*)idle->data;
-    if(loop->idle_running && loop->tasks.empty()) {
-        loop->idle_running = false;
+    auto self = static_cast<event_loop::impl*>(idle->data);
+    auto loop = &self->loop;
+    if(self->idle_running && self->tasks.empty()) {
+        self->idle_running = false;
         uv_idle_stop(idle);
     }
 
     /// Resume may create new tasks, we want to run them in the next iteration.
-    auto all = std::move(loop->tasks);
+    auto all = std::move(self->tasks);
     for(auto& task: all) {
         task->resume();
     }
 }
 
 void promise_base::schedule() {
-    if(!loop->idle_running && loop->tasks.empty()) {
-        loop->idle_running = true;
-        uv_idle_start((uv_idle_t*)&loop->idle_h, each);
+    auto self = static_cast<event_loop::impl*>(loop);
+    if(!self->idle_running && self->tasks.empty()) {
+        self->idle_running = true;
+        uv_idle_start(&self->idle, each);
     }
 
-    loop->tasks.push_back(this);
+    self->tasks.push_back(this);
 }
 
-event_loop::event_loop() {
-    auto loop = (uv_loop_t*)storage;
+event_loop::event_loop() : self(new impl()) {
+    auto loop = &self->loop;
     int err = uv_loop_init(loop);
     if(err != 0) {
         abort();
     }
 
-    auto idle = (uv_idle_t*)idle_h.storage;
+    auto idle = &self->idle;
     uv_idle_init(loop, idle);
     uv_idle_start(idle, each);
-    idle->data = this;
+    idle->data = self.get();
 }
 
 event_loop::~event_loop() {
@@ -48,7 +57,7 @@ event_loop::~event_loop() {
         }
     };
 
-    auto loop = (uv_loop_t*)storage;
+    auto loop = &self->loop;
     if(uv_loop_close(loop) == UV_EBUSY) {
         uv_walk(loop, cleanup, nullptr);
 
@@ -58,7 +67,7 @@ event_loop::~event_loop() {
         }
     }
 
-    for(auto task: tasks) {
+    for(auto task: self->tasks) {
         if(task->cancelled()) {
             task->resume();
         } else {
@@ -67,14 +76,16 @@ event_loop::~event_loop() {
     }
 }
 
+void* event_loop::handle() {
+    return &self->loop;
+}
+
 int event_loop::run() {
-    auto loop = (uv_loop_t*)storage;
-    return uv_run(loop, UV_RUN_DEFAULT);
+    return uv_run(&self->loop, UV_RUN_DEFAULT);
 }
 
 void event_loop::stop() {
-    auto loop = (uv_loop_t*)storage;
-    uv_stop(loop);
+    uv_stop(&self->loop);
 }
 
 }  // namespace eventide

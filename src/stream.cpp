@@ -7,12 +7,11 @@ namespace eventide {
 
 namespace awaiter {
 
-template <typename Derived>
 struct read {
-    stream<Derived>& target;
+    stream& target;
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
-        auto s = static_cast<eventide::stream<Derived>*>(handle->data);
+        auto s = static_cast<eventide::stream*>(handle->data);
         if(!s) {
             buf->base = nullptr;
             buf->len = 0;
@@ -29,7 +28,7 @@ struct read {
     }
 
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
-        auto s = static_cast<eventide::stream<Derived>*>(stream->data);
+        auto s = static_cast<eventide::stream*>(stream->data);
         if(!s || nread <= 0) {
             if(s) {
                 uv_read_stop(stream);
@@ -54,7 +53,7 @@ struct read {
     template <typename Promise>
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> waiting) noexcept {
         target.reader = &waiting.promise();
-        int err = uv_read_start((uv_stream_t*)target.storage, on_alloc, on_read);
+        int err = uv_read_start(target.as<uv_stream_t>(), on_alloc, on_read);
         return std::noop_coroutine();
     }
 
@@ -63,13 +62,12 @@ struct read {
 
 }  // namespace awaiter
 
-template <typename Derived>
-task<std::string> stream<Derived>::read() {
-    auto stream = (uv_stream_t*)this->storage;
+task<std::string> stream::read() {
+    auto stream = as<uv_stream_t>();
     stream->data = this;
 
     if(buffer.readable_bytes() == 0) {
-        co_await awaiter::read<Derived>(*this);
+        co_await awaiter::read(*this);
     }
 
     std::string out;
@@ -78,19 +76,16 @@ task<std::string> stream<Derived>::read() {
     co_return out;
 }
 
-template <typename Derived>
-task<> stream<Derived>::write(std::span<const char> data) {
+task<> stream::write(std::span<const char> data) {
     return task<>();
 }
 
-template class stream<pipe>;
-template class stream<tcp_socket>;
-template class stream<console>;
-
-pipe::pipe(event_loop& loop, int fd) {
-    auto p = reinterpret_cast<uv_pipe_t*>(storage);
-    uv_pipe_init((uv_loop_t*)loop.native_handle(), p, 0);
-    uv_pipe_open(p, fd);
+pipe::pipe(event_loop& loop, int fd) : stream(sizeof(uv_pipe_t)) {
+    auto h = as<uv_pipe_t>();
+    uv_pipe_init((uv_loop_t*)loop.handle(), h, 0);
+    uv_pipe_open(h, fd);
 }
+
+static std::expected<pipe, std::error_code> open(int fd);
 
 }  // namespace eventide

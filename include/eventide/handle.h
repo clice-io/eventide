@@ -1,28 +1,53 @@
 #pragma once
 
 #include <cstddef>
-
-#include "atom.h"
+#include <memory>
 
 namespace eventide {
 
-template <typename Derived>
-class handle : public uv_layout<Derived> {
-public:
-    bool is_active() const;
+class handle {
+protected:
+    handle(std::size_t size);
 
-    void close();
+    ~handle();
+
+public:
+    handle(const handle&) = delete;
+    handle& operator=(const handle&) = delete;
+
+    handle(handle&& other) noexcept : data(other.data) {
+        other.data = nullptr;
+    }
+
+    handle& operator=(handle&& other) {
+        if(this == &other) [[unlikely]] {
+            return *this;
+        }
+
+        this->~handle();
+        return *new (this) handle(std::move(other));
+    }
+
+    template <typename T>
+    T* as() {
+        return static_cast<T*>(data);
+    }
+
+    template <typename T>
+    const T* as() const {
+        return static_cast<const T*>(data);
+    }
+
+    bool is_active();
 
     void ref();
 
     void unref();
 
-protected:
+private:
     handle() = default;
 
-    ~handle() {
-        close();
-    }
+    void* data;
 };
 
 }  // namespace eventide
