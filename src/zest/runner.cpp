@@ -3,8 +3,35 @@
 #include <chrono>
 #include <print>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
+
+namespace {
+
+bool matches_pattern(std::string_view text, std::string_view pattern) {
+    std::size_t ti = 0, pi = 0, star = std::string_view::npos, match = 0;
+    while(ti < text.size()) {
+        if(pi < pattern.size() && (pattern[pi] == text[ti])) {
+            ++ti;
+            ++pi;
+        } else if(pi < pattern.size() && pattern[pi] == '*') {
+            star = pi++;
+            match = ti;
+        } else if(star != std::string_view::npos) {
+            pi = star + 1;
+            ti = ++match;
+        } else {
+            return false;
+        }
+    }
+    while(pi < pattern.size() && pattern[pi] == '*') {
+        ++pi;
+    }
+    return pi == pattern.size();
+}
+
+}  // namespace
 
 namespace zest {
 
@@ -18,6 +45,27 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 }
 
 int Runner::run_tests(std::string_view filter) {
+    constexpr std::string_view wildcard = "*";
+    std::string suite_pattern{wildcard};
+    std::string display_pattern{wildcard};
+
+    if(!filter.empty()) {
+        auto dot = filter.find('.');
+        if(dot == std::string_view::npos) {
+            suite_pattern.assign(filter);
+            display_pattern = suite_pattern + ".*";
+        } else {
+            suite_pattern.assign(filter.substr(0, dot));
+            auto test_pattern = filter.substr(dot + 1);
+            if(test_pattern.empty()) {
+                test_pattern = wildcard;
+            }
+            display_pattern.assign(filter.substr(0, dot));
+            display_pattern.push_back('.');
+            display_pattern.append(test_pattern);
+        }
+    }
+
     constexpr static std::string_view GREEN = "\033[32m";
     constexpr static std::string_view YELLOW = "\033[33m";
     constexpr static std::string_view RED = "\033[31m";
@@ -48,23 +96,16 @@ int Runner::run_tests(std::string_view filter) {
     }
 
     auto matches_suite_filter = [&](std::string_view suite_name) -> bool {
-        if(filter.empty()) {
-            return true;
-        }
-        auto pos = filter.find_first_of('.');
-        if(pos == std::string::npos) {
-            return true;
-        }
-        return filter.substr(0, pos) == suite_name;
+        return matches_pattern(suite_name, suite_pattern);
     };
 
     auto matches_test_filter = [&](std::string_view suite_name,
                                    std::string_view test_name) -> bool {
         std::string display_name = std::format("{}.{}", suite_name, test_name);
-        // if(pattern && !pattern->match(display_name)) {
-        //     return false;
-        // }
-        return true;
+        if(display_pattern == wildcard) {
+            return true;
+        }
+        return matches_pattern(display_name, display_pattern);
     };
 
     bool focus_mode = false;
