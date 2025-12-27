@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "traits.h"
+#include "utils.h"
 
 namespace refl {
 
@@ -12,17 +13,9 @@ consteval auto type_name(bool qualified = false) {
     std::string_view name = std::source_location::current().function_name();
 #if __GNUC__ || __clang__
     std::size_t start = name.rfind("T =") + 3;
-    if(name[start] == ' ') {
-        start += 1;
-    }
-    std::size_t end = name.find_first_of(";]", start);
-    if(end == std::string_view::npos) {
-        end = name.size();
-    }
-    if(name[end - 1] == ' ') {
-        end -= 1;
-    }
-    name = std::string_view(name.data() + start, end - start);
+    std::size_t end = name.find_first_of(";]}", start);
+    end = end == std::string_view::npos ? name.size() : end;
+    name = utils::trim(name.substr(start, end - start));
 #elif _MSC_VER
     std::size_t start = name.find('<') + 1;
     std::size_t end = name.rfind(">(");
@@ -54,30 +47,31 @@ consteval auto enum_name() {
 #else
     static_assert(false, "Not supported compiler");
 #endif
-    name = name.substr(start, end - start);
+    name = utils::trim(name.substr(start, end - start));
     start = name.rfind("::");
     return start == std::string_view::npos ? name : name.substr(start + 2);
 }
 
-template <auto*>
+template <auto* ptr>
 consteval auto field_name() {
     std::string_view name = std::source_location::current().function_name();
-    return name;
-#if __GNUC__ || __clang__ && (!_MSC_VER)
+#if __GNUC__ && (!__clang__) && (!_MSC_VER)
     std::size_t start = name.rfind("::") + 2;
     std::size_t end = name.rfind(')');
-    name = name.substr(start, end - start);
+    name = utils::trim(name.substr(start, end - start));
+#elif __clang__
+    std::size_t start = name.rfind(".") + 1;
+    std::size_t end = name.find_first_of(";]}", start);
+    name = utils::trim(name.substr(start, end - start));
 #elif _MSC_VER
     std::size_t start = name.rfind("->") + 2;
     std::size_t end = name.rfind('}');
-    name = name.substr(start, end - start);
+    name = utils::trim(name.substr(start, end - start));
 #else
 #error "UNKNOWN COMPILER";
 #endif
-    if(name.rfind("::") != std::string_view::npos) {
-        name = name.substr(name.rfind("::") + 2);
-    }
-    return name;
+    start = name.rfind("::");
+    return start == std::string_view::npos ? name : name.substr(start + 2);
 }
 
 }  // namespace refl
