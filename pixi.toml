@@ -13,6 +13,8 @@ repository = "https://github.com/clice-io/eventide"
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
+[dependencies]
+
 [target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
@@ -29,6 +31,7 @@ compiler-rt = "==20.1.8"
 pre-commit = "*"
 clang-format = "*"
 stylua = "*"
+
 [environments]
 default = []
 format = ["format"]
