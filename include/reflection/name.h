@@ -13,7 +13,7 @@ consteval auto type_name(bool qualified = false) {
     std::string_view name = std::source_location::current().function_name();
 #if __GNUC__ || __clang__
     std::size_t start = name.rfind("T =") + 3;
-    std::size_t end = name.find_first_of(";]", start);
+    std::size_t end = name.rfind("]");
     end = end == std::string_view::npos ? name.size() : end;
     name = utils::trim(name.substr(start, end - start));
 #elif _MSC_VER
@@ -64,6 +64,7 @@ consteval auto field_name() {
     std::size_t end = name.find_first_of(";]}", start);
     name = utils::trim(name.substr(start, end - start));
 #elif _MSC_VER
+    return name;
     std::size_t start = name.rfind("->") + 2;
     std::size_t end = name.rfind('}');
     name = utils::trim(name.substr(start, end - start));
