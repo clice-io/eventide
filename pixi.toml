@@ -29,14 +29,16 @@ compiler-rt = "==20.1.8"
 pre-commit = "*"
 clang-format = "*"
 stylua = "*"
-
-[feature.format.tasks]
-format = "pre-commit run --all-files"
-xmake-test = "xmake test --verbose"
-
 [environments]
 default = []
 format = ["format"]
+
+[feature.format.tasks]
+format = "pre-commit run --all-files"
+
+[tasks]
+xmake-test = "xmake test --verbose"
+xmake-build = "xmake --verbose --diagnosis"
 
 [tasks.ci-xmake-configure]
 args = ["build_type"]
