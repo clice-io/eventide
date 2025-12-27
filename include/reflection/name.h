@@ -62,6 +62,7 @@ consteval auto enum_name() {
 template <auto*>
 consteval auto field_name() {
     std::string_view name = std::source_location::current().function_name();
+    return name;
 #if __GNUC__ || __clang__ && (!_MSC_VER)
     std::size_t start = name.rfind("::") + 2;
     std::size_t end = name.rfind(')');
