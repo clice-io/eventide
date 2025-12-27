@@ -20,8 +20,8 @@ pre-commit = "*"
 clang-format = "*"
 stylua = "*"
 
+[feature.format.tasks]
+format = "pre-commit run --all-files"
+
 [environments]
 format = ["format"]
-
-[tasks]
-format = "pre-commit run --all-files"
