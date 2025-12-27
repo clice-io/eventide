@@ -17,7 +17,7 @@ consteval auto type_name(bool qualified = false) {
     end = end == std::string_view::npos ? name.size() : end;
     name = utils::trim(name.substr(start, end - start));
 #elif _MSC_VER
-    std::size_t start = name.find('<') + 1;
+    std::size_t start = name.find("type_name<") + 10;
     std::size_t end = name.rfind(">(");
     name = std::string_view{name.data() + start, end - start};
     start = name.find(' ');
@@ -52,19 +52,26 @@ consteval auto enum_name() {
     return start == std::string_view::npos ? name : name.substr(start + 2);
 }
 
-template <auto* ptr>
+template <typename T>
+struct wrapper {
+    /// workaround for msvc, if no such wrapper, msvc cannot print the member name.
+    T value;
+
+    constexpr wrapper(T value) : value(value) {}
+};
+
+template <wrapper ptr>
 consteval auto field_name() {
     std::string_view name = std::source_location::current().function_name();
-#if __GNUC__ && (!__clang__) && (!_MSC_VER)
+#if __GNUC__ && (!__clang__)
     std::size_t start = name.rfind("::") + 2;
     std::size_t end = name.rfind(')');
     name = utils::trim(name.substr(start, end - start));
-#elif __clang__
+#elif __clang__ && (!_MSC_VER)
     std::size_t start = name.rfind(".") + 1;
     std::size_t end = name.find_first_of(";]}", start);
     name = utils::trim(name.substr(start, end - start));
 #elif _MSC_VER
-    return name;
     std::size_t start = name.rfind("->") + 2;
     std::size_t end = name.rfind('}');
     name = utils::trim(name.substr(start, end - start));
