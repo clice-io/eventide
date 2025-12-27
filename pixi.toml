@@ -18,6 +18,13 @@ sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
 gxx = "==14.2.0"
 
+[target.osx-arm64.dependencies]
+clang = "==20.1.8"
+clangxx = "==20.1.8"
+lld = "==20.1.8"
+llvm-tools = "==20.1.8"
+compiler-rt = "==20.1.8"
+
 [feature.format.dependencies]
 pre-commit = "*"
 clang-format = "*"
@@ -25,7 +32,20 @@ stylua = "*"
 
 [feature.format.tasks]
 format = "pre-commit run --all-files"
+xmake-test = "xmake test --verbose"
 
 [environments]
 default = []
 format = ["format"]
+
+[tasks.ci-xmake-configure]
+args = ["build_type"]
+cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --toolchain=clang{% endif %}"
+
+[tasks.ci-xmake-build]
+args = ["build_type"]
+depends-on = [
+    { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
+    { task = "xmake-build" },
+    { task = "xmake-test" },
+]
