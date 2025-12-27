@@ -18,6 +18,8 @@ enum class enum_y;
 union union_y;
 
 TEST_CASE(type_name) {
+    EXPECT_EQ(type_name<int>(), "int");
+
     EXPECT_EQ(type_name<struct_x>(), "struct_x");
     EXPECT_EQ(type_name<class_x>(), "class_x");
     EXPECT_EQ(type_name<enum_x>(), "enum_x");
