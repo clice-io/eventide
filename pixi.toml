@@ -38,7 +38,7 @@ format = "pre-commit run --all-files"
 
 [tasks]
 xmake-test = "xmake test --verbose"
-xmake-build = "xmake --verbose --diagnosis"
+xmake-build = "xmake --all --verbose --diagnosis"
 
 [tasks.ci-xmake-configure]
 args = ["build_type"]
