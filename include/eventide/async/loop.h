@@ -7,8 +7,6 @@
 
 namespace eventide {
 
-struct promise_base;
-
 class event_loop {
 public:
     event_loop();
@@ -21,14 +19,13 @@ public:
 
     int run();
 
-    template <typename T>
-    int run(task<T> task) {
-        task.handle().promise().loop = self.get();
-        task.schedule();
-        return run();
+    void stop();
+
+    impl* operator->(){
+        return self.get();
     }
 
-    void stop();
+    static event_loop* current();
 
 private:
     std::unique_ptr<impl> self;

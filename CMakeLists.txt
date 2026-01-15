@@ -10,6 +10,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
+file(GLOB ZEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/zest/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/zest/*/*.cpp"
+)
+
+file(GLOB EVENTIDE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/eventide/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/eventide/**/*.cpp"
+)
+
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/**/*.cpp"
+)
+
 # Configure libuv via FetchContent so no system install is required.
 set(LIBUV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LIBUV_BUILD_BENCH OFF CACHE BOOL "" FORCE)
@@ -34,26 +49,13 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(libuv cpptrace)
 
-add_library(zest STATIC
-    "src/zest/runner.cpp"
-)
+add_library(zest STATIC ${ZEST_SOURCES})
 
 target_include_directories(zest PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_library(eventide STATIC
-    "src/eventide/process.cpp"
-    "src/eventide/error.cpp"
-    "src/eventide/handle.cpp"
-    "src/eventide/loop.cpp"
-    "src/eventide/ringbuffer.cpp"
-    "src/eventide/fs.cpp"
-    "src/eventide/udp.cpp"
-    "src/eventide/watcher.cpp"
-    "src/eventide/request.cpp"
-    "src/eventide/stream.cpp"
-)
+add_library(eventide STATIC ${EVENTIDE_SOURCES})
 target_link_libraries(zest PUBLIC cpptrace::cpptrace)
 
 target_include_directories(eventide PUBLIC
@@ -66,14 +68,10 @@ elseif(TARGET uv_a)
     target_link_libraries(eventide PUBLIC uv_a)
 endif()
 
-add_executable(unit_tests
-    "tests/main.cpp"
-    "tests/reflection/name_tests.cpp"
-    "tests/reflection/struct_tests.cpp"
-)
+add_executable(unit_tests ${TEST_SOURCES})
 
 target_include_directories(unit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(unit_tests PRIVATE eventide zest)
+target_link_libraries(unit_tests PRIVATE eventide zest cpptrace::cpptrace)

@@ -34,4 +34,9 @@ struct reflection<T> {
     }(std::make_index_sequence<member_count>{});
 };
 
+template <traits::enum_type E>
+constexpr auto enum_name(E e) {
+    return reflection<E>::member_names[static_cast<std::underlying_type_t<E>>(e)];
+}
+
 }  // namespace refl

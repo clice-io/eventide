@@ -2,7 +2,7 @@
 
 #include "libuv.h"
 #include "eventide/error.h"
-#include "eventide/loop.h"
+#include "eventide/async/loop.h"
 
 namespace eventide {
 

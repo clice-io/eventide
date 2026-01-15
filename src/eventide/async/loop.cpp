@@ -1,7 +1,7 @@
-#include "eventide/loop.h"
+#include "eventide/async/loop.h"
 
-#include "libuv.h"
-#include "eventide/task.h"
+#include "../libuv.h"
+#include "eventide/async/task.h"
 
 namespace eventide {
 
@@ -9,8 +9,18 @@ struct event_loop::impl {
     uv_loop_t loop = {};
     uv_idle_t idle = {};
     bool idle_running = false;
-    std::deque<promise_base*> tasks;
+    std::deque<async_frame*> tasks;
 };
+
+namespace {
+
+thread_local event_loop* current_loop = nullptr;
+
+}  // namespace
+
+event_loop* event_loop::current() {
+    return current_loop;
+}
 
 void each(uv_idle_t* idle) {
     auto self = static_cast<event_loop::impl*>(idle->data);
@@ -27,8 +37,9 @@ void each(uv_idle_t* idle) {
     }
 }
 
-void promise_base::schedule() {
-    auto self = static_cast<event_loop::impl*>(loop);
+void async_frame::schedule() {
+    auto& self = *current_loop;
+    assert(self && "schedule: no current event loop in this thread");
     if(!self->idle_running && self->tasks.empty()) {
         self->idle_running = true;
         uv_idle_start(&self->idle, each);
@@ -68,7 +79,7 @@ event_loop::~event_loop() {
     }
 
     for(auto task: self->tasks) {
-        if(task->cancelled()) {
+        if(task->is_cancelled()) {
             task->resume();
         } else {
             task->destroy();
@@ -81,7 +92,11 @@ void* event_loop::handle() {
 }
 
 int event_loop::run() {
-    return uv_run(&self->loop, UV_RUN_DEFAULT);
+    auto previous = current_loop;
+    current_loop = this;
+    auto result = uv_run(&self->loop, UV_RUN_DEFAULT);
+    current_loop = previous;
+    return result;
 }
 
 void event_loop::stop() {

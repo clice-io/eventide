@@ -9,7 +9,7 @@
 
 #include "handle.h"
 #include "stream.h"
-#include "task.h"
+#include "async/task.h"
 
 namespace eventide {
 
@@ -101,7 +101,7 @@ private:
     template <typename Tag>
     friend struct awaiter;
 
-    promise_base* waiter = nullptr;
+    async_frame* waiter = nullptr;
     exit_status* active = nullptr;
     std::optional<exit_status> completed;
 };

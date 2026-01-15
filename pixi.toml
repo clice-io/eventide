@@ -1,17 +1,17 @@
 [workspace]
+
 name = "eventide"
 version = "0.1.0"
 description = "A simple C++20 coroutine wrapper for libuv"
 authors = ["ykiko <ykikoykikoykiko@gmail.com>"]
-
 license = "Apache-2.0"
 license-file = "LICENSE"
 readme = "README.md"
 documentation = "https://clice.io"
 repository = "https://github.com/clice-io/eventide"
-
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
+
 
 [dependencies]
 python = "*"
@@ -33,12 +33,12 @@ pre-commit = "*"
 clang-format = "*"
 stylua = "*"
 
+[feature.format.tasks]
+format = "pre-commit run --all-files"
+
 [environments]
 default = []
 format = ["format"]
-
-[feature.format.tasks]
-format = "pre-commit run --all-files"
 
 [tasks]
 xmake-test = "xmake test --verbose"
@@ -51,7 +51,7 @@ cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --
 [tasks.ci-xmake-build]
 args = ["build_type"]
 depends-on = [
-    { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
-    { task = "xmake-build" },
-    { task = "xmake-test" },
+  { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
+  { task = "xmake-build" },
+  { task = "xmake-test" },
 ]

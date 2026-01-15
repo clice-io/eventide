@@ -8,7 +8,7 @@
 #include <system_error>
 #include <vector>
 
-#include "task.h"
+#include "async/loop.h"
 
 namespace eventide {
 

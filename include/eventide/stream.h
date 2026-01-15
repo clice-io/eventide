@@ -12,9 +12,11 @@
 #include "error.h"
 #include "handle.h"
 #include "ringbuffer.h"
-#include "task.h"
+#include "async/task.h"
 
 namespace eventide {
+
+class event_loop;
 
 template <typename Tag>
 struct awaiter;
@@ -38,7 +40,7 @@ public:
 
 private:
     /// a stream allows only one active reader at a time
-    promise_base* reader;
+    async_frame* reader;
 
     ring_buffer buffer;
 };
@@ -57,7 +59,7 @@ public:
     task<std::expected<Stream, std::error_code>> accept();
 
 private:
-    promise_base* waiter = nullptr;
+    async_frame* waiter = nullptr;
     std::expected<Stream, std::error_code>* active = nullptr;
     std::deque<std::expected<Stream, std::error_code>> pending;
 };
