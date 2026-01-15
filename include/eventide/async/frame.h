@@ -110,7 +110,7 @@ struct async_frame {
     /// and must explicitly cache the handle address here (costing 1 pointer size).
     void* address = nullptr;
 
-    /// Call-site captured for diagnostics (useful when walking async chains).
+    /// Schedule-site captured for diagnostics (useful when walking async chains).
     std::source_location location = {};
 
     /// Currently awaited child coroutine frame (state bits tagged onto the pointer).
@@ -120,6 +120,9 @@ struct async_frame {
     tagged_pointer<async_frame, Policy> caller = nullptr;
 
 public:
+    template <typename Callback>
+    void on_cancel(Callback&& callback);
+
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
     }
@@ -130,10 +133,6 @@ public:
 
     void set_policy(Policy policy) {
         caller |= policy;
-    }
-
-    void destroy() {
-        handle().destroy();
     }
 
     bool is_explicit_cancel() {
@@ -158,11 +157,12 @@ public:
 
     using Self = async_frame;
 
+    void destroy();
+
     // Cancel this frame and its callee chain by tagging each child as Cancelled.
     void cancel(this Self& self);
 
-    void schedule();
-
+private:
     /// Determines the next coroutine to execute.
     ///
     /// If the task is in a normal state or cancellation is intercepted, returns
@@ -170,6 +170,7 @@ public:
     /// this triggers a bottom-up chain destruction and returns noop.
     std::coroutine_handle<> continuation(this Self& self);
 
+public:
     void resume() {
         return continuation().resume();
     }
@@ -177,6 +178,8 @@ public:
     std::coroutine_handle<> suspend(this Self& self, async_frame& caller);
 
     std::coroutine_handle<> finish(this Self& self);
+
+    void stacktrace(std::source_location location = std::source_location::current());
 
     static async_frame* current();
 };

@@ -1,8 +1,16 @@
 #include "eventide/async/frame.h"
 
+#include <print>
+#include <vector>
+
 namespace eventide {
 
 static thread_local async_frame* current_frame = nullptr;
+
+void async_frame::destroy() {
+    current_frame = this;
+    handle().destroy();
+}
 
 void async_frame::cancel(this Self& self) {
     auto* cur = &self;
@@ -28,6 +36,7 @@ std::coroutine_handle<> async_frame::continuation(this Self& self) {
     // -----------------------------------------------------------------
     // If the task is not marked as cancelled, resume execution immediately.
     if(!self.is_cancelled()) {
+        current_frame = &self;
         return self.handle();
     }
 
@@ -41,6 +50,7 @@ std::coroutine_handle<> async_frame::continuation(this Self& self) {
     // expected to check `is_cancelled()` internally and return a
     // "Cancelled Result" to the parent.
     if(self.caller->is_intercept_cancel()) {
+        current_frame = &self;
         return self.handle();
     }
 
@@ -72,7 +82,7 @@ std::coroutine_handle<> async_frame::continuation(this Self& self) {
         } else {
             // If we cannot destroy it, mark it as Finished to prevent
             // double-free or logic errors later.
-            cur->callee->set_state(State::Finished);
+            cur->set_state(State::Finished);
         }
 
         // Climb up the chain.
@@ -120,6 +130,38 @@ std::coroutine_handle<> async_frame::finish(this Self& self) {
 
     /// Return handle for resuming, it is safe on stack.
     return handle;
+}
+
+void async_frame::stacktrace(std::source_location location) {
+    std::vector<async_frame*> chain;
+    for(auto* cur = this; cur; cur = cur->caller.ptr()) {
+        chain.push_back(cur);
+    }
+
+    async_frame* highlight = this;
+    if(current_frame) {
+        for(auto* frame: chain) {
+            if(frame == current_frame) {
+                highlight = current_frame;
+                break;
+            }
+        }
+    }
+
+    for(auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        const auto& loc = (*it)->location;
+        std::println("  {} [{}:{}:{}]",
+                     loc.function_name(),
+                     loc.file_name(),
+                     loc.line(),
+                     loc.column());
+    }
+
+    std::println("->{} [{}:{}:{}]",
+                 location.function_name(),
+                 location.file_name(),
+                 location.line(),
+                 location.column());
 }
 
 async_frame* async_frame::current() {

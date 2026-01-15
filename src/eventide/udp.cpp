@@ -4,8 +4,8 @@
 #include <optional>
 
 #include "libuv.h"
-#include "eventide/error.h"
 #include "eventide/async/loop.h"
+#include "eventide/error.h"
 
 namespace {
 

@@ -37,15 +37,15 @@ void each(uv_idle_t* idle) {
     }
 }
 
-void async_frame::schedule() {
-    auto& self = *current_loop;
+void event_loop::schedule(async_frame& frame, std::source_location location) {
+    frame.location = location;
+    auto& self = *this;
     assert(self && "schedule: no current event loop in this thread");
     if(!self->idle_running && self->tasks.empty()) {
         self->idle_running = true;
         uv_idle_start(&self->idle, each);
     }
-
-    self->tasks.push_back(this);
+    self->tasks.push_back(&frame);
 }
 
 event_loop::event_loop() : self(new impl()) {

@@ -7,6 +7,8 @@
 
 namespace eventide {
 
+struct async_frame;
+
 class event_loop {
 public:
     event_loop();
@@ -21,8 +23,16 @@ public:
 
     void stop();
 
-    impl* operator->(){
+    impl* operator->() {
         return self.get();
+    }
+
+    void schedule(async_frame& frame,
+                  std::source_location location = std::source_location::current());
+
+    template <typename T>
+    void schedule(task<T>& task, std::source_location location = std::source_location::current()) {
+        schedule(static_cast<async_frame&>(task.h.promise()), location);
     }
 
     static event_loop* current();

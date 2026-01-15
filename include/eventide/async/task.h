@@ -15,14 +15,17 @@ class task;
 constexpr inline cancellation_t cancellation_token;
 
 template <typename T>
+using maybe = std::expected<T, cancellation_t>;
+
+template <typename T>
 constexpr bool is_cancellable_v = false;
 
 template <typename T>
-constexpr bool is_cancellable_v<std::expected<T, cancellation_t>> = true;
+constexpr bool is_cancellable_v<maybe<T>> = true;
 
 template <typename T>
 struct promise_result {
-    std::conditional_t<is_cancellable_v<T>, T, std::expected<T, cancellation_t>> value;
+    std::conditional_t<is_cancellable_v<T>, T, maybe<T>> value;
 
     template <typename U>
     void return_value(U&& val) noexcept {
@@ -30,7 +33,7 @@ struct promise_result {
     }
 
     void return_value(cancellation_t) {
-        value.emplace(std::unexpected(cancellation_t{}));
+        value = std::unexpected(cancellation_t());
     }
 };
 
@@ -63,14 +66,20 @@ struct task {
     }
 
     template <typename Promise>
-    auto await_suspend(std::coroutine_handle<Promise> caller) noexcept {
+    auto await_suspend(std::coroutine_handle<Promise> caller,
+                       std::source_location location = std::source_location::current()) noexcept {
+        callee.promise().location = location;
         return callee.promise().suspend(caller.promise());
     }
 
     T await_resume() noexcept {
         if constexpr(!std::is_void_v<T>) {
             assert(handle.promise().value.has_value() && "await_resume: value not set");
-            return std::move(*callee.promise().value);
+            if constexpr(is_cancellable_v<T>) {
+                return std::move(callee.promise().value);
+            } else {
+                return std::move(*callee.promise().value);
+            }
         }
     }
 };
@@ -83,7 +92,7 @@ struct promise_object : async_frame, promise_result<T> {
         return std::coroutine_handle<promise_object>::from_promise(*this);
     }
 
-    auto initial_suspend() const noexcept {
+    auto initial_suspend() noexcept {
         return std::suspend_always();
     }
 
@@ -99,15 +108,16 @@ struct promise_object : async_frame, promise_result<T> {
         std::abort();
     }
 
-    promise_object(std::source_location location = std::source_location::current()) {
+    promise_object() {
         this->address = handle().address();
-        this->location = location;
     }
 };
 
 template <typename T = void>
 class task {
 public:
+    friend class event_loop;
+
     using promise_type = promise_object<T>;
 
     using coroutine_handle = std::coroutine_handle<promise_type>;
@@ -133,6 +143,21 @@ public:
         if(h) {
             h.destroy();
         }
+    }
+
+    T result() {
+        return std::move(*h.promise().value);
+    }
+
+    async_frame* operator->() {
+        return &h.promise();
+    }
+
+    task<maybe<T>> catch_cancel() {
+        auto handle = h;
+        h = nullptr;
+        using coroutine_handle = std::coroutine_handle<promise_object<maybe<T>>>;
+        return task<maybe<T>>(coroutine_handle::from_address(handle.address()));
     }
 
 private:
