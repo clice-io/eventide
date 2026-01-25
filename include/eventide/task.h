@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <expected>
+#include <optional>
 #include <vector>
 
 #include "frame.h"
@@ -12,33 +13,42 @@ namespace eventide {
 struct cancellation_t {};
 
 template <typename T>
+constexpr bool is_cancellation_t = false;
+
+template <typename T>
+constexpr bool is_cancellation_t<std::expected<T, cancellation_t>> = true;
+
+template <typename T>
 class task;
 
-constexpr inline cancellation_t cancellation_token;
-
 template <typename T>
-using maybe = std::expected<T, cancellation_t>;
-
-template <typename T>
-constexpr bool is_cancellable_v = false;
-
-template <typename T>
-constexpr bool is_cancellable_v<maybe<T>> = true;
+using ctask = task<std::expected<T, cancellation_t>>;
 
 template <typename T>
 struct promise_result {
-    /// FIXME: use variant?
-    std::conditional_t<is_cancellable_v<T>, T, maybe<T>> value = {
-        std::unexpected(cancellation_t())};
+    std::optional<T> value;
+
+    template <typename U>
+    void return_value(U&& val) noexcept {
+        value.emplace(std::forward<U>(val));
+    }
+};
+
+template <typename T>
+struct promise_result<std::expected<T, cancellation_t>> {
+    std::optional<T> value;
 
     template <typename U>
     void return_value(U&& val) noexcept {
         value.emplace(std::forward<U>(val));
     }
 
-    void return_value(cancellation_t) {
-        value = std::unexpected(cancellation_t());
-    }
+    void return_value(cancellation_t) {}
+};
+
+template <>
+struct promise_result<std::expected<void, cancellation_t>> {
+    void return_void() noexcept {}
 };
 
 template <>
@@ -92,19 +102,41 @@ public:
         auto await_suspend(
             std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
+            awaitee.h.promise().state = async_node::Running;
             awaitee.h.promise().location = location;
             return awaitee.h.promise().suspend(awaiter.promise());
         }
 
         T await_resume() noexcept {
-            if constexpr(!std::is_void_v<T>) {
-                assert(awaitee.h.promise().value.has_value() && "await_resume: value not set");
-                if constexpr(is_cancellable_v<T>) {
-                    return std::move(awaitee.h.promise().value);
+            auto& promise = awaitee.h.promise();
+            if(promise.state == async_node::Cancelled) {
+                if constexpr(is_cancellation_t<T>) {
+                    return std::unexpected(cancellation_t());
                 } else {
-                    return std::move(*awaitee.h.promise().value);
+                    /// Implicitly spread cancellation, never call this.
+                    std::abort();
                 }
             }
+
+            if(promise.state == async_node::Finished) {
+                if constexpr(is_cancellation_t<T>) {
+                    if constexpr(!std::is_void_v<typename T::value_type>) {
+                        assert(promise.value.has_value() && "await_resume: value not set");
+                        return std::move(*awaitee.h.promise().value);
+                    } else {
+                        return {};
+                    }
+                } else {
+                    if constexpr(!std::is_void_v<T>) {
+                        assert(promise.value.has_value() && "await_resume: value not set");
+                        return std::move(*awaitee.h.promise().value);
+                    } else {
+                        return;
+                    }
+                }
+            }
+
+            std::abort();
         }
     };
 
@@ -131,19 +163,30 @@ public:
         }
     }
 
-    T result() {
-        return std::move(*h.promise().value);
+    auto result() {
+        if constexpr(!std::is_void_v<T>) {
+            return std::move(*h.promise().value);
+        } else {
+            return std::nullopt;
+        }
     }
 
     async_node* operator->() {
         return &h.promise();
     }
 
-    task<maybe<T>> catch_cancel() {
-        /// auto handle = h;
-        /// h = nullptr;
-        /// using coroutine_handle = std::coroutine_handle<promise_object<maybe<T>>>;
-        /// return task<maybe<T>>(coroutine_handle::from_address(handle.address()));
+    ctask<T> catch_cancel() {
+        if constexpr(is_cancellation_t<T>) {
+            static_assert(!is_cancellation_t<T>, "already explicit cancellation");
+        }
+
+        h.promise().policy = async_node::InterceptCancel;
+        auto handle = h;
+        h = nullptr;
+        /// We make sure they have totally same layout, so do it here is fine even if
+        /// sounds like undefined behavior.
+        using coroutine_handle = ctask<T>::coroutine_handle;
+        return ctask<T>(coroutine_handle::from_address(handle.address()));
     }
 
 private:

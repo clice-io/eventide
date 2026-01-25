@@ -39,6 +39,14 @@ void each(uv_idle_t* idle) {
 void event_loop::schedule(async_node& frame, std::source_location location) {
     assert(self && "schedule: no current event loop in this thread");
 
+    if(frame.state == async_node::Pending) {
+        frame.state = async_node::Running;
+    } else if(frame.state == async_node::Finished || frame.state == async_node::Running) {
+        std::abort();
+    } else if(frame.state == async_node::Cancelled) {
+        /// meaningless? think cancel shared task.
+    }
+
     frame.location = location;
     auto& self = *this;
     if(!self->idle_running && self->tasks.empty()) {

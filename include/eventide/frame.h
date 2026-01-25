@@ -84,6 +84,10 @@ public:
         return !is_stable_node();
     }
 
+    bool is_finished() const noexcept {
+        return state == Finished;
+    }
+
     bool is_cancelled() const noexcept {
         return state == Cancelled;
     }
