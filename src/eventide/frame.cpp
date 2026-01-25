@@ -10,7 +10,7 @@ namespace eventide {
 static thread_local async_node* current_node = nullptr;
 
 void async_node::cancel() {
-    if(state != Running) {
+    if(state == Cancelled) {
         return;
     }
     state = Cancelled;
@@ -208,7 +208,9 @@ std::coroutine_handle<> async_node::suspend(async_node& awaiter) {
 
 void async_node::resume() {
     if(is_stable_node()) {
-        static_cast<stable_node*>(this)->handle().resume();
+        if(!is_cancelled()) {
+            static_cast<stable_node*>(this)->handle().resume();
+        }
     }
 }
 

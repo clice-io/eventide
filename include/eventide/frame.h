@@ -2,6 +2,8 @@
 
 #include <coroutine>
 #include <cstdint>
+#include <cstdlib>
+#include <exception>
 #include <source_location>
 #include <vector>
 
@@ -38,16 +40,17 @@ public:
     };
 
     enum State : uint8_t {
-        Running = 0,
-        Cancelled = 1,
-        Finished = 2,
+        Pending,
+        Running,
+        Cancelled,
+        Finished,
     };
 
     const NodeKind kind;
 
     Policy policy;
 
-    State state;
+    State state = Pending;
 
     bool root = false;
 
@@ -203,18 +206,34 @@ struct final_awaiter {
     template <typename Promise>
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
         auto& promise = handle.promise();
-
-        promise.state = async_node::Finished;
-        if constexpr(requires { promise.value; }) {
-            if(!promise.value) {
-                promise.state = async_node::Cancelled;
-            }
+        if(promise.state == async_node::Running) {
+            promise.state = async_node::Finished;
+        } else {
+            std::terminate();
         }
-
         return handle.promise().suspend();
     }
 
     void await_resume() const noexcept {}
 };
+
+struct cancel_awaiter {
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
+        auto& promise = handle.promise();
+        promise.state = async_node::Cancelled;
+        return handle.promise().suspend();
+    }
+
+    void await_resume() const noexcept {}
+};
+
+inline auto cancel() {
+    return cancel_awaiter();
+}
 
 }  // namespace eventide
