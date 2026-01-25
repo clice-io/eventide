@@ -101,7 +101,7 @@ private:
     template <typename Tag>
     friend struct awaiter;
 
-    promise_base* waiter = nullptr;
+    async_node* waiter = nullptr;
     exit_status* active = nullptr;
     std::optional<exit_status> completed;
 };

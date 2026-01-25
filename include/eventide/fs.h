@@ -39,7 +39,7 @@ public:
     task<std::expected<change, std::error_code>> wait();
 
 private:
-    promise_base* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::expected<change, std::error_code>* active = nullptr;
     std::optional<change> pending;
 };

@@ -16,6 +16,8 @@
 
 namespace eventide {
 
+class event_loop;
+
 template <typename Tag>
 struct awaiter;
 
@@ -38,7 +40,7 @@ public:
 
 private:
     /// a stream allows only one active reader at a time
-    promise_base* reader;
+    async_node* reader;
 
     ring_buffer buffer;
 };
@@ -57,7 +59,7 @@ public:
     task<std::expected<Stream, std::error_code>> accept();
 
 private:
-    promise_base* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::expected<Stream, std::error_code>* active = nullptr;
     std::deque<std::expected<Stream, std::error_code>> pending;
 };

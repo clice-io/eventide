@@ -3,18 +3,36 @@ name = "eventide"
 version = "0.1.0"
 description = "A simple C++20 coroutine wrapper for libuv"
 authors = ["ykiko <ykikoykikoykiko@gmail.com>"]
-
 license = "Apache-2.0"
 license-file = "LICENSE"
 readme = "README.md"
 documentation = "https://clice.io"
 repository = "https://github.com/clice-io/eventide"
-
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [dependencies]
 python = "*"
+
+[environments]
+default = []
+format = ["format"]
+
+[tasks]
+xmake-test = "xmake test --verbose"
+xmake-build = "xmake --all --verbose --diagnosis"
+
+[tasks.ci-xmake-configure]
+args = ["build_type"]
+cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --toolchain=clang{% endif %}"
+
+[tasks.ci-xmake-build]
+args = ["build_type"]
+depends-on = [
+  { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
+  { task = "xmake-build" },
+  { task = "xmake-test" },
+]
 
 [target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
@@ -28,30 +46,36 @@ lld = "==20.1.8"
 llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
 
+# ============================================================================== #
+#                                    FORMAT                                      #
+# ============================================================================== #
 [feature.format.dependencies]
-pre-commit = "*"
-clang-format = "*"
+ruff = "*"
+tombi = "*"
 stylua = "*"
-
-[environments]
-default = []
-format = ["format"]
+fd-find = "*"
+prettier = "*"
+clang-format = "==21.1.7"
 
 [feature.format.tasks]
-format = "pre-commit run --all-files"
-
-[tasks]
-xmake-test = "xmake test --verbose"
-xmake-build = "xmake --all --verbose --diagnosis"
-
-[tasks.ci-xmake-configure]
-args = ["build_type"]
-cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --toolchain=clang{% endif %}"
-
-[tasks.ci-xmake-build]
-args = ["build_type"]
-depends-on = [
-    { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
-    { task = "xmake-build" },
-    { task = "xmake-test" },
-]
+format-cpp = "fd -H -e cpp -e h -e cc -e hpp -x clang-format -i"
+format-python = "ruff format ."
+format-lua = "stylua ."
+format-web = "fd -H -e js -e ts -e css -x prettier --write"
+format-markdown = "fd -H -e md -x prettier --write"
+format-json = "fd -H -e json -E package-lock.json -x prettier --write"
+format-toml = "fd -H -e toml -x tombi format"
+format-yaml = """
+fd -H -e yaml -e yml -E pnpm-lock.yaml -x prettier --write && \
+fd -H "^\\.clang-(format|tidy)$" -x prettier --write --parser yaml
+"""
+format = { depends-on = [
+  "format-cpp",
+  "format-python",
+  "format-lua",
+  "format-web",
+  "format-markdown",
+  "format-json",
+  "format-toml",
+  "format-yaml"
+] }

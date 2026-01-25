@@ -8,10 +8,20 @@ struct Point {
     int y;
 };
 
-TEST_SUITE(reflection) {
+TEST_SUITE(reflection2) {
 
-TEST_CASE(struct){
+int s = 0;
 
-};  // TEST_SUITE(struct)
+void setup() {
+    s += 1;
+}
 
-};  // TEST_SUITE(reflection)
+TEST_CASE(struct) {
+    std::println("{}", s);
+};
+
+TEST_CASE(struct2) {
+    std::println("{}", s);
+};
+
+};  // TEST_SUITE(reflection2)

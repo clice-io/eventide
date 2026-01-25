@@ -123,6 +123,4 @@ task<std::expected<fs_event::change, std::error_code>> fs_event::wait() {
     co_return co_await awaiter<fs_event_tag>{this};
 }
 
-template struct awaiter<fs_event_tag>;
-
 }  // namespace eventide
