@@ -6,7 +6,7 @@
 #include <system_error>
 
 #include "handle.h"
-#include "async/task.h"
+#include "task.h"
 
 namespace eventide {
 
@@ -39,7 +39,7 @@ public:
     task<std::expected<change, std::error_code>> wait();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::expected<change, std::error_code>* active = nullptr;
     std::optional<change> pending;
 };

@@ -1,29 +1,28 @@
-#include "eventide/async/loop.h"
+#include "eventide/loop.h"
 
-#include "../libuv.h"
-#include "eventide/async/task.h"
+#include <cassert>
+#include <deque>
+
+#include "libuv.h"
+#include "eventide/frame.h"
 
 namespace eventide {
 
-struct event_loop::impl {
+struct event_loop::self {
     uv_loop_t loop = {};
     uv_idle_t idle = {};
     bool idle_running = false;
-    std::deque<async_frame*> tasks;
+    std::deque<async_node*> tasks;
 };
 
-namespace {
-
-thread_local event_loop* current_loop = nullptr;
-
-}  // namespace
+static thread_local event_loop* current_loop = nullptr;
 
 event_loop* event_loop::current() {
     return current_loop;
 }
 
 void each(uv_idle_t* idle) {
-    auto self = static_cast<event_loop::impl*>(idle->data);
+    auto self = static_cast<struct event_loop::self*>(idle->data);
     auto loop = &self->loop;
     if(self->idle_running && self->tasks.empty()) {
         self->idle_running = false;
@@ -33,14 +32,15 @@ void each(uv_idle_t* idle) {
     /// Resume may create new tasks, we want to run them in the next iteration.
     auto all = std::move(self->tasks);
     for(auto& task: all) {
-        task->resume();
+        /// task->resume();
     }
 }
 
-void event_loop::schedule(async_frame& frame, std::source_location location) {
+void event_loop::schedule(async_node& frame, std::source_location location) {
+    assert(self && "schedule: no current event loop in this thread");
+
     frame.location = location;
     auto& self = *this;
-    assert(self && "schedule: no current event loop in this thread");
     if(!self->idle_running && self->tasks.empty()) {
         self->idle_running = true;
         uv_idle_start(&self->idle, each);
@@ -48,7 +48,7 @@ void event_loop::schedule(async_frame& frame, std::source_location location) {
     self->tasks.push_back(&frame);
 }
 
-event_loop::event_loop() : self(new impl()) {
+event_loop::event_loop() : self(new struct self()) {
     auto loop = &self->loop;
     int err = uv_loop_init(loop);
     if(err != 0) {
@@ -79,11 +79,11 @@ event_loop::~event_loop() {
     }
 
     for(auto task: self->tasks) {
-        if(task->is_cancelled()) {
-            task->resume();
-        } else {
-            task->destroy();
-        }
+        /// if(task->is_cancelled()) {
+        ///     task->resume();
+        /// } else {
+        ///     task->destroy();
+        /// }
     }
 }
 

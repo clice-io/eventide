@@ -12,7 +12,7 @@
 #include "error.h"
 #include "handle.h"
 #include "ringbuffer.h"
-#include "async/task.h"
+#include "task.h"
 
 namespace eventide {
 
@@ -40,7 +40,7 @@ public:
 
 private:
     /// a stream allows only one active reader at a time
-    async_frame* reader;
+    async_node* reader;
 
     ring_buffer buffer;
 };
@@ -59,7 +59,7 @@ public:
     task<std::expected<Stream, std::error_code>> accept();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::expected<Stream, std::error_code>* active = nullptr;
     std::deque<std::expected<Stream, std::error_code>> pending;
 };

@@ -3,7 +3,7 @@
 #include <type_traits>
 
 #include "libuv.h"
-#include "eventide/async/loop.h"
+#include "eventide/loop.h"
 #include "eventide/error.h"
 
 namespace {

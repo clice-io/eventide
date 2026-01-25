@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "libuv.h"
-#include "eventide/async/loop.h"
+#include "eventide/loop.h"
 
 namespace eventide {
 

@@ -5,7 +5,7 @@
 #include <system_error>
 
 #include "handle.h"
-#include "async/task.h"
+#include "task.h"
 
 namespace eventide {
 
@@ -31,7 +31,7 @@ public:
     task<std::error_code> wait();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::error_code* active = nullptr;
     int pending = 0;
 };
@@ -53,7 +53,7 @@ public:
     task<std::error_code> wait();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::error_code* active = nullptr;
     int pending = 0;
 };
@@ -75,7 +75,7 @@ public:
     task<std::error_code> wait();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::error_code* active = nullptr;
     int pending = 0;
 };
@@ -97,7 +97,7 @@ public:
     task<std::error_code> wait();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::error_code* active = nullptr;
     int pending = 0;
 };
@@ -119,7 +119,7 @@ public:
     task<std::error_code> wait();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::error_code* active = nullptr;
     int pending = 0;
 };

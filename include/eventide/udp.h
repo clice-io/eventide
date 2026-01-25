@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "handle.h"
-#include "async/task.h"
+#include "task.h"
 
 namespace eventide {
 
@@ -95,13 +95,13 @@ public:
     task<std::expected<recv_result, std::error_code>> recv();
 
 private:
-    async_frame* waiter = nullptr;
+    async_node* waiter = nullptr;
     std::expected<recv_result, std::error_code>* active = nullptr;
     std::deque<std::expected<recv_result, std::error_code>> pending;
     std::vector<char> buffer;
     bool receiving = false;
 
-    async_frame* send_waiter = nullptr;
+    async_node* send_waiter = nullptr;
     std::error_code* send_active = nullptr;
     std::optional<std::error_code> send_pending;
     bool send_inflight = false;

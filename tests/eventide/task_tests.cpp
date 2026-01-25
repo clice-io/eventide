@@ -1,14 +1,14 @@
 #include "zest/zest.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/task.h"
+#include "eventide/loop.h"
+#include "eventide/task.h"
 
 namespace et = eventide;
 
 TEST_SUITE(eventide) {
 
 static et::task<int> foo() {
-    auto frame = et::async_frame::current();
-    frame->stacktrace();
+    auto frame = et::async_node::current();
+    ///frame->stacktrace();
 
     /// frame->on_cancel([&]() { std::println("foo was cancelled!"); });
 
@@ -19,7 +19,7 @@ static et::task<int> bar() {
     auto h = foo().catch_cancel();
     h->cancel();
 
-    auto res = co_await h;
+    auto res = co_await std::move(h);
     if(!res) {
         co_return 0;
     }
@@ -30,7 +30,7 @@ static et::task<int> bar() {
 TEST_CASE(task, {.focus = true}) {
     et::event_loop loop;
     auto task = bar();
-    loop.schedule(task);
+    loop.schedule(std::move(task));
     loop.run();
     std::println("{}", task.result());
 }

@@ -4,7 +4,7 @@
 #include <unistd.h>
 
 #include "zest/zest.h"
-#include "eventide/async/loop.h"
+#include "eventide/loop.h"
 #include "eventide/stream.h"
 
 namespace ev = eventide;
