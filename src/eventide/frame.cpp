@@ -36,13 +36,8 @@ void async_node::cancel() {
             auto* cur = self->head;
             while(cur) {
                 auto* next = cur->next;
-                // 唤醒等待者的父协程 (即实际在等待的协程)
-                if(cur->awaiter) {
-                    // 注意：这里我们调用 on_completion 来触发等待者的恢复逻辑
-                    // 或者如果能直接 resume 也可以，但走统一接口更安全
-                    // 这里假设直接 resume 等待者的宿主
-                    //
-                }
+                /// FIXME:
+                if(cur->awaiter) {}
                 cur = next;
             }
 
@@ -73,7 +68,7 @@ void async_node::cancel() {
                 self->resource = nullptr;
             }
             if(self->awaiter) {
-                /// notify completion 并且处理 resume handle
+                /// FIXME:
             }
             break;
         }
