@@ -27,7 +27,9 @@ constexpr bool is_cancellable_v<maybe<T>> = true;
 
 template <typename T>
 struct promise_result {
-    std::conditional_t<is_cancellable_v<T>, T, maybe<T>> value;
+    /// FIXME: use variant?
+    std::conditional_t<is_cancellable_v<T>, T, maybe<T>> value = {
+        std::unexpected(cancellation_t())};
 
     template <typename U>
     void return_value(U&& val) noexcept {
