@@ -3,8 +3,8 @@
 #include <type_traits>
 
 #include "libuv.h"
-#include "eventide/loop.h"
 #include "eventide/error.h"
+#include "eventide/loop.h"
 
 namespace {
 

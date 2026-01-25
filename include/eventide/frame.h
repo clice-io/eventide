@@ -7,19 +7,6 @@
 
 namespace eventide {
 
-struct final_awaiter {
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    template <typename Promise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) {
-        return handle.promise().suspend();
-    }
-
-    void await_resume() const noexcept {}
-};
-
 class async_node {
 public:
     enum class NodeKind : std::uint8_t {
@@ -62,6 +49,8 @@ public:
 
     State state;
 
+    bool root = false;
+
     std::source_location location;
 
     static async_node* current() {
@@ -98,11 +87,13 @@ public:
 
     void cancel();
 
-    void resume() {}
+    void resume();
 
     std::coroutine_handle<> continuation(async_node* parent);
 
     std::coroutine_handle<> suspend();
+
+    std::coroutine_handle<> suspend(async_node& awaiter);
 
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
@@ -112,6 +103,7 @@ class stable_node : public async_node {
 protected:
     explicit stable_node(NodeKind k) : async_node(k) {}
 
+public:
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
     }
@@ -201,6 +193,28 @@ protected:
     friend class async_node;
 
     explicit system_op(NodeKind k) : transient_node(k) {}
+};
+
+struct final_awaiter {
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
+        auto& promise = handle.promise();
+
+        promise.state = async_node::Finished;
+        if constexpr(requires { promise.value; }) {
+            if(!promise.value) {
+                promise.state = async_node::Cancelled;
+            }
+        }
+
+        return handle.promise().suspend();
+    }
+
+    void await_resume() const noexcept {}
 };
 
 }  // namespace eventide

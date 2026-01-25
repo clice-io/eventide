@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <source_location>
+#include <tuple>
 
 namespace eventide {
 
@@ -36,14 +37,12 @@ public:
 
     void stop();
 
-    template <typename T>
-    void schedule(task<T> task, std::source_location location = std::source_location::current()) {
-        schedule(static_cast<async_node&>(task.h.promise()), location);
-    }
+    template <typename Task>
+    void schedule(Task&& task, std::source_location location = std::source_location::current()) {
+        if constexpr(std::is_rvalue_reference_v<Task&&>) {
+            task.h.promise().root = true;
+        }
 
-    template <typename T>
-    void schedule(shared_task<T> task,
-                  std::source_location location = std::source_location::current()) {
         schedule(static_cast<async_node&>(task.h.promise()), location);
     }
 
@@ -52,5 +51,13 @@ private:
 
     std::unique_ptr<self> self;
 };
+
+template <typename... Tasks>
+auto run(Tasks&&... tasks) {
+    event_loop loop;
+    (loop.schedule(tasks), ...);
+    loop.run();
+    return std::tuple(std::move(tasks.result())...);
+}
 
 }  // namespace eventide

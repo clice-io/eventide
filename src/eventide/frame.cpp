@@ -105,7 +105,9 @@ std::coroutine_handle<> async_node::continuation(async_node* parent) {
 
             if(this == p) {
                 if(!p->awaiter) {
-                    p->handle().destroy();
+                    if(p->root) {
+                        p->handle().destroy();
+                    }
                     return std::noop_coroutine();
                 }
 
@@ -134,7 +136,9 @@ std::coroutine_handle<> async_node::continuation(async_node* parent) {
                     return p->continuation(p->awaiter);
                 } else {
                     /// Top level coroutine.
-                    p->handle().destroy();
+                    if(p->root) {
+                        p->handle().destroy();
+                    }
                     return std::noop_coroutine();
                 }
             }
@@ -164,7 +168,7 @@ std::coroutine_handle<> async_node::continuation(async_node* parent) {
                 /// Note that even if the shared_task was cancelled, we still
                 /// need to resume it. Because we requires it to explicitly
                 /// handle cancellation result.
-                loop->schedule(*cur, p->location);
+                loop->schedule(static_cast<async_node&>(*cur), p->location);
                 cur = cur->next;
             }
 
@@ -195,6 +199,22 @@ std::coroutine_handle<> async_node::continuation(async_node* parent) {
 
 std::coroutine_handle<> async_node::suspend() {
     return continuation(this);
+}
+
+std::coroutine_handle<> async_node::suspend(async_node& awaiter) {
+    if(is_standard_task()) {
+        static_cast<standard_task*>(this)->awaiter = &awaiter;
+        static_cast<standard_task*>(&awaiter)->awaitee = this;
+    }
+
+    /// FIXME: ?
+    return static_cast<standard_task*>(this)->handle();
+}
+
+void async_node::resume() {
+    if(is_stable_node()) {
+        static_cast<stable_node*>(this)->handle().resume();
+    }
 }
 
 }  // namespace eventide

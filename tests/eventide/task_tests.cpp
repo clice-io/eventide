@@ -2,37 +2,50 @@
 #include "eventide/loop.h"
 #include "eventide/task.h"
 
-namespace et = eventide;
+namespace eventide {
 
-TEST_SUITE(eventide) {
+namespace {
 
-static et::task<int> foo() {
-    auto frame = et::async_node::current();
-    ///frame->stacktrace();
+TEST_SUITE(task) {
 
-    /// frame->on_cancel([&]() { std::println("foo was cancelled!"); });
-
+task<int> foo() {
     co_return 1;
 }
 
-static et::task<int> bar() {
-    auto h = foo().catch_cancel();
-    h->cancel();
+task<int> foo1() {
+    co_return co_await foo() + 1;
+}
 
-    auto res = co_await std::move(h);
-    if(!res) {
-        co_return 0;
+task<int> foo2() {
+    auto res = co_await foo();
+    auto res1 = co_await foo1();
+    co_return res + res1;
+}
+
+TEST_CASE(await) {
+    {
+        auto [res] = run(foo());
+        EXPECT_EQ(res, 1);
     }
 
-    co_return 1;
+    {
+        auto [res, res1] = run(foo(), foo1());
+        EXPECT_EQ(res, 1);
+        EXPECT_EQ(res1, 2);
+    }
+
+    {
+        auto [res, res1, res2] = run(foo(), foo1(), foo2());
+        EXPECT_EQ(res, 1);
+        EXPECT_EQ(res1, 2);
+        EXPECT_EQ(res2, 3);
+    }
 }
 
-TEST_CASE(task, {.focus = true}) {
-    et::event_loop loop;
-    auto task = bar();
-    loop.schedule(std::move(task));
-    loop.run();
-    std::println("{}", task.result());
-}
+TEST_CASE(cancel) {}
 
-};  // TEST_SUITE(eventide)
+};  // TEST_SUITE(task)
+
+}  // namespace
+
+}  // namespace eventide

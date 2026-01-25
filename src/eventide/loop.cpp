@@ -32,7 +32,7 @@ void each(uv_idle_t* idle) {
     /// Resume may create new tasks, we want to run them in the next iteration.
     auto all = std::move(self->tasks);
     for(auto& task: all) {
-        /// task->resume();
+        task->resume();
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdlib>
 #include <expected>
 #include <vector>
@@ -79,7 +80,7 @@ public:
     };
 
     struct awaiter {
-        coroutine_handle callee;
+        task<T> awaitee;
 
         bool await_ready() noexcept {
             return false;
@@ -87,28 +88,26 @@ public:
 
         template <typename Promise>
         auto await_suspend(
-            std::coroutine_handle<Promise> caller,
+            std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
-            callee.promise().location = location;
-            return callee.promise().suspend();
+            awaitee.h.promise().location = location;
+            return awaitee.h.promise().suspend(awaiter.promise());
         }
 
         T await_resume() noexcept {
             if constexpr(!std::is_void_v<T>) {
-                /// assert(callee.promise().value.has_value() && "await_resume: value not set");
+                assert(awaitee.h.promise().value.has_value() && "await_resume: value not set");
                 if constexpr(is_cancellable_v<T>) {
-                    return std::move(callee.promise().value);
+                    return std::move(awaitee.h.promise().value);
                 } else {
-                    return std::move(*callee.promise().value);
+                    return std::move(*awaitee.h.promise().value);
                 }
             }
         }
     };
 
     auto operator co_await() && noexcept {
-        auto h2 = h;
-        h = nullptr;
-        return awaiter(h2);
+        return awaiter(std::move(*this));
     }
 
 public:
