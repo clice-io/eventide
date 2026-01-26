@@ -96,11 +96,11 @@ public:
 
     void resume();
 
-    std::coroutine_handle<> continuation(async_node* parent);
+    std::coroutine_handle<> link_continuation(async_node* awaiter);
 
-    std::coroutine_handle<> suspend();
+    std::coroutine_handle<> dispatch_completion();
 
-    std::coroutine_handle<> suspend(async_node& awaiter);
+    std::coroutine_handle<> handle_subtask_result(async_node* parent);
 
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
@@ -215,7 +215,7 @@ struct final_awaiter {
         } else {
             std::terminate();
         }
-        return handle.promise().suspend();
+        return handle.promise().dispatch_completion();
     }
 
     void await_resume() const noexcept {}
@@ -230,7 +230,7 @@ struct cancel_awaiter {
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
         auto& promise = handle.promise();
         promise.state = async_node::Cancelled;
-        return handle.promise().suspend();
+        return handle.promise().dispatch_completion();
     }
 
     void await_resume() const noexcept {}

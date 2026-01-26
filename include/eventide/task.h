@@ -104,7 +104,7 @@ public:
             std::source_location location = std::source_location::current()) noexcept {
             awaitee.h.promise().state = async_node::Running;
             awaitee.h.promise().location = location;
-            return awaitee.h.promise().suspend(awaiter.promise());
+            return awaitee.h.promise().link_continuation(&awaiter.promise());
         }
 
         T await_resume() noexcept {
