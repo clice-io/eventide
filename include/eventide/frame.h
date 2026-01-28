@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <coroutine>
 #include <cstdint>
 #include <cstdlib>
@@ -8,6 +9,8 @@
 #include <vector>
 
 namespace eventide {
+
+class stable_node;
 
 class async_node {
 public:
@@ -96,9 +99,9 @@ public:
 
     void resume();
 
-    std::coroutine_handle<> link_continuation(async_node* awaiter);
+    std::coroutine_handle<> link_continuation(async_node* awaiter, std::source_location location);
 
-    std::coroutine_handle<> dispatch_completion();
+    std::coroutine_handle<> final_transition();
 
     std::coroutine_handle<> handle_subtask_result(async_node* parent);
 
@@ -152,10 +155,25 @@ private:
 class waiter_link;
 
 class shared_resource : public stable_node {
-protected:
+public:
     friend class async_node;
 
     explicit shared_resource(NodeKind k) : stable_node(k) {}
+
+    void inc_ref() {
+        ref_count += 1;
+    }
+
+    void dec_ref() {
+        ref_count -= 1;
+        if(ref_count == 0) {
+            handle().destroy();
+        }
+    }
+
+    void insert(waiter_link* link);
+
+    void remove(waiter_link* link);
 
 private:
     std::uint32_t ref_count = 0;
@@ -168,12 +186,13 @@ private:
 };
 
 class waiter_link : public transient_node {
-protected:
+public:
     friend class async_node;
+    friend class shared_resource;
 
     explicit waiter_link(NodeKind k) : transient_node(k) {}
 
-private:
+protected:
     shared_resource* resource = nullptr;
 
     waiter_link* prev = nullptr;
@@ -202,7 +221,9 @@ protected:
     explicit system_op(NodeKind k) : transient_node(k) {}
 };
 
-struct final_awaiter {
+struct transition_await {
+    async_node::State state = async_node::Pending;
+
     bool await_ready() const noexcept {
         return false;
     }
@@ -210,34 +231,22 @@ struct final_awaiter {
     template <typename Promise>
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
         auto& promise = handle.promise();
-        if(promise.state == async_node::Running) {
-            promise.state = async_node::Finished;
+        if(state == async_node::Finished) {
+            assert(promise.state == async_node::Running && "only running task could finish");
+            promise.state = state;
+        } else if(state == async_node::Cancelled) {
+            promise.state = state;
         } else {
-            std::terminate();
+            assert(false && "unexpected task state");
         }
-        return handle.promise().dispatch_completion();
-    }
-
-    void await_resume() const noexcept {}
-};
-
-struct cancel_awaiter {
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    template <typename Promise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
-        auto& promise = handle.promise();
-        promise.state = async_node::Cancelled;
-        return handle.promise().dispatch_completion();
+        return promise.final_transition();
     }
 
     void await_resume() const noexcept {}
 };
 
 inline auto cancel() {
-    return cancel_awaiter();
+    return transition_await(async_node::Cancelled);
 }
 
 }  // namespace eventide

@@ -95,6 +95,31 @@ TEST_CASE(down_cancel) {
 
 };  // TEST_SUITE(task)
 
+TEST_SUITE(shared_task) {
+
+TEST_CASE(future) {
+    auto task1 = []() -> shared_task<int> {
+        co_return 1;
+    }();
+
+    auto task2 = [](shared_future<int> future) -> task<int> {
+        auto res = co_await future;
+        co_return *res + 1;
+    }(task1.get());
+
+    auto task3 = [](shared_future<int> future) -> task<int> {
+        auto res = co_await future;
+        co_return *res + 2;
+    }(task1.get());
+
+    auto [res2, res3, res1] = run(task2, task3, task1);
+    EXPECT_EQ(res2, 2);
+    EXPECT_EQ(res3, 3);
+    EXPECT_EQ(res1, 1);
+}
+
+};  // TEST_SUITE(shared_task)
+
 }  // namespace
 
 }  // namespace eventide
