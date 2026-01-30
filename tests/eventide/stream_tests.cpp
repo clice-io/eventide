@@ -233,7 +233,7 @@ TEST_CASE(accept_already_waiting) {
     EXPECT_TRUE(first_res.has_value());
     EXPECT_FALSE(second_res.has_value());
     if(!second_res.has_value()) {
-        EXPECT_EQ(second_res.error().value(), -114);
+        EXPECT_EQ(second_res.error().value(), uv_err::connection_already_in_progress);
     }
 }
 
