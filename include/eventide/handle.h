@@ -8,7 +8,7 @@ namespace eventide {
 
 class handle {
 protected:
-    handle() = default;
+    handle() noexcept : data(nullptr) {}
 
     handle(std::size_t size) noexcept;
 

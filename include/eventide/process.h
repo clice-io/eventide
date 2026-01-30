@@ -20,6 +20,10 @@ private:
     using handle::handle;
 
 public:
+    process(process&& other) noexcept;
+
+    process& operator=(process&& other) noexcept;
+
     struct exit_status {
         /// Exit code reported by the child.
         int64_t status;

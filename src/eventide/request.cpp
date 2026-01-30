@@ -50,31 +50,46 @@ struct awaiter<work_tag> {
 task<std::error_code> work_request::queue(event_loop& loop, work_fn fn) {
     awaiter<work_tag> aw;
 
+    struct work_holder {
+        uv_work_t req{};
+        work_fn fn;
+        awaiter<work_tag>* aw = nullptr;
+    };
+
     auto work_cb = [](uv_work_t* req) {
-        auto* fn_ptr = static_cast<work_fn*>(req->data);
-        if(fn_ptr) {
-            (*fn_ptr)();
+        auto* holder = static_cast<work_holder*>(req->data);
+        if(holder && holder->fn) {
+            holder->fn();
         }
     };
 
     auto after_cb = [](uv_work_t* req, int status) {
-        auto* aw = static_cast<awaiter<work_tag>*>(req->data);
-        if(aw == nullptr) {
+        auto* holder = static_cast<work_holder*>(req->data);
+        if(holder == nullptr) {
             return;
         }
 
-        aw->result = status < 0 ? uv_error(status) : std::error_code{};
-        if(aw->waiter) {
-            aw->waiter->resume();
+        if(holder->aw) {
+            holder->aw->result = status < 0 ? uv_error(status) : std::error_code{};
+            if(holder->aw->waiter) {
+                holder->aw->waiter->resume();
+            }
         }
+
+        delete holder;
     };
 
-    auto work = std::make_unique<uv_work_t>();
-    work->data = &aw;
     aw.result.clear();
 
-    int err = uv_queue_work(static_cast<uv_loop_t*>(loop.handle()), work.get(), work_cb, after_cb);
+    auto holder = std::make_unique<work_holder>();
+    holder->fn = std::move(fn);
+    holder->aw = &aw;
+    holder->req.data = holder.get();
+    auto* raw = holder.release();
+
+    int err = uv_queue_work(static_cast<uv_loop_t*>(loop.handle()), &raw->req, work_cb, after_cb);
     if(err != 0) {
+        delete raw;
         co_return uv_error(err);
     }
 
@@ -341,7 +356,17 @@ task<std::expected<std::vector<fs_request::dirent>, std::error_code>>
         co_return std::unexpected(uv_error(UV_EINVAL));
     }
 
-    auto populate = [](uv_fs_t& req) {
+    auto dir_ptr = static_cast<uv_dir_t*>(dir.dir);
+    if(dir_ptr == nullptr) {
+        co_return std::unexpected(uv_error(UV_EINVAL));
+    }
+
+    constexpr std::size_t entry_count = 64;
+    auto entries_storage = std::make_shared<std::vector<uv_dirent_t>>(entry_count);
+    dir_ptr->dirents = entries_storage->data();
+    dir_ptr->nentries = entries_storage->size();
+
+    auto populate = [entries_storage](uv_fs_t& req) {
         std::vector<dirent> out;
         auto* d = static_cast<uv_dir_t*>(req.ptr);
         if(d == nullptr) {
@@ -363,8 +388,10 @@ task<std::expected<std::vector<fs_request::dirent>, std::error_code>>
     co_return co_await run_fs<std::vector<dirent>>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
-            req.ptr = dir.dir;
-            return uv_fs_readdir(static_cast<uv_loop_t*>(loop.handle()), &req, nullptr, cb);
+            return uv_fs_readdir(static_cast<uv_loop_t*>(loop.handle()),
+                                 &req,
+                                 static_cast<uv_dir_t*>(dir.dir),
+                                 cb);
         },
         populate);
 }

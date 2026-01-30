@@ -1,0 +1,115 @@
+#include <atomic>
+#include <string>
+#include <string_view>
+
+#include "zest/zest.h"
+#include "eventide/loop.h"
+#include "eventide/udp.h"
+
+namespace eventide {
+
+namespace {
+
+task<std::expected<udp::recv_result, std::error_code>> recv_once(udp& sock,
+                                                                 std::atomic<int>& done) {
+    auto res = co_await sock.recv();
+    if(done.fetch_add(1) + 1 == 2) {
+        event_loop::current()->stop();
+    }
+    co_return res;
+}
+
+task<std::error_code> send_to(udp& sock,
+                              std::string_view payload,
+                              std::string_view host,
+                              int port,
+                              std::atomic<int>& done) {
+    std::span<const char> data(payload.data(), payload.size());
+    auto ec = co_await sock.send(data, host, port);
+    if(done.fetch_add(1) + 1 == 2) {
+        event_loop::current()->stop();
+    }
+    co_return ec;
+}
+
+task<std::error_code> send_connected(udp& sock, std::string_view payload, std::atomic<int>& done) {
+    std::span<const char> data(payload.data(), payload.size());
+    auto ec = co_await sock.send(data);
+    if(done.fetch_add(1) + 1 == 2) {
+        event_loop::current()->stop();
+    }
+    co_return ec;
+}
+
+}  // namespace
+
+TEST_SUITE(udp_io) {
+
+TEST_CASE(send_and_recv) {
+    event_loop loop;
+
+    auto recv_sock = udp::create(loop);
+    ASSERT_TRUE(recv_sock.has_value());
+
+    auto bind_ec = recv_sock->bind("127.0.0.1", 0);
+    EXPECT_FALSE(static_cast<bool>(bind_ec));
+
+    auto endpoint = recv_sock->getsockname();
+    ASSERT_TRUE(endpoint.has_value());
+
+    auto send_sock = udp::create(loop);
+    ASSERT_TRUE(send_sock.has_value());
+
+    std::atomic<int> done{0};
+    auto receiver = recv_once(*recv_sock, done);
+    auto sender = send_to(*send_sock, "eventide-udp", endpoint->addr, endpoint->port, done);
+
+    loop.schedule(receiver);
+    loop.schedule(sender);
+    loop.run();
+
+    auto recv_result = receiver.result();
+    EXPECT_TRUE(recv_result.has_value());
+    EXPECT_EQ(recv_result->data, "eventide-udp");
+
+    auto send_result = sender.result();
+    EXPECT_FALSE(static_cast<bool>(send_result));
+}
+
+TEST_CASE(connect_and_send) {
+    event_loop loop;
+
+    auto recv_sock = udp::create(loop);
+    ASSERT_TRUE(recv_sock.has_value());
+
+    auto bind_ec = recv_sock->bind("127.0.0.1", 0);
+    EXPECT_FALSE(static_cast<bool>(bind_ec));
+
+    auto endpoint = recv_sock->getsockname();
+    ASSERT_TRUE(endpoint.has_value());
+
+    auto send_sock = udp::create(loop);
+    ASSERT_TRUE(send_sock.has_value());
+
+    auto conn_ec = send_sock->connect(endpoint->addr, endpoint->port);
+    EXPECT_FALSE(static_cast<bool>(conn_ec));
+
+    std::atomic<int> done{0};
+    auto receiver = recv_once(*recv_sock, done);
+    auto sender = send_connected(*send_sock, "eventide-udp-connect", done);
+
+    loop.schedule(receiver);
+    loop.schedule(sender);
+    loop.run();
+
+    auto recv_result = receiver.result();
+    EXPECT_TRUE(recv_result.has_value());
+    EXPECT_EQ(recv_result->data, "eventide-udp-connect");
+
+    auto send_result = sender.result();
+    EXPECT_FALSE(static_cast<bool>(send_result));
+}
+
+};  // TEST_SUITE(udp_io)
+
+}  // namespace eventide

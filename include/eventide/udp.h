@@ -27,6 +27,10 @@ private:
     friend struct awaiter;
 
 public:
+    udp(udp&& other) noexcept;
+
+    udp& operator=(udp&& other) noexcept;
+
     struct recv_result {
         std::string data;
         std::string addr;

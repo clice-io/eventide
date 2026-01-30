@@ -17,6 +17,53 @@ struct udp_send_tag {};
 
 namespace eventide {
 
+udp::udp(udp&& other) noexcept :
+    handle(std::move(other)), waiter(other.waiter), active(other.active),
+    pending(std::move(other.pending)), buffer(std::move(other.buffer)), receiving(other.receiving),
+    send_waiter(other.send_waiter), send_active(other.send_active),
+    send_pending(std::move(other.send_pending)), send_inflight(other.send_inflight) {
+    other.waiter = nullptr;
+    other.active = nullptr;
+    other.send_waiter = nullptr;
+    other.send_active = nullptr;
+
+    if(initialized()) {
+        if(auto* handle = as<uv_handle_t>()) {
+            handle->data = this;
+        }
+    }
+}
+
+udp& udp::operator=(udp&& other) noexcept {
+    if(this == &other) {
+        return *this;
+    }
+
+    handle::operator=(std::move(other));
+    waiter = other.waiter;
+    active = other.active;
+    pending = std::move(other.pending);
+    buffer = std::move(other.buffer);
+    receiving = other.receiving;
+    send_waiter = other.send_waiter;
+    send_active = other.send_active;
+    send_pending = std::move(other.send_pending);
+    send_inflight = other.send_inflight;
+
+    other.waiter = nullptr;
+    other.active = nullptr;
+    other.send_waiter = nullptr;
+    other.send_active = nullptr;
+
+    if(initialized()) {
+        if(auto* handle = as<uv_handle_t>()) {
+            handle->data = this;
+        }
+    }
+
+    return *this;
+}
+
 static int fill_addr(std::string_view host, int port, sockaddr_storage& storage) {
     auto build = [&](auto& out, auto fn) -> int {
         return fn(std::string(host).c_str(), port, &out);

@@ -94,6 +94,7 @@ void async_node::cancel() {
 }
 
 void async_node::resume() {
+    const auto kind_snapshot = kind;
     /// Task/SharedTask/SharedFuture ...
     if(is_stable_node()) {
         if(!is_cancelled()) {
@@ -101,7 +102,7 @@ void async_node::resume() {
         }
     }
 
-    if(kind == NodeKind::SharedFuture) {
+    if(kind_snapshot == NodeKind::SharedFuture) {
         auto self = static_cast<waiter_link*>(this);
         static_cast<stable_node*>(self->awaiter)->handle().resume();
     }

@@ -47,7 +47,9 @@ struct awaiter<stream_read_tag> {
             if(s) {
                 uv_read_stop(stream);
                 if(s->reader) {
-                    s->reader->resume();
+                    auto reader = s->reader;
+                    s->reader = nullptr;
+                    reader->resume();
                 }
             }
             return;
@@ -56,7 +58,9 @@ struct awaiter<stream_read_tag> {
         s->buffer.advance_write(static_cast<size_t>(nread));
 
         if(s->reader) {
-            s->reader->resume();
+            auto reader = s->reader;
+            s->reader = nullptr;
+            reader->resume();
         }
     }
 
@@ -173,6 +177,43 @@ struct awaiter {
         return std::move(result);
     }
 };
+
+template <typename Stream>
+acceptor<Stream>::acceptor(acceptor&& other) noexcept :
+    handle(std::move(other)), waiter(other.waiter), active(other.active),
+    pending(std::move(other.pending)) {
+    other.waiter = nullptr;
+    other.active = nullptr;
+
+    if(initialized()) {
+        if(auto* h = as<uv_handle_t>()) {
+            h->data = this;
+        }
+    }
+}
+
+template <typename Stream>
+acceptor<Stream>& acceptor<Stream>::operator=(acceptor&& other) noexcept {
+    if(this == &other) {
+        return *this;
+    }
+
+    handle::operator=(std::move(other));
+    waiter = other.waiter;
+    active = other.active;
+    pending = std::move(other.pending);
+
+    other.waiter = nullptr;
+    other.active = nullptr;
+
+    if(initialized()) {
+        if(auto* h = as<uv_handle_t>()) {
+            h->data = this;
+        }
+    }
+
+    return *this;
+}
 
 template <typename Stream>
 task<std::expected<Stream, std::error_code>> acceptor<Stream>::accept() {

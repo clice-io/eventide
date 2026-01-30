@@ -12,6 +12,41 @@ struct process_wait_tag {};
 
 }  // namespace
 
+process::process(process&& other) noexcept :
+    handle(std::move(other)), waiter(other.waiter), active(other.active),
+    completed(std::move(other.completed)) {
+    other.waiter = nullptr;
+    other.active = nullptr;
+
+    if(initialized()) {
+        if(auto* handle = as<uv_process_t>()) {
+            handle->data = this;
+        }
+    }
+}
+
+process& process::operator=(process&& other) noexcept {
+    if(this == &other) {
+        return *this;
+    }
+
+    handle::operator=(std::move(other));
+    waiter = other.waiter;
+    active = other.active;
+    completed = std::move(other.completed);
+
+    other.waiter = nullptr;
+    other.active = nullptr;
+
+    if(initialized()) {
+        if(auto* handle = as<uv_process_t>()) {
+            handle->data = this;
+        }
+    }
+
+    return *this;
+}
+
 template <>
 struct awaiter<process_wait_tag> {
     using promise_t = task<process::wait_result>::promise_type;
@@ -114,7 +149,7 @@ std::expected<process::spawn_result, std::error_code> process::spawn(event_loop&
     std::array<uv_stdio_container_t, 3> stdio{};
 
     auto make_pipe = [&]() -> std::expected<pipe, std::error_code> {
-        pipe out{};
+        pipe out(sizeof(uv_pipe_t));
         int err = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), out.as<uv_pipe_t>(), 0);
         if(err != 0) {
             return std::unexpected(uv_error(err));
@@ -193,6 +228,7 @@ std::expected<process::spawn_result, std::error_code> process::spawn(event_loop&
     auto proc_handle = out.proc.as<uv_process_t>();
     int err = uv_spawn(static_cast<uv_loop_t*>(loop.handle()), proc_handle, &uv_opts);
     if(err != 0) {
+        out.proc.mark_initialized();
         return std::unexpected(uv_error(err));
     }
 

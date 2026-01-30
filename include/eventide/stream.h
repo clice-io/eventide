@@ -56,6 +56,10 @@ private:
     friend struct awaiter;
 
 public:
+    acceptor(acceptor&& other) noexcept;
+
+    acceptor& operator=(acceptor&& other) noexcept;
+
     task<std::expected<Stream, std::error_code>> accept();
 
 private:
@@ -74,6 +78,7 @@ public:
     using acceptor = eventide::acceptor<pipe>;
 
     static std::expected<pipe, std::error_code> open(event_loop& loop, int fd);
+
     static std::expected<acceptor, std::error_code> listen(event_loop& loop,
                                                            const char* name,
                                                            int backlog = 128);
