@@ -303,7 +303,7 @@ task<result<std::vector<fs_request::dirent>>> fs_request::scandir(event_loop& lo
     auto populate = [](uv_fs_t& req) {
         std::vector<dirent> out;
         uv_dirent_t ent;
-    while(uv_fs_scandir_next(&req, &ent) != error::end_of_file.value()) {
+        while(uv_fs_scandir_next(&req, &ent) != error::end_of_file.value()) {
             dirent d;
             if(ent.name) {
                 d.name = ent.name;

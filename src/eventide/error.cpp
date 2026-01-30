@@ -40,7 +40,6 @@ const error error::addrinfo_socket_type_not_supported{UV_EAI_SOCKTYPE};
 const error error::connection_already_in_progress{UV_EALREADY};
 const error error::bad_file_descriptor{UV_EBADF};
 const error error::resource_busy_or_locked{UV_EBUSY};
-const error error::operation_canceled{UV_ECANCELED};
 const error error::invalid_unicode_character{UV_ECHARSET};
 const error error::software_caused_connection_abort{UV_ECONNABORTED};
 const error error::connection_refused{UV_ECONNREFUSED};

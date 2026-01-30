@@ -1,7 +1,10 @@
 #pragma once
 
 #include <expected>
+#include <limits>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 namespace eventide {
 
@@ -56,7 +59,6 @@ public:
     const static error connection_already_in_progress;
     const static error bad_file_descriptor;
     const static error resource_busy_or_locked;
-    const static error operation_canceled;
     const static error invalid_unicode_character;
     const static error software_caused_connection_abort;
     const static error connection_refused;
@@ -123,21 +125,92 @@ private:
     int code = 0;
 };
 
+struct cancellation {};
+
+class status {
+public:
+    constexpr status() noexcept = default;
+
+    constexpr explicit status(error err) noexcept : err(err) {}
+
+    constexpr static int cancelled_code = (std::numeric_limits<int>::min)();
+
+    constexpr status(cancellation) noexcept : err(error(cancelled_code)) {}
+
+    constexpr bool cancelled() const noexcept {
+        return err.value() == cancelled_code;
+    }
+
+    constexpr bool has_error() const noexcept {
+        return err.has_error() && !cancelled();
+    }
+
+    constexpr explicit operator bool() const noexcept {
+        return err.has_error();
+    }
+
+    constexpr const error& as_error() const noexcept {
+        return err;
+    }
+
+    constexpr int value() const noexcept {
+        return err.value();
+    }
+
+    std::string_view message() const noexcept {
+        return cancelled() ? std::string_view("canceled") : err.message();
+    }
+
+    friend constexpr bool operator==(const status& lhs, const status& rhs) noexcept = default;
+
+private:
+    error err = {};
+};
+
 template <typename T>
 using result = std::expected<T, error>;
 
-struct cancellation_t {};
+template <typename T>
+using cancellation_result = std::expected<T, cancellation>;
+
+template <typename T>
+using status_result = std::expected<T, status>;
 
 template <typename T>
 constexpr bool is_cancellation_t = false;
 
 template <typename T>
-constexpr bool is_cancellation_t<std::expected<T, cancellation_t>> = true;
+constexpr bool is_cancellation_t<std::expected<T, cancellation>> = true;
+
+template <typename T>
+constexpr bool is_status_t = false;
+
+template <typename T>
+constexpr bool is_status_t<std::expected<T, status>> = true;
+
+template <typename T>
+constexpr std::expected<T, status>
+    zip_expected(std::expected<std::expected<T, error>, cancellation> value) {
+    if(!value.has_value()) {
+        return std::unexpected(status(cancellation{}));
+    }
+
+    auto inner = std::move(*value);
+    if(!inner.has_value()) {
+        return std::unexpected(status(inner.error()));
+    }
+
+    if constexpr(std::is_void_v<T>) {
+        return {};
+    } else {
+        return std::move(*inner);
+    }
+}
 
 template <typename T>
 class task;
 
 template <typename T>
-using ctask = task<std::expected<T, cancellation_t>>;
+using ctask = task<std::expected<T, cancellation>>;
 
 }  // namespace eventide

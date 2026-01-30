@@ -22,7 +22,7 @@ struct promise_result {
 };
 
 template <typename T>
-struct promise_result<std::expected<T, cancellation_t>> {
+struct promise_result<std::expected<T, cancellation>> {
     std::optional<T> value;
 
     template <typename U>
@@ -30,11 +30,11 @@ struct promise_result<std::expected<T, cancellation_t>> {
         value.emplace(std::forward<U>(val));
     }
 
-    void return_value(cancellation_t) {}
+    void return_value(cancellation) {}
 };
 
 template <>
-struct promise_result<std::expected<void, cancellation_t>> {
+struct promise_result<std::expected<void, cancellation>> {
     void return_void() noexcept {}
 };
 
@@ -96,7 +96,9 @@ public:
             auto& promise = awaitee.h.promise();
             if(promise.state == async_node::Cancelled) {
                 if constexpr(is_cancellation_t<T>) {
-                    return std::unexpected(cancellation_t());
+                    return std::unexpected(cancellation());
+                } else if constexpr(is_status_t<T>) {
+                    return std::unexpected(status(cancellation{}));
                 } else {
                     /// Implicitly spread cancellation, never call this.
                     std::abort();
@@ -217,12 +219,12 @@ public:
         return link_continuation(&awaiter.promise(), location);
     }
 
-    std::expected<T, cancellation_t> await_resume() {
+    std::expected<T, cancellation> await_resume() {
         if(resource->state == Finished) {
             assert(await_ready() && "resume without value");
             return *static_cast<promise_type*>(resource)->value;
         } else {
-            return std::unexpected(cancellation_t());
+            return std::unexpected(cancellation());
         }
     }
 };
