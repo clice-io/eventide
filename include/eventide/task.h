@@ -2,28 +2,14 @@
 
 #include <cassert>
 #include <cstdlib>
-#include <expected>
 #include <memory>
 #include <optional>
 #include <vector>
 
+#include "error.h"
 #include "frame.h"
 
 namespace eventide {
-
-struct cancellation_t {};
-
-template <typename T>
-constexpr bool is_cancellation_t = false;
-
-template <typename T>
-constexpr bool is_cancellation_t<std::expected<T, cancellation_t>> = true;
-
-template <typename T>
-class task;
-
-template <typename T>
-using ctask = task<std::expected<T, cancellation_t>>;
 
 template <typename T>
 struct promise_result {

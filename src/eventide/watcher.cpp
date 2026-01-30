@@ -105,7 +105,7 @@ struct awaiter {
     }
 };
 
-std::expected<timer, std::error_code> timer::create(event_loop& loop) {
+result<timer> timer::create(event_loop& loop) {
     timer t(sizeof(uv_timer_t));
     auto handle = t.as<uv_timer_t>();
     int err = uv_timer_init(static_cast<uv_loop_t*>(loop.handle()), handle);
@@ -155,7 +155,7 @@ task<std::error_code> timer::wait() {
     co_return co_await awaiter<timer_tag>{this};
 }
 
-std::expected<idle, std::error_code> idle::create(event_loop& loop) {
+result<idle> idle::create(event_loop& loop) {
     idle w(sizeof(uv_idle_t));
     auto handle = w.as<uv_idle_t>();
     int err = uv_idle_init(static_cast<uv_loop_t*>(loop.handle()), handle);
@@ -201,7 +201,7 @@ task<std::error_code> idle::wait() {
     co_return co_await awaiter<idle_tag>{this};
 }
 
-std::expected<prepare, std::error_code> prepare::create(event_loop& loop) {
+result<prepare> prepare::create(event_loop& loop) {
     prepare w(sizeof(uv_prepare_t));
     auto handle = w.as<uv_prepare_t>();
     int err = uv_prepare_init(static_cast<uv_loop_t*>(loop.handle()), handle);
@@ -247,7 +247,7 @@ task<std::error_code> prepare::wait() {
     co_return co_await awaiter<prepare_tag>{this};
 }
 
-std::expected<check, std::error_code> check::create(event_loop& loop) {
+result<check> check::create(event_loop& loop) {
     check w(sizeof(uv_check_t));
     auto handle = w.as<uv_check_t>();
     int err = uv_check_init(static_cast<uv_loop_t*>(loop.handle()), handle);
@@ -293,7 +293,7 @@ task<std::error_code> check::wait() {
     co_return co_await awaiter<check_tag>{this};
 }
 
-std::expected<signal, std::error_code> signal::create(event_loop& loop) {
+result<signal> signal::create(event_loop& loop) {
     signal s(sizeof(uv_signal_t));
     auto handle = s.as<uv_signal_t>();
     int err = uv_signal_init(static_cast<uv_loop_t*>(loop.handle()), handle);

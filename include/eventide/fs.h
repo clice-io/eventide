@@ -1,10 +1,10 @@
 #pragma once
 
-#include <expected>
 #include <optional>
 #include <string>
 #include <system_error>
 
+#include "error.h"
 #include "handle.h"
 #include "task.h"
 
@@ -28,7 +28,7 @@ public:
         int flags;
     };
 
-    static std::expected<fs_event, std::error_code> create(event_loop& loop);
+    static result<fs_event> create(event_loop& loop);
 
     /// Start watching the given path; flags passed directly to libuv.
     std::error_code start(const char* path, unsigned int flags = 0);
@@ -36,11 +36,11 @@ public:
     std::error_code stop();
 
     /// Await a change event; delivers one pending change at a time.
-    task<std::expected<change, std::error_code>> wait();
+    task<result<change>> wait();
 
 private:
     async_node* waiter = nullptr;
-    std::expected<change, std::error_code>* active = nullptr;
+    result<change>* active = nullptr;
     std::optional<change> pending;
 };
 

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "error.h"
 #include "handle.h"
 #include "stream.h"
 #include "task.h"
@@ -83,14 +84,13 @@ public:
         std::array<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};
     };
 
-    using wait_result = std::expected<exit_status, std::error_code>;
+    using wait_result = result<exit_status>;
 
     /// Launch the process; creates pipes as requested in options.
     struct spawn_result;
 
     /// Spawn a child process within the given loop.
-    static std::expected<spawn_result, std::error_code> spawn(event_loop& loop,
-                                                              const options& opts);
+    static result<spawn_result> spawn(event_loop& loop, const options& opts);
 
     /// Await process termination and fetch exit status.
     task<wait_result> wait();

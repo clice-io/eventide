@@ -19,7 +19,7 @@ template <typename Result>
 struct fs_holder {
     uv_fs_t req;
     std::function<Result(uv_fs_t&)> populate;
-    std::expected<Result, std::error_code> out = std::unexpected(std::error_code{});
+    ::eventide::result<Result> out = std::unexpected(std::error_code{});
 };
 
 }  // namespace
@@ -99,10 +99,10 @@ task<std::error_code> work_request::queue(event_loop& loop, work_fn fn) {
 
 template <typename Result>
 struct fs_awaiter {
-    using promise_t = task<std::expected<Result, std::error_code>>::promise_type;
+    using promise_t = task<result<Result>>::promise_type;
 
     promise_t* waiter = nullptr;
-    std::expected<Result, std::error_code>* target = nullptr;
+    result<Result>* target = nullptr;
 
     bool await_ready() const noexcept {
         return false;
@@ -113,7 +113,7 @@ struct fs_awaiter {
         return std::noop_coroutine();
     }
 
-    std::expected<Result, std::error_code> await_resume() noexcept {
+    result<Result> await_resume() noexcept {
         return std::move(*target);
     }
 };
@@ -150,9 +150,7 @@ static fs_request::dirent::type map_dirent(uv_dirent_type_t t) {
 }
 
 template <typename Result, typename Submit, typename Populate>
-static task<std::expected<Result, std::error_code>> run_fs(event_loop& loop,
-                                                           Submit submit,
-                                                           Populate populate) {
+static task<result<Result>> run_fs(event_loop& loop, Submit submit, Populate populate) {
     auto holder = std::make_unique<fs_holder<Result>>();
     fs_awaiter<Result> aw;
     aw.target = &holder->out;
@@ -200,8 +198,7 @@ static fs_request::result basic_populate(uv_fs_t& req) {
     return r;
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::unlink(event_loop& loop,
-                                                                            std::string_view path) {
+task<result<fs_request::result>> fs_request::unlink(event_loop& loop, std::string_view path) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -213,9 +210,9 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::unlink(even
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::mkdir(event_loop& loop,
-                                                                           std::string_view path,
-                                                                           int mode) {
+task<result<fs_request::result>> fs_request::mkdir(event_loop& loop,
+                                                   std::string_view path,
+                                                   int mode) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -228,8 +225,7 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::mkdir(event
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::stat(event_loop& loop,
-                                                                          std::string_view path) {
+task<result<fs_request::result>> fs_request::stat(event_loop& loop, std::string_view path) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -241,11 +237,10 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::stat(event_
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
-    fs_request::copyfile(event_loop& loop,
-                         std::string_view path,
-                         std::string_view new_path,
-                         int flags) {
+task<result<fs_request::result>> fs_request::copyfile(event_loop& loop,
+                                                      std::string_view path,
+                                                      std::string_view new_path,
+                                                      int flags) {
     auto populate = [&](uv_fs_t& req) {
         result r = basic_populate(req);
         r.path = path;
@@ -266,8 +261,7 @@ task<std::expected<fs_request::result, std::error_code>>
         populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::mkdtemp(event_loop& loop,
-                                                                             std::string_view tpl) {
+task<result<fs_request::result>> fs_request::mkdtemp(event_loop& loop, std::string_view tpl) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -279,8 +273,7 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::mkdtemp(eve
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::mkstemp(event_loop& loop,
-                                                                             std::string_view tpl) {
+task<result<fs_request::result>> fs_request::mkstemp(event_loop& loop, std::string_view tpl) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -292,8 +285,7 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::mkstemp(eve
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::rmdir(event_loop& loop,
-                                                                           std::string_view path) {
+task<result<fs_request::result>> fs_request::rmdir(event_loop& loop, std::string_view path) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -305,8 +297,9 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::rmdir(event
         basic_populate);
 }
 
-task<std::expected<std::vector<fs_request::dirent>, std::error_code>>
-    fs_request::scandir(event_loop& loop, std::string_view path, int flags) {
+task<result<std::vector<fs_request::dirent>>> fs_request::scandir(event_loop& loop,
+                                                                  std::string_view path,
+                                                                  int flags) {
     auto populate = [](uv_fs_t& req) {
         std::vector<dirent> out;
         uv_dirent_t ent;
@@ -333,8 +326,7 @@ task<std::expected<std::vector<fs_request::dirent>, std::error_code>>
         populate);
 }
 
-task<std::expected<fs_request::dir_handle, std::error_code>>
-    fs_request::opendir(event_loop& loop, std::string_view path) {
+task<result<fs_request::dir_handle>> fs_request::opendir(event_loop& loop, std::string_view path) {
     auto populate = [](uv_fs_t& req) {
         return dir_handle{req.ptr};
     };
@@ -350,8 +342,8 @@ task<std::expected<fs_request::dir_handle, std::error_code>>
         populate);
 }
 
-task<std::expected<std::vector<fs_request::dirent>, std::error_code>>
-    fs_request::readdir(event_loop& loop, dir_handle& dir) {
+task<result<std::vector<fs_request::dirent>>> fs_request::readdir(event_loop& loop,
+                                                                  dir_handle& dir) {
     if(!dir.valid()) {
         co_return std::unexpected(uv_error(UV_EINVAL));
     }
@@ -419,8 +411,7 @@ task<std::error_code> fs_request::closedir(event_loop& loop, dir_handle& dir) {
     co_return std::error_code{};
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::fstat(event_loop& loop,
-                                                                           int fd) {
+task<result<fs_request::result>> fs_request::fstat(event_loop& loop, int fd) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -429,8 +420,7 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::fstat(event
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::lstat(event_loop& loop,
-                                                                           std::string_view path) {
+task<result<fs_request::result>> fs_request::lstat(event_loop& loop, std::string_view path) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -442,8 +432,9 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::lstat(event
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
-    fs_request::rename(event_loop& loop, std::string_view path, std::string_view new_path) {
+task<result<fs_request::result>> fs_request::rename(event_loop& loop,
+                                                    std::string_view path,
+                                                    std::string_view new_path) {
     auto populate = [&](uv_fs_t& req) {
         result r = basic_populate(req);
         r.path = path;
@@ -463,8 +454,7 @@ task<std::expected<fs_request::result, std::error_code>>
         populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::fsync(event_loop& loop,
-                                                                           int fd) {
+task<result<fs_request::result>> fs_request::fsync(event_loop& loop, int fd) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -473,8 +463,7 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::fsync(event
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::fdatasync(event_loop& loop,
-                                                                               int fd) {
+task<result<fs_request::result>> fs_request::fdatasync(event_loop& loop, int fd) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -483,8 +472,9 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::fdatasync(e
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
-    fs_request::ftruncate(event_loop& loop, int fd, std::int64_t offset) {
+task<result<fs_request::result>> fs_request::ftruncate(event_loop& loop,
+                                                       int fd,
+                                                       std::int64_t offset) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -493,12 +483,11 @@ task<std::expected<fs_request::result, std::error_code>>
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
-    fs_request::sendfile(event_loop& loop,
-                         int out_fd,
-                         int in_fd,
-                         std::int64_t in_offset,
-                         std::size_t length) {
+task<result<fs_request::result>> fs_request::sendfile(event_loop& loop,
+                                                      int out_fd,
+                                                      int in_fd,
+                                                      std::int64_t in_offset,
+                                                      std::size_t length) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -513,9 +502,9 @@ task<std::expected<fs_request::result, std::error_code>>
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::access(event_loop& loop,
-                                                                            std::string_view path,
-                                                                            int mode) {
+task<result<fs_request::result>> fs_request::access(event_loop& loop,
+                                                    std::string_view path,
+                                                    int mode) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -528,9 +517,9 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::access(even
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>> fs_request::chmod(event_loop& loop,
-                                                                           std::string_view path,
-                                                                           int mode) {
+task<result<fs_request::result>> fs_request::chmod(event_loop& loop,
+                                                   std::string_view path,
+                                                   int mode) {
     co_return co_await run_fs<result>(
         loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
@@ -543,7 +532,7 @@ task<std::expected<fs_request::result, std::error_code>> fs_request::chmod(event
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
+task<result<fs_request::result>>
     fs_request::utime(event_loop& loop, std::string_view path, double atime, double mtime) {
     co_return co_await run_fs<result>(
         loop,
@@ -558,7 +547,7 @@ task<std::expected<fs_request::result, std::error_code>>
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
+task<result<fs_request::result>>
     fs_request::futime(event_loop& loop, int fd, double atime, double mtime) {
     co_return co_await run_fs<result>(
         loop,
@@ -568,7 +557,7 @@ task<std::expected<fs_request::result, std::error_code>>
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
+task<result<fs_request::result>>
     fs_request::lutime(event_loop& loop, std::string_view path, double atime, double mtime) {
     co_return co_await run_fs<result>(
         loop,
@@ -583,8 +572,9 @@ task<std::expected<fs_request::result, std::error_code>>
         basic_populate);
 }
 
-task<std::expected<fs_request::result, std::error_code>>
-    fs_request::link(event_loop& loop, std::string_view path, std::string_view new_path) {
+task<result<fs_request::result>> fs_request::link(event_loop& loop,
+                                                  std::string_view path,
+                                                  std::string_view new_path) {
     auto populate = [&](uv_fs_t& req) {
         result r = basic_populate(req);
         r.path = path;

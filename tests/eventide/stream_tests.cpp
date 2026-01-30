@@ -16,7 +16,6 @@
 #include <unistd.h>
 #endif
 
-#include "uv.h"
 #include "zest/zest.h"
 #include "eventide/loop.h"
 #include "eventide/stream.h"
@@ -116,7 +115,7 @@ task<std::string> read_from_pipe(pipe p) {
     co_return out;
 }
 
-task<std::expected<std::string, std::error_code>> accept_and_read(tcp_socket::acceptor acc) {
+task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current()->stop();
@@ -130,8 +129,7 @@ task<std::expected<std::string, std::error_code>> accept_and_read(tcp_socket::ac
     co_return data;
 }
 
-task<std::expected<tcp_socket, std::error_code>> accept_once(tcp_socket::acceptor& acc,
-                                                             std::atomic<int>& done) {
+task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, std::atomic<int>& done) {
     auto res = co_await acc.accept();
     if(done.fetch_add(1) + 1 == 2) {
         event_loop::current()->stop();

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <deque>
-#include <expected>
 #include <optional>
 #include <span>
 #include <string>
@@ -9,6 +8,7 @@
 #include <system_error>
 #include <vector>
 
+#include "error.h"
 #include "handle.h"
 #include "task.h"
 
@@ -45,11 +45,11 @@ public:
 
     enum class membership { join, leave };
 
-    static std::expected<udp, std::error_code> create(event_loop& loop);
+    static result<udp> create(event_loop& loop);
 
-    static std::expected<udp, std::error_code> create(event_loop& loop, unsigned int flags);
+    static result<udp> create(event_loop& loop, unsigned int flags);
 
-    static std::expected<udp, std::error_code> open(event_loop& loop, int fd);
+    static result<udp> open(event_loop& loop, int fd);
 
     std::error_code bind(std::string_view host, int port, unsigned flags = 0);
 
@@ -65,9 +65,9 @@ public:
 
     std::error_code try_send(std::span<const char> data);
 
-    std::expected<endpoint, std::error_code> getsockname() const;
+    result<endpoint> getsockname() const;
 
-    std::expected<endpoint, std::error_code> getpeername() const;
+    result<endpoint> getpeername() const;
 
     std::error_code set_membership(std::string_view multicast_addr,
                                    std::string_view interface_addr,
@@ -96,12 +96,12 @@ public:
 
     std::error_code stop_recv();
 
-    task<std::expected<recv_result, std::error_code>> recv();
+    task<result<recv_result>> recv();
 
 private:
     async_node* waiter = nullptr;
-    std::expected<recv_result, std::error_code>* active = nullptr;
-    std::deque<std::expected<recv_result, std::error_code>> pending;
+    result<recv_result>* active = nullptr;
+    std::deque<result<recv_result>> pending;
     std::vector<char> buffer;
     bool receiving = false;
 

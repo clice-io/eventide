@@ -102,10 +102,10 @@ struct awaiter {
     constexpr inline static bool is_pipe_v = std::is_same_v<tag, pipe_acceptor_t>;
     using stream_t = std::conditional_t<is_pipe_v, pipe, tcp_socket>;
     using handle_type = std::conditional_t<is_pipe_v, uv_pipe_t, uv_tcp_t>;
-    using promise_t = task<std::expected<stream_t, std::error_code>>::promise_type;
+    using promise_t = task<result<stream_t>>::promise_type;
 
     acceptor<stream_t>* self;
-    std::expected<stream_t, std::error_code> result = std::unexpected(std::error_code());
+    result<stream_t> outcome = std::unexpected(std::error_code());
 
     static int init_stream(stream_t& stream, uv_loop_t* loop) {
         if constexpr(is_pipe_v) {
@@ -125,7 +125,7 @@ struct awaiter {
     }
 
     static void on_connection(acceptor<stream_t>& listener, uv_stream_t* server, int status) {
-        auto deliver = [&](std::expected<stream_t, std::error_code>&& value) {
+        auto deliver = [&](result<stream_t>&& value) {
             if(listener.waiter && listener.active) {
                 *listener.active = std::move(value);
 
@@ -167,14 +167,14 @@ struct awaiter {
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        self->active = &result;
+        self->active = &outcome;
         return std::noop_coroutine();
     }
 
-    std::expected<stream_t, std::error_code> await_resume() noexcept {
+    result<stream_t> await_resume() noexcept {
         self->waiter = nullptr;
         self->active = nullptr;
-        return std::move(result);
+        return std::move(outcome);
     }
 };
 
@@ -216,7 +216,7 @@ acceptor<Stream>& acceptor<Stream>::operator=(acceptor&& other) noexcept {
 }
 
 template <typename Stream>
-task<std::expected<Stream, std::error_code>> acceptor<Stream>::accept() {
+task<result<Stream>> acceptor<Stream>::accept() {
     if(!pending.empty()) {
         auto out = std::move(pending.front());
         pending.pop_front();
@@ -237,7 +237,7 @@ task<std::expected<Stream, std::error_code>> acceptor<Stream>::accept() {
 template class acceptor<pipe>;
 template class acceptor<tcp_socket>;
 
-std::expected<pipe, std::error_code> pipe::open(event_loop& loop, int fd) {
+result<pipe> pipe::open(event_loop& loop, int fd) {
     auto h = pipe(sizeof(uv_pipe_t));
 
     auto handle = h.as<uv_pipe_t>();
@@ -277,9 +277,7 @@ static int start_pipe_listen(acceptor<pipe>& acc, event_loop& loop, const char* 
     return err;
 }
 
-std::expected<pipe::acceptor, std::error_code> pipe::listen(event_loop& loop,
-                                                            const char* name,
-                                                            int backlog) {
+result<pipe::acceptor> pipe::listen(event_loop& loop, const char* name, int backlog) {
     pipe::acceptor acc(sizeof(uv_pipe_t));
     int err = start_pipe_listen(acc, loop, name, backlog);
     if(err != 0) {
@@ -289,7 +287,7 @@ std::expected<pipe::acceptor, std::error_code> pipe::listen(event_loop& loop,
     return acc;
 }
 
-std::expected<tcp_socket, std::error_code> tcp_socket::open(event_loop& loop, int fd) {
+result<tcp_socket> tcp_socket::open(event_loop& loop, int fd) {
     tcp_socket sock(sizeof(uv_tcp_t));
     auto handle = sock.as<uv_tcp_t>();
 
@@ -352,11 +350,11 @@ static int start_tcp_listen(acceptor<tcp_socket>& acc,
     return err;
 }
 
-std::expected<tcp_socket::acceptor, std::error_code> tcp_socket::listen(event_loop& loop,
-                                                                        std::string_view host,
-                                                                        int port,
-                                                                        unsigned int flags,
-                                                                        int backlog) {
+result<tcp_socket::acceptor> tcp_socket::listen(event_loop& loop,
+                                                std::string_view host,
+                                                int port,
+                                                unsigned int flags,
+                                                int backlog) {
     tcp_socket::acceptor acc(sizeof(uv_tcp_t));
     int err = start_tcp_listen(acc, loop, host, port, flags, backlog);
     if(err != 0) {
@@ -366,7 +364,7 @@ std::expected<tcp_socket::acceptor, std::error_code> tcp_socket::listen(event_lo
     return acc;
 }
 
-std::expected<console, std::error_code> console::open(event_loop& loop, int fd) {
+result<console> console::open(event_loop& loop, int fd) {
     console con(sizeof(uv_tty_t));
     auto handle = con.as<uv_tty_t>();
 

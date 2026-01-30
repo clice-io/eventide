@@ -10,8 +10,7 @@ namespace eventide {
 
 namespace {
 
-task<std::expected<udp::recv_result, std::error_code>> recv_once(udp& sock,
-                                                                 std::atomic<int>& done) {
+task<result<udp::recv_result>> recv_once(udp& sock, std::atomic<int>& done) {
     auto res = co_await sock.recv();
     if(done.fetch_add(1) + 1 == 2) {
         event_loop::current()->stop();

@@ -14,10 +14,10 @@ namespace eventide {
 
 template <>
 struct awaiter<fs_event_tag> {
-    using promise_t = task<std::expected<fs_event::change, std::error_code>>::promise_type;
+    using promise_t = task<result<fs_event::change>>::promise_type;
 
     fs_event* self;
-    std::expected<fs_event::change, std::error_code> result = std::unexpected(std::error_code{});
+    result<fs_event::change> outcome = std::unexpected(std::error_code{});
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
         auto* watcher = static_cast<fs_event*>(handle->data);
@@ -25,7 +25,7 @@ struct awaiter<fs_event_tag> {
             return;
         }
 
-        auto deliver = [&](std::expected<fs_event::change, std::error_code>&& value) {
+        auto deliver = [&](result<fs_event::change>&& value) {
             if(watcher->waiter && watcher->active) {
                 *watcher->active = std::move(value);
 
@@ -63,18 +63,18 @@ struct awaiter<fs_event_tag> {
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        self->active = &result;
+        self->active = &outcome;
         return std::noop_coroutine();
     }
 
-    std::expected<fs_event::change, std::error_code> await_resume() noexcept {
+    result<fs_event::change> await_resume() noexcept {
         self->waiter = nullptr;
         self->active = nullptr;
-        return std::move(result);
+        return std::move(outcome);
     }
 };
 
-std::expected<fs_event, std::error_code> fs_event::create(event_loop& loop) {
+result<fs_event> fs_event::create(event_loop& loop) {
     fs_event w(sizeof(uv_fs_event_t));
     auto handle = w.as<uv_fs_event_t>();
 
@@ -109,7 +109,7 @@ std::error_code fs_event::stop() {
     return {};
 }
 
-task<std::expected<fs_event::change, std::error_code>> fs_event::wait() {
+task<result<fs_event::change>> fs_event::wait() {
     if(pending.has_value()) {
         auto out = std::move(*pending);
         pending.reset();

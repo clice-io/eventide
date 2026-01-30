@@ -119,8 +119,7 @@ void on_exit_cb(uv_process_t* handle, int64_t exit_status, int term_signal) {
     awaiter<process_wait_tag>::notify(*proc, process::exit_status{exit_status, term_signal});
 }
 
-std::expected<process::spawn_result, std::error_code> process::spawn(event_loop& loop,
-                                                                     const options& opts) {
+result<process::spawn_result> process::spawn(event_loop& loop, const options& opts) {
     spawn_result out{process(sizeof(uv_process_t))};
 
     std::vector<std::string> argv_storage;
@@ -148,7 +147,7 @@ std::expected<process::spawn_result, std::error_code> process::spawn(event_loop&
     std::array<pipe, 3> created_pipes{};
     std::array<uv_stdio_container_t, 3> stdio{};
 
-    auto make_pipe = [&]() -> std::expected<pipe, std::error_code> {
+    auto make_pipe = [&]() -> result<pipe> {
         pipe out(sizeof(uv_pipe_t));
         int err = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), out.as<uv_pipe_t>(), 0);
         if(err != 0) {

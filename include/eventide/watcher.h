@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <expected>
 #include <system_error>
 
+#include "error.h"
 #include "handle.h"
 #include "task.h"
 
@@ -22,7 +22,7 @@ private:
     friend struct awaiter;
 
 public:
-    static std::expected<timer, std::error_code> create(event_loop& loop);
+    static result<timer> create(event_loop& loop);
 
     std::error_code start(std::uint64_t timeout_ms, std::uint64_t repeat_ms = 0);
 
@@ -44,7 +44,7 @@ private:
     friend struct awaiter;
 
 public:
-    static std::expected<idle, std::error_code> create(event_loop& loop);
+    static result<idle> create(event_loop& loop);
 
     std::error_code start();
 
@@ -66,7 +66,7 @@ private:
     friend struct awaiter;
 
 public:
-    static std::expected<prepare, std::error_code> create(event_loop& loop);
+    static result<prepare> create(event_loop& loop);
 
     std::error_code start();
 
@@ -88,7 +88,7 @@ private:
     friend struct awaiter;
 
 public:
-    static std::expected<check, std::error_code> create(event_loop& loop);
+    static result<check> create(event_loop& loop);
 
     std::error_code start();
 
@@ -110,7 +110,7 @@ private:
     friend struct awaiter;
 
 public:
-    static std::expected<signal, std::error_code> create(event_loop& loop);
+    static result<signal> create(event_loop& loop);
 
     std::error_code start(int signum);
 

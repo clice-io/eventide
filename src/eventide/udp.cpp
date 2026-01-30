@@ -78,7 +78,7 @@ static int fill_addr(std::string_view host, int port, sockaddr_storage& storage)
     return AF_UNSPEC;
 }
 
-static std::expected<udp::endpoint, std::error_code> endpoint_from_sockaddr(const sockaddr* addr) {
+static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
     if(addr == nullptr) {
         return std::unexpected(uv_error(UV_EINVAL));
     }
@@ -105,10 +105,10 @@ static std::expected<udp::endpoint, std::error_code> endpoint_from_sockaddr(cons
 
 template <>
 struct awaiter<udp_recv_tag> {
-    using promise_t = task<std::expected<udp::recv_result, std::error_code>>::promise_type;
+    using promise_t = task<result<udp::recv_result>>::promise_type;
 
     udp* self;
-    std::expected<udp::recv_result, std::error_code> result = std::unexpected(std::error_code{});
+    result<udp::recv_result> outcome = std::unexpected(std::error_code{});
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto* u = static_cast<udp*>(handle->data);
@@ -132,7 +132,7 @@ struct awaiter<udp_recv_tag> {
             return;
         }
 
-        auto deliver = [&](std::expected<udp::recv_result, std::error_code>&& value) {
+        auto deliver = [&](result<udp::recv_result>&& value) {
             if(u->waiter && u->active) {
                 *u->active = std::move(value);
 
@@ -172,14 +172,14 @@ struct awaiter<udp_recv_tag> {
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        self->active = &result;
+        self->active = &outcome;
 
         if(!self->receiving) {
             int err = uv_udp_recv_start(self->as<uv_udp_t>(), on_alloc, on_read);
             if(err == 0) {
                 self->receiving = true;
             } else {
-                result = std::unexpected(uv_error(err));
+                outcome = std::unexpected(uv_error(err));
                 self->waiter = nullptr;
                 self->active = nullptr;
                 return waiting;
@@ -189,10 +189,10 @@ struct awaiter<udp_recv_tag> {
         return std::noop_coroutine();
     }
 
-    std::expected<udp::recv_result, std::error_code> await_resume() noexcept {
+    result<udp::recv_result> await_resume() noexcept {
         self->waiter = nullptr;
         self->active = nullptr;
-        return std::move(result);
+        return std::move(outcome);
     }
 };
 
@@ -276,7 +276,7 @@ struct awaiter<udp_send_tag> {
     }
 };
 
-std::expected<udp, std::error_code> udp::create(event_loop& loop) {
+result<udp> udp::create(event_loop& loop) {
     udp u(sizeof(uv_udp_t));
     u.buffer.resize(64 * 1024);
     auto handle = u.as<uv_udp_t>();
@@ -290,7 +290,7 @@ std::expected<udp, std::error_code> udp::create(event_loop& loop) {
     return u;
 }
 
-std::expected<udp, std::error_code> udp::create(event_loop& loop, unsigned int flags) {
+result<udp> udp::create(event_loop& loop, unsigned int flags) {
     udp u(sizeof(uv_udp_t));
     u.buffer.resize(64 * 1024);
     auto handle = u.as<uv_udp_t>();
@@ -304,7 +304,7 @@ std::expected<udp, std::error_code> udp::create(event_loop& loop, unsigned int f
     return u;
 }
 
-std::expected<udp, std::error_code> udp::open(event_loop& loop, int fd) {
+result<udp> udp::open(event_loop& loop, int fd) {
     udp u(sizeof(uv_udp_t));
     u.buffer.resize(64 * 1024);
     auto handle = u.as<uv_udp_t>();
@@ -420,7 +420,7 @@ std::error_code udp::stop_recv() {
     return {};
 }
 
-task<std::expected<udp::recv_result, std::error_code>> udp::recv() {
+task<result<udp::recv_result>> udp::recv() {
     if(!pending.empty()) {
         auto out = std::move(pending.front());
         pending.pop_front();
@@ -434,7 +434,7 @@ task<std::expected<udp::recv_result, std::error_code>> udp::recv() {
     co_return co_await awaiter<udp_recv_tag>{this};
 }
 
-std::expected<udp::endpoint, std::error_code> udp::getsockname() const {
+result<udp::endpoint> udp::getsockname() const {
     sockaddr_storage storage{};
     int len = sizeof(storage);
     int err = uv_udp_getsockname(as<uv_udp_t>(), reinterpret_cast<sockaddr*>(&storage), &len);
@@ -445,7 +445,7 @@ std::expected<udp::endpoint, std::error_code> udp::getsockname() const {
     return endpoint_from_sockaddr(reinterpret_cast<sockaddr*>(&storage));
 }
 
-std::expected<udp::endpoint, std::error_code> udp::getpeername() const {
+result<udp::endpoint> udp::getpeername() const {
     sockaddr_storage storage{};
     int len = sizeof(storage);
     int err = uv_udp_getpeername(as<uv_udp_t>(), reinterpret_cast<sockaddr*>(&storage), &len);

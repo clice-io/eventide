@@ -1,4 +1,3 @@
-#include <expected>
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
@@ -49,7 +48,7 @@ inline void close_fd(int fd) {
 }
 #endif
 
-task<std::expected<int, std::error_code>> fs_roundtrip(event_loop& loop) {
+task<result<int>> fs_roundtrip(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "eventide-XXXXXX").string();
     auto dir_res = co_await fs_request::mkdtemp(loop, dir_template);
     if(!dir_res.has_value()) {
@@ -116,7 +115,7 @@ task<std::expected<int, std::error_code>> fs_roundtrip(event_loop& loop) {
     co_return found ? 1 : 0;
 }
 
-task<std::expected<int, std::error_code>> mkstemp_roundtrip(event_loop& loop) {
+task<result<int>> mkstemp_roundtrip(event_loop& loop) {
     auto file_template = (std::filesystem::temp_directory_path() / "eventide-file-XXXXXX").string();
     auto file_res = co_await fs_request::mkstemp(loop, file_template);
     if(!file_res.has_value()) {
