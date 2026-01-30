@@ -2,9 +2,11 @@
 
 #include <cassert>
 #include <coroutine>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <limits>
 #include <source_location>
 #include <vector>
 
@@ -143,6 +145,11 @@ protected:
 
     explicit standard_task() : stable_node(NodeKind::Task) {}
 
+public:
+    void set_awaitee(async_node* node) noexcept {
+        awaitee = node;
+    }
+
 private:
     /// The node that awaits this task currently, if it is empty,
     /// this task is a top level task. It was launched by eventloop.
@@ -208,10 +215,26 @@ protected:
 
     explicit aggregate_op(NodeKind k) : transient_node(k) {}
 
-private:
-    async_node* awaiter;
+protected:
+    constexpr static std::size_t npos = (std::numeric_limits<std::size_t>::max)();
+
+    async_node* awaiter = nullptr;
 
     std::vector<async_node*> awaitees;
+
+    std::size_t completed = 0;
+
+    std::size_t total = 0;
+
+    std::size_t winner = npos;
+
+    bool done = false;
+
+    bool arming = false;
+
+    bool pending_resume = false;
+
+    bool pending_cancel = false;
 };
 
 class system_op : public transient_node {

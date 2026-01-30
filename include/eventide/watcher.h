@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 
 #include "error.h"
@@ -21,17 +22,16 @@ private:
     friend struct awaiter;
 
 public:
-    static result<timer> create(event_loop& loop);
+    static timer create(event_loop& loop);
 
-    error start(std::uint64_t timeout_ms, std::uint64_t repeat_ms = 0);
+    void start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat = {});
 
-    error stop();
+    void stop();
 
-    task<error> wait();
+    task<> wait();
 
 private:
     async_node* waiter = nullptr;
-    error* active = nullptr;
     int pending = 0;
 };
 
@@ -43,17 +43,16 @@ private:
     friend struct awaiter;
 
 public:
-    static result<idle> create(event_loop& loop);
+    static idle create(event_loop& loop);
 
-    error start();
+    void start();
 
-    error stop();
+    void stop();
 
-    task<error> wait();
+    task<> wait();
 
 private:
     async_node* waiter = nullptr;
-    error* active = nullptr;
     int pending = 0;
 };
 
@@ -65,17 +64,16 @@ private:
     friend struct awaiter;
 
 public:
-    static result<prepare> create(event_loop& loop);
+    static prepare create(event_loop& loop);
 
-    error start();
+    void start();
 
-    error stop();
+    void stop();
 
-    task<error> wait();
+    task<> wait();
 
 private:
     async_node* waiter = nullptr;
-    error* active = nullptr;
     int pending = 0;
 };
 
@@ -87,17 +85,16 @@ private:
     friend struct awaiter;
 
 public:
-    static result<check> create(event_loop& loop);
+    static check create(event_loop& loop);
 
-    error start();
+    void start();
 
-    error stop();
+    void stop();
 
-    task<error> wait();
+    task<> wait();
 
 private:
     async_node* waiter = nullptr;
-    error* active = nullptr;
     int pending = 0;
 };
 
@@ -122,5 +119,7 @@ private:
     error* active = nullptr;
     int pending = 0;
 };
+
+task<> sleep(event_loop& loop, std::chrono::milliseconds timeout);
 
 }  // namespace eventide

@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include "zest/zest.h"
 #include "eventide/loop.h"
 #include "eventide/watcher.h"
@@ -6,16 +8,42 @@ namespace eventide {
 
 namespace {
 
-task<error> wait_timer(timer& t) {
-    auto ec = co_await t.wait();
+task<> wait_timer(timer& t) {
+    co_await t.wait();
     event_loop::current()->stop();
-    co_return ec;
+    co_return;
 }
 
-task<error> wait_idle(idle& w) {
-    auto ec = co_await w.wait();
+task<> wait_idle(idle& w) {
+    co_await w.wait();
     event_loop::current()->stop();
-    co_return ec;
+    co_return;
+}
+
+task<> wait_sleep(event_loop& loop) {
+    co_await sleep(loop, std::chrono::milliseconds{1});
+    event_loop::current()->stop();
+    co_return;
+}
+
+task<> wait_prepare(prepare& w) {
+    co_await w.wait();
+    event_loop::current()->stop();
+    co_return;
+}
+
+task<> wait_check(check& w) {
+    co_await w.wait();
+    event_loop::current()->stop();
+    co_return;
+}
+
+task<> wait_timer_twice(timer& t) {
+    co_await t.wait();
+    co_await t.wait();
+    t.stop();
+    event_loop::current()->stop();
+    co_return;
 }
 
 }  // namespace
@@ -25,38 +53,70 @@ TEST_SUITE(watcher_io) {
 TEST_CASE(timer_wait) {
     event_loop loop;
 
-    auto timer_res = timer::create(loop);
-    ASSERT_TRUE(timer_res.has_value());
+    auto t = timer::create(loop);
+    t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{0});
 
-    auto start_ec = timer_res->start(1, 0);
-    EXPECT_FALSE(static_cast<bool>(start_ec));
-
-    auto waiter = wait_timer(*timer_res);
+    auto waiter = wait_timer(t);
     loop.schedule(waiter);
     loop.run();
-
-    auto ec = waiter.result();
-    EXPECT_FALSE(static_cast<bool>(ec));
 }
 
 TEST_CASE(idle_wait) {
     event_loop loop;
 
-    auto idle_res = idle::create(loop);
-    ASSERT_TRUE(idle_res.has_value());
+    auto w = idle::create(loop);
+    w.start();
 
-    auto start_ec = idle_res->start();
-    EXPECT_FALSE(static_cast<bool>(start_ec));
-
-    auto waiter = wait_idle(*idle_res);
+    auto waiter = wait_idle(w);
     loop.schedule(waiter);
     loop.run();
 
-    auto ec = waiter.result();
-    EXPECT_FALSE(static_cast<bool>(ec));
+    w.stop();
+}
 
-    auto stop_ec = idle_res->stop();
-    EXPECT_FALSE(static_cast<bool>(stop_ec));
+TEST_CASE(sleep_once) {
+    event_loop loop;
+
+    auto sleeper = wait_sleep(loop);
+    loop.schedule(sleeper);
+    loop.run();
+}
+
+TEST_CASE(timer_repeat_wait_twice) {
+    event_loop loop;
+
+    auto t = timer::create(loop);
+    t.start(std::chrono::milliseconds{1}, std::chrono::milliseconds{1});
+
+    auto waiter = wait_timer_twice(t);
+    loop.schedule(waiter);
+    loop.run();
+}
+
+TEST_CASE(prepare_wait) {
+    event_loop loop;
+
+    auto w = prepare::create(loop);
+    w.start();
+
+    auto waiter = wait_prepare(w);
+    loop.schedule(waiter);
+    loop.run();
+
+    w.stop();
+}
+
+TEST_CASE(check_wait) {
+    event_loop loop;
+
+    auto w = check::create(loop);
+    w.start();
+
+    auto waiter = wait_check(w);
+    loop.schedule(waiter);
+    loop.run();
+
+    w.stop();
 }
 
 };  // TEST_SUITE(watcher_io)

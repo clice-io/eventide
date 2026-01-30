@@ -244,6 +244,82 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             std::abort();
         }
 
+        case NodeKind::WhenAll:
+        case NodeKind::WhenAny: {
+            auto self = static_cast<aggregate_op*>(this);
+            if(self->done) {
+                return std::noop_coroutine();
+            }
+
+            const bool cancelled = child->state == Cancelled && child->policy != InterceptCancel;
+            if(cancelled) {
+                self->done = true;
+                self->pending_cancel = true;
+
+                for(auto* other: self->awaitees) {
+                    if(other && other != child) {
+                        other->cancel();
+                    }
+                }
+
+                if(self->arming) {
+                    self->pending_resume = true;
+                    return std::noop_coroutine();
+                }
+
+                if(self->awaiter) {
+                    self->awaiter->state = Cancelled;
+                    return self->awaiter->final_transition();
+                }
+
+                return std::noop_coroutine();
+            }
+
+            if(self->kind == NodeKind::WhenAny) {
+                if(self->winner == aggregate_op::npos) {
+                    for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
+                        if(self->awaitees[i] == child) {
+                            self->winner = i;
+                            break;
+                        }
+                    }
+                }
+
+                self->done = true;
+                for(auto* other: self->awaitees) {
+                    if(other && other != child) {
+                        other->cancel();
+                    }
+                }
+
+                if(self->arming) {
+                    self->pending_resume = true;
+                    return std::noop_coroutine();
+                }
+
+                if(self->awaiter) {
+                    return static_cast<stable_node*>(self->awaiter)->handle();
+                }
+
+                return std::noop_coroutine();
+            }
+
+            self->completed += 1;
+            if(self->completed >= self->total) {
+                self->done = true;
+                if(self->arming) {
+                    self->pending_resume = true;
+                    return std::noop_coroutine();
+                }
+
+                if(self->awaiter) {
+                    return static_cast<stable_node*>(self->awaiter)->handle();
+                }
+            }
+
+            return std::noop_coroutine();
+        }
+
         case NodeKind::Mutex:
         case NodeKind::Event:
         case NodeKind::Semaphore:
@@ -251,8 +327,6 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         case NodeKind::SharedFuture:
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
-        case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
         case NodeKind::Scope:
         case NodeKind::Sleep:
         case NodeKind::SocketRead:
