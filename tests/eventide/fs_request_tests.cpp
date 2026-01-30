@@ -57,19 +57,19 @@ task<result<int>> fs_roundtrip(event_loop& loop) {
 
     std::string dir = dir_res->path;
     if(dir.empty()) {
-        co_return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        co_return std::unexpected(error::invalid_argument);
     }
 
     std::string file = (std::filesystem::path(dir) / "sample.txt").string();
     int fd = open_fd(file);
     if(fd < 0) {
-        co_return std::unexpected(std::make_error_code(std::errc::io_error));
+        co_return std::unexpected(error::io_error);
     }
 
     constexpr std::string_view payload = "eventide-fs";
     if(write_fd(fd, payload.data(), payload.size()) != static_cast<ssize_t>(payload.size())) {
         close_fd(fd);
-        co_return std::unexpected(std::make_error_code(std::errc::io_error));
+        co_return std::unexpected(error::io_error);
     }
     close_fd(fd);
 
@@ -129,7 +129,7 @@ task<result<int>> mkstemp_roundtrip(event_loop& loop) {
     }
 
     if(path.empty()) {
-        co_return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        co_return std::unexpected(error::invalid_argument);
     }
 
     auto access_res = co_await fs_request::access(loop, path, 0);

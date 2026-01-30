@@ -19,7 +19,7 @@ template <typename Result>
 struct fs_holder {
     uv_fs_t req;
     std::function<Result(uv_fs_t&)> populate;
-    ::eventide::result<Result> out = std::unexpected(std::error_code{});
+    ::eventide::result<Result> out = std::unexpected(::eventide::error{});
 };
 
 }  // namespace
@@ -28,10 +28,10 @@ namespace eventide {
 
 template <>
 struct awaiter<work_tag> {
-    using promise_t = task<std::error_code>::promise_type;
+    using promise_t = task<error>::promise_type;
 
     promise_t* waiter = nullptr;
-    std::error_code result{};
+    error result{};
 
     bool await_ready() const noexcept {
         return false;
@@ -42,12 +42,12 @@ struct awaiter<work_tag> {
         return std::noop_coroutine();
     }
 
-    std::error_code await_resume() noexcept {
+    error await_resume() noexcept {
         return result;
     }
 };
 
-task<std::error_code> work_request::queue(event_loop& loop, work_fn fn) {
+task<error> work_request::queue(event_loop& loop, work_fn fn) {
     awaiter<work_tag> aw;
 
     struct work_holder {
@@ -70,7 +70,7 @@ task<std::error_code> work_request::queue(event_loop& loop, work_fn fn) {
         }
 
         if(holder->aw) {
-            holder->aw->result = status < 0 ? uv_error(status) : std::error_code{};
+            holder->aw->result = status < 0 ? uv_error(status) : error{};
             if(holder->aw->waiter) {
                 holder->aw->waiter->resume();
             }
@@ -388,7 +388,7 @@ task<result<std::vector<fs_request::dirent>>> fs_request::readdir(event_loop& lo
         populate);
 }
 
-task<std::error_code> fs_request::closedir(event_loop& loop, dir_handle& dir) {
+task<error> fs_request::closedir(event_loop& loop, dir_handle& dir) {
     if(!dir.valid()) {
         co_return uv_error(UV_EINVAL);
     }
@@ -408,7 +408,7 @@ task<std::error_code> fs_request::closedir(event_loop& loop, dir_handle& dir) {
     }
 
     dir.dir = nullptr;
-    co_return std::error_code{};
+    co_return error{};
 }
 
 task<result<fs_request::result>> fs_request::fstat(event_loop& loop, int fd) {

@@ -105,7 +105,7 @@ struct awaiter {
     using promise_t = task<result<stream_t>>::promise_type;
 
     acceptor<stream_t>* self;
-    result<stream_t> outcome = std::unexpected(std::error_code());
+    result<stream_t> outcome = std::unexpected(error());
 
     static int init_stream(stream_t& stream, uv_loop_t* loop) {
         if constexpr(is_pipe_v) {

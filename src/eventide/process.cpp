@@ -262,7 +262,7 @@ int process::pid() const noexcept {
     return proc ? proc->pid : -1;
 }
 
-std::error_code process::kill(int signum) {
+error process::kill(int signum) {
     if(!initialized()) {
         return uv_error(UV_EINVAL);
     }

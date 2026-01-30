@@ -5,7 +5,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
 
 #include "error.h"
@@ -51,42 +50,42 @@ public:
 
     static result<udp> open(event_loop& loop, int fd);
 
-    std::error_code bind(std::string_view host, int port, unsigned flags = 0);
+    error bind(std::string_view host, int port, unsigned flags = 0);
 
-    std::error_code connect(std::string_view host, int port);
+    error connect(std::string_view host, int port);
 
-    std::error_code disconnect();
+    error disconnect();
 
-    task<std::error_code> send(std::span<const char> data, std::string_view host, int port);
+    task<error> send(std::span<const char> data, std::string_view host, int port);
 
-    task<std::error_code> send(std::span<const char> data);
+    task<error> send(std::span<const char> data);
 
-    std::error_code try_send(std::span<const char> data, std::string_view host, int port);
+    error try_send(std::span<const char> data, std::string_view host, int port);
 
-    std::error_code try_send(std::span<const char> data);
+    error try_send(std::span<const char> data);
 
     result<endpoint> getsockname() const;
 
     result<endpoint> getpeername() const;
 
-    std::error_code set_membership(std::string_view multicast_addr,
+    error set_membership(std::string_view multicast_addr,
                                    std::string_view interface_addr,
                                    membership m);
 
-    std::error_code set_source_membership(std::string_view multicast_addr,
+    error set_source_membership(std::string_view multicast_addr,
                                           std::string_view interface_addr,
                                           std::string_view source_addr,
                                           membership m);
 
-    std::error_code set_multicast_loop(bool on);
+    error set_multicast_loop(bool on);
 
-    std::error_code set_multicast_ttl(int ttl);
+    error set_multicast_ttl(int ttl);
 
-    std::error_code set_multicast_interface(std::string_view interface_addr);
+    error set_multicast_interface(std::string_view interface_addr);
 
-    std::error_code set_broadcast(bool on);
+    error set_broadcast(bool on);
 
-    std::error_code set_ttl(int ttl);
+    error set_ttl(int ttl);
 
     bool using_recvmmsg() const;
 
@@ -94,7 +93,7 @@ public:
 
     std::size_t send_queue_count() const;
 
-    std::error_code stop_recv();
+    error stop_recv();
 
     task<result<recv_result>> recv();
 
@@ -106,8 +105,8 @@ private:
     bool receiving = false;
 
     async_node* send_waiter = nullptr;
-    std::error_code* send_active = nullptr;
-    std::optional<std::error_code> send_pending;
+    error* send_active = nullptr;
+    std::optional<error> send_pending;
     bool send_inflight = false;
 };
 

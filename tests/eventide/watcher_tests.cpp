@@ -6,13 +6,13 @@ namespace eventide {
 
 namespace {
 
-task<std::error_code> wait_timer(timer& t) {
+task<error> wait_timer(timer& t) {
     auto ec = co_await t.wait();
     event_loop::current()->stop();
     co_return ec;
 }
 
-task<std::error_code> wait_idle(idle& w) {
+task<error> wait_idle(idle& w) {
     auto ec = co_await w.wait();
     event_loop::current()->stop();
     co_return ec;

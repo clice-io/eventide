@@ -5,7 +5,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
 
 #include "error.h"
@@ -22,7 +21,7 @@ class work_request {
 public:
     using work_fn = std::function<void()>;
 
-    static task<std::error_code> queue(event_loop& loop, work_fn fn);
+    static task<error> queue(event_loop& loop, work_fn fn);
 };
 
 class fs_request {
@@ -82,7 +81,7 @@ public:
 
     static task<::eventide::result<std::vector<dirent>>> readdir(event_loop& loop, dir_handle& dir);
 
-    static task<std::error_code> closedir(event_loop& loop, dir_handle& dir);
+    static task<error> closedir(event_loop& loop, dir_handle& dir);
 
     static task<op_result> fstat(event_loop& loop, int fd);
 

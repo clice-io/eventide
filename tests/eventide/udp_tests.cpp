@@ -18,7 +18,7 @@ task<result<udp::recv_result>> recv_once(udp& sock, std::atomic<int>& done) {
     co_return res;
 }
 
-task<std::error_code> send_to(udp& sock,
+task<error> send_to(udp& sock,
                               std::string_view payload,
                               std::string_view host,
                               int port,
@@ -31,7 +31,7 @@ task<std::error_code> send_to(udp& sock,
     co_return ec;
 }
 
-task<std::error_code> send_connected(udp& sock, std::string_view payload, std::atomic<int>& done) {
+task<error> send_connected(udp& sock, std::string_view payload, std::atomic<int>& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data);
     if(done.fetch_add(1) + 1 == 2) {

@@ -60,10 +60,10 @@ struct awaiter {
     using traits = watcher_traits<Tag>;
     using watcher_t = typename traits::watcher_type;
     using handle_t = typename traits::handle_type;
-    using promise_t = task<std::error_code>::promise_type;
+    using promise_t = task<error>::promise_type;
 
     watcher_t* self;
-    std::error_code result{};
+    error result{};
 
     static void on_fire(handle_t* handle) {
         auto* watcher = static_cast<watcher_t*>(handle->data);
@@ -94,7 +94,7 @@ struct awaiter {
         return std::noop_coroutine();
     }
 
-    std::error_code await_resume() noexcept {
+    error await_resume() noexcept {
         if(self->pending > 0) {
             self->pending -= 1;
         }
@@ -117,7 +117,7 @@ result<timer> timer::create(event_loop& loop) {
     return t;
 }
 
-std::error_code timer::start(std::uint64_t timeout_ms, std::uint64_t repeat_ms) {
+error timer::start(std::uint64_t timeout_ms, std::uint64_t repeat_ms) {
     auto handle = as<uv_timer_t>();
     handle->data = this;
     int err = uv_timer_start(
@@ -132,7 +132,7 @@ std::error_code timer::start(std::uint64_t timeout_ms, std::uint64_t repeat_ms) 
     return {};
 }
 
-std::error_code timer::stop() {
+error timer::stop() {
     auto handle = as<uv_timer_t>();
     int err = uv_timer_stop(handle);
     if(err != 0) {
@@ -142,10 +142,10 @@ std::error_code timer::stop() {
     return {};
 }
 
-task<std::error_code> timer::wait() {
+task<error> timer::wait() {
     if(pending > 0) {
         pending -= 1;
-        co_return std::error_code{};
+        co_return error{};
     }
 
     if(waiter != nullptr) {
@@ -167,7 +167,7 @@ result<idle> idle::create(event_loop& loop) {
     return w;
 }
 
-std::error_code idle::start() {
+error idle::start() {
     auto handle = as<uv_idle_t>();
     handle->data = this;
     int err = uv_idle_start(handle, [](uv_idle_t* h) { awaiter<idle_tag>::on_fire(h); });
@@ -178,7 +178,7 @@ std::error_code idle::start() {
     return {};
 }
 
-std::error_code idle::stop() {
+error idle::stop() {
     auto handle = as<uv_idle_t>();
     int err = uv_idle_stop(handle);
     if(err != 0) {
@@ -188,10 +188,10 @@ std::error_code idle::stop() {
     return {};
 }
 
-task<std::error_code> idle::wait() {
+task<error> idle::wait() {
     if(pending > 0) {
         pending -= 1;
-        co_return std::error_code{};
+        co_return error{};
     }
 
     if(waiter != nullptr) {
@@ -213,7 +213,7 @@ result<prepare> prepare::create(event_loop& loop) {
     return w;
 }
 
-std::error_code prepare::start() {
+error prepare::start() {
     auto handle = as<uv_prepare_t>();
     handle->data = this;
     int err = uv_prepare_start(handle, [](uv_prepare_t* h) { awaiter<prepare_tag>::on_fire(h); });
@@ -224,7 +224,7 @@ std::error_code prepare::start() {
     return {};
 }
 
-std::error_code prepare::stop() {
+error prepare::stop() {
     auto handle = as<uv_prepare_t>();
     int err = uv_prepare_stop(handle);
     if(err != 0) {
@@ -234,10 +234,10 @@ std::error_code prepare::stop() {
     return {};
 }
 
-task<std::error_code> prepare::wait() {
+task<error> prepare::wait() {
     if(pending > 0) {
         pending -= 1;
-        co_return std::error_code{};
+        co_return error{};
     }
 
     if(waiter != nullptr) {
@@ -259,7 +259,7 @@ result<check> check::create(event_loop& loop) {
     return w;
 }
 
-std::error_code check::start() {
+error check::start() {
     auto handle = as<uv_check_t>();
     handle->data = this;
     int err = uv_check_start(handle, [](uv_check_t* h) { awaiter<check_tag>::on_fire(h); });
@@ -270,7 +270,7 @@ std::error_code check::start() {
     return {};
 }
 
-std::error_code check::stop() {
+error check::stop() {
     auto handle = as<uv_check_t>();
     int err = uv_check_stop(handle);
     if(err != 0) {
@@ -280,10 +280,10 @@ std::error_code check::stop() {
     return {};
 }
 
-task<std::error_code> check::wait() {
+task<error> check::wait() {
     if(pending > 0) {
         pending -= 1;
-        co_return std::error_code{};
+        co_return error{};
     }
 
     if(waiter != nullptr) {
@@ -305,7 +305,7 @@ result<signal> signal::create(event_loop& loop) {
     return s;
 }
 
-std::error_code signal::start(int signum) {
+error signal::start(int signum) {
     auto handle = as<uv_signal_t>();
     handle->data = this;
     int err = uv_signal_start(
@@ -319,7 +319,7 @@ std::error_code signal::start(int signum) {
     return {};
 }
 
-std::error_code signal::stop() {
+error signal::stop() {
     auto handle = as<uv_signal_t>();
     int err = uv_signal_stop(handle);
     if(err != 0) {
@@ -329,10 +329,10 @@ std::error_code signal::stop() {
     return {};
 }
 
-task<std::error_code> signal::wait() {
+task<error> signal::wait() {
     if(pending > 0) {
         pending -= 1;
-        co_return std::error_code{};
+        co_return error{};
     }
 
     if(waiter != nullptr) {

@@ -99,7 +99,7 @@ public:
     int pid() const noexcept;
 
     /// Send a signal to the process.
-    std::error_code kill(int signum);
+    error kill(int signum);
 
 private:
     template <typename Tag>

@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <string>
-#include <system_error>
 
 #include "error.h"
 #include "handle.h"
@@ -31,9 +30,9 @@ public:
     static result<fs_event> create(event_loop& loop);
 
     /// Start watching the given path; flags passed directly to libuv.
-    std::error_code start(const char* path, unsigned int flags = 0);
+    error start(const char* path, unsigned int flags = 0);
 
-    std::error_code stop();
+    error stop();
 
     /// Await a change event; delivers one pending change at a time.
     task<result<change>> wait();

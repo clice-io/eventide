@@ -17,7 +17,7 @@ struct awaiter<fs_event_tag> {
     using promise_t = task<result<fs_event::change>>::promise_type;
 
     fs_event* self;
-    result<fs_event::change> outcome = std::unexpected(std::error_code{});
+    result<fs_event::change> outcome = std::unexpected(error{});
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
         auto* watcher = static_cast<fs_event*>(handle->data);
@@ -88,7 +88,7 @@ result<fs_event> fs_event::create(event_loop& loop) {
     return w;
 }
 
-std::error_code fs_event::start(const char* path, unsigned int flags) {
+error fs_event::start(const char* path, unsigned int flags) {
     auto handle = as<uv_fs_event_t>();
     handle->data = this;
     int err = uv_fs_event_start(handle, awaiter<fs_event_tag>::on_change, path, flags);
@@ -99,7 +99,7 @@ std::error_code fs_event::start(const char* path, unsigned int flags) {
     return {};
 }
 
-std::error_code fs_event::stop() {
+error fs_event::stop() {
     auto handle = as<uv_fs_event_t>();
     int err = uv_fs_event_stop(handle);
     if(err != 0) {

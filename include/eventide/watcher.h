@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <system_error>
 
 #include "error.h"
 #include "handle.h"
@@ -24,15 +23,15 @@ private:
 public:
     static result<timer> create(event_loop& loop);
 
-    std::error_code start(std::uint64_t timeout_ms, std::uint64_t repeat_ms = 0);
+    error start(std::uint64_t timeout_ms, std::uint64_t repeat_ms = 0);
 
-    std::error_code stop();
+    error stop();
 
-    task<std::error_code> wait();
+    task<error> wait();
 
 private:
     async_node* waiter = nullptr;
-    std::error_code* active = nullptr;
+    error* active = nullptr;
     int pending = 0;
 };
 
@@ -46,15 +45,15 @@ private:
 public:
     static result<idle> create(event_loop& loop);
 
-    std::error_code start();
+    error start();
 
-    std::error_code stop();
+    error stop();
 
-    task<std::error_code> wait();
+    task<error> wait();
 
 private:
     async_node* waiter = nullptr;
-    std::error_code* active = nullptr;
+    error* active = nullptr;
     int pending = 0;
 };
 
@@ -68,15 +67,15 @@ private:
 public:
     static result<prepare> create(event_loop& loop);
 
-    std::error_code start();
+    error start();
 
-    std::error_code stop();
+    error stop();
 
-    task<std::error_code> wait();
+    task<error> wait();
 
 private:
     async_node* waiter = nullptr;
-    std::error_code* active = nullptr;
+    error* active = nullptr;
     int pending = 0;
 };
 
@@ -90,15 +89,15 @@ private:
 public:
     static result<check> create(event_loop& loop);
 
-    std::error_code start();
+    error start();
 
-    std::error_code stop();
+    error stop();
 
-    task<std::error_code> wait();
+    task<error> wait();
 
 private:
     async_node* waiter = nullptr;
-    std::error_code* active = nullptr;
+    error* active = nullptr;
     int pending = 0;
 };
 
@@ -112,15 +111,15 @@ private:
 public:
     static result<signal> create(event_loop& loop);
 
-    std::error_code start(int signum);
+    error start(int signum);
 
-    std::error_code stop();
+    error stop();
 
-    task<std::error_code> wait();
+    task<error> wait();
 
 private:
     async_node* waiter = nullptr;
-    std::error_code* active = nullptr;
+    error* active = nullptr;
     int pending = 0;
 };
 

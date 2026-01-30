@@ -108,7 +108,7 @@ struct awaiter<udp_recv_tag> {
     using promise_t = task<result<udp::recv_result>>::promise_type;
 
     udp* self;
-    result<udp::recv_result> outcome = std::unexpected(std::error_code{});
+    result<udp::recv_result> outcome = std::unexpected(error{});
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto* u = static_cast<udp*>(handle->data);
@@ -198,13 +198,13 @@ struct awaiter<udp_recv_tag> {
 
 template <>
 struct awaiter<udp_send_tag> {
-    using promise_t = task<std::error_code>::promise_type;
+    using promise_t = task<error>::promise_type;
 
     udp* self;
     std::vector<char> storage;
     uv_udp_send_t req{};
     std::optional<sockaddr_storage> dest;
-    std::error_code result{};
+    error result{};
 
     awaiter(udp* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
         self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
@@ -218,7 +218,7 @@ struct awaiter<udp_send_tag> {
 
         u->send_inflight = false;
 
-        auto ec = status < 0 ? uv_error(status) : std::error_code{};
+        auto ec = status < 0 ? uv_error(status) : error{};
 
         if(u->send_waiter && u->send_active) {
             *u->send_active = ec;
@@ -269,7 +269,7 @@ struct awaiter<udp_send_tag> {
         return std::noop_coroutine();
     }
 
-    std::error_code await_resume() noexcept {
+    error await_resume() noexcept {
         self->send_waiter = nullptr;
         self->send_active = nullptr;
         return result;
@@ -323,7 +323,7 @@ result<udp> udp::open(event_loop& loop, int fd) {
     return u;
 }
 
-std::error_code udp::bind(std::string_view host, int port, unsigned flags) {
+error udp::bind(std::string_view host, int port, unsigned flags) {
     sockaddr_storage storage{};
     int family = fill_addr(host, port, storage);
     if(family == AF_UNSPEC) {
@@ -340,7 +340,7 @@ std::error_code udp::bind(std::string_view host, int port, unsigned flags) {
     return {};
 }
 
-std::error_code udp::connect(std::string_view host, int port) {
+error udp::connect(std::string_view host, int port) {
     sockaddr_storage storage{};
     int family = fill_addr(host, port, storage);
     if(family == AF_UNSPEC) {
@@ -357,7 +357,7 @@ std::error_code udp::connect(std::string_view host, int port) {
     return {};
 }
 
-std::error_code udp::disconnect() {
+error udp::disconnect() {
     auto handle = as<uv_udp_t>();
     int err = uv_udp_connect(handle, nullptr);
     if(err != 0) {
@@ -367,7 +367,7 @@ std::error_code udp::disconnect() {
     return {};
 }
 
-task<std::error_code> udp::send(std::span<const char> data, std::string_view host, int port) {
+task<error> udp::send(std::span<const char> data, std::string_view host, int port) {
     sockaddr_storage storage{};
     int family = fill_addr(host, port, storage);
     if(family == AF_UNSPEC) {
@@ -377,11 +377,11 @@ task<std::error_code> udp::send(std::span<const char> data, std::string_view hos
     co_return co_await awaiter<udp_send_tag>{this, data, std::optional<sockaddr_storage>(storage)};
 }
 
-task<std::error_code> udp::send(std::span<const char> data) {
+task<error> udp::send(std::span<const char> data) {
     co_return co_await awaiter<udp_send_tag>{this, data, std::nullopt};
 }
 
-std::error_code udp::try_send(std::span<const char> data, std::string_view host, int port) {
+error udp::try_send(std::span<const char> data, std::string_view host, int port) {
     sockaddr_storage storage{};
     int family = fill_addr(host, port, storage);
     if(family == AF_UNSPEC) {
@@ -398,7 +398,7 @@ std::error_code udp::try_send(std::span<const char> data, std::string_view host,
     return {};
 }
 
-std::error_code udp::try_send(std::span<const char> data) {
+error udp::try_send(std::span<const char> data) {
     uv_buf_t buf =
         uv_buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(data.size()));
     int err = uv_udp_try_send(as<uv_udp_t>(), &buf, 1, nullptr);
@@ -409,7 +409,7 @@ std::error_code udp::try_send(std::span<const char> data) {
     return {};
 }
 
-std::error_code udp::stop_recv() {
+error udp::stop_recv() {
     auto handle = as<uv_udp_t>();
     int err = uv_udp_recv_stop(handle);
     if(err != 0) {
@@ -456,7 +456,7 @@ result<udp::endpoint> udp::getpeername() const {
     return endpoint_from_sockaddr(reinterpret_cast<sockaddr*>(&storage));
 }
 
-std::error_code udp::set_membership(std::string_view multicast_addr,
+error udp::set_membership(std::string_view multicast_addr,
                                     std::string_view interface_addr,
                                     membership m) {
     int err = uv_udp_set_membership(as<uv_udp_t>(),
@@ -470,7 +470,7 @@ std::error_code udp::set_membership(std::string_view multicast_addr,
     return {};
 }
 
-std::error_code udp::set_source_membership(std::string_view multicast_addr,
+error udp::set_source_membership(std::string_view multicast_addr,
                                            std::string_view interface_addr,
                                            std::string_view source_addr,
                                            membership m) {
@@ -486,7 +486,7 @@ std::error_code udp::set_source_membership(std::string_view multicast_addr,
     return {};
 }
 
-std::error_code udp::set_multicast_loop(bool on) {
+error udp::set_multicast_loop(bool on) {
     int err = uv_udp_set_multicast_loop(as<uv_udp_t>(), on ? 1 : 0);
     if(err != 0) {
         return uv_error(err);
@@ -495,7 +495,7 @@ std::error_code udp::set_multicast_loop(bool on) {
     return {};
 }
 
-std::error_code udp::set_multicast_ttl(int ttl) {
+error udp::set_multicast_ttl(int ttl) {
     int err = uv_udp_set_multicast_ttl(as<uv_udp_t>(), ttl);
     if(err != 0) {
         return uv_error(err);
@@ -504,7 +504,7 @@ std::error_code udp::set_multicast_ttl(int ttl) {
     return {};
 }
 
-std::error_code udp::set_multicast_interface(std::string_view interface_addr) {
+error udp::set_multicast_interface(std::string_view interface_addr) {
     int err = uv_udp_set_multicast_interface(as<uv_udp_t>(), std::string(interface_addr).c_str());
     if(err != 0) {
         return uv_error(err);
@@ -513,7 +513,7 @@ std::error_code udp::set_multicast_interface(std::string_view interface_addr) {
     return {};
 }
 
-std::error_code udp::set_broadcast(bool on) {
+error udp::set_broadcast(bool on) {
     int err = uv_udp_set_broadcast(as<uv_udp_t>(), on ? 1 : 0);
     if(err != 0) {
         return uv_error(err);
@@ -522,7 +522,7 @@ std::error_code udp::set_broadcast(bool on) {
     return {};
 }
 
-std::error_code udp::set_ttl(int ttl) {
+error udp::set_ttl(int ttl) {
     int err = uv_udp_set_ttl(as<uv_udp_t>(), ttl);
     if(err != 0) {
         return uv_error(err);
