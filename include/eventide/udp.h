@@ -69,13 +69,13 @@ public:
     result<endpoint> getpeername() const;
 
     error set_membership(std::string_view multicast_addr,
-                                   std::string_view interface_addr,
-                                   membership m);
+                         std::string_view interface_addr,
+                         membership m);
 
     error set_source_membership(std::string_view multicast_addr,
-                                          std::string_view interface_addr,
-                                          std::string_view source_addr,
-                                          membership m);
+                                std::string_view interface_addr,
+                                std::string_view source_addr,
+                                membership m);
 
     error set_multicast_loop(bool on);
 

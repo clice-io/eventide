@@ -19,10 +19,10 @@ task<result<udp::recv_result>> recv_once(udp& sock, std::atomic<int>& done) {
 }
 
 task<error> send_to(udp& sock,
-                              std::string_view payload,
-                              std::string_view host,
-                              int port,
-                              std::atomic<int>& done) {
+                    std::string_view payload,
+                    std::string_view host,
+                    int port,
+                    std::atomic<int>& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data, host, port);
     if(done.fetch_add(1) + 1 == 2) {

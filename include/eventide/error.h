@@ -8,7 +8,7 @@ namespace eventide {
 class error {
 public:
     constexpr error() noexcept = default;
-    
+
     constexpr error(const error&) noexcept = default;
 
     constexpr explicit error(int code) noexcept : code(code) {}

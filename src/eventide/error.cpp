@@ -21,7 +21,6 @@ error uv_error(int errc) {
     return error{errc};
 }
 
-
 const error error::argument_list_too_long{UV_E2BIG};
 const error error::permission_denied{UV_EACCES};
 const error error::address_already_in_use{UV_EADDRINUSE};
@@ -107,6 +106,5 @@ const error error::socket_type_not_supported{UV_ESOCKTNOSUPPORT};
 const error error::no_data_available{UV_ENODATA};
 const error error::protocol_driver_not_attached{UV_EUNATCH};
 const error error::exec_format_error{UV_ENOEXEC};
-
 
 }  // namespace eventide
