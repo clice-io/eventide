@@ -151,7 +151,7 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
         pipe out(sizeof(uv_pipe_t));
         int err = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), out.as<uv_pipe_t>(), 0);
         if(err != 0) {
-            return std::unexpected(uv_error(err));
+            return std::unexpected(error(err));
         }
 
         out.mark_initialized();
@@ -228,7 +228,7 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
     int err = uv_spawn(static_cast<uv_loop_t*>(loop.handle()), proc_handle, &uv_opts);
     if(err != 0) {
         out.proc.mark_initialized();
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     out.proc.mark_initialized();
@@ -247,7 +247,7 @@ task<process::wait_result> process::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return std::unexpected(uv_error(UV_EALREADY));
+        co_return std::unexpected(error::socket_is_already_connected);
     }
 
     co_return co_await awaiter<process_wait_tag>{this};
@@ -264,12 +264,12 @@ int process::pid() const noexcept {
 
 error process::kill(int signum) {
     if(!initialized()) {
-        return uv_error(UV_EINVAL);
+        return error::invalid_argument;
     }
 
     int err = uv_process_kill(as<uv_process_t>(), signum);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};

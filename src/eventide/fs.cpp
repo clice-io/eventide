@@ -44,7 +44,7 @@ struct awaiter<fs_event_tag> {
         };
 
         if(status < 0) {
-            deliver(std::unexpected(uv_error(status)));
+            deliver(std::unexpected(error(status)));
             return;
         }
 
@@ -80,7 +80,7 @@ result<fs_event> fs_event::create(event_loop& loop) {
 
     int err = uv_fs_event_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     w.mark_initialized();
@@ -93,7 +93,7 @@ error fs_event::start(const char* path, unsigned int flags) {
     handle->data = this;
     int err = uv_fs_event_start(handle, awaiter<fs_event_tag>::on_change, path, flags);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -103,7 +103,7 @@ error fs_event::stop() {
     auto handle = as<uv_fs_event_t>();
     int err = uv_fs_event_stop(handle);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -117,7 +117,7 @@ task<result<fs_event::change>> fs_event::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return std::unexpected(uv_error(UV_EALREADY));
+        co_return std::unexpected(error::connection_already_in_progress);
     }
 
     co_return co_await awaiter<fs_event_tag>{this};

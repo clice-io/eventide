@@ -110,7 +110,7 @@ result<timer> timer::create(event_loop& loop) {
     auto handle = t.as<uv_timer_t>();
     int err = uv_timer_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     t.mark_initialized();
@@ -126,7 +126,7 @@ error timer::start(std::uint64_t timeout_ms, std::uint64_t repeat_ms) {
         timeout_ms,
         repeat_ms);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -136,7 +136,7 @@ error timer::stop() {
     auto handle = as<uv_timer_t>();
     int err = uv_timer_stop(handle);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -149,7 +149,7 @@ task<error> timer::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return uv_error(UV_EALREADY);
+        co_return error::connection_already_in_progress;
     }
 
     co_return co_await awaiter<timer_tag>{this};
@@ -160,7 +160,7 @@ result<idle> idle::create(event_loop& loop) {
     auto handle = w.as<uv_idle_t>();
     int err = uv_idle_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     w.mark_initialized();
@@ -172,7 +172,7 @@ error idle::start() {
     handle->data = this;
     int err = uv_idle_start(handle, [](uv_idle_t* h) { awaiter<idle_tag>::on_fire(h); });
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -182,7 +182,7 @@ error idle::stop() {
     auto handle = as<uv_idle_t>();
     int err = uv_idle_stop(handle);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -195,7 +195,7 @@ task<error> idle::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return uv_error(UV_EALREADY);
+        co_return error::connection_already_in_progress;
     }
 
     co_return co_await awaiter<idle_tag>{this};
@@ -206,7 +206,7 @@ result<prepare> prepare::create(event_loop& loop) {
     auto handle = w.as<uv_prepare_t>();
     int err = uv_prepare_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     w.mark_initialized();
@@ -218,7 +218,7 @@ error prepare::start() {
     handle->data = this;
     int err = uv_prepare_start(handle, [](uv_prepare_t* h) { awaiter<prepare_tag>::on_fire(h); });
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -228,7 +228,7 @@ error prepare::stop() {
     auto handle = as<uv_prepare_t>();
     int err = uv_prepare_stop(handle);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -241,7 +241,7 @@ task<error> prepare::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return uv_error(UV_EALREADY);
+        co_return error::connection_already_in_progress;
     }
 
     co_return co_await awaiter<prepare_tag>{this};
@@ -252,7 +252,7 @@ result<check> check::create(event_loop& loop) {
     auto handle = w.as<uv_check_t>();
     int err = uv_check_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     w.mark_initialized();
@@ -264,7 +264,7 @@ error check::start() {
     handle->data = this;
     int err = uv_check_start(handle, [](uv_check_t* h) { awaiter<check_tag>::on_fire(h); });
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -274,7 +274,7 @@ error check::stop() {
     auto handle = as<uv_check_t>();
     int err = uv_check_stop(handle);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -287,7 +287,7 @@ task<error> check::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return uv_error(UV_EALREADY);
+        co_return error::connection_already_in_progress;
     }
 
     co_return co_await awaiter<check_tag>{this};
@@ -298,7 +298,7 @@ result<signal> signal::create(event_loop& loop) {
     auto handle = s.as<uv_signal_t>();
     int err = uv_signal_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     s.mark_initialized();
@@ -313,7 +313,7 @@ error signal::start(int signum) {
         [](uv_signal_t* h, int) { awaiter<signal_tag>::on_fire(h); },
         signum);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -323,7 +323,7 @@ error signal::stop() {
     auto handle = as<uv_signal_t>();
     int err = uv_signal_stop(handle);
     if(err != 0) {
-        return uv_error(err);
+        return error(err);
     }
 
     return {};
@@ -336,7 +336,7 @@ task<error> signal::wait() {
     }
 
     if(waiter != nullptr) {
-        co_return uv_error(UV_EALREADY);
+        co_return error::connection_already_in_progress;
     }
 
     co_return co_await awaiter<signal_tag>{this};

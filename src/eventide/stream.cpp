@@ -140,7 +140,7 @@ struct awaiter {
         };
 
         if(status < 0) {
-            deliver(std::unexpected(uv_error(status)));
+            deliver(std::unexpected(error(status)));
             return;
         }
 
@@ -155,7 +155,7 @@ struct awaiter {
         }
 
         if(err != 0) {
-            deliver(std::unexpected(uv_error(err)));
+            deliver(std::unexpected(error(err)));
         } else {
             deliver(std::move(conn));
         }
@@ -224,7 +224,7 @@ task<result<Stream>> acceptor<Stream>::accept() {
     }
 
     if(waiter != nullptr) {
-        co_return std::unexpected(uv_error(UV_EALREADY));
+        co_return std::unexpected(error::connection_already_in_progress);
     }
 
     if constexpr(std::is_same_v<Stream, pipe>) {
@@ -243,14 +243,14 @@ result<pipe> pipe::open(event_loop& loop, int fd) {
     auto handle = h.as<uv_pipe_t>();
     int errc = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), handle, 0);
     if(errc != 0) {
-        return std::unexpected(uv_error(errc));
+        return std::unexpected(error(errc));
     }
 
     h.mark_initialized();
 
     errc = uv_pipe_open(handle, fd);
     if(errc != 0) {
-        return std::unexpected(uv_error(errc));
+        return std::unexpected(error(errc));
     }
 
     return h;
@@ -281,7 +281,7 @@ result<pipe::acceptor> pipe::listen(event_loop& loop, const char* name, int back
     pipe::acceptor acc(sizeof(uv_pipe_t));
     int err = start_pipe_listen(acc, loop, name, backlog);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     return acc;
@@ -293,14 +293,14 @@ result<tcp_socket> tcp_socket::open(event_loop& loop, int fd) {
 
     int err = uv_tcp_init(static_cast<uv_loop_t*>(loop.handle()), handle);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     sock.mark_initialized();
 
     err = uv_tcp_open(handle, fd);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     return sock;
@@ -335,7 +335,7 @@ static int start_tcp_listen(acceptor<tcp_socket>& acc,
     } else if(build_addr(*reinterpret_cast<sockaddr_in*>(&storage), uv_ip4_addr) == 0) {
         addr_ptr = reinterpret_cast<sockaddr*>(&storage);
     } else {
-        return UV_EINVAL;
+        return error::invalid_argument.value();
     }
 
     err = uv_tcp_bind(handle, addr_ptr, flags);
@@ -358,7 +358,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(event_loop& loop,
     tcp_socket::acceptor acc(sizeof(uv_tcp_t));
     int err = start_tcp_listen(acc, loop, host, port, flags, backlog);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     return acc;
@@ -370,7 +370,7 @@ result<console> console::open(event_loop& loop, int fd) {
 
     int err = uv_tty_init(static_cast<uv_loop_t*>(loop.handle()), handle, fd, 0);
     if(err != 0) {
-        return std::unexpected(uv_error(err));
+        return std::unexpected(error(err));
     }
 
     con.mark_initialized();

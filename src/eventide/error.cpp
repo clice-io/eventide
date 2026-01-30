@@ -17,10 +17,6 @@ std::string_view error::message() const {
     return "unknown error";
 }
 
-error uv_error(int errc) {
-    return error{errc};
-}
-
 const error error::argument_list_too_long{UV_E2BIG};
 const error error::permission_denied{UV_EACCES};
 const error error::address_already_in_use{UV_EADDRINUSE};

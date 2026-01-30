@@ -123,8 +123,6 @@ private:
     int code = 0;
 };
 
-error uv_error(int errc);
-
 template <typename T>
 using result = std::expected<T, error>;
 

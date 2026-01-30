@@ -70,7 +70,7 @@ task<error> work_request::queue(event_loop& loop, work_fn fn) {
         }
 
         if(holder->aw) {
-            holder->aw->result = status < 0 ? uv_error(status) : error{};
+            holder->aw->result = status < 0 ? error(status) : error();
             if(holder->aw->waiter) {
                 holder->aw->waiter->resume();
             }
@@ -90,7 +90,7 @@ task<error> work_request::queue(event_loop& loop, work_fn fn) {
     int err = uv_queue_work(static_cast<uv_loop_t*>(loop.handle()), &raw->req, work_cb, after_cb);
     if(err != 0) {
         delete raw;
-        co_return uv_error(err);
+        co_return error(err);
     }
 
     co_await aw;
@@ -166,7 +166,7 @@ static task<result<Result>> run_fs(event_loop& loop, Submit submit, Populate pop
         }
 
         if(req->result < 0) {
-            h->out = std::unexpected(uv_error(static_cast<int>(req->result)));
+            h->out = std::unexpected(error(static_cast<int>(req->result)));
         } else {
             h->out = h->populate(*req);
         }
@@ -183,7 +183,7 @@ static task<result<Result>> run_fs(event_loop& loop, Submit submit, Populate pop
 
     int err = submit(holder->req, after_cb);
     if(err != 0) {
-        co_return std::unexpected(uv_error(err));
+        co_return std::unexpected(error(err));
     }
 
     co_return co_await aw;
@@ -303,7 +303,7 @@ task<result<std::vector<fs_request::dirent>>> fs_request::scandir(event_loop& lo
     auto populate = [](uv_fs_t& req) {
         std::vector<dirent> out;
         uv_dirent_t ent;
-        while(uv_fs_scandir_next(&req, &ent) != UV_EOF) {
+    while(uv_fs_scandir_next(&req, &ent) != error::end_of_file.value()) {
             dirent d;
             if(ent.name) {
                 d.name = ent.name;
@@ -345,12 +345,12 @@ task<result<fs_request::dir_handle>> fs_request::opendir(event_loop& loop, std::
 task<result<std::vector<fs_request::dirent>>> fs_request::readdir(event_loop& loop,
                                                                   dir_handle& dir) {
     if(!dir.valid()) {
-        co_return std::unexpected(uv_error(UV_EINVAL));
+        co_return std::unexpected(error::invalid_argument);
     }
 
     auto dir_ptr = static_cast<uv_dir_t*>(dir.dir);
     if(dir_ptr == nullptr) {
-        co_return std::unexpected(uv_error(UV_EINVAL));
+        co_return std::unexpected(error::invalid_argument);
     }
 
     constexpr std::size_t entry_count = 64;
@@ -390,7 +390,7 @@ task<result<std::vector<fs_request::dirent>>> fs_request::readdir(event_loop& lo
 
 task<error> fs_request::closedir(event_loop& loop, dir_handle& dir) {
     if(!dir.valid()) {
-        co_return uv_error(UV_EINVAL);
+        co_return error::invalid_argument;
     }
 
     auto res = co_await run_fs<result>(
