@@ -22,8 +22,13 @@ TEST_CASE(spawn_wait_simple) {
     event_loop loop;
 
     process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {"/c", "exit 0"};
+#else
     opts.file = "/bin/sh";
-    opts.args = {"-c", "printf 'eventide-process'"};
+    opts.args = {"-c", "true"};
+#endif
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
     auto spawn_res = process::spawn(loop, opts);
@@ -46,7 +51,11 @@ TEST_CASE(spawn_invalid_file) {
     event_loop loop;
 
     process::options opts;
+#ifdef _WIN32
+    opts.file = "Z:\\nonexistent\\eventide-nope.exe";
+#else
     opts.file = "/nonexistent/eventide-nope";
+#endif
 
     auto spawn_res = process::spawn(loop, opts);
     EXPECT_FALSE(spawn_res.has_value());

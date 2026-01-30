@@ -1,11 +1,20 @@
-#include <arpa/inet.h>
 #include <array>
 #include <atomic>
-#include <netinet/in.h>
 #include <string>
 #include <string_view>
+
+#ifdef _WIN32
+#include <BaseTsd.h>
+#include <fcntl.h>
+#include <io.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include "uv.h"
 #include "zest/zest.h"
@@ -14,11 +23,69 @@
 
 namespace eventide {
 
+#ifdef _WIN32
+struct wsa_init_guard {
+    wsa_init_guard() {
+        WSADATA data{};
+        (void)WSAStartup(MAKEWORD(2, 2), &data);
+    }
+
+    ~wsa_init_guard() {
+        WSACleanup();
+    }
+};
+
+static wsa_init_guard wsa_guard;
+using ssize_t = SSIZE_T;
+#endif
+
 namespace {
 
+#ifdef _WIN32
+using socket_t = SOCKET;
+constexpr socket_t invalid_socket = INVALID_SOCKET;
+constexpr int socket_error = SOCKET_ERROR;
+
+inline int close_socket(socket_t sock) {
+    return ::closesocket(sock);
+}
+
+inline int close_fd(int fd) {
+    return _close(fd);
+}
+
+inline ssize_t write_fd(int fd, const char* data, size_t len) {
+    return _write(fd, data, static_cast<unsigned int>(len));
+}
+
+inline int create_pipe(int fds[2]) {
+    return _pipe(fds, 4096, _O_BINARY);
+}
+#else
+using socket_t = int;
+constexpr socket_t invalid_socket = -1;
+constexpr int socket_error = -1;
+
+inline int close_socket(socket_t sock) {
+    return ::close(sock);
+}
+
+inline int close_fd(int fd) {
+    return ::close(fd);
+}
+
+inline ssize_t write_fd(int fd, const char* data, size_t len) {
+    return ::write(fd, data, len);
+}
+
+inline int create_pipe(int fds[2]) {
+    return ::pipe(fds);
+}
+#endif
+
 int pick_free_port() {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if(fd < 0) {
+    socket_t fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(fd == invalid_socket) {
         return -1;
     }
 
@@ -28,18 +95,18 @@ int pick_free_port() {
     addr.sin_port = 0;
 
     if(::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
+        close_socket(fd);
         return -1;
     }
 
     socklen_t len = sizeof(addr);
     if(::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
-        ::close(fd);
+        close_socket(fd);
         return -1;
     }
 
     int port = ntohs(addr.sin_port);
-    ::close(fd);
+    close_socket(fd);
     return port;
 }
 
@@ -78,12 +145,12 @@ TEST_SUITE(pipe_io) {
 
 TEST_CASE(read_from_fd) {
     int fds[2] = {-1, -1};
-    ASSERT_EQ(::pipe(fds), 0);
+    ASSERT_EQ(create_pipe(fds), 0);
 
     const std::string message = "eventide-pipe";
-    ASSERT_EQ(::write(fds[1], message.data(), message.size()),
+    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
               static_cast<ssize_t>(message.size()));
-    ::close(fds[1]);
+    close_fd(fds[1]);
 
     event_loop loop;
     auto pipe_res = pipe::open(loop, fds[0]);
@@ -111,8 +178,8 @@ TEST_CASE(accept_and_read) {
 
     auto server = accept_and_read(std::move(*acc_res));
 
-    int client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_TRUE(client_fd >= 0);
+    socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_TRUE(client_fd != invalid_socket);
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -124,7 +191,7 @@ TEST_CASE(accept_and_read) {
     const std::string message = "eventide-tcp";
     ASSERT_EQ(::send(client_fd, message.data(), message.size(), 0),
               static_cast<ssize_t>(message.size()));
-    ::close(client_fd);
+    close_socket(client_fd);
 
     loop.schedule(server);
     loop.run();
@@ -148,8 +215,8 @@ TEST_CASE(accept_already_waiting) {
     auto first = accept_once(acc, done);
     auto second = accept_once(acc, done);
 
-    int client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_TRUE(client_fd >= 0);
+    socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_TRUE(client_fd != invalid_socket);
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -157,7 +224,7 @@ TEST_CASE(accept_already_waiting) {
     addr.sin_port = htons(static_cast<uint16_t>(port));
 
     ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
-    ::close(client_fd);
+    close_socket(client_fd);
 
     loop.schedule(first);
     loop.schedule(second);

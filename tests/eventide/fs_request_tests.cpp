@@ -1,8 +1,16 @@
 #include <expected>
 #include <fcntl.h>
+#include <filesystem>
 #include <string>
 #include <string_view>
+
+#ifdef _WIN32
+#include <BaseTsd.h>
+#include <io.h>
+#include <sys/stat.h>
+#else
 #include <unistd.h>
+#endif
 
 #include "zest/zest.h"
 #include "eventide/loop.h"
@@ -13,8 +21,37 @@ namespace eventide {
 
 namespace {
 
+#ifdef _WIN32
+using ssize_t = SSIZE_T;
+
+inline int open_fd(const std::string& path) {
+    return _open(path.c_str(), _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
+}
+
+inline ssize_t write_fd(int fd, const char* data, size_t len) {
+    return _write(fd, data, static_cast<unsigned int>(len));
+}
+
+inline void close_fd(int fd) {
+    _close(fd);
+}
+#else
+inline int open_fd(const std::string& path) {
+    return ::open(path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+}
+
+inline ssize_t write_fd(int fd, const char* data, size_t len) {
+    return ::write(fd, data, len);
+}
+
+inline void close_fd(int fd) {
+    ::close(fd);
+}
+#endif
+
 task<std::expected<int, std::error_code>> fs_roundtrip(event_loop& loop) {
-    auto dir_res = co_await fs_request::mkdtemp(loop, "/tmp/eventide-XXXXXX");
+    auto dir_template = (std::filesystem::temp_directory_path() / "eventide-XXXXXX").string();
+    auto dir_res = co_await fs_request::mkdtemp(loop, dir_template);
     if(!dir_res.has_value()) {
         co_return std::unexpected(dir_res.error());
     }
@@ -24,18 +61,18 @@ task<std::expected<int, std::error_code>> fs_roundtrip(event_loop& loop) {
         co_return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 
-    std::string file = dir + "/sample.txt";
-    int fd = ::open(file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    std::string file = (std::filesystem::path(dir) / "sample.txt").string();
+    int fd = open_fd(file);
     if(fd < 0) {
         co_return std::unexpected(std::make_error_code(std::errc::io_error));
     }
 
     constexpr std::string_view payload = "eventide-fs";
-    if(::write(fd, payload.data(), payload.size()) != static_cast<ssize_t>(payload.size())) {
-        ::close(fd);
+    if(write_fd(fd, payload.data(), payload.size()) != static_cast<ssize_t>(payload.size())) {
+        close_fd(fd);
         co_return std::unexpected(std::make_error_code(std::errc::io_error));
     }
-    ::close(fd);
+    close_fd(fd);
 
     auto stat_res = co_await fs_request::stat(loop, file);
     if(!stat_res.has_value()) {
@@ -80,7 +117,8 @@ task<std::expected<int, std::error_code>> fs_roundtrip(event_loop& loop) {
 }
 
 task<std::expected<int, std::error_code>> mkstemp_roundtrip(event_loop& loop) {
-    auto file_res = co_await fs_request::mkstemp(loop, "/tmp/eventide-file-XXXXXX");
+    auto file_template = (std::filesystem::temp_directory_path() / "eventide-file-XXXXXX").string();
+    auto file_res = co_await fs_request::mkstemp(loop, file_template);
     if(!file_res.has_value()) {
         co_return std::unexpected(file_res.error());
     }
@@ -88,7 +126,7 @@ task<std::expected<int, std::error_code>> mkstemp_roundtrip(event_loop& loop) {
     const int fd = static_cast<int>(file_res->value);
     std::string path = file_res->path;
     if(fd >= 0) {
-        ::close(fd);
+        close_fd(fd);
     }
 
     if(path.empty()) {
