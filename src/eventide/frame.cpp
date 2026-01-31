@@ -3,6 +3,7 @@
 #include <cassert>
 #include <utility>
 
+#include "libuv.h"
 #include "eventide/loop.h"
 
 namespace eventide {
@@ -88,6 +89,7 @@ void async_node::cancel() {
         case NodeKind::Sleep:
         case NodeKind::SocketRead:
         case NodeKind::SocketWrite: {
+            uv_cancel(nullptr);
             break;
         }
     }

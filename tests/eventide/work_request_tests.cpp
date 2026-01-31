@@ -10,14 +10,14 @@ namespace eventide {
 namespace {
 
 task<error> wait_work(event_loop& loop, std::atomic<int>& flag) {
-    auto ec = co_await work_request::queue(loop, [&]() { flag.fetch_add(1); });
+    auto ec = co_await queue(loop, [&]() { flag.fetch_add(1); });
     event_loop::current()->stop();
     co_return ec;
 }
 
 task<error>
     wait_work_target(event_loop& loop, std::atomic<int>& flag, std::atomic<int>& done, int target) {
-    auto ec = co_await work_request::queue(loop, [&]() { flag.fetch_add(1); });
+    auto ec = co_await queue(loop, [&]() { flag.fetch_add(1); });
     if(done.fetch_add(1) + 1 == target) {
         event_loop::current()->stop();
     }

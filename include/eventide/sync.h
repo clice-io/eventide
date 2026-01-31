@@ -25,8 +25,9 @@ public:
         }
 
         template <typename Promise>
-        auto await_suspend(std::coroutine_handle<Promise> awaiter,
-                           std::source_location location = std::source_location::current()) noexcept {
+        auto await_suspend(
+            std::coroutine_handle<Promise> awaiter,
+            std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
             return link_continuation(&awaiter.promise(), location);
         }
@@ -65,7 +66,8 @@ private:
 
 class semaphore : public shared_resource {
 public:
-    explicit semaphore(std::ptrdiff_t initial = 0) : shared_resource(async_node::NodeKind::Semaphore) {
+    explicit semaphore(std::ptrdiff_t initial = 0) :
+        shared_resource(async_node::NodeKind::Semaphore) {
         assert(initial >= 0 && "semaphore initial count must be non-negative");
         count = initial;
     }
@@ -82,8 +84,9 @@ public:
         }
 
         template <typename Promise>
-        auto await_suspend(std::coroutine_handle<Promise> awaiter,
-                           std::source_location location = std::source_location::current()) noexcept {
+        auto await_suspend(
+            std::coroutine_handle<Promise> awaiter,
+            std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
             return link_continuation(&awaiter.promise(), location);
         }
@@ -142,8 +145,9 @@ public:
         }
 
         template <typename Promise>
-        auto await_suspend(std::coroutine_handle<Promise> awaiter,
-                           std::source_location location = std::source_location::current()) noexcept {
+        auto await_suspend(
+            std::coroutine_handle<Promise> awaiter,
+            std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
             return link_continuation(&awaiter.promise(), location);
         }
@@ -191,8 +195,9 @@ public:
         }
 
         template <typename Promise>
-        auto await_suspend(std::coroutine_handle<Promise> awaiter,
-                           std::source_location location = std::source_location::current()) noexcept {
+        auto await_suspend(
+            std::coroutine_handle<Promise> awaiter,
+            std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
             return link_continuation(&awaiter.promise(), location);
         }
