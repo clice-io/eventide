@@ -159,7 +159,24 @@ private:
     async_node* awaitee = nullptr;
 };
 
-class waiter_link;
+class shared_resource;
+
+class waiter_link : public transient_node {
+public:
+    friend class async_node;
+    friend class shared_resource;
+
+    explicit waiter_link(NodeKind k) : transient_node(k) {}
+
+protected:
+    shared_resource* resource = nullptr;
+
+    waiter_link* prev = nullptr;
+
+    waiter_link* next = nullptr;
+
+    async_node* awaiter = nullptr;
+};
 
 class shared_resource : public stable_node {
 public:
@@ -182,6 +199,43 @@ public:
 
     void remove(waiter_link* link);
 
+protected:
+    bool has_waiters() const noexcept {
+        return head != nullptr;
+    }
+
+    waiter_link* pop_waiter() noexcept {
+        auto* link = head;
+        if(link) {
+            remove(link);
+        }
+        return link;
+    }
+
+    template <typename Fn>
+    void drain_waiters(Fn&& fn) {
+        auto* cur = head;
+        while(cur) {
+            auto* next = cur->next;
+            remove(cur);
+            fn(cur);
+            cur = next;
+        }
+    }
+
+    bool resume_waiter(waiter_link* link) noexcept {
+        if(!link) {
+            return false;
+        }
+        auto* awaiting = link->awaiter;
+        link->awaiter = nullptr;
+        if(!awaiting || awaiting->is_cancelled()) {
+            return false;
+        }
+        awaiting->resume();
+        return true;
+    }
+
 private:
     std::uint32_t ref_count = 0;
 
@@ -190,23 +244,6 @@ private:
     waiter_link* tail = nullptr;
 
     async_node* awaitee = nullptr;
-};
-
-class waiter_link : public transient_node {
-public:
-    friend class async_node;
-    friend class shared_resource;
-
-    explicit waiter_link(NodeKind k) : transient_node(k) {}
-
-protected:
-    shared_resource* resource = nullptr;
-
-    waiter_link* prev = nullptr;
-
-    waiter_link* next = nullptr;
-
-    async_node* awaiter = nullptr;
 };
 
 class aggregate_op : public transient_node {

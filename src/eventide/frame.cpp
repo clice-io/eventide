@@ -147,7 +147,11 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
         }
 
         case NodeKind::MutexWaiter:
-        case NodeKind::EventWaiter:
+        case NodeKind::EventWaiter: {
+            auto self = static_cast<waiter_link*>(this);
+            self->awaiter = awaiter;
+            return std::noop_coroutine();
+        }
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
         case NodeKind::Scope:
