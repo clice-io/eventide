@@ -129,6 +129,46 @@ task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     co_return data;
 }
 
+task<result<std::string>> accept_and_read_once(tcp_socket::acceptor acc, std::atomic<int>& done) {
+    auto conn_res = co_await acc.accept();
+    if(!conn_res.has_value()) {
+        if(done.fetch_add(1) + 1 == 2) {
+            event_loop::current().stop();
+        }
+        co_return std::unexpected(conn_res.error());
+    }
+
+    auto conn = std::move(*conn_res);
+    auto data = co_await conn.read();
+
+    if(done.fetch_add(1) + 1 == 2) {
+        event_loop::current().stop();
+    }
+    co_return data;
+}
+
+task<error> connect_and_send(std::string_view host,
+                             int port,
+                             std::string_view payload,
+                             std::atomic<int>& done) {
+    auto conn_res = co_await tcp_socket::connect(host, port);
+    if(!conn_res.has_value()) {
+        if(done.fetch_add(1) + 1 == 2) {
+            event_loop::current().stop();
+        }
+        co_return conn_res.error();
+    }
+
+    auto conn = std::move(*conn_res);
+    std::span<const char> data(payload.data(), payload.size());
+    co_await conn.write(data);
+
+    if(done.fetch_add(1) + 1 == 2) {
+        event_loop::current().stop();
+    }
+    co_return error{};
+}
+
 task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, std::atomic<int>& done) {
     auto res = co_await acc.accept();
     if(done.fetch_add(1) + 1 == 2) {
@@ -235,6 +275,29 @@ TEST_CASE(accept_already_waiting) {
     if(!second_res.has_value()) {
         EXPECT_EQ(second_res.error().value(), error::connection_already_in_progress.value());
     }
+}
+
+TEST_CASE(connect_and_write) {
+    int port = pick_free_port();
+    ASSERT_TRUE(port > 0);
+
+    event_loop loop;
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, 0, 128, loop);
+    ASSERT_TRUE(acc_res.has_value());
+
+    std::atomic<int> done{0};
+    auto server = accept_and_read_once(std::move(*acc_res), done);
+    auto client = connect_and_send("127.0.0.1", port, "eventide-tcp-connect", done);
+
+    loop.schedule(server);
+    loop.schedule(client);
+    loop.run();
+
+    auto server_res = server.result();
+    auto client_res = client.result();
+    EXPECT_TRUE(server_res.has_value());
+    EXPECT_EQ(*server_res, "eventide-tcp-connect");
+    EXPECT_FALSE(static_cast<bool>(client_res));
 }
 
 };  // TEST_SUITE(tcp)

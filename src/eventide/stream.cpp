@@ -399,6 +399,89 @@ struct tcp_accept_await : system_op {
     }
 };
 
+struct tcp_connect_await : system_op {
+    using promise_t = task<result<tcp_socket>>::promise_type;
+
+    std::unique_ptr<stream::Self, void (*)(void*)> state;
+    uv_connect_t req{};
+    sockaddr_storage addr{};
+    result<tcp_socket> outcome = std::unexpected(error());
+    bool ready = true;
+
+    tcp_connect_await(std::unique_ptr<stream::Self, void (*)(void*)> state,
+                      std::string_view host,
+                      int port) : state(std::move(state)) {
+        action = &on_cancel;
+
+        std::string host_storage(host);
+        auto build_addr = [&](auto& out, auto fn) -> int {
+            return fn(host_storage.c_str(), port, &out);
+        };
+
+        if(build_addr(*reinterpret_cast<sockaddr_in6*>(&addr), uv_ip6_addr) == 0) {
+            return;
+        }
+
+        if(build_addr(*reinterpret_cast<sockaddr_in*>(&addr), uv_ip4_addr) == 0) {
+            return;
+        }
+
+        ready = false;
+        outcome = std::unexpected(error::invalid_argument);
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* aw = static_cast<tcp_connect_await*>(op);
+        uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
+    }
+
+    static void on_connect(uv_connect_t* req, int status) {
+        auto* aw = static_cast<tcp_connect_await*>(req->data);
+        if(!aw) {
+            return;
+        }
+
+        if(status < 0) {
+            aw->outcome = std::unexpected(error(status));
+        } else if(aw->state) {
+            aw->outcome = tcp_socket(aw->state.release());
+        } else {
+            aw->outcome = std::unexpected(error::invalid_argument);
+        }
+
+        aw->complete();
+    }
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        if(!state || !ready) {
+            return waiting;
+        }
+
+        req.data = this;
+
+        int err = uv_tcp_connect(&req,
+                                 state->as<uv_tcp_t>(),
+                                 reinterpret_cast<const sockaddr*>(&addr),
+                                 on_connect);
+        if(err != 0) {
+            outcome = std::unexpected(error(err));
+            return waiting;
+        }
+
+        return link_continuation(&waiting.promise(), location);
+    }
+
+    result<tcp_socket> await_resume() noexcept {
+        return std::move(outcome);
+    }
+};
+
 }  // namespace
 
 stream::stream() noexcept : self(nullptr, nullptr) {}
@@ -593,6 +676,20 @@ result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
     }
 
     return tcp_socket(state.release());
+}
+
+task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, event_loop& loop) {
+    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
+    auto handle = state->as<uv_tcp_t>();
+
+    int err = uv_tcp_init(static_cast<uv_loop_t*>(loop.handle()), handle);
+    if(err != 0) {
+        co_return std::unexpected(error(err));
+    }
+
+    state->init_handle();
+
+    co_return co_await tcp_connect_await{std::move(state), host, port};
 }
 
 static int start_tcp_listen(tcp_socket::acceptor& acc,

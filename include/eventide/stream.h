@@ -107,6 +107,10 @@ public:
 
     static result<tcp_socket> open(int fd, event_loop& loop = event_loop::current());
 
+    static task<result<tcp_socket>> connect(std::string_view host,
+                                            int port,
+                                            event_loop& loop = event_loop::current());
+
     static result<acceptor> listen(std::string_view host,
                                    int port,
                                    unsigned int flags = 0,
