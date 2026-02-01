@@ -10,14 +10,13 @@
 #include <vector>
 
 #include "error.h"
-#include "ringbuffer.h"
 #include "task.h"
 
 namespace eventide {
 
 class event_loop;
 
-template <typename StreamT>
+template <typename Stream>
 class acceptor;
 
 class stream {
@@ -35,6 +34,9 @@ public:
     struct Self;
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
+
+    void* handle() noexcept;
+    const void* handle() const noexcept;
 
     task<std::string> read();
 
@@ -67,12 +69,12 @@ public:
     task<result<Stream>> accept();
 
 private:
+    friend class pipe;
+    friend class tcp_socket;
+
     explicit acceptor(Self* state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
-
-    friend class pipe;
-    friend class tcp_socket;
 };
 
 class pipe : public stream {
@@ -88,17 +90,16 @@ public:
     explicit pipe(Self* state) noexcept;
 
 private:
-    static result<pipe> create(event_loop& loop);
-
-    void* native_handle() noexcept;
-    const void* native_handle() const noexcept;
-
     friend class process;
+
+    static result<pipe> create(event_loop& loop);
 };
 
 class tcp_socket : public stream {
 public:
     tcp_socket() noexcept = default;
+
+    explicit tcp_socket(Self* state) noexcept;
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
@@ -109,10 +110,6 @@ public:
                                    int port,
                                    unsigned int flags = 0,
                                    int backlog = 128);
-
-    explicit tcp_socket(Self* state) noexcept;
-
-private:
 };
 
 class console : public stream {

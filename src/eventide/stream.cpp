@@ -1,15 +1,18 @@
 #include "eventide/stream.h"
 
+#include <array>
+#include <cassert>
+#include <cstddef>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "libuv.h"
+#include "ringbuffer.h"
 #include "eventide/loop.h"
 
 namespace eventide {
-
-namespace detail {
 
 constexpr std::size_t max_size(std::size_t a, std::size_t b) {
     return a > b ? a : b;
@@ -21,13 +24,14 @@ constexpr std::size_t stream_handle_size =
 constexpr std::size_t stream_handle_align =
     max_size(max_size(alignof(uv_pipe_t), alignof(uv_tcp_t)), alignof(uv_tty_t));
 
-using stream_handle_storage = std::aligned_storage_t<stream_handle_size, stream_handle_align>;
+struct alignas(stream_handle_align) stream_handle_storage {
+    std::array<std::byte, stream_handle_size> bytes{};
+};
 
-}  // namespace detail
-
-struct stream::Self : uv_handle<stream::Self, detail::stream_handle_storage> {
-    detail::stream_handle_storage handle{};
+struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
+    stream_handle_storage handle{};
     async_node* reader = nullptr;
+    async_node* writer = nullptr;
     ring_buffer buffer;
 
     template <typename T>
@@ -47,8 +51,8 @@ struct stream::Self : uv_handle<stream::Self, detail::stream_handle_storage> {
 };
 
 template <typename Stream>
-struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, detail::stream_handle_storage> {
-    detail::stream_handle_storage handle{};
+struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, stream_handle_storage> {
+    stream_handle_storage handle{};
     async_node* waiter = nullptr;
     result<Stream>* active = nullptr;
     std::deque<result<Stream>> pending;
@@ -150,6 +154,72 @@ struct stream_read_await : system_op {
     }
 
     void await_resume() noexcept {}
+};
+
+struct stream_write_await : system_op {
+    using promise_t = task<>::promise_type;
+
+    stream::Self* self;
+    std::vector<char> storage;
+    uv_write_t req{};
+
+    stream_write_await(stream::Self* state, std::span<const char> data) :
+        system_op(async_node::NodeKind::SystemIO), self(state), storage(data.begin(), data.end()) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* aw = static_cast<stream_write_await*>(op);
+        if(aw->self) {
+            uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
+            aw->self->writer = nullptr;
+        }
+        aw->system_op::awaiter = nullptr;
+    }
+
+    static void on_write(uv_write_t* req, int) {
+        auto* aw = static_cast<stream_write_await*>(req->data);
+        if(!aw || !aw->self) {
+            return;
+        }
+
+        if(aw->self->writer) {
+            auto w = aw->self->writer;
+            aw->self->writer = nullptr;
+            w->resume();
+        }
+    }
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        if(!self) {
+            return waiting;
+        }
+
+        self->writer = waiting ? &waiting.promise() : nullptr;
+        req.data = this;
+
+        uv_buf_t buf = uv_buf_init(storage.empty() ? nullptr : storage.data(),
+                                   static_cast<unsigned>(storage.size()));
+        int err = uv_write(&req, self->as<uv_stream_t>(), &buf, 1, on_write);
+        if(err != 0) {
+            self->writer = nullptr;
+            return waiting;
+        }
+
+        return link_continuation(&waiting.promise(), location);
+    }
+
+    void await_resume() noexcept {
+        if(self) {
+            self->writer = nullptr;
+        }
+    }
 };
 
 struct pipe_accept_await : system_op {
@@ -338,13 +408,11 @@ struct tcp_accept_await : system_op {
 
 stream::stream() noexcept : self(nullptr, nullptr) {}
 
-stream::stream(Self* state) noexcept : self(state, Self::destroy) {}
-
-stream::~stream() = default;
-
 stream::stream(stream&& other) noexcept = default;
 
 stream& stream::operator=(stream&& other) noexcept = default;
+
+stream::~stream() = default;
 
 stream::Self* stream::operator->() noexcept {
     return self.get();
@@ -352,6 +420,14 @@ stream::Self* stream::operator->() noexcept {
 
 const stream::Self* stream::operator->() const noexcept {
     return self.get();
+}
+
+void* stream::handle() noexcept {
+    return self ? &self->handle : nullptr;
+}
+
+const void* stream::handle() const noexcept {
+    return self ? &self->handle : nullptr;
 }
 
 task<std::string> stream::read() {
@@ -373,24 +449,31 @@ task<std::string> stream::read() {
 }
 
 task<> stream::write(std::span<const char> data) {
-    (void)data;
-    return task<>();
+    if(!self || !self->initialized() || data.empty()) {
+        co_return;
+    }
+
+    if(self->writer != nullptr) {
+        assert(false && "stream::write supports a single writer at a time");
+        co_return;
+    }
+
+    co_await stream_write_await{self.get(), data};
 }
+
+stream::stream(Self* state) noexcept : self(state, Self::destroy) {}
 
 template <typename Stream>
 acceptor<Stream>::acceptor() noexcept : self(nullptr, nullptr) {}
-
-template <typename Stream>
-acceptor<Stream>::acceptor(Self* state) noexcept : self(state, Self::destroy) {}
-
-template <typename Stream>
-acceptor<Stream>::~acceptor() = default;
 
 template <typename Stream>
 acceptor<Stream>::acceptor(acceptor&& other) noexcept = default;
 
 template <typename Stream>
 acceptor<Stream>& acceptor<Stream>::operator=(acceptor&& other) noexcept = default;
+
+template <typename Stream>
+acceptor<Stream>::~acceptor() = default;
 
 template <typename Stream>
 typename acceptor<Stream>::Self* acceptor<Stream>::operator->() noexcept {
@@ -425,41 +508,11 @@ task<result<Stream>> acceptor<Stream>::accept() {
     }
 }
 
+template <typename Stream>
+acceptor<Stream>::acceptor(Self* state) noexcept : self(state, Self::destroy) {}
+
 template class acceptor<pipe>;
 template class acceptor<tcp_socket>;
-
-pipe::pipe(Self* state) noexcept : stream(state) {}
-
-tcp_socket::tcp_socket(Self* state) noexcept : stream(state) {}
-
-console::console(Self* state) noexcept : stream(state) {}
-
-void* pipe::native_handle() noexcept {
-    if(!self) {
-        return nullptr;
-    }
-    return self->as<uv_pipe_t>();
-}
-
-const void* pipe::native_handle() const noexcept {
-    if(!self) {
-        return nullptr;
-    }
-    return self->as<uv_pipe_t>();
-}
-
-result<pipe> pipe::create(event_loop& loop) {
-    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto* handle = state->as<uv_pipe_t>();
-    int errc = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), handle, 0);
-    if(errc != 0) {
-        return std::unexpected(error(errc));
-    }
-
-    state->mark_initialized();
-    state->reset_data();
-    return pipe(state.release());
-}
 
 result<pipe> pipe::open(event_loop& loop, int fd) {
     auto pipe_res = create(loop);
@@ -467,7 +520,7 @@ result<pipe> pipe::open(event_loop& loop, int fd) {
         return std::unexpected(pipe_res.error());
     }
 
-    auto handle = static_cast<uv_pipe_t*>(pipe_res->native_handle());
+    auto handle = static_cast<uv_pipe_t*>(pipe_res->handle());
     int errc = uv_pipe_open(handle, fd);
     if(errc != 0) {
         return std::unexpected(error(errc));
@@ -512,6 +565,23 @@ result<pipe::acceptor> pipe::listen(event_loop& loop, const char* name, int back
 
     return acc;
 }
+
+pipe::pipe(Self* state) noexcept : stream(state) {}
+
+result<pipe> pipe::create(event_loop& loop) {
+    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
+    auto* handle = state->as<uv_pipe_t>();
+    int errc = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), handle, 0);
+    if(errc != 0) {
+        return std::unexpected(error(errc));
+    }
+
+    state->mark_initialized();
+    state->reset_data();
+    return pipe(state.release());
+}
+
+tcp_socket::tcp_socket(Self* state) noexcept : stream(state) {}
 
 result<tcp_socket> tcp_socket::open(event_loop& loop, int fd) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
@@ -609,5 +679,7 @@ result<console> console::open(event_loop& loop, int fd) {
     state->reset_data();
     return console(state.release());
 }
+
+console::console(Self* state) noexcept : stream(state) {}
 
 }  // namespace eventide

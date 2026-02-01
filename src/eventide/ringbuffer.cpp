@@ -1,4 +1,4 @@
-#include "eventide/ringbuffer.h"
+#include "ringbuffer.h"
 
 #include <algorithm>
 #include <cstring>

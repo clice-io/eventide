@@ -165,12 +165,10 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
                 dst.data.fd = cfg.descriptor;
                 break;
             case stdio::kind::pipe: {
-                auto pipe_res = pipe::create(loop);
-                if(!pipe_res.has_value()) {
-                    return std::unexpected(pipe_res.error());
+                auto pipe = pipe::create(loop);
+                if(!pipe.has_value()) {
+                    return std::unexpected(pipe.error());
                 }
-
-                auto* handle = static_cast<uv_pipe_t*>(pipe_res->native_handle());
 
                 dst.flags = UV_CREATE_PIPE;
                 if(cfg.readable) {
@@ -181,9 +179,10 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
                     dst.flags =
                         static_cast<uv_stdio_flags>(dst.flags | static_cast<int>(UV_WRITABLE_PIPE));
                 }
-                dst.data.stream = reinterpret_cast<uv_stream_t*>(handle);
 
-                created_pipes[i] = std::move(*pipe_res);
+                dst.data.stream = static_cast<uv_stream_t*>(pipe->handle());
+
+                created_pipes[i] = std::move(*pipe);
                 break;
             }
         }

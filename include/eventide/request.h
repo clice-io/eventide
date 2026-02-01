@@ -14,9 +14,6 @@ namespace eventide {
 
 class event_loop;
 
-template <typename Tag>
-struct awaiter;
-
 using work_fn = std::function<void()>;
 
 task<error> queue(event_loop& loop, work_fn fn);
