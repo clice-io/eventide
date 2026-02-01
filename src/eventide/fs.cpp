@@ -8,7 +8,7 @@ namespace eventide {
 
 struct fs_event::Self : uv_handle<fs_event::Self, uv_fs_event_t> {
     uv_fs_event_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     result<fs_event::change>* active = nullptr;
     std::optional<fs_event::change> pending;
 
@@ -35,7 +35,7 @@ struct fs_event_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
@@ -52,7 +52,7 @@ struct fs_event_await : system_op {
                 watcher->waiter = nullptr;
                 watcher->active = nullptr;
 
-                w->resume();
+                w->complete();
             } else {
                 if(value.has_value()) {
                     watcher->pending = std::move(value.value());
@@ -86,7 +86,7 @@ struct fs_event_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         self->active = &outcome;
         return link_continuation(&waiting.promise(), location);
     }

@@ -18,7 +18,6 @@ struct work_op : system_op {
     uv_work_t req{};
     work_fn fn;
     error result{};
-    promise_t* waiter = nullptr;
 
     work_op() : system_op(async_node::NodeKind::SystemIO) {
         action = &on_cancel;
@@ -27,8 +26,6 @@ struct work_op : system_op {
     static void on_cancel(system_op* op) {
         auto* self = static_cast<work_op*>(op);
         uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
-        self->waiter = nullptr;
-        self->awaiter = nullptr;
     }
 
     bool await_ready() const noexcept {
@@ -38,7 +35,6 @@ struct work_op : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        waiter = waiting ? &waiting.promise() : nullptr;
         return link_continuation(&waiting.promise(), location);
     }
 
@@ -54,7 +50,6 @@ struct fs_op : system_op {
     uv_fs_t req = {};
     std::function<Result(uv_fs_t&)> populate;
     result<Result> out = std::unexpected(error());
-    promise_t* waiter = nullptr;
 
     fs_op() : system_op(async_node::NodeKind::SystemIO) {
         action = &on_cancel;
@@ -63,8 +58,6 @@ struct fs_op : system_op {
     static void on_cancel(system_op* op) {
         auto* self = static_cast<fs_op*>(op);
         uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
-        self->waiter = nullptr;
-        self->awaiter = nullptr;
     }
 
     bool await_ready() const noexcept {
@@ -74,7 +67,6 @@ struct fs_op : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        waiter = waiting ? &waiting.promise() : nullptr;
         return link_continuation(&waiting.promise(), location);
     }
 
@@ -103,9 +95,7 @@ task<error> queue(event_loop& loop, work_fn fn) {
         }
 
         holder->result = status < 0 ? error(status) : error();
-        if(holder->waiter) {
-            holder->waiter->resume();
-        }
+        holder->complete();
     };
 
     op.result.clear();
@@ -181,9 +171,7 @@ static task<result<Result>> run_fs(event_loop& loop, Submit submit, Populate pop
 
         uv_fs_req_cleanup(req);
 
-        if(h->waiter) {
-            h->waiter->resume();
-        }
+        h->complete();
     };
 
     op.req.data = &op;

@@ -111,6 +111,21 @@ void async_node::resume() {
     }
 }
 
+void system_op::complete() noexcept {
+    if(state != Cancelled) {
+        state = Finished;
+    }
+    auto* parent = awaiter;
+    awaiter = nullptr;
+    if(!parent) {
+        return;
+    }
+    auto next = parent->handle_subtask_result(this);
+    if(next) {
+        next.resume();
+    }
+}
+
 std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
                                                       std::source_location location) {
     this->location = location;

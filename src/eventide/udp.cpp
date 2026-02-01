@@ -17,13 +17,13 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr);
 
 struct udp::Self : uv_handle<udp::Self, uv_udp_t> {
     uv_udp_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     result<udp::recv_result>* active = nullptr;
     std::deque<result<udp::recv_result>> pending;
     std::vector<char> buffer;
     bool receiving = false;
 
-    async_node* send_waiter = nullptr;
+    system_op* send_waiter = nullptr;
     error* send_active = nullptr;
     std::optional<error> send_pending;
     bool send_inflight = false;
@@ -55,7 +55,7 @@ struct udp_recv_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -88,7 +88,7 @@ struct udp_recv_await : system_op {
                 u->waiter = nullptr;
                 u->active = nullptr;
 
-                w->resume();
+                w->complete();
             } else {
                 u->pending.push_back(std::move(value));
             }
@@ -125,7 +125,7 @@ struct udp_recv_await : system_op {
             return waiting;
         }
 
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         self->active = &outcome;
 
         if(!self->receiving) {
@@ -170,10 +170,7 @@ struct udp_send_await : system_op {
         auto* aw = static_cast<udp_send_await*>(op);
         if(aw->self) {
             uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
-            aw->self->send_waiter = nullptr;
-            aw->self->send_active = nullptr;
         }
-        aw->awaiter = nullptr;
     }
 
     static void on_send(uv_udp_send_t* req, int status) {
@@ -194,7 +191,7 @@ struct udp_send_await : system_op {
             u->send_waiter = nullptr;
             u->send_active = nullptr;
 
-            w->resume();
+            w->complete();
         } else {
             u->send_pending = ec;
         }
@@ -222,7 +219,7 @@ struct udp_send_await : system_op {
             return waiting;
         }
 
-        self->send_waiter = waiting ? &waiting.promise() : nullptr;
+        self->send_waiter = this;
         self->send_active = &result;
 
         uv_buf_t buf = uv_buf_init(storage.empty() ? nullptr : storage.data(),

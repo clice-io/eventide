@@ -8,7 +8,7 @@ namespace eventide {
 
 struct process::Self : uv_handle<process::Self, uv_process_t> {
     uv_process_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     process::exit_status* active = nullptr;
     std::optional<process::exit_status> completed;
 
@@ -35,7 +35,7 @@ struct process_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void notify(process::Self& self, process::exit_status status) {
@@ -48,7 +48,7 @@ struct process_await : system_op {
             self.waiter = nullptr;
             self.active = nullptr;
 
-            w->resume();
+            w->complete();
         }
     }
 
@@ -62,7 +62,7 @@ struct process_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         self->active = &result;
         return link_continuation(&waiting.promise(), location);
     }

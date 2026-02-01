@@ -30,8 +30,8 @@ struct alignas(stream_handle_align) stream_handle_storage {
 
 struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
     stream_handle_storage handle{};
-    async_node* reader = nullptr;
-    async_node* writer = nullptr;
+    system_op* reader = nullptr;
+    system_op* writer = nullptr;
     ring_buffer buffer;
 
     template <typename T>
@@ -54,7 +54,7 @@ struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
 template <typename Stream>
 struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, stream_handle_storage> {
     stream_handle_storage handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     result<Stream>* active = nullptr;
     std::deque<result<Stream>> pending;
 
@@ -93,7 +93,7 @@ struct stream_read_await : system_op {
             }
             aw->self->reader = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -121,7 +121,7 @@ struct stream_read_await : system_op {
                 if(s->reader) {
                     auto reader = s->reader;
                     s->reader = nullptr;
-                    reader->resume();
+                    reader->complete();
                 }
             }
             return;
@@ -132,7 +132,7 @@ struct stream_read_await : system_op {
         if(s->reader) {
             auto reader = s->reader;
             s->reader = nullptr;
-            reader->resume();
+            reader->complete();
         }
     }
 
@@ -148,7 +148,7 @@ struct stream_read_await : system_op {
             return waiting;
         }
 
-        self->reader = &waiting.promise();
+        self->reader = this;
         int err = uv_read_start(self->as<uv_stream_t>(), on_alloc, on_read);
         (void)err;
         return link_continuation(&waiting.promise(), location);
@@ -173,9 +173,7 @@ struct stream_write_await : system_op {
         auto* aw = static_cast<stream_write_await*>(op);
         if(aw->self) {
             uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
-            aw->self->writer = nullptr;
         }
-        aw->awaiter = nullptr;
     }
 
     static void on_write(uv_write_t* req, int) {
@@ -187,7 +185,7 @@ struct stream_write_await : system_op {
         if(aw->self->writer) {
             auto w = aw->self->writer;
             aw->self->writer = nullptr;
-            w->resume();
+            w->complete();
         }
     }
 
@@ -202,7 +200,7 @@ struct stream_write_await : system_op {
             return waiting;
         }
 
-        self->writer = waiting ? &waiting.promise() : nullptr;
+        self->writer = this;
         req.data = this;
 
         uv_buf_t buf = uv_buf_init(storage.empty() ? nullptr : storage.data(),
@@ -239,7 +237,7 @@ struct pipe_accept_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_connection_cb(uv_stream_t* server, int status) {
@@ -260,7 +258,7 @@ struct pipe_accept_await : system_op {
                 listener.waiter = nullptr;
                 listener.active = nullptr;
 
-                w->resume();
+                w->complete();
             } else {
                 listener.pending.push_back(std::move(value));
             }
@@ -297,7 +295,7 @@ struct pipe_accept_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         self->active = &outcome;
         return link_continuation(&waiting.promise(), location);
     }
@@ -327,7 +325,7 @@ struct tcp_accept_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_connection_cb(uv_stream_t* server, int status) {
@@ -350,7 +348,7 @@ struct tcp_accept_await : system_op {
                 listener.waiter = nullptr;
                 listener.active = nullptr;
 
-                w->resume();
+                w->complete();
             } else {
                 listener.pending.push_back(std::move(value));
             }
@@ -387,7 +385,7 @@ struct tcp_accept_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         self->active = &outcome;
         return link_continuation(&waiting.promise(), location);
     }

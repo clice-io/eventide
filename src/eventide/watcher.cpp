@@ -12,7 +12,7 @@ namespace eventide {
 
 struct timer::Self : uv_handle<timer::Self, uv_timer_t> {
     uv_timer_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     int pending = 0;
 
     Self() {
@@ -22,7 +22,7 @@ struct timer::Self : uv_handle<timer::Self, uv_timer_t> {
 
 struct idle::Self : uv_handle<idle::Self, uv_idle_t> {
     uv_idle_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     int pending = 0;
 
     Self() {
@@ -32,7 +32,7 @@ struct idle::Self : uv_handle<idle::Self, uv_idle_t> {
 
 struct prepare::Self : uv_handle<prepare::Self, uv_prepare_t> {
     uv_prepare_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     int pending = 0;
 
     Self() {
@@ -42,7 +42,7 @@ struct prepare::Self : uv_handle<prepare::Self, uv_prepare_t> {
 
 struct check::Self : uv_handle<check::Self, uv_check_t> {
     uv_check_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     int pending = 0;
 
     Self() {
@@ -52,7 +52,7 @@ struct check::Self : uv_handle<check::Self, uv_check_t> {
 
 struct signal::Self : uv_handle<signal::Self, uv_signal_t> {
     uv_signal_t handle{};
-    async_node* waiter = nullptr;
+    system_op* waiter = nullptr;
     error* active = nullptr;
     int pending = 0;
 
@@ -77,7 +77,7 @@ struct timer_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_fire(uv_timer_t* handle) {
@@ -89,7 +89,7 @@ struct timer_await : system_op {
         if(watcher->waiter) {
             auto w = watcher->waiter;
             watcher->waiter = nullptr;
-            w->resume();
+            w->complete();
         } else {
             watcher->pending += 1;
         }
@@ -105,7 +105,7 @@ struct timer_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         return link_continuation(&waiting.promise(), location);
     }
 
@@ -134,7 +134,7 @@ struct idle_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_fire(uv_idle_t* handle) {
@@ -146,7 +146,7 @@ struct idle_await : system_op {
         if(watcher->waiter) {
             auto w = watcher->waiter;
             watcher->waiter = nullptr;
-            w->resume();
+            w->complete();
         } else {
             watcher->pending += 1;
         }
@@ -162,7 +162,7 @@ struct idle_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         return link_continuation(&waiting.promise(), location);
     }
 
@@ -191,7 +191,7 @@ struct prepare_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_fire(uv_prepare_t* handle) {
@@ -203,7 +203,7 @@ struct prepare_await : system_op {
         if(watcher->waiter) {
             auto w = watcher->waiter;
             watcher->waiter = nullptr;
-            w->resume();
+            w->complete();
         } else {
             watcher->pending += 1;
         }
@@ -219,7 +219,7 @@ struct prepare_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         return link_continuation(&waiting.promise(), location);
     }
 
@@ -248,7 +248,7 @@ struct check_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_fire(uv_check_t* handle) {
@@ -260,7 +260,7 @@ struct check_await : system_op {
         if(watcher->waiter) {
             auto w = watcher->waiter;
             watcher->waiter = nullptr;
-            w->resume();
+            w->complete();
         } else {
             watcher->pending += 1;
         }
@@ -276,7 +276,7 @@ struct check_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         return link_continuation(&waiting.promise(), location);
     }
 
@@ -307,7 +307,7 @@ struct signal_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->awaiter = nullptr;
+        aw->complete();
     }
 
     static void on_fire(uv_signal_t* handle) {
@@ -323,7 +323,7 @@ struct signal_await : system_op {
             watcher->waiter = nullptr;
             watcher->active = nullptr;
 
-            w->resume();
+            w->complete();
         } else {
             watcher->pending += 1;
         }
@@ -339,7 +339,7 @@ struct signal_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+        self->waiter = this;
         self->active = &result;
         return link_continuation(&waiting.promise(), location);
     }
