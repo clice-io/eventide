@@ -10,6 +10,7 @@
 namespace eventide {
 
 namespace detail {
+
 constexpr std::size_t max_size(std::size_t a, std::size_t b) {
     return a > b ? a : b;
 }
@@ -21,6 +22,7 @@ constexpr std::size_t stream_handle_align =
     max_size(max_size(alignof(uv_pipe_t), alignof(uv_tcp_t)), alignof(uv_tty_t));
 
 using stream_handle_storage = std::aligned_storage_t<stream_handle_size, stream_handle_align>;
+
 }  // namespace detail
 
 struct stream::Self : uv_handle<stream::Self, detail::stream_handle_storage> {
@@ -199,7 +201,8 @@ struct pipe_accept_await : system_op {
             return;
         }
 
-        std::unique_ptr<stream::Self, void (*)(void*)> state(new stream::Self(), stream::Self::destroy);
+        std::unique_ptr<stream::Self, void (*)(void*)> state(new stream::Self(),
+                                                             stream::Self::destroy);
         auto* handle = state->as<uv_pipe_t>();
         int err = uv_pipe_init(server->loop, handle, 0);
         if(err == 0) {
@@ -290,7 +293,8 @@ struct tcp_accept_await : system_op {
             return;
         }
 
-        std::unique_ptr<stream::Self, void (*)(void*)> state(new stream::Self(), stream::Self::destroy);
+        std::unique_ptr<stream::Self, void (*)(void*)> state(new stream::Self(),
+                                                             stream::Self::destroy);
         auto* handle = state->as<uv_tcp_t>();
         int err = uv_tcp_init(server->loop, handle);
         if(err == 0) {
@@ -493,7 +497,9 @@ static int start_pipe_listen(pipe::acceptor& acc, event_loop& loop, const char* 
         return err;
     }
 
-    err = uv_listen(reinterpret_cast<uv_stream_t*>(handle), backlog, pipe_accept_await::on_connection_cb);
+    err = uv_listen(reinterpret_cast<uv_stream_t*>(handle),
+                    backlog,
+                    pipe_accept_await::on_connection_cb);
     return err;
 }
 

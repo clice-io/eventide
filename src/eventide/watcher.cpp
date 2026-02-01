@@ -621,7 +621,8 @@ void check::start() {
 
     auto handle = &self->handle;
     handle->data = self.get();
-    [[maybe_unused]] int err = uv_check_start(handle, [](uv_check_t* h) { check_await::on_fire(h); });
+    [[maybe_unused]] int err =
+        uv_check_start(handle, [](uv_check_t* h) { check_await::on_fire(h); });
     // uv_check_start only fails for null callback; we always provide one.
     assert(err == 0 && "uv_check_start failed: callback null");
 }
@@ -693,7 +694,8 @@ error signal::start(int signum) {
 
     auto handle = &self->handle;
     handle->data = self.get();
-    int err = uv_signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
+    int err =
+        uv_signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
     if(err != 0) {
         return error(err);
     }

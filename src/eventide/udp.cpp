@@ -446,8 +446,7 @@ error udp::try_send(std::span<const char> data, std::string_view host, int port)
 
     uv_buf_t buf =
         uv_buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(data.size()));
-    int err =
-        uv_udp_try_send(&self->handle, &buf, 1, reinterpret_cast<const sockaddr*>(&storage));
+    int err = uv_udp_try_send(&self->handle, &buf, 1, reinterpret_cast<const sockaddr*>(&storage));
     if(err < 0) {
         return error(err);
     }
@@ -601,8 +600,7 @@ error udp::set_multicast_interface(std::string_view interface_addr) {
         return error::invalid_argument;
     }
 
-    int err =
-        uv_udp_set_multicast_interface(&self->handle, std::string(interface_addr).c_str());
+    int err = uv_udp_set_multicast_interface(&self->handle, std::string(interface_addr).c_str());
     if(err != 0) {
         return error(err);
     }

@@ -150,10 +150,6 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
     std::array<pipe, 3> created_pipes{};
     std::array<uv_stdio_container_t, 3> stdio{};
 
-    auto make_pipe = [&]() -> result<pipe> {
-        return pipe::create(loop);
-    };
-
     for(std::size_t i = 0; i < opts.streams.size(); ++i) {
         auto& cfg = opts.streams[i];
         auto& dst = stdio[i];
@@ -169,7 +165,7 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
                 dst.data.fd = cfg.descriptor;
                 break;
             case stdio::kind::pipe: {
-                auto pipe_res = make_pipe();
+                auto pipe_res = pipe::create(loop);
                 if(!pipe_res.has_value()) {
                     return std::unexpected(pipe_res.error());
                 }
