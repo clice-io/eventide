@@ -33,9 +33,7 @@ public:
         WhenAny,
         Scope,
 
-        Sleep,
-        SocketRead,
-        SocketWrite,
+        SystemIO,
     };
 
     enum Policy : uint8_t {
@@ -278,7 +276,13 @@ class system_op : public transient_node {
 protected:
     friend class async_node;
 
-    explicit system_op(NodeKind k) : transient_node(k) {}
+    using on_cancel = void (*)(system_op* self);
+
+    explicit system_op(NodeKind k = NodeKind::SystemIO) : transient_node(k) {}
+
+    on_cancel action = nullptr;
+
+    async_node* awaiter = nullptr;
 };
 
 struct transition_await {

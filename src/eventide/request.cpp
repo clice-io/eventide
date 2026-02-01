@@ -12,7 +12,7 @@ namespace eventide {
 
 namespace {
 
-struct work_op {
+struct work_op : system_op {
     using promise_t = task<error>::promise_type;
 
     uv_work_t req{};
@@ -20,13 +20,26 @@ struct work_op {
     error result{};
     promise_t* waiter = nullptr;
 
+    work_op() : system_op(async_node::NodeKind::SystemIO) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<work_op*>(op);
+        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+        self->waiter = nullptr;
+        self->system_op::awaiter = nullptr;
+    }
+
     bool await_ready() const noexcept {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
@@ -35,7 +48,7 @@ struct work_op {
 };
 
 template <typename Result>
-struct fs_op {
+struct fs_op : system_op {
     using promise_t = task<result<Result>>::promise_type;
 
     uv_fs_t req = {};
@@ -43,13 +56,26 @@ struct fs_op {
     result<Result> out = std::unexpected(error());
     promise_t* waiter = nullptr;
 
+    fs_op() : system_op(async_node::NodeKind::SystemIO) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<fs_op*>(op);
+        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+        self->waiter = nullptr;
+        self->system_op::awaiter = nullptr;
+    }
+
     bool await_ready() const noexcept {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     result<Result> await_resume() noexcept {

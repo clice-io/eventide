@@ -58,7 +58,7 @@ struct watcher_traits<signal_tag> {
 namespace eventide {
 
 template <typename Tag>
-struct awaiter {
+struct awaiter : system_op {
     using traits = watcher_traits<Tag>;
     using watcher_t = typename traits::watcher_type;
     using handle_t = typename traits::handle_type;
@@ -66,6 +66,20 @@ struct awaiter {
 
     watcher_t* self;
     error result{};
+
+    explicit awaiter(watcher_t* watcher) :
+        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+            self->self->active = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static void on_fire(handle_t* handle) {
         auto* watcher = static_cast<watcher_t*>(handle->data);
@@ -90,10 +104,12 @@ struct awaiter {
         return self->pending > 0;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
         self->active = &result;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
@@ -108,7 +124,7 @@ struct awaiter {
 };
 
 template <>
-struct awaiter<timer_tag> {
+struct awaiter<timer_tag> : system_op {
     using traits = watcher_traits<timer_tag>;
     using watcher_t = typename traits::watcher_type;
     using handle_t = typename traits::handle_type;
@@ -116,6 +132,19 @@ struct awaiter<timer_tag> {
 
     watcher_t* self;
 
+    explicit awaiter(watcher_t* watcher) :
+        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
+
     static void on_fire(handle_t* handle) {
         auto* watcher = static_cast<watcher_t*>(handle->data);
         if(watcher == nullptr) {
@@ -135,9 +164,11 @@ struct awaiter<timer_tag> {
         return self->pending > 0;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     void await_resume() noexcept {
@@ -150,7 +181,7 @@ struct awaiter<timer_tag> {
 };
 
 template <>
-struct awaiter<idle_tag> {
+struct awaiter<idle_tag> : system_op {
     using traits = watcher_traits<idle_tag>;
     using watcher_t = typename traits::watcher_type;
     using handle_t = typename traits::handle_type;
@@ -158,6 +189,19 @@ struct awaiter<idle_tag> {
 
     watcher_t* self;
 
+    explicit awaiter(watcher_t* watcher) :
+        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
+
     static void on_fire(handle_t* handle) {
         auto* watcher = static_cast<watcher_t*>(handle->data);
         if(watcher == nullptr) {
@@ -177,9 +221,11 @@ struct awaiter<idle_tag> {
         return self->pending > 0;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     void await_resume() noexcept {
@@ -192,7 +238,7 @@ struct awaiter<idle_tag> {
 };
 
 template <>
-struct awaiter<prepare_tag> {
+struct awaiter<prepare_tag> : system_op {
     using traits = watcher_traits<prepare_tag>;
     using watcher_t = typename traits::watcher_type;
     using handle_t = typename traits::handle_type;
@@ -200,6 +246,19 @@ struct awaiter<prepare_tag> {
 
     watcher_t* self;
 
+    explicit awaiter(watcher_t* watcher) :
+        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
+
     static void on_fire(handle_t* handle) {
         auto* watcher = static_cast<watcher_t*>(handle->data);
         if(watcher == nullptr) {
@@ -219,9 +278,11 @@ struct awaiter<prepare_tag> {
         return self->pending > 0;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     void await_resume() noexcept {
@@ -234,13 +295,26 @@ struct awaiter<prepare_tag> {
 };
 
 template <>
-struct awaiter<check_tag> {
+struct awaiter<check_tag> : system_op {
     using traits = watcher_traits<check_tag>;
     using watcher_t = typename traits::watcher_type;
     using handle_t = typename traits::handle_type;
     using promise_t = task<>::promise_type;
 
     watcher_t* self;
+
+    explicit awaiter(watcher_t* watcher) :
+        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static void on_fire(handle_t* handle) {
         auto* watcher = static_cast<watcher_t*>(handle->data);
@@ -261,9 +335,11 @@ struct awaiter<check_tag> {
         return self->pending > 0;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     void await_resume() noexcept {

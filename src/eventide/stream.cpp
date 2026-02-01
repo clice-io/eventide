@@ -21,8 +21,22 @@ struct tcp_acceptor_t;
 }  // namespace
 
 template <>
-struct awaiter<stream_read_tag> {
+struct awaiter<stream_read_tag> : system_op {
     stream& target;
+
+    explicit awaiter(stream& stream) : system_op(async_node::NodeKind::SystemIO), target(stream) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        auto* handle = self->target.as<uv_stream_t>();
+        if(handle) {
+            uv_read_stop(handle);
+        }
+        self->target.reader = nullptr;
+        self->system_op::awaiter = nullptr;
+    }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto s = static_cast<eventide::stream*>(handle->data);
@@ -69,11 +83,13 @@ struct awaiter<stream_read_tag> {
     }
 
     template <typename Promise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         target.reader = &waiting.promise();
         int err = uv_read_start(target.as<uv_stream_t>(), on_alloc, on_read);
         (void)err;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     void await_resume() noexcept {}
@@ -98,7 +114,7 @@ task<> stream::write(std::span<const char> data) {
 }
 
 template <typename tag>
-struct awaiter {
+struct awaiter : system_op {
     constexpr inline static bool is_pipe_v = std::is_same_v<tag, pipe_acceptor_t>;
     using stream_t = std::conditional_t<is_pipe_v, pipe, tcp_socket>;
     using handle_type = std::conditional_t<is_pipe_v, uv_pipe_t, uv_tcp_t>;
@@ -106,6 +122,20 @@ struct awaiter {
 
     acceptor<stream_t>* self;
     result<stream_t> outcome = std::unexpected(error());
+
+    explicit awaiter(acceptor<stream_t>* acceptor) :
+        system_op(async_node::NodeKind::SystemIO), self(acceptor) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+            self->self->active = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static int init_stream(stream_t& stream, uv_loop_t* loop) {
         if constexpr(is_pipe_v) {
@@ -165,10 +195,12 @@ struct awaiter {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
         self->active = &outcome;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     result<stream_t> await_resume() noexcept {

@@ -48,11 +48,24 @@ process& process::operator=(process&& other) noexcept {
 }
 
 template <>
-struct awaiter<process_wait_tag> {
+struct awaiter<process_wait_tag> : system_op {
     using promise_t = task<process::wait_result>::promise_type;
 
     process* self;
     process::exit_status result{};
+
+    explicit awaiter(process* proc) : system_op(async_node::NodeKind::SystemIO), self(proc) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+            self->self->active = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static void notify(process& proc, process::exit_status status) {
         proc.completed = status;
@@ -72,10 +85,12 @@ struct awaiter<process_wait_tag> {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
         self->active = &result;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     process::wait_result await_resume() noexcept {

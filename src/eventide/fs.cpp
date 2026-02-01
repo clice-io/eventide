@@ -13,11 +13,24 @@ struct fs_event_tag {};
 namespace eventide {
 
 template <>
-struct awaiter<fs_event_tag> {
+struct awaiter<fs_event_tag> : system_op {
     using promise_t = task<result<fs_event::change>>::promise_type;
 
     fs_event* self;
     result<fs_event::change> outcome = std::unexpected(error{});
+
+    explicit awaiter(fs_event* watcher) : system_op(async_node::NodeKind::SystemIO), self(watcher) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            self->self->waiter = nullptr;
+            self->self->active = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
         auto* watcher = static_cast<fs_event*>(handle->data);
@@ -61,10 +74,12 @@ struct awaiter<fs_event_tag> {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
         self->active = &outcome;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     result<fs_event::change> await_resume() noexcept {

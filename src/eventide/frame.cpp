@@ -86,10 +86,11 @@ void async_node::cancel() {
             break;
         }
 
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite: {
-            uv_cancel(nullptr);
+        case NodeKind::SystemIO: {
+            auto* self = static_cast<system_op*>(this);
+            if(self->action) {
+                self->action(self);
+            }
             break;
         }
     }
@@ -156,10 +157,12 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
         }
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::Scope:
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite: break;
+        case NodeKind::Scope: break;
+        case NodeKind::SystemIO: {
+            auto self = static_cast<system_op*>(this);
+            self->awaiter = awaiter;
+            return std::noop_coroutine();
+        }
     }
 
     std::abort();
@@ -211,9 +214,7 @@ std::coroutine_handle<> async_node::final_transition() {
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
         case NodeKind::Scope:
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite: break;
+        case NodeKind::SystemIO: break;
     }
 
     std::abort();
@@ -334,9 +335,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::Scope:
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite:
+        case NodeKind::SystemIO:
         default: {
             /// TODO:
             std::abort();

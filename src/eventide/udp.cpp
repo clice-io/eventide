@@ -104,11 +104,28 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
 }
 
 template <>
-struct awaiter<udp_recv_tag> {
+struct awaiter<udp_recv_tag> : system_op {
     using promise_t = task<result<udp::recv_result>>::promise_type;
 
     udp* self;
     result<udp::recv_result> outcome = std::unexpected(error{});
+
+    explicit awaiter(udp* socket) : system_op(async_node::NodeKind::SystemIO), self(socket) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            if(self->self->receiving) {
+                uv_udp_recv_stop(self->self->as<uv_udp_t>());
+                self->self->receiving = false;
+            }
+            self->self->waiter = nullptr;
+            self->self->active = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto* u = static_cast<udp*>(handle->data);
@@ -170,7 +187,9 @@ struct awaiter<udp_recv_tag> {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         self->waiter = waiting ? &waiting.promise() : nullptr;
         self->active = &outcome;
 
@@ -186,7 +205,7 @@ struct awaiter<udp_recv_tag> {
             }
         }
 
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     result<udp::recv_result> await_resume() noexcept {
@@ -197,7 +216,7 @@ struct awaiter<udp_recv_tag> {
 };
 
 template <>
-struct awaiter<udp_send_tag> {
+struct awaiter<udp_send_tag> : system_op {
     using promise_t = task<error>::promise_type;
 
     udp* self;
@@ -207,7 +226,20 @@ struct awaiter<udp_send_tag> {
     error result{};
 
     awaiter(udp* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
-        self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
+        system_op(async_node::NodeKind::SystemIO), self(u), storage(data.begin(), data.end()),
+        dest(std::move(d)) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<awaiter*>(op);
+        if(self->self) {
+            uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+            self->self->send_waiter = nullptr;
+            self->self->send_active = nullptr;
+        }
+        self->system_op::awaiter = nullptr;
+    }
 
     static void on_send(uv_udp_send_t* req, int status) {
         auto* handle = static_cast<uv_udp_t*>(req->handle);
@@ -242,7 +274,9 @@ struct awaiter<udp_send_tag> {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
         if(self->send_waiter != nullptr || self->send_inflight) {
             result = error::connection_already_in_progress;
             return waiting;
@@ -266,7 +300,7 @@ struct awaiter<udp_send_tag> {
         }
 
         self->send_inflight = true;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
