@@ -151,14 +151,7 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
     std::array<uv_stdio_container_t, 3> stdio{};
 
     auto make_pipe = [&]() -> result<pipe> {
-        pipe out(sizeof(uv_pipe_t));
-        int err = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), out.as<uv_pipe_t>(), 0);
-        if(err != 0) {
-            return std::unexpected(error(err));
-        }
-
-        out.mark_initialized();
-        return out;
+        return pipe::create(loop);
     };
 
     for(std::size_t i = 0; i < opts.streams.size(); ++i) {
@@ -181,7 +174,7 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
                     return std::unexpected(pipe_res.error());
                 }
 
-                auto* handle = pipe_res->as<uv_pipe_t>();
+                auto* handle = static_cast<uv_pipe_t*>(pipe_res->native_handle());
 
                 dst.flags = UV_CREATE_PIPE;
                 if(cfg.readable) {

@@ -1,27 +1,32 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 
 #include "error.h"
-#include "handle.h"
 #include "task.h"
 
 namespace eventide {
 
 class event_loop;
 
-template <typename Tag>
-struct awaiter;
-
-class fs_event : public handle {
-private:
-    using handle::handle;
-
-    template <typename Tag>
-    friend struct awaiter;
-
+class fs_event {
 public:
+    fs_event() noexcept;
+
+    fs_event(const fs_event&) = delete;
+    fs_event& operator=(const fs_event&) = delete;
+
+    fs_event(fs_event&& other) noexcept;
+    fs_event& operator=(fs_event&& other) noexcept;
+
+    ~fs_event();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
+
     struct change {
         std::string path;
         int flags;
@@ -38,9 +43,9 @@ public:
     task<result<change>> wait();
 
 private:
-    async_node* waiter = nullptr;
-    result<change>* active = nullptr;
-    std::optional<change> pending;
+    explicit fs_event(Self* state) noexcept;
+
+    std::unique_ptr<Self, void (*)(void*)> self;
 };
 
 }  // namespace eventide

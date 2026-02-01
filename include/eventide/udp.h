@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -8,27 +9,28 @@
 #include <vector>
 
 #include "error.h"
-#include "handle.h"
 #include "task.h"
 
 namespace eventide {
 
 class event_loop;
 
-template <typename Tag>
-struct awaiter;
-
-class udp : public handle {
-private:
-    using handle::handle;
-
-    template <typename Tag>
-    friend struct awaiter;
-
+class udp {
 public:
+    udp() noexcept;
+
+    udp(const udp&) = delete;
+    udp& operator=(const udp&) = delete;
+
     udp(udp&& other) noexcept;
 
     udp& operator=(udp&& other) noexcept;
+
+    ~udp();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
 
     struct recv_result {
         std::string data;
@@ -98,16 +100,9 @@ public:
     task<result<recv_result>> recv();
 
 private:
-    async_node* waiter = nullptr;
-    result<recv_result>* active = nullptr;
-    std::deque<result<recv_result>> pending;
-    std::vector<char> buffer;
-    bool receiving = false;
+    explicit udp(Self* state) noexcept;
 
-    async_node* send_waiter = nullptr;
-    error* send_active = nullptr;
-    std::optional<error> send_pending;
-    bool send_inflight = false;
+    std::unique_ptr<Self, void (*)(void*)> self;
 };
 
 }  // namespace eventide

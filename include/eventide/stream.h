@@ -3,13 +3,13 @@
 #include <coroutine>
 #include <cstddef>
 #include <deque>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "error.h"
-#include "handle.h"
 #include "ringbuffer.h"
 #include "task.h"
 
@@ -17,75 +17,89 @@ namespace eventide {
 
 class event_loop;
 
-template <typename Tag>
-struct awaiter;
-
 template <typename StreamT>
 class acceptor;
 
-class stream : public handle {
-protected:
-    using handle::handle;
-
-    stream() = default;
-
-    template <typename Tag>
-    friend struct awaiter;
-
+class stream {
 public:
+    stream() noexcept;
+
+    stream(const stream&) = delete;
+    stream& operator=(const stream&) = delete;
+
+    stream(stream&& other) noexcept;
+    stream& operator=(stream&& other) noexcept;
+
+    ~stream();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
+
     task<std::string> read();
 
     task<> write(std::span<const char> data);
 
-private:
-    /// a stream allows only one active reader at a time
-    async_node* reader;
+protected:
+    explicit stream(Self* state) noexcept;
 
-    ring_buffer buffer;
+    std::unique_ptr<Self, void (*)(void*)> self;
 };
 
 template <typename Stream>
-class acceptor : public handle {
-private:
-    using handle::handle;
-
-    friend Stream;
-
-    template <typename Tag>
-    friend struct awaiter;
-
+class acceptor {
 public:
+    acceptor() noexcept;
+
+    acceptor(const acceptor&) = delete;
+    acceptor& operator=(const acceptor&) = delete;
+
     acceptor(acceptor&& other) noexcept;
 
     acceptor& operator=(acceptor&& other) noexcept;
 
+    ~acceptor();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
+
     task<result<Stream>> accept();
 
 private:
-    async_node* waiter = nullptr;
-    result<Stream>* active = nullptr;
-    std::deque<result<Stream>> pending;
+    explicit acceptor(Self* state) noexcept;
+
+    std::unique_ptr<Self, void (*)(void*)> self;
+
+    friend class pipe;
+    friend class tcp_socket;
 };
 
 class pipe : public stream {
-private:
-    using stream::stream;
-
-    friend class process;
-
 public:
+    pipe() noexcept = default;
+
     using acceptor = eventide::acceptor<pipe>;
 
     static result<pipe> open(event_loop& loop, int fd);
 
     static result<acceptor> listen(event_loop& loop, const char* name, int backlog = 128);
+
+    explicit pipe(Self* state) noexcept;
+
+private:
+    static result<pipe> create(event_loop& loop);
+
+    void* native_handle() noexcept;
+    const void* native_handle() const noexcept;
+
+    friend class process;
 };
 
 class tcp_socket : public stream {
-private:
-    using stream::stream;
-
 public:
+    tcp_socket() noexcept = default;
+
     using acceptor = eventide::acceptor<tcp_socket>;
 
     static result<tcp_socket> open(event_loop& loop, int fd);
@@ -95,14 +109,20 @@ public:
                                    int port,
                                    unsigned int flags = 0,
                                    int backlog = 128);
+
+    explicit tcp_socket(Self* state) noexcept;
+
+private:
 };
 
 class console : public stream {
-private:
-    using stream::stream;
-
 public:
+    console() noexcept = default;
+
     static result<console> open(event_loop& loop, int fd);
+
+private:
+    explicit console(Self* state) noexcept;
 };
 
 }  // namespace eventide
