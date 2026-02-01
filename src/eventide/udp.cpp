@@ -42,7 +42,7 @@ struct udp_recv_await : system_op {
     result<udp::recv_result> outcome = std::unexpected(error{});
 
     explicit udp_recv_await(udp::Self* socket) :
-        system_op(async_node::NodeKind::SystemIO), self(socket) {
+         self(socket) {
         action = &on_cancel;
     }
 
@@ -163,7 +163,7 @@ struct udp_send_await : system_op {
     error result{};
 
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
-        system_op(async_node::NodeKind::SystemIO), self(u), storage(data.begin(), data.end()),
+         self(u), storage(data.begin(), data.end()),
         dest(std::move(d)) {
         action = &on_cancel;
     }

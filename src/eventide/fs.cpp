@@ -25,8 +25,7 @@ struct fs_event_await : system_op {
     fs_event::Self* self;
     result<fs_event::change> outcome = std::unexpected(error{});
 
-    explicit fs_event_await(fs_event::Self* watcher) :
-        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+    explicit fs_event_await(fs_event::Self* watcher) : self(watcher) {
         action = &on_cancel;
     }
 

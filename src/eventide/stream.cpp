@@ -44,7 +44,8 @@ struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
         return reinterpret_cast<const T*>(&handle);
     }
 
-    void reset_data() noexcept {
+    void init_handle() noexcept {
+        this->mark_initialized();
         auto* h = reinterpret_cast<uv_handle_t*>(&handle);
         h->data = this;
     }
@@ -67,7 +68,8 @@ struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, stream_handle_
         return reinterpret_cast<const T*>(&handle);
     }
 
-    void reset_data() noexcept {
+    void init_handle() noexcept {
+        this->mark_initialized();
         auto* h = reinterpret_cast<uv_handle_t*>(&handle);
         h->data = this;
     }
@@ -78,8 +80,7 @@ namespace {
 struct stream_read_await : system_op {
     stream::Self* self;
 
-    explicit stream_read_await(stream::Self* state) :
-        system_op(async_node::NodeKind::SystemIO), self(state) {
+    explicit stream_read_await(stream::Self* state) : self(state) {
         action = &on_cancel;
     }
 
@@ -92,7 +93,7 @@ struct stream_read_await : system_op {
             }
             aw->self->reader = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -164,7 +165,7 @@ struct stream_write_await : system_op {
     uv_write_t req{};
 
     stream_write_await(stream::Self* state, std::span<const char> data) :
-        system_op(async_node::NodeKind::SystemIO), self(state), storage(data.begin(), data.end()) {
+        self(state), storage(data.begin(), data.end()) {
         action = &on_cancel;
     }
 
@@ -174,7 +175,7 @@ struct stream_write_await : system_op {
             uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
             aw->self->writer = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_write(uv_write_t* req, int) {
@@ -228,8 +229,7 @@ struct pipe_accept_await : system_op {
     acceptor<pipe>::Self* self;
     result<pipe> outcome = std::unexpected(error());
 
-    explicit pipe_accept_await(acceptor<pipe>::Self* acceptor) :
-        system_op(async_node::NodeKind::SystemIO), self(acceptor) {
+    explicit pipe_accept_await(acceptor<pipe>::Self* acceptor) : self(acceptor) {
         action = &on_cancel;
     }
 
@@ -239,7 +239,7 @@ struct pipe_accept_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_connection_cb(uv_stream_t* server, int status) {
@@ -276,8 +276,7 @@ struct pipe_accept_await : system_op {
         auto* handle = state->as<uv_pipe_t>();
         int err = uv_pipe_init(server->loop, handle, 0);
         if(err == 0) {
-            state->mark_initialized();
-            state->reset_data();
+            state->init_handle();
             err = uv_accept(server, reinterpret_cast<uv_stream_t*>(handle));
         }
 
@@ -318,8 +317,7 @@ struct tcp_accept_await : system_op {
     acceptor<tcp_socket>::Self* self;
     result<tcp_socket> outcome = std::unexpected(error());
 
-    explicit tcp_accept_await(acceptor<tcp_socket>::Self* acceptor) :
-        system_op(async_node::NodeKind::SystemIO), self(acceptor) {
+    explicit tcp_accept_await(acceptor<tcp_socket>::Self* acceptor) : self(acceptor) {
         action = &on_cancel;
     }
 
@@ -329,7 +327,7 @@ struct tcp_accept_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_connection_cb(uv_stream_t* server, int status) {
@@ -368,8 +366,7 @@ struct tcp_accept_await : system_op {
         auto* handle = state->as<uv_tcp_t>();
         int err = uv_tcp_init(server->loop, handle);
         if(err == 0) {
-            state->mark_initialized();
-            state->reset_data();
+            state->init_handle();
             err = uv_accept(server, reinterpret_cast<uv_stream_t*>(handle));
         }
 
@@ -542,8 +539,7 @@ static int start_pipe_listen(pipe::acceptor& acc, event_loop& loop, const char* 
         return err;
     }
 
-    self->mark_initialized();
-    self->reset_data();
+    self->init_handle();
 
     err = uv_pipe_bind(handle, name);
     if(err != 0) {
@@ -576,8 +572,7 @@ result<pipe> pipe::create(event_loop& loop) {
         return std::unexpected(error(errc));
     }
 
-    state->mark_initialized();
-    state->reset_data();
+    state->init_handle();
     return pipe(state.release());
 }
 
@@ -592,8 +587,7 @@ result<tcp_socket> tcp_socket::open(event_loop& loop, int fd) {
         return std::unexpected(error(err));
     }
 
-    state->mark_initialized();
-    state->reset_data();
+    state->init_handle();
 
     err = uv_tcp_open(handle, fd);
     if(err != 0) {
@@ -621,8 +615,7 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
         return err;
     }
 
-    self->mark_initialized();
-    self->reset_data();
+    self->init_handle();
 
     ::sockaddr_storage storage{};
 
@@ -675,8 +668,7 @@ result<console> console::open(event_loop& loop, int fd) {
         return std::unexpected(error(err));
     }
 
-    state->mark_initialized();
-    state->reset_data();
+    state->init_handle();
     return console(state.release());
 }
 

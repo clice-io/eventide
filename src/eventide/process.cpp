@@ -26,7 +26,7 @@ struct process_await : system_op {
     process::exit_status result{};
 
     explicit process_await(process::Self* self) :
-        system_op(async_node::NodeKind::SystemIO), self(self) {
+         self(self) {
         action = &on_cancel;
     }
 

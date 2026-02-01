@@ -69,7 +69,7 @@ struct timer_await : system_op {
     timer::Self* self;
 
     explicit timer_await(timer::Self* watcher) :
-        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+         self(watcher) {
         action = &on_cancel;
     }
 
@@ -127,7 +127,7 @@ struct idle_await : system_op {
     idle::Self* self;
 
     explicit idle_await(idle::Self* watcher) :
-        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+         self(watcher) {
         action = &on_cancel;
     }
 
@@ -185,7 +185,7 @@ struct prepare_await : system_op {
     prepare::Self* self;
 
     explicit prepare_await(prepare::Self* watcher) :
-        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+         self(watcher) {
         action = &on_cancel;
     }
 
@@ -243,7 +243,7 @@ struct check_await : system_op {
     check::Self* self;
 
     explicit check_await(check::Self* watcher) :
-        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+         self(watcher) {
         action = &on_cancel;
     }
 
@@ -302,7 +302,7 @@ struct signal_await : system_op {
     error result{};
 
     explicit signal_await(signal::Self* watcher) :
-        system_op(async_node::NodeKind::SystemIO), self(watcher) {
+         self(watcher) {
         action = &on_cancel;
     }
 
