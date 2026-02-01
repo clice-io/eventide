@@ -6,65 +6,72 @@
 
 namespace eventide {
 
+static unsigned int to_uv_process_flags(const process::creation_options& options) {
+    unsigned int out = 0;
+    if(options.detached) {
+        out |= UV_PROCESS_DETACHED;
+    }
+    if(options.windows_hide) {
+        out |= UV_PROCESS_WINDOWS_HIDE;
+    }
+    if(options.windows_hide_console) {
+        out |= UV_PROCESS_WINDOWS_HIDE_CONSOLE;
+    }
+    if(options.windows_hide_gui) {
+        out |= UV_PROCESS_WINDOWS_HIDE_GUI;
+    }
+    if(options.windows_verbatim_arguments) {
+        out |= UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS;
+    }
+    if(options.windows_file_path_exact_name) {
+        out |= UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME;
+    }
+    return out;
+}
+
+struct process::Self : uv_handle<process::Self, uv_process_t> {
+    uv_process_t handle{};
+    system_op* waiter = nullptr;
+    process::exit_status* active = nullptr;
+    std::optional<process::exit_status> completed;
+
+    Self() {
+        handle.data = this;
+    }
+};
+
 namespace {
 
-struct process_wait_tag {};
-
-}  // namespace
-
-process::process(process&& other) noexcept :
-    handle(std::move(other)), waiter(other.waiter), active(other.active),
-    completed(std::move(other.completed)) {
-    other.waiter = nullptr;
-    other.active = nullptr;
-
-    if(initialized()) {
-        if(auto* handle = as<uv_process_t>()) {
-            handle->data = this;
-        }
-    }
-}
-
-process& process::operator=(process&& other) noexcept {
-    if(this == &other) {
-        return *this;
-    }
-
-    handle::operator=(std::move(other));
-    waiter = other.waiter;
-    active = other.active;
-    completed = std::move(other.completed);
-
-    other.waiter = nullptr;
-    other.active = nullptr;
-
-    if(initialized()) {
-        if(auto* handle = as<uv_process_t>()) {
-            handle->data = this;
-        }
-    }
-
-    return *this;
-}
-
-template <>
-struct awaiter<process_wait_tag> {
+struct process_await : system_op {
     using promise_t = task<process::wait_result>::promise_type;
 
-    process* self;
+    process::Self* self;
     process::exit_status result{};
 
-    static void notify(process& proc, process::exit_status status) {
-        proc.completed = status;
+    explicit process_await(process::Self* self) : self(self) {
+        action = &on_cancel;
+    }
 
-        if(proc.waiter && proc.active) {
-            *proc.active = status;
+    static void on_cancel(system_op* op) {
+        auto* aw = static_cast<process_await*>(op);
+        if(aw->self) {
+            aw->self->waiter = nullptr;
+            aw->self->active = nullptr;
+        }
+        aw->complete();
+    }
 
-            auto w = proc.waiter;
-            proc.waiter = nullptr;
-            proc.active = nullptr;
+    static void notify(process::Self& self, process::exit_status status) {
+        self.completed = status;
 
-            w->resume();
+        if(self.waiter && self.active) {
+            *self.active = status;
+
+            auto w = self.waiter;
+            self.waiter = nullptr;
+            self.active = nullptr;
+
+            w->complete();
         }
     }
 
@@ -72,18 +79,45 @@ struct awaiter<process_wait_tag> {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
-        self->waiter = waiting ? &waiting.promise() : nullptr;
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        if(!self) {
+            return waiting;
+        }
+        self->waiter = this;
         self->active = &result;
-        return std::noop_coroutine();
+        return link_continuation(&waiting.promise(), location);
     }
 
     process::wait_result await_resume() noexcept {
-        self->waiter = nullptr;
-        self->active = nullptr;
+        if(self) {
+            self->waiter = nullptr;
+            self->active = nullptr;
+        }
         return result;
     }
 };
+
+}  // namespace
+
+process::process() noexcept : self(nullptr, nullptr) {}
+
+process::process(Self* self) noexcept : self(self, Self::destroy) {}
+
+process::~process() = default;
+
+process::process(process&& other) noexcept = default;
+
+process& process::operator=(process&& other) noexcept = default;
+
+process::Self* process::operator->() noexcept {
+    return self.get();
+}
+
+const process::Self* process::operator->() const noexcept {
+    return self.get();
+}
 
 process::stdio process::stdio::inherit() {
     return stdio{};
@@ -110,22 +144,15 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
     return io;
 }
 
-void on_exit_cb(uv_process_t* handle, int64_t exit_status, int term_signal) {
-    auto* proc = static_cast<process*>(handle->data);
-    if(proc == nullptr) {
-        return;
-    }
-
-    awaiter<process_wait_tag>::notify(*proc, process::exit_status{exit_status, term_signal});
-}
-
-result<process::spawn_result> process::spawn(event_loop& loop, const options& opts) {
-    spawn_result out{process(sizeof(uv_process_t))};
+result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
+    spawn_result out{process(new Self())};
 
     std::vector<std::string> argv_storage;
-    argv_storage.reserve(opts.args.size() + 1);
-    argv_storage.push_back(opts.file);
-    argv_storage.insert(argv_storage.end(), opts.args.begin(), opts.args.end());
+    if(opts.args.empty()) {
+        argv_storage.push_back(opts.file);
+    } else {
+        argv_storage = opts.args;
+    }
 
     std::vector<char*> argv;
     argv.reserve(argv_storage.size() + 1);
@@ -147,17 +174,6 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
     std::array<pipe, 3> created_pipes{};
     std::array<uv_stdio_container_t, 3> stdio{};
 
-    auto make_pipe = [&]() -> result<pipe> {
-        pipe out(sizeof(uv_pipe_t));
-        int err = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), out.as<uv_pipe_t>(), 0);
-        if(err != 0) {
-            return std::unexpected(error(err));
-        }
-
-        out.mark_initialized();
-        return out;
-    };
-
     for(std::size_t i = 0; i < opts.streams.size(); ++i) {
         auto& cfg = opts.streams[i];
         auto& dst = stdio[i];
@@ -173,12 +189,10 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
                 dst.data.fd = cfg.descriptor;
                 break;
             case stdio::kind::pipe: {
-                auto pipe_res = make_pipe();
-                if(!pipe_res.has_value()) {
-                    return std::unexpected(pipe_res.error());
+                auto pipe = pipe::create(loop);
+                if(!pipe.has_value()) {
+                    return std::unexpected(pipe.error());
                 }
-
-                auto* handle = pipe_res->as<uv_pipe_t>();
 
                 dst.flags = UV_CREATE_PIPE;
                 if(cfg.readable) {
@@ -189,16 +203,24 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
                     dst.flags =
                         static_cast<uv_stdio_flags>(dst.flags | static_cast<int>(UV_WRITABLE_PIPE));
                 }
-                dst.data.stream = reinterpret_cast<uv_stream_t*>(handle);
 
-                created_pipes[i] = std::move(*pipe_res);
+                dst.data.stream = static_cast<uv_stream_t*>(pipe->handle());
+
+                created_pipes[i] = std::move(*pipe);
                 break;
             }
         }
     }
 
     uv_process_options_t uv_opts{};
-    uv_opts.exit_cb = on_exit_cb;
+    uv_opts.exit_cb = +[](uv_process_t* handle, int64_t exit_status, int term_signal) {
+        auto* self = static_cast<process::Self*>(handle->data);
+        if(self == nullptr) {
+            return;
+        }
+
+        process_await::notify(*self, process::exit_status{exit_status, term_signal});
+    };
     uv_opts.file = opts.file.c_str();
     uv_opts.args = argv.data();
     uv_opts.stdio_count = static_cast<int>(stdio.size());
@@ -212,27 +234,22 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
         uv_opts.cwd = opts.cwd.c_str();
     }
 
-    uv_opts.flags = 0;
-#ifdef UV_PROCESS_DETACHED
-    if(opts.detached) {
-        uv_opts.flags |= UV_PROCESS_DETACHED;
-    }
-#endif
-#ifdef UV_PROCESS_WINDOWS_HIDE
-    if(opts.hide_window) {
-        uv_opts.flags |= UV_PROCESS_WINDOWS_HIDE;
-    }
-#endif
+    uv_opts.flags = to_uv_process_flags(opts.creation);
 
-    auto proc_handle = out.proc.as<uv_process_t>();
+    auto* self = out.proc.self.get();
+    if(self == nullptr) {
+        return std::unexpected(error::invalid_argument);
+    }
+
+    auto proc_handle = &self->handle;
     int err = uv_spawn(static_cast<uv_loop_t*>(loop.handle()), proc_handle, &uv_opts);
     if(err != 0) {
-        out.proc.mark_initialized();
+        self->mark_initialized();
         return std::unexpected(error(err));
     }
 
-    out.proc.mark_initialized();
-    proc_handle->data = &out.proc;
+    self->mark_initialized();
+    proc_handle->data = self;
 
     out.stdin_pipe = std::move(created_pipes[0]);
     out.stdout_pipe = std::move(created_pipes[1]);
@@ -242,32 +259,35 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
 }
 
 task<process::wait_result> process::wait() {
-    if(completed.has_value()) {
-        co_return *completed;
+    if(!self) {
+        co_return std::unexpected(error::invalid_argument);
     }
 
-    if(waiter != nullptr) {
+    if(self->completed.has_value()) {
+        co_return *self->completed;
+    }
+
+    if(self->waiter != nullptr) {
         co_return std::unexpected(error::socket_is_already_connected);
     }
 
-    co_return co_await awaiter<process_wait_tag>{this};
+    co_return co_await process_await{self.get()};
 }
 
 int process::pid() const noexcept {
-    if(!initialized()) {
+    if(!self || !self->initialized()) {
         return -1;
     }
 
-    auto proc = as<const uv_process_t>();
-    return proc ? proc->pid : -1;
+    return self->handle.pid;
 }
 
 error process::kill(int signum) {
-    if(!initialized()) {
+    if(!self || !self->initialized()) {
         return error::invalid_argument;
     }
 
-    int err = uv_process_kill(as<uv_process_t>(), signum);
+    int err = uv_process_kill(&self->handle, signum);
     if(err != 0) {
         return error(err);
     }

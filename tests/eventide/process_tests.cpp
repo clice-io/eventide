@@ -10,7 +10,7 @@ namespace {
 
 task<process::wait_result> wait_for_exit(process& proc) {
     auto status = co_await proc.wait();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return status;
 }
 
@@ -24,14 +24,14 @@ TEST_CASE(spawn_wait_simple) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    opts.args = {"/c", "exit 0"};
+    opts.args = {opts.file, "/c", "exit 0"};
 #else
     opts.file = "/bin/sh";
-    opts.args = {"-c", "true"};
+    opts.args = {opts.file, "-c", "true"};
 #endif
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
-    auto spawn_res = process::spawn(loop, opts);
+    auto spawn_res = process::spawn(opts, loop);
     ASSERT_TRUE(spawn_res.has_value());
 
     EXPECT_TRUE(spawn_res->proc.pid() > 0);
@@ -57,7 +57,7 @@ TEST_CASE(spawn_invalid_file) {
     opts.file = "/nonexistent/eventide-nope";
 #endif
 
-    auto spawn_res = process::spawn(loop, opts);
+    auto spawn_res = process::spawn(opts, loop);
     EXPECT_FALSE(spawn_res.has_value());
 }
 

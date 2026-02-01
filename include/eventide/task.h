@@ -8,6 +8,7 @@
 
 #include "error.h"
 #include "frame.h"
+#include "loop.h"
 
 namespace eventide {
 
@@ -42,6 +43,34 @@ template <>
 struct promise_result<void> {
     void return_void() noexcept {}
 };
+
+struct transition_await {
+    async_node::State state = async_node::Pending;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
+        auto& promise = handle.promise();
+        if(state == async_node::Finished) {
+            assert(promise.state == async_node::Running && "only running task could finish");
+            promise.state = state;
+        } else if(state == async_node::Cancelled) {
+            promise.state = state;
+        } else {
+            assert(false && "unexpected task state");
+        }
+        return promise.final_transition();
+    }
+
+    void await_resume() const noexcept {}
+};
+
+inline auto cancel() {
+    return transition_await(async_node::Cancelled);
+}
 
 template <typename T = void>
 class task {

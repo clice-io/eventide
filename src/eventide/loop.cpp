@@ -17,8 +17,8 @@ struct event_loop::self {
 
 static thread_local event_loop* current_loop = nullptr;
 
-event_loop* event_loop::current() {
-    return current_loop;
+event_loop& event_loop::current() {
+    return *current_loop;
 }
 
 void each(uv_idle_t* idle) {

@@ -59,13 +59,13 @@ TEST_CASE(when_all_sleep_values) {
     int fast_done = 0;
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(loop, std::chrono::milliseconds{5});
+        co_await sleep(std::chrono::milliseconds{5}, loop);
         slow_done += 1;
         co_return 7;
     };
 
     auto fast = [&]() -> task<int> {
-        co_await sleep(loop, std::chrono::milliseconds{1});
+        co_await sleep(std::chrono::milliseconds{1}, loop);
         fast_done += 1;
         co_return 9;
     };
@@ -90,13 +90,13 @@ TEST_CASE(when_any_sleep_winner) {
     int slow_done = 0;
 
     auto fast = [&]() -> task<int> {
-        co_await sleep(loop, std::chrono::milliseconds{1});
+        co_await sleep(std::chrono::milliseconds{1}, loop);
         fast_done += 1;
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
-        co_await sleep(loop, std::chrono::milliseconds{10});
+        co_await sleep(std::chrono::milliseconds{10}, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -123,14 +123,14 @@ TEST_CASE(when_any_child_cancel) {
 
     auto canceler = [&]() -> task<int> {
         cancel_started += 1;
-        co_await sleep(loop, std::chrono::milliseconds{1});
+        co_await sleep(std::chrono::milliseconds{1}, loop);
         co_await cancel();
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
         slow_started += 1;
-        co_await sleep(loop, std::chrono::milliseconds{5});
+        co_await sleep(std::chrono::milliseconds{5}, loop);
         slow_done += 1;
         co_return 2;
     };
@@ -156,14 +156,14 @@ TEST_CASE(when_all_child_cancel_cancels_others) {
 
     auto canceler = [&]() -> task<int> {
         cancel_started += 1;
-        co_await sleep(loop, std::chrono::milliseconds{1});
+        co_await sleep(std::chrono::milliseconds{1}, loop);
         co_await cancel();
         co_return 1;
     };
 
     auto slow = [&]() -> task<int> {
         slow_started += 1;
-        co_await sleep(loop, std::chrono::milliseconds{5});
+        co_await sleep(std::chrono::milliseconds{5}, loop);
         slow_done += 1;
         co_return 2;
     };

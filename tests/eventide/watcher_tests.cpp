@@ -10,31 +10,31 @@ namespace {
 
 task<> wait_timer(timer& t) {
     co_await t.wait();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return;
 }
 
 task<> wait_idle(idle& w) {
     co_await w.wait();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return;
 }
 
 task<> wait_sleep(event_loop& loop) {
-    co_await sleep(loop, std::chrono::milliseconds{1});
-    event_loop::current()->stop();
+    co_await sleep(std::chrono::milliseconds{1}, loop);
+    event_loop::current().stop();
     co_return;
 }
 
 task<> wait_prepare(prepare& w) {
     co_await w.wait();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return;
 }
 
 task<> wait_check(check& w) {
     co_await w.wait();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return;
 }
 
@@ -42,7 +42,7 @@ task<> wait_timer_twice(timer& t) {
     co_await t.wait();
     co_await t.wait();
     t.stop();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return;
 }
 

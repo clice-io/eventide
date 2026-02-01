@@ -16,6 +16,23 @@ void async_node::cancel() {
     }
     state = Cancelled;
 
+    auto propagate_cancel = [](waiter_link* link) {
+        if(!link) {
+            return;
+        }
+
+        auto* awaiter = link->awaiter;
+        link->awaiter = nullptr;
+        if(!awaiter) {
+            return;
+        }
+
+        auto next = awaiter->handle_subtask_result(link);
+        if(next) {
+            next.resume();
+        }
+    };
+
     switch(kind) {
         case NodeKind::Task: {
             auto* self = static_cast<standard_task*>(this);
@@ -24,7 +41,13 @@ void async_node::cancel() {
             }
             break;
         }
-        case NodeKind::SharedTask:
+        case NodeKind::SharedTask: {
+            auto* self = static_cast<shared_resource*>(this);
+            if(self->awaitee) {
+                self->awaitee->cancel();
+            }
+            break;
+        }
         case NodeKind::Mutex:
         case NodeKind::Event:
         case NodeKind::Semaphore:
@@ -34,16 +57,10 @@ void async_node::cancel() {
                 self->awaitee->cancel();
             }
 
-            auto* cur = self->head;
-            while(cur) {
-                auto* next = cur->next;
-                /// FIXME:
-                if(cur->awaiter) {}
-                cur = next;
+            while(auto* cur = self->pop_waiter()) {
+                cur->state = Cancelled;
+                propagate_cancel(cur);
             }
-
-            self->head = nullptr;
-            self->tail = nullptr;
             break;
         }
 
@@ -52,25 +69,9 @@ void async_node::cancel() {
         case NodeKind::EventWaiter: {
             auto* self = static_cast<waiter_link*>(this);
             if(auto* res = self->resource) {
-                if(self->prev) {
-                    self->prev->next = self->next;
-                } else {
-                    res->head = self->next;
-                }
-
-                if(self->next) {
-                    self->next->prev = self->prev;
-                } else {
-                    res->tail = self->prev;
-                }
-
-                self->prev = nullptr;
-                self->next = nullptr;
-                self->resource = nullptr;
+                res->remove(self);
             }
-            if(self->awaiter) {
-                /// FIXME:
-            }
+            propagate_cancel(self);
             break;
         }
 
@@ -86,10 +87,11 @@ void async_node::cancel() {
             break;
         }
 
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite: {
-            uv_cancel(nullptr);
+        case NodeKind::SystemIO: {
+            auto* self = static_cast<system_op*>(this);
+            if(self->action) {
+                self->action(self);
+            }
             break;
         }
     }
@@ -107,6 +109,21 @@ void async_node::resume() {
     if(kind_snapshot == NodeKind::SharedFuture) {
         auto self = static_cast<waiter_link*>(this);
         static_cast<stable_node*>(self->awaiter)->handle().resume();
+    }
+}
+
+void system_op::complete() noexcept {
+    if(state != Cancelled) {
+        state = Finished;
+    }
+    auto* parent = awaiter;
+    awaiter = nullptr;
+    if(!parent) {
+        return;
+    }
+    auto next = parent->handle_subtask_result(this);
+    if(next) {
+        next.resume();
     }
 }
 
@@ -156,10 +173,12 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
         }
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::Scope:
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite: break;
+        case NodeKind::Scope: break;
+        case NodeKind::SystemIO: {
+            auto self = static_cast<system_op*>(this);
+            self->awaiter = awaiter;
+            return std::noop_coroutine();
+        }
     }
 
     std::abort();
@@ -181,7 +200,7 @@ std::coroutine_handle<> async_node::final_transition() {
 
         case NodeKind::SharedTask: {
             auto p = static_cast<shared_resource*>(this);
-            auto loop = event_loop::current();
+            auto& loop = event_loop::current();
             auto cur = p->head;
             while(cur) {
                 if(state == Cancelled) {
@@ -191,7 +210,7 @@ std::coroutine_handle<> async_node::final_transition() {
                 /// Note that even if the shared_task was cancelled, we still
                 /// need to resume it. Because we requires it to explicitly
                 /// handle cancellation result.
-                loop->schedule(static_cast<async_node&>(*cur), p->location);
+                loop.schedule(static_cast<async_node&>(*cur), p->location);
                 cur = cur->next;
             }
 
@@ -211,9 +230,7 @@ std::coroutine_handle<> async_node::final_transition() {
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
         case NodeKind::Scope:
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite: break;
+        case NodeKind::SystemIO: break;
     }
 
     std::abort();
@@ -334,9 +351,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter:
         case NodeKind::Scope:
-        case NodeKind::Sleep:
-        case NodeKind::SocketRead:
-        case NodeKind::SocketWrite:
+        case NodeKind::SystemIO:
         default: {
             /// TODO:
             std::abort();

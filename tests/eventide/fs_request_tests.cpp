@@ -50,7 +50,7 @@ inline void close_fd(int fd) {
 
 task<result<int>> fs_roundtrip(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "eventide-XXXXXX").string();
-    auto dir_res = co_await fs::mkdtemp(loop, dir_template);
+    auto dir_res = co_await fs::mkdtemp(dir_template, loop);
     if(!dir_res.has_value()) {
         co_return std::unexpected(dir_res.error());
     }
@@ -73,19 +73,19 @@ task<result<int>> fs_roundtrip(event_loop& loop) {
     }
     close_fd(fd);
 
-    auto stat_res = co_await fs::stat(loop, file);
+    auto stat_res = co_await fs::stat(file, loop);
     if(!stat_res.has_value()) {
         co_return std::unexpected(stat_res.error());
     }
 
-    auto dir_res2 = co_await fs::opendir(loop, dir);
+    auto dir_res2 = co_await fs::opendir(dir, loop);
     if(!dir_res2.has_value()) {
         co_return std::unexpected(dir_res2.error());
     }
 
-    auto entries = co_await fs::readdir(loop, *dir_res2);
+    auto entries = co_await fs::readdir(*dir_res2, loop);
     if(!entries.has_value()) {
-        co_await fs::closedir(loop, *dir_res2);
+        co_await fs::closedir(*dir_res2, loop);
         co_return std::unexpected(entries.error());
     }
 
@@ -97,17 +97,17 @@ task<result<int>> fs_roundtrip(event_loop& loop) {
         }
     }
 
-    auto close_res = co_await fs::closedir(loop, *dir_res2);
+    auto close_res = co_await fs::closedir(*dir_res2, loop);
     if(close_res) {
         co_return std::unexpected(close_res);
     }
 
-    auto unlink_res = co_await fs::unlink(loop, file);
+    auto unlink_res = co_await fs::unlink(file, loop);
     if(!unlink_res.has_value()) {
         co_return std::unexpected(unlink_res.error());
     }
 
-    auto rmdir_res = co_await fs::rmdir(loop, dir);
+    auto rmdir_res = co_await fs::rmdir(dir, loop);
     if(!rmdir_res.has_value()) {
         co_return std::unexpected(rmdir_res.error());
     }
@@ -117,7 +117,7 @@ task<result<int>> fs_roundtrip(event_loop& loop) {
 
 task<result<int>> mkstemp_roundtrip(event_loop& loop) {
     auto file_template = (std::filesystem::temp_directory_path() / "eventide-file-XXXXXX").string();
-    auto file_res = co_await fs::mkstemp(loop, file_template);
+    auto file_res = co_await fs::mkstemp(file_template, loop);
     if(!file_res.has_value()) {
         co_return std::unexpected(file_res.error());
     }
@@ -132,12 +132,12 @@ task<result<int>> mkstemp_roundtrip(event_loop& loop) {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    auto access_res = co_await fs::access(loop, path, 0);
+    auto access_res = co_await fs::access(path, 0, loop);
     if(!access_res.has_value()) {
         co_return std::unexpected(access_res.error());
     }
 
-    auto unlink_res = co_await fs::unlink(loop, path);
+    auto unlink_res = co_await fs::unlink(path, loop);
     if(!unlink_res.has_value()) {
         co_return std::unexpected(unlink_res.error());
     }

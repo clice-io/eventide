@@ -3,12 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "error.h"
-#include "handle.h"
 #include "stream.h"
 #include "task.h"
 
@@ -16,14 +16,21 @@ namespace eventide {
 
 class event_loop;
 
-class process : public handle {
-private:
-    using handle::handle;
-
+class process {
 public:
-    process(process&& other) noexcept;
+    process() noexcept;
 
+    process(const process&) = delete;
+    process& operator=(const process&) = delete;
+
+    process(process&& other) noexcept;
     process& operator=(process&& other) noexcept;
+
+    ~process();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
 
     struct exit_status {
         /// Exit code reported by the child.
@@ -34,7 +41,12 @@ public:
     };
 
     struct stdio {
-        enum class kind { inherit, ignore, fd, pipe };
+        enum class kind {
+            inherit,  // inherit parent's stdio
+            ignore,   // discard this stream
+            fd,       // inherit a specific file descriptor
+            pipe      // create a pipe
+        };
 
         /// How this stream should be configured for the child.
         kind type = kind::inherit;
@@ -61,11 +73,31 @@ public:
         static stdio pipe(bool readable, bool writable);
     };
 
+    struct creation_options {
+        /// Detach the child from the parent process group/session.
+        bool detached = false;
+
+        /// Hide the console window (Windows).
+        bool windows_hide = false;
+
+        /// Hide the console window specifically (Windows).
+        bool windows_hide_console = false;
+
+        /// Hide GUI window (Windows).
+        bool windows_hide_gui = false;
+
+        /// Disable argument quoting/escaping (Windows).
+        bool windows_verbatim_arguments = false;
+
+        /// Use exact file path for image name (Windows).
+        bool windows_file_path_exact_name = false;
+    };
+
     struct options {
         /// Executable path.
         std::string file;
 
-        /// argv (excluding argv[0], which is taken from `file`).
+        /// argv (including argv[0]). If empty, defaults to `file`.
         std::vector<std::string> args;
 
         /// Environment variables in `KEY=VALUE` form; empty means inherit.
@@ -74,11 +106,8 @@ public:
         /// Working directory; empty means inherit.
         std::string cwd;
 
-        /// Whether to detach the child process.
-        bool detached = false;
-
-        /// Hide window on platforms that support it.
-        bool hide_window = false;
+        /// Process creation options (platform-specific options may be ignored).
+        creation_options creation;
 
         /// Stdio config for stdin/stdout/stderr.
         std::array<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};
@@ -90,7 +119,8 @@ public:
     struct spawn_result;
 
     /// Spawn a child process within the given loop.
-    static result<spawn_result> spawn(event_loop& loop, const options& opts);
+    static result<spawn_result> spawn(const options& opts,
+                                      event_loop& loop = event_loop::current());
 
     /// Await process termination and fetch exit status.
     task<wait_result> wait();
@@ -102,12 +132,9 @@ public:
     error kill(int signum);
 
 private:
-    template <typename Tag>
-    friend struct awaiter;
+    explicit process(Self* state) noexcept;
 
-    async_node* waiter = nullptr;
-    exit_status* active = nullptr;
-    std::optional<exit_status> completed;
+    std::unique_ptr<Self, void (*)(void*)> self;
 };
 
 struct process::spawn_result {

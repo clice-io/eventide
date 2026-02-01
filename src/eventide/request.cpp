@@ -12,21 +12,30 @@ namespace eventide {
 
 namespace {
 
-struct work_op {
+struct work_op : system_op {
     using promise_t = task<error>::promise_type;
 
     uv_work_t req{};
     work_fn fn;
     error result{};
-    promise_t* waiter = nullptr;
+
+    work_op() : system_op(async_node::NodeKind::SystemIO) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<work_op*>(op);
+        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+    }
 
     bool await_ready() const noexcept {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
-        waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
@@ -35,21 +44,30 @@ struct work_op {
 };
 
 template <typename Result>
-struct fs_op {
+struct fs_op : system_op {
     using promise_t = task<result<Result>>::promise_type;
 
     uv_fs_t req = {};
     std::function<Result(uv_fs_t&)> populate;
     result<Result> out = std::unexpected(error());
-    promise_t* waiter = nullptr;
+
+    fs_op() : system_op(async_node::NodeKind::SystemIO) {
+        action = &on_cancel;
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* self = static_cast<fs_op*>(op);
+        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+    }
 
     bool await_ready() const noexcept {
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<promise_t> waiting) noexcept {
-        waiter = waiting ? &waiting.promise() : nullptr;
-        return std::noop_coroutine();
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return link_continuation(&waiting.promise(), location);
     }
 
     result<Result> await_resume() noexcept {
@@ -59,7 +77,7 @@ struct fs_op {
 
 }  // namespace
 
-task<error> queue(event_loop& loop, work_fn fn) {
+task<error> queue(work_fn fn, event_loop& loop) {
     work_op op;
     op.fn = std::move(fn);
 
@@ -77,9 +95,7 @@ task<error> queue(event_loop& loop, work_fn fn) {
         }
 
         holder->result = status < 0 ? error(status) : error();
-        if(holder->waiter) {
-            holder->waiter->resume();
-        }
+        holder->complete();
     };
 
     op.result.clear();
@@ -136,8 +152,42 @@ static fs::dirent::type map_dirent(uv_dirent_type_t t) {
     }
 }
 
+static result<int> to_uv_copyfile_flags(const fs::copyfile_options& options) {
+    unsigned int out = 0;
+#ifdef UV_FS_COPYFILE_EXCL
+    if(options.excl) {
+        out |= UV_FS_COPYFILE_EXCL;
+    }
+#else
+    if(options.excl) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_FS_COPYFILE_FICLONE
+    if(options.clone) {
+        out |= UV_FS_COPYFILE_FICLONE;
+    }
+#else
+    if(options.clone) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_FS_COPYFILE_FICLONE_FORCE
+    if(options.clone_force) {
+        out |= UV_FS_COPYFILE_FICLONE_FORCE;
+    }
+#else
+    if(options.clone_force) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+    return static_cast<int>(out);
+}
+
 template <typename Result, typename Submit, typename Populate>
-static task<result<Result>> run_fs(event_loop& loop, Submit submit, Populate populate) {
+static task<result<Result>> run_fs(Submit submit,
+                                   Populate populate,
+                                   event_loop& loop = event_loop::current()) {
     fs_op<Result> op;
     op.populate = populate;
 
@@ -155,9 +205,7 @@ static task<result<Result>> run_fs(event_loop& loop, Submit submit, Populate pop
 
         uv_fs_req_cleanup(req);
 
-        if(h->waiter) {
-            h->waiter->resume();
-        }
+        h->complete();
     };
 
     op.req.data = &op;
@@ -179,21 +227,20 @@ static fs::result basic_populate(uv_fs_t& req) {
     return r;
 }
 
-task<result<fs::result>> fs::unlink(event_loop& loop, std::string_view path) {
+task<result<fs::result>> fs::unlink(std::string_view path, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_unlink(static_cast<uv_loop_t*>(loop.handle()),
                                 &req,
                                 std::string(path).c_str(),
                                 cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::mkdir(event_loop& loop, std::string_view path, int mode) {
+task<result<fs::result>> fs::mkdir(std::string_view path, int mode, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_mkdir(static_cast<uv_loop_t*>(loop.handle()),
                                &req,
@@ -201,23 +248,31 @@ task<result<fs::result>> fs::mkdir(event_loop& loop, std::string_view path, int 
                                mode,
                                cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::stat(event_loop& loop, std::string_view path) {
+task<result<fs::result>> fs::stat(std::string_view path, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_stat(static_cast<uv_loop_t*>(loop.handle()),
                               &req,
                               std::string(path).c_str(),
                               cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>>
-    fs::copyfile(event_loop& loop, std::string_view path, std::string_view new_path, int flags) {
+task<result<fs::result>> fs::copyfile(std::string_view path,
+                                      std::string_view new_path,
+                                      fs::copyfile_options options,
+                                      event_loop& loop) {
+    auto uv_flags = to_uv_copyfile_flags(options);
+    if(!uv_flags.has_value()) {
+        co_return std::unexpected(uv_flags.error());
+    }
+
     auto populate = [&](uv_fs_t& req) {
         fs::result r = basic_populate(req);
         r.path = path;
@@ -226,57 +281,55 @@ task<result<fs::result>>
     };
 
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_copyfile(static_cast<uv_loop_t*>(loop.handle()),
                                   &req,
                                   std::string(path).c_str(),
                                   std::string(new_path).c_str(),
-                                  flags,
+                                  uv_flags.value(),
                                   cb);
         },
-        populate);
+        populate,
+        loop);
 }
 
-task<result<fs::result>> fs::mkdtemp(event_loop& loop, std::string_view tpl) {
+task<result<fs::result>> fs::mkdtemp(std::string_view tpl, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_mkdtemp(static_cast<uv_loop_t*>(loop.handle()),
                                  &req,
                                  std::string(tpl).c_str(),
                                  cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::mkstemp(event_loop& loop, std::string_view tpl) {
+task<result<fs::result>> fs::mkstemp(std::string_view tpl, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_mkstemp(static_cast<uv_loop_t*>(loop.handle()),
                                  &req,
                                  std::string(tpl).c_str(),
                                  cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::rmdir(event_loop& loop, std::string_view path) {
+task<result<fs::result>> fs::rmdir(std::string_view path, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_rmdir(static_cast<uv_loop_t*>(loop.handle()),
                                &req,
                                std::string(path).c_str(),
                                cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<std::vector<fs::dirent>>> fs::scandir(event_loop& loop,
-                                                  std::string_view path,
-                                                  int flags) {
+task<result<std::vector<fs::dirent>>> fs::scandir(std::string_view path, event_loop& loop) {
     auto populate = [](uv_fs_t& req) {
         std::vector<fs::dirent> out;
         uv_dirent_t ent;
@@ -292,34 +345,34 @@ task<result<std::vector<fs::dirent>>> fs::scandir(event_loop& loop,
     };
 
     co_return co_await run_fs<std::vector<fs::dirent>>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_scandir(static_cast<uv_loop_t*>(loop.handle()),
                                  &req,
                                  std::string(path).c_str(),
-                                 flags,
+                                 0,
                                  cb);
         },
-        populate);
+        populate,
+        loop);
 }
 
-task<result<fs::dir_handle>> fs::opendir(event_loop& loop, std::string_view path) {
+task<result<fs::dir_handle>> fs::opendir(std::string_view path, event_loop& loop) {
     auto populate = [](uv_fs_t& req) {
         return fs::dir_handle::from_native(req.ptr);
     };
 
     co_return co_await run_fs<fs::dir_handle>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_opendir(static_cast<uv_loop_t*>(loop.handle()),
                                  &req,
                                  std::string(path).c_str(),
                                  cb);
         },
-        populate);
+        populate,
+        loop);
 }
 
-task<result<std::vector<fs::dirent>>> fs::readdir(event_loop& loop, fs::dir_handle& dir) {
+task<result<std::vector<fs::dirent>>> fs::readdir(fs::dir_handle& dir, event_loop& loop) {
     if(!dir.valid()) {
         co_return std::unexpected(error::invalid_argument);
     }
@@ -354,30 +407,30 @@ task<result<std::vector<fs::dirent>>> fs::readdir(event_loop& loop, fs::dir_hand
     };
 
     co_return co_await run_fs<std::vector<fs::dirent>>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_readdir(static_cast<uv_loop_t*>(loop.handle()),
                                  &req,
                                  static_cast<uv_dir_t*>(dir.native_handle()),
                                  cb);
         },
-        populate);
+        populate,
+        loop);
 }
 
-task<error> fs::closedir(event_loop& loop, fs::dir_handle& dir) {
+task<error> fs::closedir(fs::dir_handle& dir, event_loop& loop) {
     if(!dir.valid()) {
         co_return error::invalid_argument;
     }
 
     auto res = co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_closedir(static_cast<uv_loop_t*>(loop.handle()),
                                   &req,
                                   static_cast<uv_dir_t*>(dir.native_handle()),
                                   cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 
     if(!res.has_value()) {
         co_return res.error();
@@ -387,30 +440,30 @@ task<error> fs::closedir(event_loop& loop, fs::dir_handle& dir) {
     co_return error{};
 }
 
-task<result<fs::result>> fs::fstat(event_loop& loop, int fd) {
+task<result<fs::result>> fs::fstat(int fd, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_fstat(static_cast<uv_loop_t*>(loop.handle()), &req, fd, cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::lstat(event_loop& loop, std::string_view path) {
+task<result<fs::result>> fs::lstat(std::string_view path, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_lstat(static_cast<uv_loop_t*>(loop.handle()),
                                &req,
                                std::string(path).c_str(),
                                cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::rename(event_loop& loop,
-                                    std::string_view path,
-                                    std::string_view new_path) {
+task<result<fs::result>> fs::rename(std::string_view path,
+                                    std::string_view new_path,
+                                    event_loop& loop) {
     auto populate = [&](uv_fs_t& req) {
         fs::result r = basic_populate(req);
         r.path = path;
@@ -419,7 +472,6 @@ task<result<fs::result>> fs::rename(event_loop& loop,
     };
 
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_rename(static_cast<uv_loop_t*>(loop.handle()),
                                 &req,
@@ -427,43 +479,43 @@ task<result<fs::result>> fs::rename(event_loop& loop,
                                 std::string(new_path).c_str(),
                                 cb);
         },
-        populate);
+        populate,
+        loop);
 }
 
-task<result<fs::result>> fs::fsync(event_loop& loop, int fd) {
+task<result<fs::result>> fs::fsync(int fd, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_fsync(static_cast<uv_loop_t*>(loop.handle()), &req, fd, cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::fdatasync(event_loop& loop, int fd) {
+task<result<fs::result>> fs::fdatasync(int fd, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_fdatasync(static_cast<uv_loop_t*>(loop.handle()), &req, fd, cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::ftruncate(event_loop& loop, int fd, std::int64_t offset) {
+task<result<fs::result>> fs::ftruncate(int fd, std::int64_t offset, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_ftruncate(static_cast<uv_loop_t*>(loop.handle()), &req, fd, offset, cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::sendfile(event_loop& loop,
-                                      int out_fd,
+task<result<fs::result>> fs::sendfile(int out_fd,
                                       int in_fd,
                                       std::int64_t in_offset,
-                                      std::size_t length) {
+                                      std::size_t length,
+                                      event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_sendfile(static_cast<uv_loop_t*>(loop.handle()),
                                   &req,
@@ -473,12 +525,12 @@ task<result<fs::result>> fs::sendfile(event_loop& loop,
                                   length,
                                   cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::access(event_loop& loop, std::string_view path, int mode) {
+task<result<fs::result>> fs::access(std::string_view path, int mode, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_access(static_cast<uv_loop_t*>(loop.handle()),
                                 &req,
@@ -486,12 +538,12 @@ task<result<fs::result>> fs::access(event_loop& loop, std::string_view path, int
                                 mode,
                                 cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::chmod(event_loop& loop, std::string_view path, int mode) {
+task<result<fs::result>> fs::chmod(std::string_view path, int mode, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_chmod(static_cast<uv_loop_t*>(loop.handle()),
                                &req,
@@ -499,13 +551,13 @@ task<result<fs::result>> fs::chmod(event_loop& loop, std::string_view path, int 
                                mode,
                                cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
 task<result<fs::result>>
-    fs::utime(event_loop& loop, std::string_view path, double atime, double mtime) {
+    fs::utime(std::string_view path, double atime, double mtime, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_utime(static_cast<uv_loop_t*>(loop.handle()),
                                &req,
@@ -514,22 +566,22 @@ task<result<fs::result>>
                                mtime,
                                cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::futime(event_loop& loop, int fd, double atime, double mtime) {
+task<result<fs::result>> fs::futime(int fd, double atime, double mtime, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_futime(static_cast<uv_loop_t*>(loop.handle()), &req, fd, atime, mtime, cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
 task<result<fs::result>>
-    fs::lutime(event_loop& loop, std::string_view path, double atime, double mtime) {
+    fs::lutime(std::string_view path, double atime, double mtime, event_loop& loop) {
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_lutime(static_cast<uv_loop_t*>(loop.handle()),
                                 &req,
@@ -538,12 +590,13 @@ task<result<fs::result>>
                                 mtime,
                                 cb);
         },
-        basic_populate);
+        basic_populate,
+        loop);
 }
 
-task<result<fs::result>> fs::link(event_loop& loop,
-                                  std::string_view path,
-                                  std::string_view new_path) {
+task<result<fs::result>> fs::link(std::string_view path,
+                                  std::string_view new_path,
+                                  event_loop& loop) {
     auto populate = [&](uv_fs_t& req) {
         fs::result r = basic_populate(req);
         r.path = path;
@@ -552,7 +605,6 @@ task<result<fs::result>> fs::link(event_loop& loop,
     };
 
     co_return co_await run_fs<fs::result>(
-        loop,
         [&](uv_fs_t& req, uv_fs_cb cb) {
             return uv_fs_link(static_cast<uv_loop_t*>(loop.handle()),
                               &req,
@@ -560,7 +612,8 @@ task<result<fs::result>> fs::link(event_loop& loop,
                               std::string(new_path).c_str(),
                               cb);
         },
-        populate);
+        populate,
+        loop);
 }
 
 }  // namespace eventide

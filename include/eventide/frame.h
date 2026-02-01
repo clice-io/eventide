@@ -33,9 +33,7 @@ public:
         WhenAny,
         Scope,
 
-        Sleep,
-        SocketRead,
-        SocketWrite,
+        SystemIO,
     };
 
     enum Policy : uint8_t {
@@ -53,7 +51,7 @@ public:
 
     const NodeKind kind;
 
-    Policy policy;
+    Policy policy = None;
 
     State state = Pending;
 
@@ -278,35 +276,16 @@ class system_op : public transient_node {
 protected:
     friend class async_node;
 
-    explicit system_op(NodeKind k) : transient_node(k) {}
+    using on_cancel = void (*)(system_op* self);
+
+    explicit system_op(NodeKind k = NodeKind::SystemIO) : transient_node(k) {}
+
+    on_cancel action = nullptr;
+
+    async_node* awaiter = nullptr;
+
+public:
+    void complete() noexcept;
 };
-
-struct transition_await {
-    async_node::State state = async_node::Pending;
-
-    bool await_ready() const noexcept {
-        return false;
-    }
-
-    template <typename Promise>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
-        auto& promise = handle.promise();
-        if(state == async_node::Finished) {
-            assert(promise.state == async_node::Running && "only running task could finish");
-            promise.state = state;
-        } else if(state == async_node::Cancelled) {
-            promise.state = state;
-        } else {
-            assert(false && "unexpected task state");
-        }
-        return promise.final_transition();
-    }
-
-    void await_resume() const noexcept {}
-};
-
-inline auto cancel() {
-    return transition_await(async_node::Cancelled);
-}
 
 }  // namespace eventide
