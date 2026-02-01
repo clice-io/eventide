@@ -1,4 +1,3 @@
-#include <atomic>
 #include <string>
 #include <string_view>
 
@@ -10,33 +9,33 @@ namespace eventide {
 
 namespace {
 
-task<result<udp::recv_result>> recv_once(udp& sock, std::atomic<int>& done) {
-    auto res = co_await sock.recv();
-    if(done.fetch_add(1) + 1 == 2) {
+bool bump_and_stop(int& done, int target) {
+    done += 1;
+    if(done == target) {
         event_loop::current().stop();
+        return true;
     }
+    return false;
+}
+
+task<result<udp::recv_result>> recv_once(udp& sock, int& done) {
+    auto res = co_await sock.recv();
+    bump_and_stop(done, 2);
     co_return res;
 }
 
-task<error> send_to(udp& sock,
-                    std::string_view payload,
-                    std::string_view host,
-                    int port,
-                    std::atomic<int>& done) {
+task<error>
+    send_to(udp& sock, std::string_view payload, std::string_view host, int port, int& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data, host, port);
-    if(done.fetch_add(1) + 1 == 2) {
-        event_loop::current().stop();
-    }
+    bump_and_stop(done, 2);
     co_return ec;
 }
 
-task<error> send_connected(udp& sock, std::string_view payload, std::atomic<int>& done) {
+task<error> send_connected(udp& sock, std::string_view payload, int& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data);
-    if(done.fetch_add(1) + 1 == 2) {
-        event_loop::current().stop();
-    }
+    bump_and_stop(done, 2);
     co_return ec;
 }
 
@@ -59,7 +58,7 @@ TEST_CASE(send_and_recv) {
     auto send_sock = udp::create(loop);
     ASSERT_TRUE(send_sock.has_value());
 
-    std::atomic<int> done{0};
+    int done = 0;
     auto receiver = recv_once(*recv_sock, done);
     auto sender = send_to(*send_sock, "eventide-udp", endpoint->addr, endpoint->port, done);
 
@@ -93,7 +92,7 @@ TEST_CASE(connect_and_send) {
     auto conn_ec = send_sock->connect(endpoint->addr, endpoint->port);
     EXPECT_FALSE(static_cast<bool>(conn_ec));
 
-    std::atomic<int> done{0};
+    int done = 0;
     auto receiver = recv_once(*recv_sock, done);
     auto sender = send_connected(*send_sock, "eventide-udp-connect", done);
 

@@ -29,16 +29,29 @@ struct result {
 using op_result = ::eventide::result<fs::result>;
 
 struct dirent {
-    enum class type { unknown, file, dir, link, fifo, socket, char_device, block_device };
+    enum class type {
+        unknown,      // type not known
+        file,         // regular file
+        dir,          // directory
+        link,         // symlink
+        fifo,         // FIFO/pipe
+        socket,       // socket
+        char_device,  // character device
+        block_device  // block device
+    };
     std::string name;
     type kind = type::unknown;
 };
 
-enum class copyfile_flags : unsigned int {
-    none = 0,
-    excl = 1 << 0,
-    clone = 1 << 1,
-    clone_force = 1 << 2,
+struct copyfile_options {
+    /// Fail if destination exists.
+    bool excl = false;
+
+    /// Try to clone via copy-on-write if supported.
+    bool clone = false;
+
+    /// Force clone (may fall back to copy on failure).
+    bool clone_force = false;
 };
 
 class dir_handle {
@@ -70,7 +83,7 @@ task<op_result> stat(std::string_view path, event_loop& loop = event_loop::curre
 
 task<op_result> copyfile(std::string_view path,
                          std::string_view new_path,
-                         copyfile_flags flags = copyfile_flags::none,
+                         copyfile_options options = copyfile_options{},
                          event_loop& loop = event_loop::current());
 
 task<op_result> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
@@ -132,25 +145,5 @@ task<op_result> link(std::string_view path,
                      event_loop& loop = event_loop::current());
 
 }  // namespace fs
-
-constexpr fs::copyfile_flags operator|(fs::copyfile_flags lhs, fs::copyfile_flags rhs) noexcept {
-    return static_cast<fs::copyfile_flags>(static_cast<unsigned int>(lhs) |
-                                           static_cast<unsigned int>(rhs));
-}
-
-constexpr fs::copyfile_flags operator&(fs::copyfile_flags lhs, fs::copyfile_flags rhs) noexcept {
-    return static_cast<fs::copyfile_flags>(static_cast<unsigned int>(lhs) &
-                                           static_cast<unsigned int>(rhs));
-}
-
-constexpr fs::copyfile_flags& operator|=(fs::copyfile_flags& lhs,
-                                         fs::copyfile_flags rhs) noexcept {
-    lhs = lhs | rhs;
-    return lhs;
-}
-
-constexpr bool has_flag(fs::copyfile_flags value, fs::copyfile_flags flag) noexcept {
-    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
-}
 
 }  // namespace eventide

@@ -251,17 +251,10 @@ struct pipe_accept_await : system_op {
 
     static void on_connection(acceptor<pipe>::Self& listener, uv_stream_t* server, int status) {
         auto deliver = [&](result<pipe>&& value) {
-            if(listener.waiter && listener.active) {
-                *listener.active = std::move(value);
-
-                auto w = listener.waiter;
-                listener.waiter = nullptr;
-                listener.active = nullptr;
-
-                w->complete();
-            } else {
-                listener.pending.push_back(std::move(value));
-            }
+            detail::deliver_or_queue(listener.waiter,
+                                     listener.active,
+                                     listener.pending,
+                                     std::move(value));
         };
 
         if(status < 0) {
@@ -341,17 +334,10 @@ struct tcp_accept_await : system_op {
                               uv_stream_t* server,
                               int status) {
         auto deliver = [&](result<tcp_socket>&& value) {
-            if(listener.waiter && listener.active) {
-                *listener.active = std::move(value);
-
-                auto w = listener.waiter;
-                listener.waiter = nullptr;
-                listener.active = nullptr;
-
-                w->complete();
-            } else {
-                listener.pending.push_back(std::move(value));
-            }
+            detail::deliver_or_queue(listener.waiter,
+                                     listener.active,
+                                     listener.pending,
+                                     std::move(value));
         };
 
         if(status < 0) {
@@ -413,21 +399,14 @@ struct tcp_connect_await : system_op {
                       int port) : state(std::move(state)) {
         action = &on_cancel;
 
-        std::string host_storage(host);
-        auto build_addr = [&](auto& out, auto fn) -> int {
-            return fn(host_storage.c_str(), port, &out);
-        };
-
-        if(build_addr(*reinterpret_cast<sockaddr_in6*>(&addr), uv_ip6_addr) == 0) {
+        auto resolved = detail::resolve_addr(host, port);
+        if(!resolved.has_value()) {
+            ready = false;
+            outcome = std::unexpected(resolved.error());
             return;
         }
 
-        if(build_addr(*reinterpret_cast<sockaddr_in*>(&addr), uv_ip4_addr) == 0) {
-            return;
-        }
-
-        ready = false;
-        outcome = std::unexpected(error::invalid_argument);
+        addr = resolved->storage;
     }
 
     static void on_cancel(system_op* op) {
@@ -692,14 +671,14 @@ task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, ev
     co_return co_await tcp_connect_await{std::move(state), host, port};
 }
 
-static result<unsigned int> to_uv_tcp_bind_flags(tcp_socket::bind_flags flags) {
+static result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::bind_options& options) {
     unsigned int out = 0;
 #ifdef UV_TCP_IPV6ONLY
-    if(has_flag(flags, tcp_socket::bind_flags::ipv6_only)) {
+    if(options.ipv6_only) {
         out |= UV_TCP_IPV6ONLY;
     }
 #else
-    if(has_flag(flags, tcp_socket::bind_flags::ipv6_only)) {
+    if(options.ipv6_only) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
@@ -709,7 +688,7 @@ static result<unsigned int> to_uv_tcp_bind_flags(tcp_socket::bind_flags flags) {
 static int start_tcp_listen(tcp_socket::acceptor& acc,
                             std::string_view host,
                             int port,
-                            tcp_socket::bind_flags flags,
+                            tcp_socket::bind_options options,
                             int backlog,
                             event_loop& loop) {
     auto* self = acc.operator->();
@@ -726,24 +705,14 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
 
     self->init_handle();
 
-    ::sockaddr_storage storage{};
-
-    auto build_addr = [&](auto& out, auto fn) -> int {
-        return fn(std::string(host).c_str(), port, &out);
-    };
-
-    ::sockaddr* addr_ptr = nullptr;
-
-    // Try IPv6 first, fallback to IPv4.
-    if(build_addr(*reinterpret_cast<sockaddr_in6*>(&storage), uv_ip6_addr) == 0) {
-        addr_ptr = reinterpret_cast<sockaddr*>(&storage);
-    } else if(build_addr(*reinterpret_cast<sockaddr_in*>(&storage), uv_ip4_addr) == 0) {
-        addr_ptr = reinterpret_cast<sockaddr*>(&storage);
-    } else {
-        return error::invalid_argument.value();
+    auto resolved = detail::resolve_addr(host, port);
+    if(!resolved.has_value()) {
+        return resolved.error().value();
     }
 
-    auto uv_flags = to_uv_tcp_bind_flags(flags);
+    ::sockaddr* addr_ptr = reinterpret_cast<sockaddr*>(&resolved->storage);
+
+    auto uv_flags = to_uv_tcp_bind_flags(options);
     if(!uv_flags.has_value()) {
         return uv_flags.error().value();
     }
@@ -761,11 +730,11 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
 
 result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 int port,
-                                                tcp_socket::bind_flags flags,
+                                                tcp_socket::bind_options options,
                                                 int backlog,
                                                 event_loop& loop) {
     tcp_socket::acceptor acc(new tcp_socket::acceptor::Self());
-    int err = start_tcp_listen(acc, host, port, flags, backlog, loop);
+    int err = start_tcp_listen(acc, host, port, options, backlog, loop);
     if(err != 0) {
         return std::unexpected(error(err));
     }

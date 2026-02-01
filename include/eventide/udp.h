@@ -32,17 +32,22 @@ public:
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
 
-    enum class recv_flags : unsigned int {
-        none = 0,
-        partial = 1 << 0,
-        mmsg_chunk = 1 << 1,
+    struct recv_flags {
+        /// Packet is partial (truncated).
+        bool partial;
+
+        /// Packet came from a recvmmsg batch (Linux).
+        bool mmsg_chunk;
+
+        constexpr recv_flags(bool partial = false, bool mmsg_chunk = false) :
+            partial(partial), mmsg_chunk(mmsg_chunk) {}
     };
 
     struct recv_result {
         std::string data;
         std::string addr;
         int port = 0;
-        recv_flags flags = recv_flags::none;
+        recv_flags flags;
     };
 
     struct endpoint {
@@ -50,28 +55,47 @@ public:
         int port = 0;
     };
 
-    enum class membership { join, leave };
+    /// Multicast membership operation.
+    enum class membership {
+        join,  // join multicast group
+        leave  // leave multicast group
+    };
+
+    struct create_options {
+        /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
+        bool ipv6_only;
+
+        /// Enable recvmmsg batching when supported.
+        bool recvmmsg;
+
+        constexpr create_options(bool ipv6_only = false, bool recvmmsg = false) :
+            ipv6_only(ipv6_only), recvmmsg(recvmmsg) {}
+    };
+
+    struct bind_options {
+        /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
+        bool ipv6_only;
+
+        /// Enable SO_REUSEADDR if supported.
+        bool reuse_addr;
+
+        /// Enable SO_REUSEPORT if supported.
+        bool reuse_port;
+
+        constexpr bind_options(bool ipv6_only = false,
+                               bool reuse_addr = false,
+                               bool reuse_port = false) :
+            ipv6_only(ipv6_only), reuse_addr(reuse_addr), reuse_port(reuse_port) {}
+    };
 
     static result<udp> create(event_loop& loop = event_loop::current());
 
-    enum class create_flags : unsigned int {
-        none = 0,
-        ipv6_only = 1 << 0,
-        recvmmsg = 1 << 1,
-    };
-
-    enum class bind_flags : unsigned int {
-        none = 0,
-        ipv6_only = 1 << 0,
-        reuse_addr = 1 << 1,
-        reuse_port = 1 << 2,
-    };
-
-    static result<udp> create(create_flags flags, event_loop& loop = event_loop::current());
+    static result<udp> create(create_options options = create_options{},
+                              event_loop& loop = event_loop::current());
 
     static result<udp> open(int fd, event_loop& loop = event_loop::current());
 
-    error bind(std::string_view host, int port, bind_flags flags = bind_flags::none);
+    error bind(std::string_view host, int port, bind_options options = bind_options{});
 
     error connect(std::string_view host, int port);
 
@@ -123,62 +147,5 @@ private:
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };
-
-constexpr udp::create_flags operator|(udp::create_flags lhs, udp::create_flags rhs) noexcept {
-    return static_cast<udp::create_flags>(static_cast<unsigned int>(lhs) |
-                                          static_cast<unsigned int>(rhs));
-}
-
-constexpr udp::create_flags operator&(udp::create_flags lhs, udp::create_flags rhs) noexcept {
-    return static_cast<udp::create_flags>(static_cast<unsigned int>(lhs) &
-                                          static_cast<unsigned int>(rhs));
-}
-
-constexpr udp::create_flags& operator|=(udp::create_flags& lhs, udp::create_flags rhs) noexcept {
-    lhs = lhs | rhs;
-    return lhs;
-}
-
-constexpr bool has_flag(udp::create_flags value, udp::create_flags flag) noexcept {
-    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
-}
-
-constexpr udp::bind_flags operator|(udp::bind_flags lhs, udp::bind_flags rhs) noexcept {
-    return static_cast<udp::bind_flags>(static_cast<unsigned int>(lhs) |
-                                        static_cast<unsigned int>(rhs));
-}
-
-constexpr udp::bind_flags operator&(udp::bind_flags lhs, udp::bind_flags rhs) noexcept {
-    return static_cast<udp::bind_flags>(static_cast<unsigned int>(lhs) &
-                                        static_cast<unsigned int>(rhs));
-}
-
-constexpr udp::bind_flags& operator|=(udp::bind_flags& lhs, udp::bind_flags rhs) noexcept {
-    lhs = lhs | rhs;
-    return lhs;
-}
-
-constexpr bool has_flag(udp::bind_flags value, udp::bind_flags flag) noexcept {
-    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
-}
-
-constexpr udp::recv_flags operator|(udp::recv_flags lhs, udp::recv_flags rhs) noexcept {
-    return static_cast<udp::recv_flags>(static_cast<unsigned int>(lhs) |
-                                        static_cast<unsigned int>(rhs));
-}
-
-constexpr udp::recv_flags operator&(udp::recv_flags lhs, udp::recv_flags rhs) noexcept {
-    return static_cast<udp::recv_flags>(static_cast<unsigned int>(lhs) &
-                                        static_cast<unsigned int>(rhs));
-}
-
-constexpr udp::recv_flags& operator|=(udp::recv_flags& lhs, udp::recv_flags rhs) noexcept {
-    lhs = lhs | rhs;
-    return lhs;
-}
-
-constexpr bool has_flag(udp::recv_flags value, udp::recv_flags flag) noexcept {
-    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
-}
 
 }  // namespace eventide

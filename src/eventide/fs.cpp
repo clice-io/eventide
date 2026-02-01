@@ -19,32 +19,32 @@ struct fs_event::Self : uv_handle<fs_event::Self, uv_fs_event_t> {
 
 namespace {
 
-static result<unsigned int> to_uv_fs_event_flags(fs_event::watch_flags flags) {
+static result<unsigned int> to_uv_fs_event_flags(const fs_event::watch_options& options) {
     unsigned int out = 0;
 #ifdef UV_FS_EVENT_WATCH_ENTRY
-    if(has_flag(flags, fs_event::watch_flags::watch_entry)) {
+    if(options.watch_entry) {
         out |= UV_FS_EVENT_WATCH_ENTRY;
     }
 #else
-    if(has_flag(flags, fs_event::watch_flags::watch_entry)) {
+    if(options.watch_entry) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
 #ifdef UV_FS_EVENT_STAT
-    if(has_flag(flags, fs_event::watch_flags::stat)) {
+    if(options.stat) {
         out |= UV_FS_EVENT_STAT;
     }
 #else
-    if(has_flag(flags, fs_event::watch_flags::stat)) {
+    if(options.stat) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
 #ifdef UV_FS_EVENT_RECURSIVE
-    if(has_flag(flags, fs_event::watch_flags::recursive)) {
+    if(options.recursive) {
         out |= UV_FS_EVENT_RECURSIVE;
     }
 #else
-    if(has_flag(flags, fs_event::watch_flags::recursive)) {
+    if(options.recursive) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
@@ -52,15 +52,15 @@ static result<unsigned int> to_uv_fs_event_flags(fs_event::watch_flags flags) {
 }
 
 static fs_event::change_flags to_fs_change_flags(int events) {
-    auto out = fs_event::change_flags::none;
+    fs_event::change_flags out{};
 #ifdef UV_RENAME
     if((events & UV_RENAME) != 0) {
-        out |= fs_event::change_flags::rename;
+        out.rename = true;
     }
 #endif
 #ifdef UV_CHANGE
     if((events & UV_CHANGE) != 0) {
-        out |= fs_event::change_flags::change;
+        out.change = true;
     }
 #endif
     return out;
@@ -181,12 +181,12 @@ result<fs_event> fs_event::create(event_loop& loop) {
     return fs_event(state.release());
 }
 
-error fs_event::start(const char* path, watch_flags flags) {
+error fs_event::start(const char* path, watch_options options) {
     if(!self) {
         return error::invalid_argument;
     }
 
-    auto uv_flags = to_uv_fs_event_flags(flags);
+    auto uv_flags = to_uv_fs_event_flags(options);
     if(!uv_flags.has_value()) {
         return uv_flags.error();
     }

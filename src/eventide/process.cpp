@@ -6,6 +6,29 @@
 
 namespace eventide {
 
+static unsigned int to_uv_process_flags(const process::creation_options& options) {
+    unsigned int out = 0;
+    if(options.detached) {
+        out |= UV_PROCESS_DETACHED;
+    }
+    if(options.windows_hide) {
+        out |= UV_PROCESS_WINDOWS_HIDE;
+    }
+    if(options.windows_hide_console) {
+        out |= UV_PROCESS_WINDOWS_HIDE_CONSOLE;
+    }
+    if(options.windows_hide_gui) {
+        out |= UV_PROCESS_WINDOWS_HIDE_GUI;
+    }
+    if(options.windows_verbatim_arguments) {
+        out |= UV_PROCESS_WINDOWS_VERBATIM_ARGUMENTS;
+    }
+    if(options.windows_file_path_exact_name) {
+        out |= UV_PROCESS_WINDOWS_FILE_PATH_EXACT_NAME;
+    }
+    return out;
+}
+
 struct process::Self : uv_handle<process::Self, uv_process_t> {
     uv_process_t handle{};
     system_op* waiter = nullptr;
@@ -125,9 +148,11 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     spawn_result out{process(new Self())};
 
     std::vector<std::string> argv_storage;
-    argv_storage.reserve(opts.args.size() + 1);
-    argv_storage.push_back(opts.file);
-    argv_storage.insert(argv_storage.end(), opts.args.begin(), opts.args.end());
+    if(opts.args.empty()) {
+        argv_storage.push_back(opts.file);
+    } else {
+        argv_storage = opts.args;
+    }
 
     std::vector<char*> argv;
     argv.reserve(argv_storage.size() + 1);
@@ -209,17 +234,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         uv_opts.cwd = opts.cwd.c_str();
     }
 
-    uv_opts.flags = 0;
-#ifdef UV_PROCESS_DETACHED
-    if(opts.detached) {
-        uv_opts.flags |= UV_PROCESS_DETACHED;
-    }
-#endif
-#ifdef UV_PROCESS_WINDOWS_HIDE
-    if(opts.hide_window) {
-        uv_opts.flags |= UV_PROCESS_WINDOWS_HIDE;
-    }
-#endif
+    uv_opts.flags = to_uv_process_flags(opts.creation);
 
     auto* self = out.proc.self.get();
     if(self == nullptr) {

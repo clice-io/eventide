@@ -152,32 +152,32 @@ static fs::dirent::type map_dirent(uv_dirent_type_t t) {
     }
 }
 
-static result<int> to_uv_copyfile_flags(fs::copyfile_flags flags) {
+static result<int> to_uv_copyfile_flags(const fs::copyfile_options& options) {
     unsigned int out = 0;
 #ifdef UV_FS_COPYFILE_EXCL
-    if(has_flag(flags, fs::copyfile_flags::excl)) {
+    if(options.excl) {
         out |= UV_FS_COPYFILE_EXCL;
     }
 #else
-    if(has_flag(flags, fs::copyfile_flags::excl)) {
+    if(options.excl) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
 #ifdef UV_FS_COPYFILE_FICLONE
-    if(has_flag(flags, fs::copyfile_flags::clone)) {
+    if(options.clone) {
         out |= UV_FS_COPYFILE_FICLONE;
     }
 #else
-    if(has_flag(flags, fs::copyfile_flags::clone)) {
+    if(options.clone) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
 #ifdef UV_FS_COPYFILE_FICLONE_FORCE
-    if(has_flag(flags, fs::copyfile_flags::clone_force)) {
+    if(options.clone_force) {
         out |= UV_FS_COPYFILE_FICLONE_FORCE;
     }
 #else
-    if(has_flag(flags, fs::copyfile_flags::clone_force)) {
+    if(options.clone_force) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
@@ -266,9 +266,9 @@ task<result<fs::result>> fs::stat(std::string_view path, event_loop& loop) {
 
 task<result<fs::result>> fs::copyfile(std::string_view path,
                                       std::string_view new_path,
-                                      fs::copyfile_flags flags,
+                                      fs::copyfile_options options,
                                       event_loop& loop) {
-    auto uv_flags = to_uv_copyfile_flags(flags);
+    auto uv_flags = to_uv_copyfile_flags(options);
     if(!uv_flags.has_value()) {
         co_return std::unexpected(uv_flags.error());
     }

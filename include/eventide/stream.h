@@ -105,9 +105,11 @@ public:
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
-    enum class bind_flags : unsigned int {
-        none = 0,
-        ipv6_only = 1 << 0,
+    struct bind_options {
+        /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
+        bool ipv6_only;
+
+        constexpr bind_options(bool ipv6_only = false) : ipv6_only(ipv6_only) {}
     };
 
     static result<tcp_socket> open(int fd, event_loop& loop = event_loop::current());
@@ -118,7 +120,7 @@ public:
 
     static result<acceptor> listen(std::string_view host,
                                    int port,
-                                   bind_flags flags = bind_flags::none,
+                                   bind_options options = bind_options{},
                                    int backlog = 128,
                                    event_loop& loop = event_loop::current());
 };
@@ -132,27 +134,5 @@ public:
 private:
     explicit console(Self* state) noexcept;
 };
-
-constexpr tcp_socket::bind_flags operator|(tcp_socket::bind_flags lhs,
-                                           tcp_socket::bind_flags rhs) noexcept {
-    return static_cast<tcp_socket::bind_flags>(static_cast<unsigned int>(lhs) |
-                                               static_cast<unsigned int>(rhs));
-}
-
-constexpr tcp_socket::bind_flags operator&(tcp_socket::bind_flags lhs,
-                                           tcp_socket::bind_flags rhs) noexcept {
-    return static_cast<tcp_socket::bind_flags>(static_cast<unsigned int>(lhs) &
-                                               static_cast<unsigned int>(rhs));
-}
-
-constexpr tcp_socket::bind_flags& operator|=(tcp_socket::bind_flags& lhs,
-                                             tcp_socket::bind_flags rhs) noexcept {
-    lhs = lhs | rhs;
-    return lhs;
-}
-
-constexpr bool has_flag(tcp_socket::bind_flags value, tcp_socket::bind_flags flag) noexcept {
-    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
-}
 
 }  // namespace eventide

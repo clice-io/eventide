@@ -16,6 +16,23 @@ void async_node::cancel() {
     }
     state = Cancelled;
 
+    auto propagate_cancel = [](waiter_link* link) {
+        if(!link) {
+            return;
+        }
+
+        auto* awaiter = link->awaiter;
+        link->awaiter = nullptr;
+        if(!awaiter) {
+            return;
+        }
+
+        auto next = awaiter->handle_subtask_result(link);
+        if(next) {
+            next.resume();
+        }
+    };
+
     switch(kind) {
         case NodeKind::Task: {
             auto* self = static_cast<standard_task*>(this);
@@ -24,7 +41,13 @@ void async_node::cancel() {
             }
             break;
         }
-        case NodeKind::SharedTask:
+        case NodeKind::SharedTask: {
+            auto* self = static_cast<shared_resource*>(this);
+            if(self->awaitee) {
+                self->awaitee->cancel();
+            }
+            break;
+        }
         case NodeKind::Mutex:
         case NodeKind::Event:
         case NodeKind::Semaphore:
@@ -34,16 +57,10 @@ void async_node::cancel() {
                 self->awaitee->cancel();
             }
 
-            auto* cur = self->head;
-            while(cur) {
-                auto* next = cur->next;
-                /// FIXME:
-                if(cur->awaiter) {}
-                cur = next;
+            while(auto* cur = self->pop_waiter()) {
+                cur->state = Cancelled;
+                propagate_cancel(cur);
             }
-
-            self->head = nullptr;
-            self->tail = nullptr;
             break;
         }
 
@@ -52,25 +69,9 @@ void async_node::cancel() {
         case NodeKind::EventWaiter: {
             auto* self = static_cast<waiter_link*>(this);
             if(auto* res = self->resource) {
-                if(self->prev) {
-                    self->prev->next = self->next;
-                } else {
-                    res->head = self->next;
-                }
-
-                if(self->next) {
-                    self->next->prev = self->prev;
-                } else {
-                    res->tail = self->prev;
-                }
-
-                self->prev = nullptr;
-                self->next = nullptr;
-                self->resource = nullptr;
+                res->remove(self);
             }
-            if(self->awaiter) {
-                /// FIXME:
-            }
+            propagate_cancel(self);
             break;
         }
 

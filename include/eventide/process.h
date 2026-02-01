@@ -41,7 +41,12 @@ public:
     };
 
     struct stdio {
-        enum class kind { inherit, ignore, fd, pipe };
+        enum class kind {
+            inherit,  // inherit parent's stdio
+            ignore,   // discard this stream
+            fd,       // inherit a specific file descriptor
+            pipe      // create a pipe
+        };
 
         /// How this stream should be configured for the child.
         kind type = kind::inherit;
@@ -68,11 +73,31 @@ public:
         static stdio pipe(bool readable, bool writable);
     };
 
+    struct creation_options {
+        /// Detach the child from the parent process group/session.
+        bool detached = false;
+
+        /// Hide the console window (Windows).
+        bool windows_hide = false;
+
+        /// Hide the console window specifically (Windows).
+        bool windows_hide_console = false;
+
+        /// Hide GUI window (Windows).
+        bool windows_hide_gui = false;
+
+        /// Disable argument quoting/escaping (Windows).
+        bool windows_verbatim_arguments = false;
+
+        /// Use exact file path for image name (Windows).
+        bool windows_file_path_exact_name = false;
+    };
+
     struct options {
         /// Executable path.
         std::string file;
 
-        /// argv (excluding argv[0], which is taken from `file`).
+        /// argv (including argv[0]). If empty, defaults to `file`.
         std::vector<std::string> args;
 
         /// Environment variables in `KEY=VALUE` form; empty means inherit.
@@ -81,11 +106,8 @@ public:
         /// Working directory; empty means inherit.
         std::string cwd;
 
-        /// Whether to detach the child process.
-        bool detached = false;
-
-        /// Hide window on platforms that support it.
-        bool hide_window = false;
+        /// Process creation options (platform-specific options may be ignored).
+        creation_options creation;
 
         /// Stdio config for stdin/stdout/stderr.
         std::array<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};

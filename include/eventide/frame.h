@@ -51,7 +51,7 @@ public:
 
     const NodeKind kind;
 
-    Policy policy;
+    Policy policy = None;
 
     State state = Pending;
 

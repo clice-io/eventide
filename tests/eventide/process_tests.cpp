@@ -24,10 +24,10 @@ TEST_CASE(spawn_wait_simple) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    opts.args = {"/c", "exit 0"};
+    opts.args = {opts.file, "/c", "exit 0"};
 #else
     opts.file = "/bin/sh";
-    opts.args = {"-c", "true"};
+    opts.args = {opts.file, "-c", "true"};
 #endif
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
 
