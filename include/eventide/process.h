@@ -3,12 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "error.h"
-#include "handle.h"
 #include "stream.h"
 #include "task.h"
 
@@ -16,14 +16,21 @@ namespace eventide {
 
 class event_loop;
 
-class process : public handle {
-private:
-    using handle::handle;
-
+class process {
 public:
-    process(process&& other) noexcept;
+    process() noexcept;
 
+    process(const process&) = delete;
+    process& operator=(const process&) = delete;
+
+    process(process&& other) noexcept;
     process& operator=(process&& other) noexcept;
+
+    ~process();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
 
     struct exit_status {
         /// Exit code reported by the child.
@@ -102,12 +109,9 @@ public:
     error kill(int signum);
 
 private:
-    template <typename Tag>
-    friend struct awaiter;
+    explicit process(Self* state) noexcept;
 
-    async_node* waiter = nullptr;
-    exit_status* active = nullptr;
-    std::optional<exit_status> completed;
+    std::unique_ptr<Self, void (*)(void*)> self;
 };
 
 struct process::spawn_result {

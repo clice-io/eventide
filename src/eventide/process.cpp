@@ -6,76 +6,48 @@
 
 namespace eventide {
 
+struct process::Self : uv_handle<process::Self, uv_process_t> {
+    uv_process_t handle{};
+    async_node* waiter = nullptr;
+    process::exit_status* active = nullptr;
+    std::optional<process::exit_status> completed;
+
+    Self() {
+        handle.data = this;
+    }
+};
+
 namespace {
 
-struct process_wait_tag {};
-
-}  // namespace
-
-process::process(process&& other) noexcept :
-    handle(std::move(other)), waiter(other.waiter), active(other.active),
-    completed(std::move(other.completed)) {
-    other.waiter = nullptr;
-    other.active = nullptr;
-
-    if(initialized()) {
-        if(auto* handle = as<uv_process_t>()) {
-            handle->data = this;
-        }
-    }
-}
-
-process& process::operator=(process&& other) noexcept {
-    if(this == &other) {
-        return *this;
-    }
-
-    handle::operator=(std::move(other));
-    waiter = other.waiter;
-    active = other.active;
-    completed = std::move(other.completed);
-
-    other.waiter = nullptr;
-    other.active = nullptr;
-
-    if(initialized()) {
-        if(auto* handle = as<uv_process_t>()) {
-            handle->data = this;
-        }
-    }
-
-    return *this;
-}
-
-template <>
-struct awaiter<process_wait_tag> : system_op {
+struct process_await : system_op {
     using promise_t = task<process::wait_result>::promise_type;
 
-    process* self;
+    process::Self* self;
     process::exit_status result{};
 
-    explicit awaiter(process* proc) : system_op(async_node::NodeKind::SystemIO), self(proc) {
+    explicit process_await(process::Self* self) :
+        system_op(async_node::NodeKind::SystemIO), self(self) {
         action = &on_cancel;
     }
 
     static void on_cancel(system_op* op) {
-        auto* self = static_cast<awaiter*>(op);
-        if(self->self) {
-            self->self->waiter = nullptr;
-            self->self->active = nullptr;
+        auto* aw = static_cast<process_await*>(op);
+        if(aw->self) {
+            aw->self->waiter = nullptr;
+            aw->self->active = nullptr;
         }
-        self->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
-    static void notify(process& proc, process::exit_status status) {
-        proc.completed = status;
+    static void notify(process::Self& self, process::exit_status status) {
+        self.completed = status;
 
-        if(proc.waiter && proc.active) {
-            *proc.active = status;
+        if(self.waiter && self.active) {
+            *self.active = status;
 
-            auto w = proc.waiter;
-            proc.waiter = nullptr;
-            proc.active = nullptr;
+            auto w = self.waiter;
+            self.waiter = nullptr;
+            self.active = nullptr;
 
             w->resume();
         }
@@ -88,17 +60,42 @@ struct awaiter<process_wait_tag> : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
+        if(!self) {
+            return waiting;
+        }
         self->waiter = waiting ? &waiting.promise() : nullptr;
         self->active = &result;
         return link_continuation(&waiting.promise(), location);
     }
 
     process::wait_result await_resume() noexcept {
-        self->waiter = nullptr;
-        self->active = nullptr;
+        if(self) {
+            self->waiter = nullptr;
+            self->active = nullptr;
+        }
         return result;
     }
 };
+
+}  // namespace
+
+process::process() noexcept : self(nullptr, nullptr) {}
+
+process::process(Self* self) noexcept : self(self, Self::destroy) {}
+
+process::~process() = default;
+
+process::process(process&& other) noexcept = default;
+
+process& process::operator=(process&& other) noexcept = default;
+
+process::Self* process::operator->() noexcept {
+    return self.get();
+}
+
+const process::Self* process::operator->() const noexcept {
+    return self.get();
+}
 
 process::stdio process::stdio::inherit() {
     return stdio{};
@@ -125,17 +122,8 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
     return io;
 }
 
-void on_exit_cb(uv_process_t* handle, int64_t exit_status, int term_signal) {
-    auto* proc = static_cast<process*>(handle->data);
-    if(proc == nullptr) {
-        return;
-    }
-
-    awaiter<process_wait_tag>::notify(*proc, process::exit_status{exit_status, term_signal});
-}
-
 result<process::spawn_result> process::spawn(event_loop& loop, const options& opts) {
-    spawn_result out{process(sizeof(uv_process_t))};
+    spawn_result out{process(new Self())};
 
     std::vector<std::string> argv_storage;
     argv_storage.reserve(opts.args.size() + 1);
@@ -213,7 +201,14 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
     }
 
     uv_process_options_t uv_opts{};
-    uv_opts.exit_cb = on_exit_cb;
+    uv_opts.exit_cb = +[](uv_process_t* handle, int64_t exit_status, int term_signal) {
+        auto* self = static_cast<process::Self*>(handle->data);
+        if(self == nullptr) {
+            return;
+        }
+
+        process_await::notify(*self, process::exit_status{exit_status, term_signal});
+    };
     uv_opts.file = opts.file.c_str();
     uv_opts.args = argv.data();
     uv_opts.stdio_count = static_cast<int>(stdio.size());
@@ -239,15 +234,20 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
     }
 #endif
 
-    auto proc_handle = out.proc.as<uv_process_t>();
+    auto* self = out.proc.self.get();
+    if(self == nullptr) {
+        return std::unexpected(error::invalid_argument);
+    }
+
+    auto proc_handle = &self->handle;
     int err = uv_spawn(static_cast<uv_loop_t*>(loop.handle()), proc_handle, &uv_opts);
     if(err != 0) {
-        out.proc.mark_initialized();
+        self->mark_initialized();
         return std::unexpected(error(err));
     }
 
-    out.proc.mark_initialized();
-    proc_handle->data = &out.proc;
+    self->mark_initialized();
+    proc_handle->data = self;
 
     out.stdin_pipe = std::move(created_pipes[0]);
     out.stdout_pipe = std::move(created_pipes[1]);
@@ -257,32 +257,35 @@ result<process::spawn_result> process::spawn(event_loop& loop, const options& op
 }
 
 task<process::wait_result> process::wait() {
-    if(completed.has_value()) {
-        co_return *completed;
+    if(!self) {
+        co_return std::unexpected(error::invalid_argument);
     }
 
-    if(waiter != nullptr) {
+    if(self->completed.has_value()) {
+        co_return *self->completed;
+    }
+
+    if(self->waiter != nullptr) {
         co_return std::unexpected(error::socket_is_already_connected);
     }
 
-    co_return co_await awaiter<process_wait_tag>{this};
+    co_return co_await process_await{self.get()};
 }
 
 int process::pid() const noexcept {
-    if(!initialized()) {
+    if(!self || !self->initialized()) {
         return -1;
     }
 
-    auto proc = as<const uv_process_t>();
-    return proc ? proc->pid : -1;
+    return self->handle.pid;
 }
 
 error process::kill(int signum) {
-    if(!initialized()) {
+    if(!self || !self->initialized()) {
         return error::invalid_argument;
     }
 
-    int err = uv_process_kill(as<uv_process_t>(), signum);
+    int err = uv_process_kill(&self->handle, signum);
     if(err != 0) {
         return error(err);
     }
