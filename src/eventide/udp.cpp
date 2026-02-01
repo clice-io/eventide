@@ -41,8 +41,7 @@ struct udp_recv_await : system_op {
     udp::Self* self;
     result<udp::recv_result> outcome = std::unexpected(error{});
 
-    explicit udp_recv_await(udp::Self* socket) :
-         self(socket) {
+    explicit udp_recv_await(udp::Self* socket) : self(socket) {
         action = &on_cancel;
     }
 
@@ -56,7 +55,7 @@ struct udp_recv_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -163,8 +162,7 @@ struct udp_send_await : system_op {
     error result{};
 
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
-         self(u), storage(data.begin(), data.end()),
-        dest(std::move(d)) {
+        self(u), storage(data.begin(), data.end()), dest(std::move(d)) {
         action = &on_cancel;
     }
 
@@ -175,7 +173,7 @@ struct udp_send_await : system_op {
             aw->self->send_waiter = nullptr;
             aw->self->send_active = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_send(uv_udp_send_t* req, int status) {

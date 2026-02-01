@@ -68,8 +68,7 @@ struct timer_await : system_op {
 
     timer::Self* self;
 
-    explicit timer_await(timer::Self* watcher) :
-         self(watcher) {
+    explicit timer_await(timer::Self* watcher) : self(watcher) {
         action = &on_cancel;
     }
 
@@ -78,7 +77,7 @@ struct timer_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_fire(uv_timer_t* handle) {
@@ -126,8 +125,7 @@ struct idle_await : system_op {
 
     idle::Self* self;
 
-    explicit idle_await(idle::Self* watcher) :
-         self(watcher) {
+    explicit idle_await(idle::Self* watcher) : self(watcher) {
         action = &on_cancel;
     }
 
@@ -136,7 +134,7 @@ struct idle_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_fire(uv_idle_t* handle) {
@@ -184,8 +182,7 @@ struct prepare_await : system_op {
 
     prepare::Self* self;
 
-    explicit prepare_await(prepare::Self* watcher) :
-         self(watcher) {
+    explicit prepare_await(prepare::Self* watcher) : self(watcher) {
         action = &on_cancel;
     }
 
@@ -194,7 +191,7 @@ struct prepare_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_fire(uv_prepare_t* handle) {
@@ -242,8 +239,7 @@ struct check_await : system_op {
 
     check::Self* self;
 
-    explicit check_await(check::Self* watcher) :
-         self(watcher) {
+    explicit check_await(check::Self* watcher) : self(watcher) {
         action = &on_cancel;
     }
 
@@ -252,7 +248,7 @@ struct check_await : system_op {
         if(aw->self) {
             aw->self->waiter = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_fire(uv_check_t* handle) {
@@ -301,8 +297,7 @@ struct signal_await : system_op {
     signal::Self* self;
     error result{};
 
-    explicit signal_await(signal::Self* watcher) :
-         self(watcher) {
+    explicit signal_await(signal::Self* watcher) : self(watcher) {
         action = &on_cancel;
     }
 
@@ -312,7 +307,7 @@ struct signal_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_fire(uv_signal_t* handle) {

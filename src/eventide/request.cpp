@@ -28,7 +28,7 @@ struct work_op : system_op {
         auto* self = static_cast<work_op*>(op);
         uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
         self->waiter = nullptr;
-        self->system_op::awaiter = nullptr;
+        self->awaiter = nullptr;
     }
 
     bool await_ready() const noexcept {
@@ -64,7 +64,7 @@ struct fs_op : system_op {
         auto* self = static_cast<fs_op*>(op);
         uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
         self->waiter = nullptr;
-        self->system_op::awaiter = nullptr;
+        self->awaiter = nullptr;
     }
 
     bool await_ready() const noexcept {

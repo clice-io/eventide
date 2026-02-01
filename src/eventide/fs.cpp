@@ -35,7 +35,7 @@ struct fs_event_await : system_op {
             aw->self->waiter = nullptr;
             aw->self->active = nullptr;
         }
-        aw->system_op::awaiter = nullptr;
+        aw->awaiter = nullptr;
     }
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {

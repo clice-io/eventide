@@ -25,8 +25,7 @@ struct process_await : system_op {
     process::Self* self;
     process::exit_status result{};
 
-    explicit process_await(process::Self* self) :
-         self(self) {
+    explicit process_await(process::Self* self) : self(self) {
         action = &on_cancel;
     }
 
