@@ -105,6 +105,11 @@ public:
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
+    enum class bind_flags : unsigned int {
+        none = 0,
+        ipv6_only = 1 << 0,
+    };
+
     static result<tcp_socket> open(int fd, event_loop& loop = event_loop::current());
 
     static task<result<tcp_socket>> connect(std::string_view host,
@@ -113,7 +118,7 @@ public:
 
     static result<acceptor> listen(std::string_view host,
                                    int port,
-                                   unsigned int flags = 0,
+                                   bind_flags flags = bind_flags::none,
                                    int backlog = 128,
                                    event_loop& loop = event_loop::current());
 };
@@ -127,5 +132,27 @@ public:
 private:
     explicit console(Self* state) noexcept;
 };
+
+constexpr tcp_socket::bind_flags operator|(tcp_socket::bind_flags lhs,
+                                           tcp_socket::bind_flags rhs) noexcept {
+    return static_cast<tcp_socket::bind_flags>(static_cast<unsigned int>(lhs) |
+                                               static_cast<unsigned int>(rhs));
+}
+
+constexpr tcp_socket::bind_flags operator&(tcp_socket::bind_flags lhs,
+                                           tcp_socket::bind_flags rhs) noexcept {
+    return static_cast<tcp_socket::bind_flags>(static_cast<unsigned int>(lhs) &
+                                               static_cast<unsigned int>(rhs));
+}
+
+constexpr tcp_socket::bind_flags& operator|=(tcp_socket::bind_flags& lhs,
+                                             tcp_socket::bind_flags rhs) noexcept {
+    lhs = lhs | rhs;
+    return lhs;
+}
+
+constexpr bool has_flag(tcp_socket::bind_flags value, tcp_socket::bind_flags flag) noexcept {
+    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
+}
 
 }  // namespace eventide

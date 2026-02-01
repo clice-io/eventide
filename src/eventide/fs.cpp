@@ -19,6 +19,53 @@ struct fs_event::Self : uv_handle<fs_event::Self, uv_fs_event_t> {
 
 namespace {
 
+static result<unsigned int> to_uv_fs_event_flags(fs_event::watch_flags flags) {
+    unsigned int out = 0;
+#ifdef UV_FS_EVENT_WATCH_ENTRY
+    if(has_flag(flags, fs_event::watch_flags::watch_entry)) {
+        out |= UV_FS_EVENT_WATCH_ENTRY;
+    }
+#else
+    if(has_flag(flags, fs_event::watch_flags::watch_entry)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_FS_EVENT_STAT
+    if(has_flag(flags, fs_event::watch_flags::stat)) {
+        out |= UV_FS_EVENT_STAT;
+    }
+#else
+    if(has_flag(flags, fs_event::watch_flags::stat)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_FS_EVENT_RECURSIVE
+    if(has_flag(flags, fs_event::watch_flags::recursive)) {
+        out |= UV_FS_EVENT_RECURSIVE;
+    }
+#else
+    if(has_flag(flags, fs_event::watch_flags::recursive)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+    return out;
+}
+
+static fs_event::change_flags to_fs_change_flags(int events) {
+    auto out = fs_event::change_flags::none;
+#ifdef UV_RENAME
+    if((events & UV_RENAME) != 0) {
+        out |= fs_event::change_flags::rename;
+    }
+#endif
+#ifdef UV_CHANGE
+    if((events & UV_CHANGE) != 0) {
+        out |= fs_event::change_flags::change;
+    }
+#endif
+    return out;
+}
+
 struct fs_event_await : system_op {
     using promise_t = task<result<fs_event::change>>::promise_type;
 
@@ -71,7 +118,7 @@ struct fs_event_await : system_op {
         if(filename) {
             c.path = filename;
         }
-        c.flags = events;
+        c.flags = to_fs_change_flags(events);
 
         deliver(std::move(c));
     }
@@ -134,14 +181,19 @@ result<fs_event> fs_event::create(event_loop& loop) {
     return fs_event(state.release());
 }
 
-error fs_event::start(const char* path, unsigned int flags) {
+error fs_event::start(const char* path, watch_flags flags) {
     if(!self) {
         return error::invalid_argument;
     }
 
+    auto uv_flags = to_uv_fs_event_flags(flags);
+    if(!uv_flags.has_value()) {
+        return uv_flags.error();
+    }
+
     auto handle = &self->handle;
     handle->data = self.get();
-    int err = uv_fs_event_start(handle, fs_event_await::on_change, path, flags);
+    int err = uv_fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value());
     if(err != 0) {
         return error(err);
     }

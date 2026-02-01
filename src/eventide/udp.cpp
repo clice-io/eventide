@@ -35,6 +35,76 @@ struct udp::Self : uv_handle<udp::Self, uv_udp_t> {
 
 namespace {
 
+static result<unsigned int> to_uv_udp_init_flags(udp::create_flags flags) {
+    unsigned int out = 0;
+#ifdef UV_UDP_IPV6ONLY
+    if(has_flag(flags, udp::create_flags::ipv6_only)) {
+        out |= UV_UDP_IPV6ONLY;
+    }
+#else
+    if(has_flag(flags, udp::create_flags::ipv6_only)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_UDP_RECVMMSG
+    if(has_flag(flags, udp::create_flags::recvmmsg)) {
+        out |= UV_UDP_RECVMMSG;
+    }
+#else
+    if(has_flag(flags, udp::create_flags::recvmmsg)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+    return out;
+}
+
+static result<unsigned int> to_uv_udp_bind_flags(udp::bind_flags flags) {
+    unsigned int out = 0;
+#ifdef UV_UDP_IPV6ONLY
+    if(has_flag(flags, udp::bind_flags::ipv6_only)) {
+        out |= UV_UDP_IPV6ONLY;
+    }
+#else
+    if(has_flag(flags, udp::bind_flags::ipv6_only)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_UDP_REUSEADDR
+    if(has_flag(flags, udp::bind_flags::reuse_addr)) {
+        out |= UV_UDP_REUSEADDR;
+    }
+#else
+    if(has_flag(flags, udp::bind_flags::reuse_addr)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+#ifdef UV_UDP_REUSEPORT
+    if(has_flag(flags, udp::bind_flags::reuse_port)) {
+        out |= UV_UDP_REUSEPORT;
+    }
+#else
+    if(has_flag(flags, udp::bind_flags::reuse_port)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+    return out;
+}
+
+static udp::recv_flags to_udp_recv_flags(unsigned flags) {
+    auto out = udp::recv_flags::none;
+#ifdef UV_UDP_PARTIAL
+    if((flags & UV_UDP_PARTIAL) != 0) {
+        out |= udp::recv_flags::partial;
+    }
+#endif
+#ifdef UV_UDP_MMSG_CHUNK
+    if((flags & UV_UDP_MMSG_CHUNK) != 0) {
+        out |= udp::recv_flags::mmsg_chunk;
+    }
+#endif
+    return out;
+}
+
 struct udp_recv_await : system_op {
     using promise_t = task<result<udp::recv_result>>::promise_type;
 
@@ -101,7 +171,7 @@ struct udp_recv_await : system_op {
 
         udp::recv_result out{};
         out.data.assign(u->buffer.data(), u->buffer.data() + nread);
-        out.flags = flags;
+        out.flags = to_udp_recv_flags(flags);
 
         if(addr != nullptr) {
             auto ep = endpoint_from_sockaddr(addr);
@@ -321,10 +391,16 @@ result<udp> udp::create(event_loop& loop) {
     return udp(state.release());
 }
 
-result<udp> udp::create(unsigned int flags, event_loop& loop) {
+result<udp> udp::create(create_flags flags, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     state->buffer.resize(64 * 1024);
-    int err = uv_udp_init_ex(static_cast<uv_loop_t*>(loop.handle()), &state->handle, flags);
+    auto uv_flags = to_uv_udp_init_flags(flags);
+    if(!uv_flags.has_value()) {
+        return std::unexpected(uv_flags.error());
+    }
+
+    int err =
+        uv_udp_init_ex(static_cast<uv_loop_t*>(loop.handle()), &state->handle, uv_flags.value());
     if(err != 0) {
         return std::unexpected(error(err));
     }
@@ -353,9 +429,14 @@ result<udp> udp::open(int fd, event_loop& loop) {
     return udp(state.release());
 }
 
-error udp::bind(std::string_view host, int port, unsigned flags) {
+error udp::bind(std::string_view host, int port, bind_flags flags) {
     if(!self) {
         return error::invalid_argument;
+    }
+
+    auto uv_flags = to_uv_udp_bind_flags(flags);
+    if(!uv_flags.has_value()) {
+        return uv_flags.error();
     }
 
     sockaddr_storage storage{};
@@ -365,7 +446,7 @@ error udp::bind(std::string_view host, int port, unsigned flags) {
     }
 
     const sockaddr* addr = reinterpret_cast<const sockaddr*>(&storage);
-    int err = uv_udp_bind(&self->handle, addr, flags);
+    int err = uv_udp_bind(&self->handle, addr, uv_flags.value());
     if(err != 0) {
         return error(err);
     }

@@ -692,10 +692,24 @@ task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, ev
     co_return co_await tcp_connect_await{std::move(state), host, port};
 }
 
+static result<unsigned int> to_uv_tcp_bind_flags(tcp_socket::bind_flags flags) {
+    unsigned int out = 0;
+#ifdef UV_TCP_IPV6ONLY
+    if(has_flag(flags, tcp_socket::bind_flags::ipv6_only)) {
+        out |= UV_TCP_IPV6ONLY;
+    }
+#else
+    if(has_flag(flags, tcp_socket::bind_flags::ipv6_only)) {
+        return std::unexpected(error::function_not_implemented);
+    }
+#endif
+    return out;
+}
+
 static int start_tcp_listen(tcp_socket::acceptor& acc,
                             std::string_view host,
                             int port,
-                            unsigned int flags,
+                            tcp_socket::bind_flags flags,
                             int backlog,
                             event_loop& loop) {
     auto* self = acc.operator->();
@@ -729,7 +743,12 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
         return error::invalid_argument.value();
     }
 
-    err = uv_tcp_bind(handle, addr_ptr, flags);
+    auto uv_flags = to_uv_tcp_bind_flags(flags);
+    if(!uv_flags.has_value()) {
+        return uv_flags.error().value();
+    }
+
+    err = uv_tcp_bind(handle, addr_ptr, uv_flags.value());
     if(err != 0) {
         return err;
     }
@@ -742,7 +761,7 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
 
 result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 int port,
-                                                unsigned int flags,
+                                                tcp_socket::bind_flags flags,
                                                 int backlog,
                                                 event_loop& loop) {
     tcp_socket::acceptor acc(new tcp_socket::acceptor::Self());

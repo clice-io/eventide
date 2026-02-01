@@ -211,7 +211,8 @@ TEST_CASE(accept_and_read) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, 0, 128, loop);
+    auto acc_res =
+        tcp_socket::listen("127.0.0.1", port, tcp_socket::bind_flags::none, 128, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto server = accept_and_read(std::move(*acc_res));
@@ -244,7 +245,8 @@ TEST_CASE(accept_already_waiting) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, 0, 128, loop);
+    auto acc_res =
+        tcp_socket::listen("127.0.0.1", port, tcp_socket::bind_flags::none, 128, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto acc = std::move(*acc_res);
@@ -282,7 +284,8 @@ TEST_CASE(connect_and_write) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, 0, 128, loop);
+    auto acc_res =
+        tcp_socket::listen("127.0.0.1", port, tcp_socket::bind_flags::none, 128, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     std::atomic<int> done{0};

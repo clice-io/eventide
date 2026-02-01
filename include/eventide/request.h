@@ -34,6 +34,13 @@ struct dirent {
     type kind = type::unknown;
 };
 
+enum class copyfile_flags : unsigned int {
+    none = 0,
+    excl = 1 << 0,
+    clone = 1 << 1,
+    clone_force = 1 << 2,
+};
+
 class dir_handle {
 public:
     dir_handle() = default;
@@ -63,7 +70,7 @@ task<op_result> stat(std::string_view path, event_loop& loop = event_loop::curre
 
 task<op_result> copyfile(std::string_view path,
                          std::string_view new_path,
-                         int flags,
+                         copyfile_flags flags = copyfile_flags::none,
                          event_loop& loop = event_loop::current());
 
 task<op_result> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
@@ -73,7 +80,6 @@ task<op_result> mkstemp(std::string_view tpl, event_loop& loop = event_loop::cur
 task<op_result> rmdir(std::string_view path, event_loop& loop = event_loop::current());
 
 task<::eventide::result<std::vector<dirent>>> scandir(std::string_view path,
-                                                      int flags,
                                                       event_loop& loop = event_loop::current());
 
 task<::eventide::result<dir_handle>> opendir(std::string_view path,
@@ -126,5 +132,25 @@ task<op_result> link(std::string_view path,
                      event_loop& loop = event_loop::current());
 
 }  // namespace fs
+
+constexpr fs::copyfile_flags operator|(fs::copyfile_flags lhs, fs::copyfile_flags rhs) noexcept {
+    return static_cast<fs::copyfile_flags>(static_cast<unsigned int>(lhs) |
+                                           static_cast<unsigned int>(rhs));
+}
+
+constexpr fs::copyfile_flags operator&(fs::copyfile_flags lhs, fs::copyfile_flags rhs) noexcept {
+    return static_cast<fs::copyfile_flags>(static_cast<unsigned int>(lhs) &
+                                           static_cast<unsigned int>(rhs));
+}
+
+constexpr fs::copyfile_flags& operator|=(fs::copyfile_flags& lhs,
+                                         fs::copyfile_flags rhs) noexcept {
+    lhs = lhs | rhs;
+    return lhs;
+}
+
+constexpr bool has_flag(fs::copyfile_flags value, fs::copyfile_flags flag) noexcept {
+    return (static_cast<unsigned int>(value) & static_cast<unsigned int>(flag)) != 0U;
+}
 
 }  // namespace eventide
