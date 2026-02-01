@@ -411,7 +411,10 @@ struct tcp_connect_await : system_op {
 
     static void on_cancel(system_op* op) {
         auto* aw = static_cast<tcp_connect_await*>(op);
-        uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
+        if(aw->state) {
+            // uv_connect_t can't be cancelled; close the handle to trigger ECANCELED.
+            aw->state.reset();
+        }
     }
 
     static void on_connect(uv_connect_t* req, int status) {
