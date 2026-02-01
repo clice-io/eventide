@@ -32,7 +32,7 @@ public:
         int flags;
     };
 
-    static result<fs_event> create(event_loop& loop);
+    static result<fs_event> create(event_loop& loop = event_loop::current());
 
     /// Start watching the given path; flags passed directly to libuv.
     error start(const char* path, unsigned int flags = 0);

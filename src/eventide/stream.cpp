@@ -509,7 +509,7 @@ acceptor<Stream>::acceptor(Self* state) noexcept : self(state, Self::destroy) {}
 template class acceptor<pipe>;
 template class acceptor<tcp_socket>;
 
-result<pipe> pipe::open(event_loop& loop, int fd) {
+result<pipe> pipe::open(int fd, event_loop& loop) {
     auto pipe_res = create(loop);
     if(!pipe_res.has_value()) {
         return std::unexpected(pipe_res.error());
@@ -524,7 +524,7 @@ result<pipe> pipe::open(event_loop& loop, int fd) {
     return std::move(*pipe_res);
 }
 
-static int start_pipe_listen(pipe::acceptor& acc, event_loop& loop, const char* name, int backlog) {
+static int start_pipe_listen(pipe::acceptor& acc, const char* name, int backlog, event_loop& loop) {
     auto* self = acc.operator->();
     if(!self) {
         return error::invalid_argument.value();
@@ -550,9 +550,9 @@ static int start_pipe_listen(pipe::acceptor& acc, event_loop& loop, const char* 
     return err;
 }
 
-result<pipe::acceptor> pipe::listen(event_loop& loop, const char* name, int backlog) {
+result<pipe::acceptor> pipe::listen(const char* name, int backlog, event_loop& loop) {
     pipe::acceptor acc(new pipe::acceptor::Self());
-    int err = start_pipe_listen(acc, loop, name, backlog);
+    int err = start_pipe_listen(acc, name, backlog, loop);
     if(err != 0) {
         return std::unexpected(error(err));
     }
@@ -576,7 +576,7 @@ result<pipe> pipe::create(event_loop& loop) {
 
 tcp_socket::tcp_socket(Self* state) noexcept : stream(state) {}
 
-result<tcp_socket> tcp_socket::open(event_loop& loop, int fd) {
+result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = state->as<uv_tcp_t>();
 
@@ -596,11 +596,11 @@ result<tcp_socket> tcp_socket::open(event_loop& loop, int fd) {
 }
 
 static int start_tcp_listen(tcp_socket::acceptor& acc,
-                            event_loop& loop,
                             std::string_view host,
                             int port,
                             unsigned int flags,
-                            int backlog) {
+                            int backlog,
+                            event_loop& loop) {
     auto* self = acc.operator->();
     if(!self) {
         return error::invalid_argument.value();
@@ -643,13 +643,13 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
     return err;
 }
 
-result<tcp_socket::acceptor> tcp_socket::listen(event_loop& loop,
-                                                std::string_view host,
+result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 int port,
                                                 unsigned int flags,
-                                                int backlog) {
+                                                int backlog,
+                                                event_loop& loop) {
     tcp_socket::acceptor acc(new tcp_socket::acceptor::Self());
-    int err = start_tcp_listen(acc, loop, host, port, flags, backlog);
+    int err = start_tcp_listen(acc, host, port, flags, backlog, loop);
     if(err != 0) {
         return std::unexpected(error(err));
     }
@@ -657,7 +657,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(event_loop& loop,
     return acc;
 }
 
-result<console> console::open(event_loop& loop, int fd) {
+result<console> console::open(int fd, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = state->as<uv_tty_t>();
 

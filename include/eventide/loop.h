@@ -20,7 +20,7 @@ public:
 
     ~event_loop();
 
-    static event_loop* current();
+    static event_loop& current();
 
     struct self;
 

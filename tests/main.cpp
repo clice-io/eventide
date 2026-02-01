@@ -10,7 +10,7 @@
 namespace ev = eventide;
 
 ev::task<> echo(ev::event_loop& loop) {
-    auto pipe = ev::pipe::open(loop, STDIN_FILENO);
+    auto pipe = ev::pipe::open(STDIN_FILENO, loop);
     if(!pipe) {
         co_return;
     }

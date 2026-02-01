@@ -97,7 +97,8 @@ public:
     struct spawn_result;
 
     /// Spawn a child process within the given loop.
-    static result<spawn_result> spawn(event_loop& loop, const options& opts);
+    static result<spawn_result> spawn(const options& opts,
+                                      event_loop& loop = event_loop::current());
 
     /// Await process termination and fetch exit status.
     task<wait_result> wait();

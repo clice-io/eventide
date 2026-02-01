@@ -13,7 +13,7 @@ namespace {
 task<result<udp::recv_result>> recv_once(udp& sock, std::atomic<int>& done) {
     auto res = co_await sock.recv();
     if(done.fetch_add(1) + 1 == 2) {
-        event_loop::current()->stop();
+        event_loop::current().stop();
     }
     co_return res;
 }
@@ -26,7 +26,7 @@ task<error> send_to(udp& sock,
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data, host, port);
     if(done.fetch_add(1) + 1 == 2) {
-        event_loop::current()->stop();
+        event_loop::current().stop();
     }
     co_return ec;
 }
@@ -35,7 +35,7 @@ task<error> send_connected(udp& sock, std::string_view payload, std::atomic<int>
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data);
     if(done.fetch_add(1) + 1 == 2) {
-        event_loop::current()->stop();
+        event_loop::current().stop();
     }
     co_return ec;
 }

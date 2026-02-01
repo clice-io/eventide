@@ -121,7 +121,7 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
     return io;
 }
 
-result<process::spawn_result> process::spawn(event_loop& loop, const options& opts) {
+result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
     spawn_result out{process(new Self())};
 
     std::vector<std::string> argv_storage;

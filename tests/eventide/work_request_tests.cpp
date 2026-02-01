@@ -9,17 +9,17 @@ namespace eventide {
 
 namespace {
 
-task<error> wait_work(event_loop& loop, std::atomic<int>& flag) {
-    auto ec = co_await queue(loop, [&]() { flag.fetch_add(1); });
-    event_loop::current()->stop();
+task<error> wait_work(std::atomic<int>& flag, event_loop& loop) {
+    auto ec = co_await queue([&]() { flag.fetch_add(1); }, loop);
+    event_loop::current().stop();
     co_return ec;
 }
 
 task<error>
-    wait_work_target(event_loop& loop, std::atomic<int>& flag, std::atomic<int>& done, int target) {
-    auto ec = co_await queue(loop, [&]() { flag.fetch_add(1); });
+    wait_work_target(std::atomic<int>& flag, std::atomic<int>& done, int target, event_loop& loop) {
+    auto ec = co_await queue([&]() { flag.fetch_add(1); }, loop);
     if(done.fetch_add(1) + 1 == target) {
-        event_loop::current()->stop();
+        event_loop::current().stop();
     }
     co_return ec;
 }
@@ -32,7 +32,7 @@ TEST_CASE(queue_runs) {
     event_loop loop;
     std::atomic<int> flag{0};
 
-    auto worker = wait_work(loop, flag);
+    auto worker = wait_work(flag, loop);
     loop.schedule(worker);
     loop.run();
 
@@ -46,8 +46,8 @@ TEST_CASE(queue_runs_twice) {
     std::atomic<int> flag{0};
     std::atomic<int> done{0};
 
-    auto first = wait_work_target(loop, flag, done, 2);
-    auto second = wait_work_target(loop, flag, done, 2);
+    auto first = wait_work_target(flag, done, 2, loop);
+    auto second = wait_work_target(flag, done, 2, loop);
 
     loop.schedule(first);
     loop.schedule(second);

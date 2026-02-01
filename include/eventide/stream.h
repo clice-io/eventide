@@ -83,16 +83,18 @@ public:
 
     using acceptor = eventide::acceptor<pipe>;
 
-    static result<pipe> open(event_loop& loop, int fd);
+    static result<pipe> open(int fd, event_loop& loop = event_loop::current());
 
-    static result<acceptor> listen(event_loop& loop, const char* name, int backlog = 128);
+    static result<acceptor> listen(const char* name,
+                                   int backlog = 128,
+                                   event_loop& loop = event_loop::current());
 
     explicit pipe(Self* state) noexcept;
 
 private:
     friend class process;
 
-    static result<pipe> create(event_loop& loop);
+    static result<pipe> create(event_loop& loop = event_loop::current());
 };
 
 class tcp_socket : public stream {
@@ -103,20 +105,20 @@ public:
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
-    static result<tcp_socket> open(event_loop& loop, int fd);
+    static result<tcp_socket> open(int fd, event_loop& loop = event_loop::current());
 
-    static result<acceptor> listen(event_loop& loop,
-                                   std::string_view host,
+    static result<acceptor> listen(std::string_view host,
                                    int port,
                                    unsigned int flags = 0,
-                                   int backlog = 128);
+                                   int backlog = 128,
+                                   event_loop& loop = event_loop::current());
 };
 
 class console : public stream {
 public:
     console() noexcept = default;
 
-    static result<console> open(event_loop& loop, int fd);
+    static result<console> open(int fd, event_loop& loop = event_loop::current());
 
 private:
     explicit console(Self* state) noexcept;

@@ -46,11 +46,11 @@ public:
 
     enum class membership { join, leave };
 
-    static result<udp> create(event_loop& loop);
+    static result<udp> create(event_loop& loop = event_loop::current());
 
-    static result<udp> create(event_loop& loop, unsigned int flags);
+    static result<udp> create(unsigned int flags, event_loop& loop = event_loop::current());
 
-    static result<udp> open(event_loop& loop, int fd);
+    static result<udp> open(int fd, event_loop& loop = event_loop::current());
 
     error bind(std::string_view host, int port, unsigned flags = 0);
 

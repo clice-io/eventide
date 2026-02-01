@@ -729,7 +729,7 @@ task<error> signal::wait() {
     co_return co_await signal_await{self.get()};
 }
 
-task<> sleep(event_loop& loop, std::chrono::milliseconds timeout) {
+task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     auto t = timer::create(loop);
     t.start(timeout, std::chrono::milliseconds{0});
     co_await t.wait();

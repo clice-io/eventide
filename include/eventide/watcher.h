@@ -27,7 +27,7 @@ public:
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
 
-    static timer create(event_loop& loop);
+    static timer create(event_loop& loop = event_loop::current());
 
     void start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat = {});
 
@@ -57,7 +57,7 @@ public:
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
 
-    static idle create(event_loop& loop);
+    static idle create(event_loop& loop = event_loop::current());
 
     void start();
 
@@ -87,7 +87,7 @@ public:
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
 
-    static prepare create(event_loop& loop);
+    static prepare create(event_loop& loop = event_loop::current());
 
     void start();
 
@@ -117,7 +117,7 @@ public:
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
 
-    static check create(event_loop& loop);
+    static check create(event_loop& loop = event_loop::current());
 
     void start();
 
@@ -147,7 +147,7 @@ public:
     Self* operator->() noexcept;
     const Self* operator->() const noexcept;
 
-    static result<signal> create(event_loop& loop);
+    static result<signal> create(event_loop& loop = event_loop::current());
 
     error start(int signum);
 
@@ -161,6 +161,6 @@ private:
     std::unique_ptr<Self, void (*)(void*)> self;
 };
 
-task<> sleep(event_loop& loop, std::chrono::milliseconds timeout);
+task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::current());
 
 }  // namespace eventide

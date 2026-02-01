@@ -111,28 +111,28 @@ int pick_free_port() {
 
 task<std::string> read_from_pipe(pipe p) {
     auto out = co_await p.read();
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return out;
 }
 
 task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
-        event_loop::current()->stop();
+        event_loop::current().stop();
         co_return std::unexpected(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
     auto data = co_await conn.read();
 
-    event_loop::current()->stop();
+    event_loop::current().stop();
     co_return data;
 }
 
 task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, std::atomic<int>& done) {
     auto res = co_await acc.accept();
     if(done.fetch_add(1) + 1 == 2) {
-        event_loop::current()->stop();
+        event_loop::current().stop();
     }
     co_return res;
 }
@@ -151,7 +151,7 @@ TEST_CASE(read_from_fd) {
     close_fd(fds[1]);
 
     event_loop loop;
-    auto pipe_res = pipe::open(loop, fds[0]);
+    auto pipe_res = pipe::open(fds[0], loop);
     ASSERT_TRUE(pipe_res.has_value());
 
     auto reader = read_from_pipe(std::move(*pipe_res));
@@ -171,7 +171,7 @@ TEST_CASE(accept_and_read) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen(loop, "127.0.0.1", port);
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, 0, 128, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto server = accept_and_read(std::move(*acc_res));
@@ -204,7 +204,7 @@ TEST_CASE(accept_already_waiting) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen(loop, "127.0.0.1", port);
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, 0, 128, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto acc = std::move(*acc_res);

@@ -199,7 +199,7 @@ std::coroutine_handle<> async_node::final_transition() {
 
         case NodeKind::SharedTask: {
             auto p = static_cast<shared_resource*>(this);
-            auto loop = event_loop::current();
+            auto& loop = event_loop::current();
             auto cur = p->head;
             while(cur) {
                 if(state == Cancelled) {
@@ -209,7 +209,7 @@ std::coroutine_handle<> async_node::final_transition() {
                 /// Note that even if the shared_task was cancelled, we still
                 /// need to resume it. Because we requires it to explicitly
                 /// handle cancellation result.
-                loop->schedule(static_cast<async_node&>(*cur), p->location);
+                loop.schedule(static_cast<async_node&>(*cur), p->location);
                 cur = cur->next;
             }
 

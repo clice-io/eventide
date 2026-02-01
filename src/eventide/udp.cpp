@@ -321,7 +321,7 @@ result<udp> udp::create(event_loop& loop) {
     return udp(state.release());
 }
 
-result<udp> udp::create(event_loop& loop, unsigned int flags) {
+result<udp> udp::create(unsigned int flags, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     state->buffer.resize(64 * 1024);
     int err = uv_udp_init_ex(static_cast<uv_loop_t*>(loop.handle()), &state->handle, flags);
@@ -334,7 +334,7 @@ result<udp> udp::create(event_loop& loop, unsigned int flags) {
     return udp(state.release());
 }
 
-result<udp> udp::open(event_loop& loop, int fd) {
+result<udp> udp::open(int fd, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     state->buffer.resize(64 * 1024);
     int err = uv_udp_init(static_cast<uv_loop_t*>(loop.handle()), &state->handle);
