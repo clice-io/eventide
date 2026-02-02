@@ -1,0 +1,65 @@
+name: cmake
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cmake.yml"
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "CMakeLists.txt"
+      - "pixi.toml"
+
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/cmake.yml"
+      - "src/**"
+      - "include/**"
+      - "tests/**"
+      - "CMakeLists.txt"
+      - "pixi.toml"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15]
+
+    concurrency:
+      group: ${{ github.ref }}-${{ github.base_ref }}-${{ github.head_ref }}-${{ matrix.os }}
+      cancel-in-progress: true
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          pixi-version: v0.61.0
+          activate-environment: true
+          cache: true
+          locked: ${{ runner.os != 'Windows' }}
+
+      - name: Configure (debug)
+        run: cmake -S . -B build-cmake-debug -DCMAKE_BUILD_TYPE=Debug -DEVENTIDE_ENABLE_TEST=ON
+
+      - name: Build (debug)
+        run: cmake --build build-cmake-debug
+
+      - name: Test (debug)
+        run: ctest --test-dir build-cmake-debug --output-on-failure
+
+      - name: Configure (release)
+        run: cmake -S . -B build-cmake-release -DCMAKE_BUILD_TYPE=Release -DEVENTIDE_ENABLE_TEST=ON
+
+      - name: Build (release)
+        run: cmake --build build-cmake-release
+
+      - name: Test (release)
+        run: ctest --test-dir build-cmake-release --output-on-failure

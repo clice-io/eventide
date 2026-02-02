@@ -88,4 +88,7 @@ if(EVENTIDE_ENABLE_TEST)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     target_link_libraries(unit_tests PRIVATE eventide zest cpptrace::cpptrace)
+
+    enable_testing()
+    add_test(NAME unit_tests COMMAND unit_tests)
 endif()
