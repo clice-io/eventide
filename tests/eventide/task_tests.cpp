@@ -1,3 +1,4 @@
+#include "zest/macro.h"
 #include "zest/zest.h"
 #include "eventide/loop.h"
 #include "eventide/task.h"
@@ -92,6 +93,22 @@ TEST_CASE(down_cancel) {
         EXPECT_EQ(x, 2);
     }
 }
+
+#ifdef __cpp_exceptions
+TEST_CASE(exception_propagation) {
+    auto bar1 = []() -> task<> {
+        throw std::runtime_error("Test exception");
+        co_return;
+    };
+
+    auto bar2 = [&]() -> task<> {
+        co_return co_await bar1();
+    };
+
+    EXPECT_THROWS(run(bar1()));
+    EXPECT_THROWS(run(bar2()));
+}
+#endif
 
 };  // TEST_SUITE(task)
 

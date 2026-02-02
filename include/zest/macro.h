@@ -69,6 +69,20 @@ inline bool check_binary_failure(bool failure,
     return failure;
 }
 
+#ifdef __cpp_exceptions
+
+inline bool check_throws_failure(bool failure,
+                                 std::string_view expr,
+                                 std::string_view expectation,
+                                 std::source_location loc = std::source_location::current()) {
+    if(failure) {
+        std::println("[ expect ] {} (expected {})", expr, expectation);
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+    }
+    return failure;
+}
+#endif
+
 }  // namespace zest::detail
 
 #define TEST_SUITE(name) struct name##TEST : zest::TestSuiteDef<#name, name##TEST>
@@ -134,3 +148,33 @@ inline bool check_binary_failure(bool failure,
 #define CO_ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), co_return)
 #define CO_ASSERT_EQ(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, ==, (_lhs) != (_rhs), co_return)
 #define CO_ASSERT_NE(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, !=, (_lhs) == (_rhs), co_return)
+
+#ifdef __cpp_exceptions
+
+#define CAUGHT(expr)                                                                               \
+    ([&]() {                                                                                       \
+        try {                                                                                      \
+            (expr);                                                                                \
+            return false;                                                                          \
+        } catch(...) {                                                                             \
+            return true;                                                                           \
+        }                                                                                          \
+    }())
+
+#define EXPECT_THROWS(expr)                                                                        \
+    do {                                                                                           \
+        CLICE_CHECK_IMPL(                                                                          \
+            zest::detail::check_throws_failure(!CAUGHT(expr), #expr, "throw exception"),           \
+            (void)0,                                                                               \
+            (void)0);                                                                              \
+    } while(0)
+
+#define EXPECT_NOTHROWS(expr)                                                                      \
+    do {                                                                                           \
+        CLICE_CHECK_IMPL(                                                                          \
+            zest::detail::check_throws_failure(CAUGHT(expr), #expr, "not throw exception"),        \
+            (void)0,                                                                               \
+            (void)0);                                                                              \
+    } while(0)
+
+#endif

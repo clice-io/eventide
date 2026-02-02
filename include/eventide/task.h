@@ -44,6 +44,21 @@ struct promise_result<void> {
     void return_void() noexcept {}
 };
 
+struct promise_exception {
+    void unhandled_exception() noexcept {
+        this->exception = std::current_exception();
+    }
+
+    void rethrow_if_exception() {
+        if(this->exception) {
+            std::rethrow_exception(this->exception);
+        }
+    }
+
+protected:
+    std::exception_ptr exception{nullptr};
+};
+
 struct transition_await {
     async_node::State state = async_node::Pending;
 
@@ -80,8 +95,11 @@ public:
     struct promise_type;
 
     using coroutine_handle = std::coroutine_handle<promise_type>;
-
+#ifdef __cpp_exceptions
+    struct promise_type : standard_task, promise_result<T>, promise_exception {
+#else
     struct promise_type : standard_task, promise_result<T> {
+#endif
         auto handle() {
             return coroutine_handle::from_promise(*this);
         }
@@ -97,11 +115,11 @@ public:
         auto get_return_object() {
             return task<T>(handle());
         }
-
+#ifndef __cpp_exceptions
         void unhandled_exception() {
             std::abort();
         }
-
+#endif
         promise_type() {
             this->address = handle().address();
         }
@@ -121,8 +139,11 @@ public:
             return awaitee.h.promise().link_continuation(&awaiter.promise(), location);
         }
 
-        T await_resume() noexcept {
+        T await_resume() {
             auto& promise = awaitee.h.promise();
+#ifdef __cpp_exceptions
+            promise.rethrow_if_exception();
+#endif
             if(promise.state == async_node::Cancelled) {
                 if constexpr(is_cancellation_t<T>) {
                     return std::unexpected(cancellation());
@@ -180,8 +201,12 @@ public:
     }
 
     auto result() {
+        auto&& promise = h.promise();
+#ifdef __cpp_exceptions
+        promise.rethrow_if_exception();
+#endif
         if constexpr(!std::is_void_v<T>) {
-            return std::move(*h.promise().value);
+            return std::move(*promise.value);
         } else {
             return std::nullopt;
         }
