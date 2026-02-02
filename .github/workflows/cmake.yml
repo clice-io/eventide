@@ -50,16 +50,36 @@ jobs:
         run: cmake -S . -B build-cmake-debug -DCMAKE_BUILD_TYPE=Debug -DEVENTIDE_ENABLE_TEST=ON
 
       - name: Build (debug)
+        if: runner.os != 'Windows'
         run: cmake --build build-cmake-debug
 
+      - name: Build (debug, windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build-cmake-debug --config Debug
+
       - name: Test (debug)
-        run: ctest --test-dir build-cmake-debug --output-on-failure
+        if: runner.os != 'Windows'
+        run: ./build-cmake-debug/unit_tests
+
+      - name: Test (debug, windows)
+        if: runner.os == 'Windows'
+        run: .\build-cmake-debug\Debug\unit_tests.exe
 
       - name: Configure (release)
         run: cmake -S . -B build-cmake-release -DCMAKE_BUILD_TYPE=Release -DEVENTIDE_ENABLE_TEST=ON
 
       - name: Build (release)
+        if: runner.os != 'Windows'
         run: cmake --build build-cmake-release
 
+      - name: Build (release, windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build-cmake-release --config Release
+
       - name: Test (release)
-        run: ctest --test-dir build-cmake-release --output-on-failure
+        if: runner.os != 'Windows'
+        run: ./build-cmake-release/unit_tests
+
+      - name: Test (release, windows)
+        if: runner.os == 'Windows'
+        run: .\build-cmake-release\Release\unit_tests.exe
