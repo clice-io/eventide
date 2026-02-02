@@ -32,7 +32,7 @@ struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
     stream_handle_storage handle{};
     system_op* reader = nullptr;
     system_op* writer = nullptr;
-    ring_buffer buffer;
+    ring_buffer buffer{};
 
     template <typename T>
     T* as() noexcept {
