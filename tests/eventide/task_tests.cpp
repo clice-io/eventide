@@ -1,3 +1,5 @@
+#include <stdexcept>
+
 #include "zest/macro.h"
 #include "zest/zest.h"
 #include "eventide/loop.h"

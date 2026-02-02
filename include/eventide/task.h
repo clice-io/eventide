@@ -201,9 +201,7 @@ public:
 
     auto result() {
         auto&& promise = h.promise();
-#ifdef __cpp_exceptions
         promise.rethrow_if_exception();
-#endif
         if constexpr(!std::is_void_v<T>) {
             return std::move(*promise.value);
         } else {
