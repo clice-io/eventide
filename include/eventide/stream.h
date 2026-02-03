@@ -85,6 +85,9 @@ public:
 
     static result<pipe> open(int fd, event_loop& loop = event_loop::current());
 
+    static task<result<pipe>> connect(std::string_view name,
+                                      event_loop& loop = event_loop::current());
+
     static result<acceptor> listen(const char* name,
                                    int backlog = 128,
                                    event_loop& loop = event_loop::current());

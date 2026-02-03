@@ -123,6 +123,47 @@ task<std::string> read_from_pipe(pipe p) {
     co_return out;
 }
 
+task<result<pipe>> connect_pipe(std::string_view name, int& done, int target = 2) {
+    auto result = co_await pipe::connect(name);
+    bump_and_stop(done, target);
+    co_return result;
+}
+
+task<result<pipe>> accept_pipe_once(pipe::acceptor acc, int& done) {
+    auto result = co_await acc.accept();
+    bump_and_stop(done, 2);
+    co_return result;
+}
+
+task<result<std::string>> accept_and_read_pipe(pipe::acceptor acc, int& done) {
+    auto conn_res = co_await acc.accept();
+    if(!conn_res.has_value()) {
+        bump_and_stop(done, 2);
+        co_return std::unexpected(conn_res.error());
+    }
+
+    auto conn = std::move(*conn_res);
+    auto data = co_await conn.read();
+
+    bump_and_stop(done, 2);
+    co_return data;
+}
+
+task<error> connect_and_write_pipe(std::string_view name, std::string_view payload, int& done) {
+    auto conn_res = co_await pipe::connect(name);
+    if(!conn_res.has_value()) {
+        bump_and_stop(done, 2);
+        co_return conn_res.error();
+    }
+
+    auto conn = std::move(*conn_res);
+    std::span<const char> data(payload.data(), payload.size());
+    co_await conn.write(data);
+
+    bump_and_stop(done, 2);
+    co_return error{};
+}
+
 task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
@@ -174,7 +215,7 @@ task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, int& done) {
 
 }  // namespace
 
-TEST_SUITE(pipe_io) {
+TEST_SUITE(pipe) {
 
 TEST_CASE(read_from_fd) {
     int fds[2] = {-1, -1};
@@ -197,7 +238,65 @@ TEST_CASE(read_from_fd) {
     EXPECT_EQ(reader.result(), message);
 }
 
-};  // TEST_SUITE(pipe_io)
+TEST_CASE(connect_and_accept) {
+    event_loop loop;
+
+#ifdef _WIN32
+    const std::string name = "\\\\.\\pipe\\eventide-test-pipe";
+#else
+    std::string name = "eventide-test-pipe-XXXXXX";
+    int fd = ::mkstemp(name.data());
+    ASSERT_TRUE(fd >= 0);
+    close_fd(fd);
+    ::unlink(name.c_str());
+#endif
+
+    auto acc_res = pipe::listen(name.c_str(), 16, loop);
+    ASSERT_TRUE(acc_res.has_value());
+
+    int done = 0;
+    const std::string message = "eventide-pipe-connect";
+    auto server = accept_and_read_pipe(std::move(*acc_res), done);
+    auto client = connect_and_write_pipe(name, message, done);
+
+    loop.schedule(server);
+    loop.schedule(client);
+    loop.run();
+
+    auto server_res = server.result();
+    auto client_res = client.result();
+
+    EXPECT_TRUE(server_res.has_value());
+    EXPECT_FALSE(client_res.has_error());
+    if(server_res.has_value()) {
+        EXPECT_EQ(*server_res, message);
+    }
+}
+
+TEST_CASE(connect_failure) {
+    event_loop loop;
+
+#ifdef _WIN32
+    const std::string name = "\\\\.\\pipe\\eventide-test-pipe-missing";
+#else
+    std::string name = "eventide-test-pipe-missing-XXXXXX";
+    int fd = ::mkstemp(name.data());
+    ASSERT_TRUE(fd >= 0);
+    close_fd(fd);
+    ::unlink(name.c_str());
+#endif
+
+    int done = 0;
+    auto client = connect_pipe(name, done, 1);
+
+    loop.schedule(client);
+    loop.run();
+
+    auto client_res = client.result();
+    EXPECT_FALSE(client_res.has_value());
+}
+
+};  // TEST_SUITE(pipe)
 
 TEST_SUITE(tcp) {
 

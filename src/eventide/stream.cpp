@@ -464,6 +464,72 @@ struct tcp_connect_await : system_op {
     }
 };
 
+struct pipe_connect_await : system_op {
+    using promise_t = task<result<pipe>>::promise_type;
+
+    std::unique_ptr<stream::Self, void (*)(void*)> state;
+    uv_connect_t req{};
+    std::string name;
+    result<pipe> outcome = std::unexpected(error());
+    bool ready = true;
+
+    pipe_connect_await(std::unique_ptr<stream::Self, void (*)(void*)> state,
+                       std::string_view name) : state(std::move(state)), name(name) {
+        action = &on_cancel;
+        if(this->name.empty()) {
+            ready = false;
+            outcome = std::unexpected(error::invalid_argument);
+        }
+    }
+
+    static void on_cancel(system_op* op) {
+        auto* aw = static_cast<pipe_connect_await*>(op);
+        if(aw->state) {
+            // uv_connect_t can't be cancelled; close the handle to trigger ECANCELED.
+            aw->state.reset();
+        }
+    }
+
+    static void on_connect(uv_connect_t* req, int status) {
+        auto* aw = static_cast<pipe_connect_await*>(req->data);
+        if(!aw) {
+            return;
+        }
+
+        if(status < 0) {
+            aw->outcome = std::unexpected(error(status));
+        } else if(aw->state) {
+            aw->outcome = pipe(aw->state.release());
+        } else {
+            aw->outcome = std::unexpected(error::invalid_argument);
+        }
+
+        aw->complete();
+    }
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<promise_t> waiting,
+                      std::source_location location = std::source_location::current()) noexcept {
+        if(!state || !ready) {
+            return waiting;
+        }
+
+        req.data = this;
+
+        uv_pipe_connect(&req, state->as<uv_pipe_t>(), name.c_str(), on_connect);
+
+        return link_continuation(&waiting.promise(), location);
+    }
+
+    result<pipe> await_resume() noexcept {
+        return std::move(outcome);
+    }
+};
+
 }  // namespace
 
 stream::stream() noexcept : self(nullptr, nullptr) {}
@@ -637,6 +703,20 @@ result<pipe> pipe::create(event_loop& loop) {
 
     state->init_handle();
     return pipe(state.release());
+}
+
+task<result<pipe>> pipe::connect(std::string_view name, event_loop& loop) {
+    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
+    auto* handle = state->as<uv_pipe_t>();
+
+    int err = uv_pipe_init(static_cast<uv_loop_t*>(loop.handle()), handle, 0);
+    if(err != 0) {
+        co_return std::unexpected(error(err));
+    }
+
+    state->init_handle();
+
+    co_return co_await pipe_connect_await{std::move(state), name};
 }
 
 tcp_socket::tcp_socket(Self* state) noexcept : stream(state) {}
