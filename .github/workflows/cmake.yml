@@ -40,7 +40,6 @@ jobs:
           pixi-version: v0.61.0
           activate-environment: true
           cache: true
-          locked: ${{ runner.os != 'Windows' }}
 
       - name: Configure (debug)
         run: cmake -S . -B build-cmake-debug -DCMAKE_BUILD_TYPE=Debug -DEVENTIDE_ENABLE_TEST=ON
