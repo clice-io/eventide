@@ -317,10 +317,6 @@ public:
             return shared_task<T>(handle());
         }
 
-        void unhandled_exception() {
-            std::abort();
-        }
-
         promise_type() : shared_resource(async_node::NodeKind::SharedTask) {
             this->address = handle().address();
         }
