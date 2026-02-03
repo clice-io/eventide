@@ -57,7 +57,7 @@ auto run(Tasks&&... tasks) {
     event_loop loop;
     (loop.schedule(tasks), ...);
     loop.run();
-    return std::tuple(std::move(tasks.result())...);
+    return std::tuple(std::move(tasks.value())...);
 }
 
 }  // namespace eventide

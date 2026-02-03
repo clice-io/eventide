@@ -1,8 +1,10 @@
 #pragma once
 
 #include <format>
+#include <optional>
 #include <print>
 #include <source_location>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -12,35 +14,31 @@
 namespace zest::detail {
 
 template <typename T>
-concept Formattable = requires(const T& value) { std::format("{}", value); };
+concept Formattable = std::formattable<T, char>;
 
-template <typename V>
-inline void print_unary_failure(std::string_view expr,
-                                std::string_view expectation,
-                                const V& value,
-                                std::source_location loc = std::source_location::current()) {
-    std::println("[ expect ] {} (expected {})", expr, expectation);
-    if constexpr(Formattable<V>) {
-        std::println("           got: {}", value);
-    }
-    std::println("           at {}:{}", loc.file_name(), loc.line());
-}
+template <typename T>
+struct is_optional : std::false_type {};
 
-template <typename L, typename R>
-inline void print_binary_failure(std::string_view op,
-                                 std::string_view lhs_expr,
-                                 std::string_view rhs_expr,
-                                 const L& lhs,
-                                 const R& rhs,
-                                 std::source_location loc = std::source_location::current()) {
-    std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
-    if constexpr(Formattable<L>) {
-        std::println("           lhs: {}", lhs);
+template <typename T>
+struct is_optional<std::optional<T>> : std::true_type {};
+
+template <typename T>
+constexpr inline bool is_optional_v = is_optional<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+inline std::string pretty_dump(const T& value) {
+    if constexpr(is_optional_v<T>) {
+        if(!value) {
+            return std::string("nullopt");
+        }
+        return pretty_dump(*value);
+    } else {
+        if constexpr(Formattable<T>) {
+            return std::format("{}", value);
+        } else {
+            return std::string("<unformattable>");
+        }
     }
-    if constexpr(Formattable<R>) {
-        std::println("           rhs: {}", rhs);
-    }
-    std::println("           at {}:{}", loc.file_name(), loc.line());
 }
 
 template <typename V>
@@ -50,7 +48,9 @@ inline bool check_unary_failure(bool failure,
                                 const V& value,
                                 std::source_location loc = std::source_location::current()) {
     if(failure) {
-        print_unary_failure(expr, expectation, value, loc);
+        std::println("[ expect ] {} (expected {})", expr, expectation);
+        std::println("           got: {}", pretty_dump(value));
+        std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
 }
@@ -64,7 +64,10 @@ inline bool check_binary_failure(bool failure,
                                  const R& rhs,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
-        print_binary_failure(op, lhs_expr, rhs_expr, lhs, rhs, loc);
+        std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
+        std::println("           lhs: {}", pretty_dump(lhs));
+        std::println("           rhs: {}", pretty_dump(rhs));
+        std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
 }
@@ -100,10 +103,9 @@ inline bool check_throws_failure(bool failure,
     }                                                                                              \
     void test_##name()
 
-#define CLICE_CHECK_IMPL(condition, report_action, return_action)                                  \
+#define CLICE_CHECK_IMPL(condition, return_action)                                                 \
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
-            report_action;                                                                         \
             auto trace = cpptrace::generate_trace();                                               \
             zest::print_trace(trace, std::source_location::current());                             \
             failure();                                                                             \
@@ -113,25 +115,23 @@ inline bool check_throws_failure(bool failure,
 
 #define ZEST_EXPECT_UNARY(expr, expectation, failure_pred, return_action)                          \
     do {                                                                                           \
-        auto&& _expr = (expr);                                                                     \
-        CLICE_CHECK_IMPL(                                                                          \
-            zest::detail::check_unary_failure((failure_pred), #expr, (expectation), _expr),        \
-            (void)0,                                                                               \
-            return_action);                                                                        \
+        auto _failed = ([&](auto&& _expr) {                                                        \
+            return zest::detail::check_unary_failure((failure_pred), #expr, (expectation), _expr); \
+        }((expr)));                                                                                \
+        CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
 
 #define ZEST_EXPECT_BINARY(lhs, rhs, op_string, failure_pred, return_action)                       \
     do {                                                                                           \
-        auto&& _lhs = (lhs);                                                                       \
-        auto&& _rhs = (rhs);                                                                       \
-        CLICE_CHECK_IMPL(zest::detail::check_binary_failure((failure_pred),                        \
-                                                            #op_string,                            \
-                                                            #lhs,                                  \
-                                                            #rhs,                                  \
-                                                            _lhs,                                  \
-                                                            _rhs),                                 \
-                         (void)0,                                                                  \
-                         return_action);                                                           \
+        auto _failed = ([&](auto&& _lhs, auto&& _rhs) {                                            \
+            return zest::detail::check_binary_failure((failure_pred),                              \
+                                                      #op_string,                                  \
+                                                      #lhs,                                        \
+                                                      #rhs,                                        \
+                                                      _lhs,                                        \
+                                                      _rhs);                                       \
+        }((lhs), (rhs)));                                                                          \
+        CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
 
 #define EXPECT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), (void)0)
@@ -161,20 +161,15 @@ inline bool check_throws_failure(bool failure,
         }                                                                                          \
     }())
 
-#define EXPECT_THROWS(expr)                                                                        \
+#define ZEST_EXPECT_THROWS(expr, expectation, failure_pred, return_action)                         \
     do {                                                                                           \
-        CLICE_CHECK_IMPL(                                                                          \
-            zest::detail::check_throws_failure(!CAUGHT(expr), #expr, "throw exception"),           \
-            (void)0,                                                                               \
-            (void)0);                                                                              \
+        auto _failed = ([&]() {                                                                    \
+            return zest::detail::check_throws_failure((failure_pred), #expr, (expectation));       \
+        }());                                                                                      \
+        CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
 
-#define EXPECT_NOTHROWS(expr)                                                                      \
-    do {                                                                                           \
-        CLICE_CHECK_IMPL(                                                                          \
-            zest::detail::check_throws_failure(CAUGHT(expr), #expr, "not throw exception"),        \
-            (void)0,                                                                               \
-            (void)0);                                                                              \
-    } while(0)
+#define EXPECT_THROWS(expr) ZEST_EXPECT_THROWS(expr, "throw exception", !CAUGHT(expr), (void)0)
+#define EXPECT_NOTHROWS(expr) ZEST_EXPECT_THROWS(expr, "not throw exception", CAUGHT(expr), (void)0)
 
 #endif

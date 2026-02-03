@@ -203,7 +203,18 @@ public:
         auto&& promise = h.promise();
         promise.rethrow_if_exception();
         if constexpr(!std::is_void_v<T>) {
+            assert(promise.value.has_value() && "on empty return");
             return std::move(*promise.value);
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    auto value() {
+        auto&& promise = h.promise();
+        promise.rethrow_if_exception();
+        if constexpr(!std::is_void_v<T>) {
+            return std::move(promise.value);
         } else {
             return std::nullopt;
         }
@@ -289,7 +300,7 @@ public:
 
     using coroutine_handle = std::coroutine_handle<promise_type>;
 
-    struct promise_type : shared_resource, promise_result<T> {
+    struct promise_type : shared_resource, promise_result<T>, promise_exception {
         auto handle() {
             return coroutine_handle::from_promise(*this);
         }
@@ -327,8 +338,21 @@ public:
     }
 
     auto result() {
+        auto&& promise = h.promise();
+        promise.rethrow_if_exception();
         if constexpr(!std::is_void_v<T>) {
-            return std::move(*h.promise().value);
+            assert(promise.value.has_value() && "on empty return");
+            return std::move(*promise.value);
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    auto value() {
+        auto&& promise = h.promise();
+        promise.rethrow_if_exception();
+        if constexpr(!std::is_void_v<T>) {
+            return std::move(promise.value);
         } else {
             return std::nullopt;
         }
