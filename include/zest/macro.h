@@ -88,7 +88,7 @@ inline bool check_throws_failure(bool failure,
 
 }  // namespace zest
 
-#define TEST_SUITE(name) struct name##TEST : zest::TestSuiteDef<#name, name##TEST>
+#define TEST_SUITE(name) struct name##TEST : ::zest::TestSuiteDef<#name, name##TEST>
 
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
@@ -97,7 +97,7 @@ inline bool check_throws_failure(bool failure,
         (void)_register_suites<>;                                                                  \
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
-                                  zest::fixed_string<file_len>(file_name),                         \
+                                  ::zest::fixed_string<file_len>(file_name),                       \
                                   std::source_location::current().line() __VA_OPT__(, )            \
                                       __VA_ARGS__>;                                                \
     }                                                                                              \
