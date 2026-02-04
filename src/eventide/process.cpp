@@ -189,7 +189,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
                 dst.data.fd = cfg.descriptor;
                 break;
             case stdio::kind::pipe: {
-                auto pipe = pipe::create(loop);
+                auto pipe = pipe::create(pipe::options{}, loop);
                 if(!pipe.has_value()) {
                     return std::unexpected(pipe.error());
                 }

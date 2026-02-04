@@ -19,6 +19,9 @@ public:
 
     size_t read(char* dest, size_t len);
 
+    std::pair<const char*, size_t> get_read_ptr() const;
+    void advance_read(size_t len);
+
     std::pair<char*, size_t> get_write_ptr();
     void advance_write(size_t len);
 

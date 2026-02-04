@@ -24,6 +24,34 @@ size_t ring_buffer::read(char* dest, size_t len) {
     return to_read;
 }
 
+std::pair<const char*, size_t> ring_buffer::get_read_ptr() const {
+    if(size == 0 || data.empty()) {
+        return {nullptr, 0};
+    }
+
+    size_t contiguous = 0;
+    if(tail >= head) {
+        contiguous = tail - head;
+    } else {
+        contiguous = data.size() - head;
+    }
+
+    return {data.data() + head, contiguous};
+}
+
+void ring_buffer::advance_read(size_t len) {
+    if(len > size) {
+        len = size;
+    }
+
+    if(len == 0 || data.empty()) {
+        return;
+    }
+
+    head = (head + len) % data.size();
+    size -= len;
+}
+
 std::pair<char*, size_t> ring_buffer::get_write_ptr() {
     if(data.empty()) {
         return {nullptr, 0};

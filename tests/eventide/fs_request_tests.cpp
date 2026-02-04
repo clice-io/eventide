@@ -12,8 +12,8 @@
 #endif
 
 #include "zest/zest.h"
+#include "eventide/fs.h"
 #include "eventide/loop.h"
-#include "eventide/request.h"
 #include "eventide/task.h"
 
 namespace eventide {

@@ -1,6 +1,7 @@
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #ifdef _WIN32
 #include <BaseTsd.h>
@@ -123,6 +124,23 @@ task<std::string> read_from_pipe(pipe p) {
     co_return out;
 }
 
+task<std::string> read_some_from_pipe(pipe p) {
+    std::array<char, 64> buf{};
+    auto n = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
+    event_loop::current().stop();
+    co_return std::string(buf.data(), n);
+}
+
+task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
+    auto view = co_await p.read_chunk();
+    std::string out(view.begin(), view.end());
+    p.consume(view.size());
+
+    auto next = co_await p.read_chunk();
+    event_loop::current().stop();
+    co_return std::make_pair(out, next.size());
+}
+
 task<result<pipe>> connect_pipe(std::string_view name, int& done, int target = 2) {
     auto result = co_await pipe::connect(name);
     bump_and_stop(done, target);
@@ -227,7 +245,7 @@ TEST_CASE(read_from_fd) {
     close_fd(fds[1]);
 
     event_loop loop;
-    auto pipe_res = pipe::open(fds[0], loop);
+    auto pipe_res = pipe::open(fds[0], {}, loop);
     ASSERT_TRUE(pipe_res.has_value());
 
     auto reader = read_from_pipe(std::move(*pipe_res));
@@ -236,6 +254,50 @@ TEST_CASE(read_from_fd) {
     loop.run();
 
     EXPECT_EQ(reader.result(), message);
+}
+
+TEST_CASE(read_some_from_fd) {
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    const std::string message = "eventide-pipe-read-some";
+    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
+              static_cast<ssize_t>(message.size()));
+    close_fd(fds[1]);
+
+    event_loop loop;
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT_TRUE(pipe_res.has_value());
+
+    auto reader = read_some_from_pipe(std::move(*pipe_res));
+
+    loop.schedule(reader);
+    loop.run();
+
+    EXPECT_EQ(reader.result(), message);
+}
+
+TEST_CASE(read_chunk_from_fd) {
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    const std::string message = "eventide-pipe-read-view";
+    ASSERT_EQ(write_fd(fds[1], message.data(), message.size()),
+              static_cast<ssize_t>(message.size()));
+    close_fd(fds[1]);
+
+    event_loop loop;
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT_TRUE(pipe_res.has_value());
+
+    auto reader = read_chunk_from_pipe(std::move(*pipe_res));
+
+    loop.schedule(reader);
+    loop.run();
+
+    auto result = reader.result();
+    EXPECT_EQ(result.first, message);
+    EXPECT_EQ(result.second, static_cast<std::size_t>(0));
 }
 
 TEST_CASE(connect_and_accept) {
@@ -251,7 +313,9 @@ TEST_CASE(connect_and_accept) {
     ::unlink(name.c_str());
 #endif
 
-    auto acc_res = pipe::listen(name.c_str(), 16, loop);
+    pipe::options opts{};
+    opts.backlog = 16;
+    auto acc_res = pipe::listen(name, opts, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     int done = 0;
@@ -305,7 +369,7 @@ TEST_CASE(accept_and_read) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, 128, loop);
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto server = accept_and_read(std::move(*acc_res));
@@ -338,7 +402,7 @@ TEST_CASE(accept_already_waiting) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, 128, loop);
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     auto acc = std::move(*acc_res);
@@ -376,7 +440,7 @@ TEST_CASE(connect_and_write) {
     ASSERT_TRUE(port > 0);
 
     event_loop loop;
-    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, 128, loop);
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
 
     int done = 0;
