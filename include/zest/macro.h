@@ -31,7 +31,7 @@ inline std::string pretty_dump(const T& value) {
         if(!value) {
             return std::string("nullopt");
         }
-        return pretty_dump(*value);
+        return zest::pretty_dump(*value);
     } else {
         if constexpr(Formattable<T>) {
             return std::format("{}", value);
@@ -49,7 +49,7 @@ inline bool check_unary_failure(bool failure,
                                 std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} (expected {})", expr, expectation);
-        std::println("           got: {}", pretty_dump(value));
+        std::println("           got: {}", zest::pretty_dump(value));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
@@ -65,8 +65,8 @@ inline bool check_binary_failure(bool failure,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
-        std::println("           lhs: {}", pretty_dump(lhs));
-        std::println("           rhs: {}", pretty_dump(rhs));
+        std::println("           lhs: {}", zest::pretty_dump(lhs));
+        std::println("           rhs: {}", zest::pretty_dump(rhs));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
