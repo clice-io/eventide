@@ -11,7 +11,7 @@
 #include "suite.h"
 #include "trace.h"
 
-namespace zest::detail {
+namespace zest {
 
 template <typename T>
 concept Formattable = std::formattable<T, char>;
@@ -31,7 +31,7 @@ inline std::string pretty_dump(const T& value) {
         if(!value) {
             return std::string("nullopt");
         }
-        return pretty_dump(*value);
+        return zest::pretty_dump(*value);
     } else {
         if constexpr(Formattable<T>) {
             return std::format("{}", value);
@@ -49,7 +49,7 @@ inline bool check_unary_failure(bool failure,
                                 std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} (expected {})", expr, expectation);
-        std::println("           got: {}", pretty_dump(value));
+        std::println("           got: {}", zest::pretty_dump(value));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
@@ -65,8 +65,8 @@ inline bool check_binary_failure(bool failure,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
-        std::println("           lhs: {}", pretty_dump(lhs));
-        std::println("           rhs: {}", pretty_dump(rhs));
+        std::println("           lhs: {}", zest::pretty_dump(lhs));
+        std::println("           rhs: {}", zest::pretty_dump(rhs));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
@@ -86,9 +86,9 @@ inline bool check_throws_failure(bool failure,
 }
 #endif
 
-}  // namespace zest::detail
+}  // namespace zest
 
-#define TEST_SUITE(name) struct name##TEST : zest::TestSuiteDef<#name, name##TEST>
+#define TEST_SUITE(name) struct name##TEST : ::zest::TestSuiteDef<#name, name##TEST>
 
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
@@ -97,7 +97,7 @@ inline bool check_throws_failure(bool failure,
         (void)_register_suites<>;                                                                  \
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
-                                  refl::fixed_string<file_len>(file_name),                         \
+                                  ::zest::fixed_string<file_len>(file_name),                       \
                                   std::source_location::current().line() __VA_OPT__(, )            \
                                       __VA_ARGS__>;                                                \
     }                                                                                              \
@@ -107,7 +107,7 @@ inline bool check_throws_failure(bool failure,
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
             auto trace = cpptrace::generate_trace();                                               \
-            zest::print_trace(trace, std::source_location::current());                             \
+            ::zest::print_trace(trace, std::source_location::current());                           \
             failure();                                                                             \
             return_action;                                                                         \
         }                                                                                          \
@@ -116,7 +116,7 @@ inline bool check_throws_failure(bool failure,
 #define ZEST_EXPECT_UNARY(expr, expectation, failure_pred, return_action)                          \
     do {                                                                                           \
         auto _failed = ([&](auto&& _expr) {                                                        \
-            return zest::detail::check_unary_failure((failure_pred), #expr, (expectation), _expr); \
+            return ::zest::check_unary_failure((failure_pred), #expr, (expectation), _expr);       \
         }((expr)));                                                                                \
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
@@ -124,12 +124,12 @@ inline bool check_throws_failure(bool failure,
 #define ZEST_EXPECT_BINARY(lhs, rhs, op_string, failure_pred, return_action)                       \
     do {                                                                                           \
         auto _failed = ([&](auto&& _lhs, auto&& _rhs) {                                            \
-            return zest::detail::check_binary_failure((failure_pred),                              \
-                                                      #op_string,                                  \
-                                                      #lhs,                                        \
-                                                      #rhs,                                        \
-                                                      _lhs,                                        \
-                                                      _rhs);                                       \
+            return ::zest::check_binary_failure((failure_pred),                                    \
+                                                #op_string,                                        \
+                                                #lhs,                                              \
+                                                #rhs,                                              \
+                                                _lhs,                                              \
+                                                _rhs);                                             \
         }((lhs), (rhs)));                                                                          \
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
@@ -164,7 +164,7 @@ inline bool check_throws_failure(bool failure,
 #define ZEST_EXPECT_THROWS(expr, expectation, failure_pred, return_action)                         \
     do {                                                                                           \
         auto _failed = ([&]() {                                                                    \
-            return zest::detail::check_throws_failure((failure_pred), #expr, (expectation));       \
+            return ::zest::check_throws_failure((failure_pred), #expr, (expectation));             \
         }());                                                                                      \
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
