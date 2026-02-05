@@ -10,6 +10,13 @@
 #include "eventide/error.h"
 #include "eventide/frame.h"
 
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 namespace eventide {
 
 template <typename Derived, typename Handle>
