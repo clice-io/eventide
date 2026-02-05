@@ -81,6 +81,7 @@ if(EVENTIDE_ENABLE_LANGUAGE)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/language/*.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/language/**/*.cpp"
     )
+
     add_library(eventide_language STATIC ${EVENTIDE_LANGUAGE_SOURCES})
     target_include_directories(eventide_language PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include

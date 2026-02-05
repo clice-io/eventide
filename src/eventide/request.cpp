@@ -13,7 +13,7 @@ struct work_op : system_op {
     using promise_t = task<error>::promise_type;
 
     uv_work_t req{};
-    work_fn fn;
+    std::move_only_function<void()> fn;
     error result{};
 
     work_op() : system_op(async_node::NodeKind::SystemIO) {
@@ -42,7 +42,7 @@ struct work_op : system_op {
 
 }  // namespace
 
-task<error> queue(work_fn fn, event_loop& loop) {
+task<error> queue(std::move_only_function<void()> fn, event_loop& loop) {
     work_op op;
     op.fn = std::move(fn);
 

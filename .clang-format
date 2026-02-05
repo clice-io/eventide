@@ -101,7 +101,7 @@ SortIncludes: true
 SortUsingDeclarations: Never
 IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex: '^["<](spdlog|toml\+\+|coraing|cpptrace|flatbuffers)/'
+  - Regex: '^["<](spdlog|toml\+\+|coraing|cpptrace|flatbuffers|rfl)/'
     Priority: 30
     SortPriority: 31
 

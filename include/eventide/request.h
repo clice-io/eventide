@@ -7,8 +7,6 @@
 
 namespace eventide {
 
-using work_fn = std::function<void()>;
-
-task<error> queue(work_fn fn, event_loop& loop = event_loop::current());
+task<error> queue(std::move_only_function<void()> fn, event_loop& loop = event_loop::current());
 
 }  // namespace eventide
