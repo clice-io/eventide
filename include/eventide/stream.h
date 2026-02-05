@@ -137,17 +137,17 @@ public:
 
     /// Wrap an existing file descriptor.
     static result<pipe> open(int fd,
-                             options opts = options{},
+                             options opts = options(),
                              event_loop& loop = event_loop::current());
 
     /// Connect to a named pipe.
     static task<result<pipe>> connect(std::string_view name,
-                                      options opts = options{},
+                                      options opts = options(),
                                       event_loop& loop = event_loop::current());
 
     /// Listen on a named pipe.
     static result<acceptor> listen(std::string_view name,
-                                   options opts = options{},
+                                   options opts = options(),
                                    event_loop& loop = event_loop::current());
 
     explicit pipe(Self* state) noexcept;
@@ -155,7 +155,7 @@ public:
 private:
     friend class process;
 
-    static result<pipe> create(options opts = options{}, event_loop& loop = event_loop::current());
+    static result<pipe> create(options opts = options(), event_loop& loop = event_loop::current());
 };
 
 /// TCP socket wrapper.
@@ -167,7 +167,7 @@ public:
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
-    struct bind_options {
+    struct options {
         /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
         bool ipv6_only = false;
 
@@ -177,7 +177,7 @@ public:
         /// Listen backlog size.
         int backlog = 128;
 
-        constexpr bind_options(bool ipv6_only = false, bool reuse_port = false, int backlog = 128) :
+        constexpr options(bool ipv6_only = false, bool reuse_port = false, int backlog = 128) :
             ipv6_only(ipv6_only), reuse_port(reuse_port), backlog(backlog) {}
     };
 
@@ -192,7 +192,7 @@ public:
     /// Listen on a TCP host/port.
     static result<acceptor> listen(std::string_view host,
                                    int port,
-                                   bind_options options = bind_options{},
+                                   options opts = options(),
                                    event_loop& loop = event_loop::current());
 };
 
@@ -213,16 +213,16 @@ public:
 
     enum class vterm_state { supported, unsupported };
 
-    struct open_options {
+    struct options {
         /// Whether the TTY is readable (stdin).
         bool readable = false;
 
-        constexpr open_options(bool readable = false) : readable(readable) {}
+        constexpr options(bool readable = false) : readable(readable) {}
     };
 
     /// Wrap a console file descriptor.
     static result<console> open(int fd,
-                                open_options opts = open_options{},
+                                options opts = options(),
                                 event_loop& loop = event_loop::current());
 
     /// Set TTY/console mode.

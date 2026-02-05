@@ -93,7 +93,7 @@ struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, stream_handle_
     }
 };
 
-static result<unsigned int> to_uv_pipe_flags(const pipe::options& options);
+static result<unsigned int> to_uv_pipe_flags(const pipe::options& opts);
 
 namespace {
 
@@ -873,14 +873,14 @@ acceptor<Stream>::acceptor(Self* state) noexcept : self(state, Self::destroy) {}
 template class acceptor<pipe>;
 template class acceptor<tcp_socket>;
 
-static result<unsigned int> to_uv_pipe_flags(const pipe::options& options) {
+static result<unsigned int> to_uv_pipe_flags(const pipe::options& opts) {
     unsigned int out = 0;
 #ifdef UV_PIPE_NO_TRUNCATE
-    if(options.no_truncate) {
+    if(opts.no_truncate) {
         out |= UV_PIPE_NO_TRUNCATE;
     }
 #else
-    if(options.no_truncate) {
+    if(opts.no_truncate) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
@@ -1014,23 +1014,23 @@ task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, ev
     co_return co_await tcp_connect_await{std::move(state), host, port};
 }
 
-static result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::bind_options& options) {
+static result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::options& opts) {
     unsigned int out = 0;
 #ifdef UV_TCP_IPV6ONLY
-    if(options.ipv6_only) {
+    if(opts.ipv6_only) {
         out |= UV_TCP_IPV6ONLY;
     }
 #else
-    if(options.ipv6_only) {
+    if(opts.ipv6_only) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
 #ifdef UV_TCP_REUSEPORT
-    if(options.reuse_port) {
+    if(opts.reuse_port) {
         out |= UV_TCP_REUSEPORT;
     }
 #else
-    if(options.reuse_port) {
+    if(opts.reuse_port) {
         return std::unexpected(error::function_not_implemented);
     }
 #endif
@@ -1040,7 +1040,7 @@ static result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::bind_options&
 static int start_tcp_listen(tcp_socket::acceptor& acc,
                             std::string_view host,
                             int port,
-                            tcp_socket::bind_options options,
+                            tcp_socket::options opts,
                             event_loop& loop) {
     auto* self = acc.operator->();
     if(!self) {
@@ -1063,7 +1063,7 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
 
     ::sockaddr* addr_ptr = reinterpret_cast<sockaddr*>(&resolved->storage);
 
-    auto uv_flags = to_uv_tcp_bind_flags(options);
+    auto uv_flags = to_uv_tcp_bind_flags(opts);
     if(!uv_flags.has_value()) {
         return uv_flags.error().value();
     }
@@ -1074,17 +1074,17 @@ static int start_tcp_listen(tcp_socket::acceptor& acc,
     }
 
     err = uv_listen(reinterpret_cast<uv_stream_t*>(handle),
-                    options.backlog,
+                    opts.backlog,
                     tcp_accept_await::on_connection_cb);
     return err;
 }
 
 result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 int port,
-                                                tcp_socket::bind_options options,
+                                                tcp_socket::options opts,
                                                 event_loop& loop) {
     tcp_socket::acceptor acc(new tcp_socket::acceptor::Self());
-    int err = start_tcp_listen(acc, host, port, options, loop);
+    int err = start_tcp_listen(acc, host, port, opts, loop);
     if(err != 0) {
         return std::unexpected(error(err));
     }
@@ -1092,7 +1092,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
     return acc;
 }
 
-result<console> console::open(int fd, console::open_options opts, event_loop& loop) {
+result<console> console::open(int fd, console::options opts, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = state->as<uv_tty_t>();
 
