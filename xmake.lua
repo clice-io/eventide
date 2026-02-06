@@ -55,6 +55,7 @@ target("ztest", function()
 	add_files("src/zest/*.cpp")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(zest/*.h)", "include/(reflection/*.h)")
+	add_cxflags("cl::/Zc:preprocessor", { public = true })
 	add_packages("cpptrace", { public = true })
 end)
 
@@ -71,7 +72,6 @@ target("unit_tests", function()
 	set_kind("binary")
 	add_files("tests/**.cpp")
 	add_includedirs("include")
-	add_cxflags("cl::/Zc:preprocessor")
 	add_deps("ztest", "eventide")
 
 	if has_config("test") and is_plat("windows") then
