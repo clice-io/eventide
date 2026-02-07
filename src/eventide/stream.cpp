@@ -133,9 +133,10 @@ struct stream_read_await : system_op {
         }
     }
 
+    // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<eventide::stream::Self*>(stream->data);
-        if(!s || nread <= 0) {
+        if(!s || nread < 0) {
             if(s) {
                 uv_read_stop(stream);
                 if(s->reader) {
@@ -219,6 +220,7 @@ struct stream_read_some_await : system_op {
         buf->len = static_cast<unsigned int>(aw->dst.size());
     }
 
+    // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<eventide::stream::Self*>(stream->data);
         if(!s) {
@@ -230,7 +232,7 @@ struct stream_read_some_await : system_op {
             return;
         }
 
-        if(nread <= 0) {
+        if(nread < 0) {
             aw->bytes = 0;
         } else {
             aw->bytes = static_cast<std::size_t>(nread);
