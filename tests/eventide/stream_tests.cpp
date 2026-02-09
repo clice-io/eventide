@@ -2,6 +2,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include "eventide/error.h"
 #include "zest/macro.h"
 
 #ifdef _WIN32
@@ -380,18 +381,34 @@ TEST_CASE(stop) {
     auto acc = pipe::listen(name, opts, loop);
     ASSERT_TRUE(acc.has_value());
 
-    acc->stop();
+    auto err = acc->stop();
+    EXPECT_FALSE(err.has_error());
 
-    auto task = [&]() -> eventide::task<bool> {
-        auto res = co_await acc->accept();
-        EXPECT_TRUE(res.has_value() && res.error() == error::operation_aborted);
-        co_return true;
-    }();
+    auto task1 = [](acceptor<pipe>& acc) -> eventide::task<result<pipe>> {
+        auto res = co_await acc.accept();
+        event_loop::current().stop();
+        co_return res;
+    }(*acc);
 
-    loop.schedule(task);
+    loop.schedule(task1);
     loop.run();
 
-    EXPECT_TRUE(task.result());
+    auto res1 = task1.value().value();
+    EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
+
+
+    auto task2 = [](acceptor<pipe>& acc) -> eventide::task<result<pipe>> {
+        event_loop::current().stop();
+        auto res = co_await acc.accept();
+        co_return res;
+    }(*acc);
+
+    loop.schedule(task2);
+    loop.run();
+
+    EXPECT_TRUE(!task2->is_finished());
+    acc->stop();
+    EXPECT_TRUE(task2->is_finished());
 }
 
 };  // TEST_SUITE(pipe)
