@@ -27,6 +27,12 @@ TEST_CASE(task_await) {
     };
 
     {
+        event_loop loop;
+        loop.schedule(foo());
+        loop.run();
+    }
+
+    {
         auto [res] = run(foo());
         EXPECT_EQ(res, 1);
     }
