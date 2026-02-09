@@ -16,7 +16,7 @@ DEFAULT_URL_TEMPLATE = (
 DEFAULT_OUT_TYPES = "lsp_types.h"
 DEFAULT_OUT_METHODS = "lsp_methods.inc"
 DEFAULT_NAMESPACE = "eventide::language::proto"
-DEFAULT_BASE_HEADER = "language/lsp_base.h"
+DEFAULT_BASE_HEADER = "language/base.h"
 
 CXX_KEYWORDS = {
     "alignas",
@@ -177,7 +177,7 @@ class TypeRenderer:
                 "uinteger": "std::uint32_t",
                 "decimal": "double",
                 "boolean": "bool",
-                "null": "eventide::language::json_null",
+                "null": "LSPAny",
                 "DocumentUri": "DocumentUri",
                 "URI": "URI",
             }[name]
@@ -466,6 +466,7 @@ def main() -> None:
     lines.append("#pragma once")
     lines.append("")
     lines.append(f'#include "{DEFAULT_BASE_HEADER}"')
+    lines.append('#include "serde/serde.h"')
     lines.append("")
     lines.append(f"namespace {DEFAULT_NAMESPACE} {{")
     lines.append("")
@@ -568,9 +569,7 @@ def main() -> None:
 
     lines.append(f"}}  // namespace {DEFAULT_NAMESPACE}")
     lines.append("")
-    lines.append("namespace rfl {")
-    lines.append("template <typename T>")
-    lines.append("struct Reflector;")
+    lines.append("namespace refl::serde {")
     lines.append("")
 
     for enum in enum_specs:
@@ -586,57 +585,33 @@ def main() -> None:
             json_value = val.get("value", raw_name)
             members.append((member_name, json_value, val.get("value")))
         if base in ("integer", "uinteger"):
-            underlying = "std::int32_t" if base == "integer" else "std::uint32_t"
             lines.append(
-                f"template <> struct Reflector<{DEFAULT_NAMESPACE}::{enum_type}> {{"
+                f"template <> struct enum_traits<{DEFAULT_NAMESPACE}::{enum_type}> {{"
             )
-            lines.append(f"    using ReflType = {underlying};")
-            lines.append(
-                f"    static ReflType from(const {DEFAULT_NAMESPACE}::{enum_type}& value) {{"
-            )
-            lines.append("        return static_cast<ReflType>(value);")
-            lines.append("    }")
-            lines.append(
-                f"    static {DEFAULT_NAMESPACE}::{enum_type} to(const ReflType& value) {{"
-            )
-            lines.append(
-                f"        return static_cast<{DEFAULT_NAMESPACE}::{enum_type}>(value);"
-            )
-            lines.append("    }")
+            lines.append("    static constexpr bool enabled = true;")
+            lines.append("    static constexpr enum_encoding encoding = enum_encoding::integer;")
             lines.append("};")
             lines.append("")
             continue
 
         # string enums
         lines.append(
-            f"template <> struct Reflector<{DEFAULT_NAMESPACE}::{enum_type}> {{"
+            f"template <> struct enum_traits<{DEFAULT_NAMESPACE}::{enum_type}> {{"
         )
-        lines.append("    using ReflType = std::string;")
+        lines.append("    static constexpr bool enabled = true;")
+        lines.append("    static constexpr enum_encoding encoding = enum_encoding::string;")
         lines.append(
-            f"    static ReflType from(const {DEFAULT_NAMESPACE}::{enum_type}& value) {{"
+            f"    static constexpr std::array<std::pair<{DEFAULT_NAMESPACE}::{enum_type}, std::string_view>, {len(members)}> mapping = {{{{"
         )
-        lines.append("        switch(value) {")
         for member_name, json_value, _ in members:
             lines.append(
-                f"            case {DEFAULT_NAMESPACE}::{enum_type}::{member_name}: return {cxx_string_literal(json_value)};"
+                f"        {{{DEFAULT_NAMESPACE}::{enum_type}::{member_name}, {cxx_string_literal(json_value)}}},"
             )
-        lines.append("        }")
-        lines.append("        return {};\n    }")
-        lines.append(
-            f"    static {DEFAULT_NAMESPACE}::{enum_type} to(const ReflType& value) {{"
-        )
-        for member_name, json_value, _ in members:
-            lines.append(f"        if(value == {cxx_string_literal(json_value)}) {{")
-            lines.append(
-                f"            return {DEFAULT_NAMESPACE}::{enum_type}::{member_name};"
-            )
-            lines.append("        }")
-        lines.append('        throw std::runtime_error("Unknown enum value");')
-        lines.append("    }")
+        lines.append("    }};")
         lines.append("};")
         lines.append("")
 
-    lines.append("}  // namespace rfl")
+    lines.append("}  // namespace refl::serde")
     lines.append("")
 
     out_types.write_text("\n".join(lines), encoding="utf-8")
@@ -660,9 +635,7 @@ def main() -> None:
             else renderer.render(params)
         )
         result = req.get("result")
-        result_type = (
-            renderer.render(result) if result else "eventide::language::json_null"
-        )
+        result_type = renderer.render(result) if result else "LSPAny"
         suffix = (" " + "\\") if idx < len(requests) - 1 else ""
         method_lines.append(
             f"    X({ident}, {cxx_string_literal(method)}, ({params_type}), ({result_type})){suffix}"

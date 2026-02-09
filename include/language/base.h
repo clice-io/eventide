@@ -5,16 +5,12 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <variant>
 #include <vector>
 
-#include "language/json_value.h"
-
-#include <rfl/Flatten.hpp>
+#include <rfl/Generic.hpp>
 #include <rfl/Literal.hpp>
-#include <rfl/Rename.hpp>
 
 namespace eventide::language::proto {
 
@@ -23,7 +19,7 @@ using URI = std::string;
 
 struct no_params {};
 
-using LSPAny = eventide::language::json_value;
+using LSPAny = rfl::Generic;
 using LSPObject = std::map<std::string, LSPAny>;
 using LSPArray = std::vector<LSPAny>;
 

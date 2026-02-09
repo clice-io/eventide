@@ -3,6 +3,7 @@
 #include "libuv.h"
 #include "eventide/error.h"
 #include "eventide/loop.h"
+#include "eventide/move_only_function.h"
 #include "eventide/task.h"
 
 namespace eventide {
@@ -13,7 +14,7 @@ struct work_op : system_op {
     using promise_t = task<error>::promise_type;
 
     uv_work_t req{};
-    std::move_only_function<void()> fn;
+    move_only_function<void()> fn;
     error result{};
 
     work_op() : system_op(async_node::NodeKind::SystemIO) {
@@ -42,7 +43,7 @@ struct work_op : system_op {
 
 }  // namespace
 
-task<error> queue(std::move_only_function<void()> fn, event_loop& loop) {
+task<error> queue(move_only_function<void()> fn, event_loop& loop) {
     work_op op;
     op.fn = std::move(fn);
 

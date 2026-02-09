@@ -10,17 +10,17 @@
     X(text_document_document_color, "textDocument/documentColor", (DocumentColorParams), (std::vector<ColorInformation>)) \
     X(text_document_color_presentation, "textDocument/colorPresentation", (ColorPresentationParams), (std::vector<ColorPresentation>)) \
     X(text_document_folding_range, "textDocument/foldingRange", (FoldingRangeParams), (std::optional<std::vector<FoldingRange>>)) \
-    X(workspace_folding_range_refresh, "workspace/foldingRange/refresh", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(workspace_folding_range_refresh, "workspace/foldingRange/refresh", (eventide::language::proto::no_params), (LSPAny)) \
     X(text_document_declaration, "textDocument/declaration", (DeclarationParams), (std::optional<std::variant<Declaration, std::vector<DeclarationLink>>>)) \
     X(text_document_selection_range, "textDocument/selectionRange", (SelectionRangeParams), (std::optional<std::vector<SelectionRange>>)) \
-    X(window_work_done_progress_create, "window/workDoneProgress/create", (WorkDoneProgressCreateParams), (eventide::language::json_null)) \
+    X(window_work_done_progress_create, "window/workDoneProgress/create", (WorkDoneProgressCreateParams), (LSPAny)) \
     X(text_document_prepare_call_hierarchy, "textDocument/prepareCallHierarchy", (CallHierarchyPrepareParams), (std::optional<std::vector<CallHierarchyItem>>)) \
     X(call_hierarchy_incoming_calls, "callHierarchy/incomingCalls", (CallHierarchyIncomingCallsParams), (std::optional<std::vector<CallHierarchyIncomingCall>>)) \
     X(call_hierarchy_outgoing_calls, "callHierarchy/outgoingCalls", (CallHierarchyOutgoingCallsParams), (std::optional<std::vector<CallHierarchyOutgoingCall>>)) \
     X(text_document_semantic_tokens_full, "textDocument/semanticTokens/full", (SemanticTokensParams), (std::optional<SemanticTokens>)) \
     X(text_document_semantic_tokens_full_delta, "textDocument/semanticTokens/full/delta", (SemanticTokensDeltaParams), (std::optional<std::variant<SemanticTokens, SemanticTokensDelta>>)) \
     X(text_document_semantic_tokens_range, "textDocument/semanticTokens/range", (SemanticTokensRangeParams), (std::optional<SemanticTokens>)) \
-    X(workspace_semantic_tokens_refresh, "workspace/semanticTokens/refresh", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(workspace_semantic_tokens_refresh, "workspace/semanticTokens/refresh", (eventide::language::proto::no_params), (LSPAny)) \
     X(window_show_document, "window/showDocument", (ShowDocumentParams), (ShowDocumentResult)) \
     X(text_document_linked_editing_range, "textDocument/linkedEditingRange", (LinkedEditingRangeParams), (std::optional<LinkedEditingRanges>)) \
     X(workspace_will_create_files, "workspace/willCreateFiles", (CreateFilesParams), (std::optional<WorkspaceEdit>)) \
@@ -31,18 +31,18 @@
     X(type_hierarchy_supertypes, "typeHierarchy/supertypes", (TypeHierarchySupertypesParams), (std::optional<std::vector<TypeHierarchyItem>>)) \
     X(type_hierarchy_subtypes, "typeHierarchy/subtypes", (TypeHierarchySubtypesParams), (std::optional<std::vector<TypeHierarchyItem>>)) \
     X(text_document_inline_value, "textDocument/inlineValue", (InlineValueParams), (std::optional<std::vector<InlineValue>>)) \
-    X(workspace_inline_value_refresh, "workspace/inlineValue/refresh", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(workspace_inline_value_refresh, "workspace/inlineValue/refresh", (eventide::language::proto::no_params), (LSPAny)) \
     X(text_document_inlay_hint, "textDocument/inlayHint", (InlayHintParams), (std::optional<std::vector<InlayHint>>)) \
     X(inlay_hint_resolve, "inlayHint/resolve", (InlayHint), (InlayHint)) \
-    X(workspace_inlay_hint_refresh, "workspace/inlayHint/refresh", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(workspace_inlay_hint_refresh, "workspace/inlayHint/refresh", (eventide::language::proto::no_params), (LSPAny)) \
     X(text_document_diagnostic, "textDocument/diagnostic", (DocumentDiagnosticParams), (DocumentDiagnosticReport)) \
     X(workspace_diagnostic, "workspace/diagnostic", (WorkspaceDiagnosticParams), (WorkspaceDiagnosticReport)) \
-    X(workspace_diagnostic_refresh, "workspace/diagnostic/refresh", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(workspace_diagnostic_refresh, "workspace/diagnostic/refresh", (eventide::language::proto::no_params), (LSPAny)) \
     X(text_document_inline_completion, "textDocument/inlineCompletion", (InlineCompletionParams), (std::optional<std::variant<InlineCompletionList, std::vector<InlineCompletionItem>>>)) \
-    X(client_register_capability, "client/registerCapability", (RegistrationParams), (eventide::language::json_null)) \
-    X(client_unregister_capability, "client/unregisterCapability", (UnregistrationParams), (eventide::language::json_null)) \
+    X(client_register_capability, "client/registerCapability", (RegistrationParams), (LSPAny)) \
+    X(client_unregister_capability, "client/unregisterCapability", (UnregistrationParams), (LSPAny)) \
     X(initialize, "initialize", (InitializeParams), (InitializeResult)) \
-    X(shutdown, "shutdown", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(shutdown, "shutdown", (eventide::language::proto::no_params), (LSPAny)) \
     X(window_show_message_request, "window/showMessageRequest", (ShowMessageRequestParams), (std::optional<MessageActionItem>)) \
     X(text_document_will_save_wait_until, "textDocument/willSaveWaitUntil", (WillSaveTextDocumentParams), (std::optional<std::vector<TextEdit>>)) \
     X(text_document_completion, "textDocument/completion", (CompletionParams), (std::optional<std::variant<std::vector<CompletionItem>, CompletionList>>)) \
@@ -59,7 +59,7 @@
     X(workspace_symbol_resolve, "workspaceSymbol/resolve", (WorkspaceSymbol), (WorkspaceSymbol)) \
     X(text_document_code_lens, "textDocument/codeLens", (CodeLensParams), (std::optional<std::vector<CodeLens>>)) \
     X(code_lens_resolve, "codeLens/resolve", (CodeLens), (CodeLens)) \
-    X(workspace_code_lens_refresh, "workspace/codeLens/refresh", (eventide::language::proto::no_params), (eventide::language::json_null)) \
+    X(workspace_code_lens_refresh, "workspace/codeLens/refresh", (eventide::language::proto::no_params), (LSPAny)) \
     X(text_document_document_link, "textDocument/documentLink", (DocumentLinkParams), (std::optional<std::vector<DocumentLink>>)) \
     X(document_link_resolve, "documentLink/resolve", (DocumentLink), (DocumentLink)) \
     X(text_document_formatting, "textDocument/formatting", (DocumentFormattingParams), (std::optional<std::vector<TextEdit>>)) \

@@ -77,6 +77,13 @@ if(EVENTIDE_ENABLE_LANGUAGE)
     set(REFLECTCPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(reflectcpp)
 
+    FetchContent_Declare(
+        simdjson
+        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(simdjson)
+
     file(GLOB EVENTIDE_LANGUAGE_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/language/*.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/language/**/*.cpp"
@@ -95,7 +102,15 @@ if(EVENTIDE_ENABLE_LANGUAGE)
         message(FATAL_ERROR "reflect-cpp target not found after FetchContent.")
     endif()
 
-    target_link_libraries(eventide_language PUBLIC eventide ${REFLECTCPP_TARGET})
+    if(TARGET simdjson::simdjson)
+        set(SIMDJSON_TARGET simdjson::simdjson)
+    elseif(TARGET simdjson)
+        set(SIMDJSON_TARGET simdjson)
+    else()
+        message(FATAL_ERROR "simdjson target not found after FetchContent.")
+    endif()
+
+    target_link_libraries(eventide_language PUBLIC eventide ${REFLECTCPP_TARGET} ${SIMDJSON_TARGET})
     target_compile_definitions(eventide_language PUBLIC EVENTIDE_ENABLE_LANGUAGE=1)
 endif()
 
