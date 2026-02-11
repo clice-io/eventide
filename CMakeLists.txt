@@ -145,4 +145,7 @@ if(EVENTIDE_ENABLE_TEST)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     target_link_libraries(unit_tests PRIVATE eventide zest cpptrace::cpptrace)
+    if(EVENTIDE_ENABLE_LANGUAGE AND TARGET eventide_language)
+        target_link_libraries(unit_tests PRIVATE eventide_language)
+    endif()
 endif()

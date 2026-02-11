@@ -169,8 +169,7 @@ struct stream_read_await : system_op {
         }
 
         self->reader = this;
-        int err = uv_read_start(self->as<uv_stream_t>(), on_alloc, on_read);
-        (void)err;
+        [[maybe_unused]] int err = uv_read_start(self->as<uv_stream_t>(), on_alloc, on_read);
         return link_continuation(&waiting.promise(), location);
     }
 
