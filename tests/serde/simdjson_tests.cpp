@@ -2,8 +2,8 @@
 #include <string>
 #include <vector>
 
-#include "serde/json.h"
 #include "zest/zest.h"
+#include "serde/json.h"
 
 namespace eventide::serde {
 

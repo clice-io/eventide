@@ -84,7 +84,7 @@ struct value_ops<yyjson_val*> {
         return yyjson_obj_getn(value, key.data(), key.size());
     }
 
-    static const char* get_str(yyjson_val* value) {
+    const static char* get_str(yyjson_val* value) {
         return yyjson_get_str(value);
     }
 
@@ -180,7 +180,7 @@ struct value_ops<yyjson_mut_val*> {
         return yyjson_mut_obj_getn(value, key.data(), key.size());
     }
 
-    static const char* get_str(yyjson_mut_val* value) {
+    const static char* get_str(yyjson_mut_val* value) {
         return yyjson_mut_get_str(value);
     }
 
@@ -341,8 +341,8 @@ public:
         return std::string_view(text == nullptr ? "" : text, len);
     }
 
-    std::expected<std::vector<object_member>, read_error_type> object_members(
-        value_type node = nullptr) const {
+    std::expected<std::vector<object_member>, read_error_type>
+        object_members(value_type node = nullptr) const {
         auto* object = resolve(node);
         if(!value_ops<value_type>::is_obj(object)) {
             return std::unexpected(YYJSON_READ_ERROR_INVALID_PARAMETER);
@@ -371,8 +371,8 @@ public:
         return fields;
     }
 
-    std::expected<std::vector<value_type>, read_error_type> array_elements(
-        value_type node = nullptr) const {
+    std::expected<std::vector<value_type>, read_error_type>
+        array_elements(value_type node = nullptr) const {
         auto* array = resolve(node);
         if(!value_ops<value_type>::is_arr(array)) {
             return std::unexpected(YYJSON_READ_ERROR_INVALID_PARAMETER);
@@ -381,7 +381,8 @@ public:
         std::vector<value_type> items{};
         items.reserve(value_ops<value_type>::arr_size(array));
 
-        value_ops<value_type>::for_each_array(array, [&](value_type item) { items.push_back(item); });
+        value_ops<value_type>::for_each_array(array,
+                                              [&](value_type item) { items.push_back(item); });
         return items;
     }
 
@@ -429,22 +430,6 @@ public:
         return *this;
     }
 
-    static std::expected<Dom, read_error_type> parse(std::string_view json) {
-        yyjson_read_err err{};
-        auto* parsed = yyjson_read_opts(
-            const_cast<char*>(json.data()), json.size(), YYJSON_READ_NOFLAG, nullptr, &err);
-        if(parsed == nullptr) {
-            const auto code =
-                err.code == YYJSON_READ_SUCCESS ? YYJSON_READ_ERROR_INVALID_PARAMETER : err.code;
-            return std::unexpected(code);
-        }
-        return Dom(parsed);
-    }
-
-    static std::expected<Dom, write_error_type> object();
-
-    static std::expected<Dom, write_error_type> array();
-
     bool valid() const {
         return document != nullptr;
     }
@@ -455,10 +440,6 @@ public:
 
     yyjson_doc* get() const {
         return document;
-    }
-
-    yyjson_doc* release() {
-        return std::exchange(document, nullptr);
     }
 
     void reset(yyjson_doc* new_document = nullptr) {
@@ -477,8 +458,8 @@ public:
         std::size_t len = 0;
         char* json = yyjson_write_opts(document, YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
         if(json == nullptr) {
-            const auto code = err.code == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_MEMORY_ALLOCATION
-                                                                : err.code;
+            const auto code =
+                err.code == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_MEMORY_ALLOCATION : err.code;
             return std::unexpected(code);
         }
 
@@ -494,10 +475,8 @@ public:
 private:
     static read_error_type map_write_to_read(write_error_type error) {
         switch(error) {
-            case YYJSON_WRITE_ERROR_MEMORY_ALLOCATION:
-                return YYJSON_READ_ERROR_MEMORY_ALLOCATION;
-            default:
-                return YYJSON_READ_ERROR_INVALID_PARAMETER;
+            case YYJSON_WRITE_ERROR_MEMORY_ALLOCATION: return YYJSON_READ_ERROR_MEMORY_ALLOCATION;
+            default: return YYJSON_READ_ERROR_INVALID_PARAMETER;
         }
     }
 
@@ -506,8 +485,9 @@ private:
     friend class MutableDom;
 };
 
-class MutableDom
-    : public detail::read_dom_base<MutableDom, yyjson_mut_val*, detail::object_member<yyjson_mut_val*>> {
+class MutableDom :
+    public detail::
+        read_dom_base<MutableDom, yyjson_mut_val*, detail::object_member<yyjson_mut_val*>> {
 public:
     using base_type =
         detail::read_dom_base<MutableDom, yyjson_mut_val*, detail::object_member<yyjson_mut_val*>>;
@@ -582,14 +562,6 @@ public:
         return document == nullptr ? nullptr : yyjson_mut_doc_get_root(document);
     }
 
-    yyjson_mut_doc* get() const {
-        return document;
-    }
-
-    yyjson_mut_doc* release() {
-        return std::exchange(document, nullptr);
-    }
-
     void reset(yyjson_mut_doc* new_document = nullptr) {
         if(document != nullptr) {
             yyjson_mut_doc_free(document);
@@ -606,8 +578,8 @@ public:
         std::size_t len = 0;
         char* json = yyjson_mut_write_opts(document, YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
         if(json == nullptr) {
-            const auto code = err.code == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_MEMORY_ALLOCATION
-                                                                : err.code;
+            const auto code =
+                err.code == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_MEMORY_ALLOCATION : err.code;
             return std::unexpected(code);
         }
 
@@ -1014,20 +986,19 @@ inline std::expected<Dom, Dom::read_error_type> Dom::copy() const {
     return std::move(*immutable_document);
 }
 
-inline std::expected<Dom, Dom::write_error_type> Dom::object() {
-    auto mutable_document = MutableDom::object();
-    if(!mutable_document) {
-        return std::unexpected(mutable_document.error());
+inline std::expected<Dom, Dom::read_error_type> parse(std::string_view json) {
+    yyjson_read_err err{};
+    auto* parsed = yyjson_read_opts(const_cast<char*>(json.data()),
+                                    json.size(),
+                                    YYJSON_READ_NOFLAG,
+                                    nullptr,
+                                    &err);
+    if(parsed == nullptr) {
+        const auto code =
+            err.code == YYJSON_READ_SUCCESS ? YYJSON_READ_ERROR_INVALID_PARAMETER : err.code;
+        return std::unexpected(code);
     }
-    return mutable_document->freeze();
-}
-
-inline std::expected<Dom, Dom::write_error_type> Dom::array() {
-    auto mutable_document = MutableDom::array();
-    if(!mutable_document) {
-        return std::unexpected(mutable_document.error());
-    }
-    return mutable_document->freeze();
+    return Dom(parsed);
 }
 
 }  // namespace eventide::serde::json::yy

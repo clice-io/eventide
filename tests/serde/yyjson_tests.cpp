@@ -3,8 +3,8 @@
 #include <string_view>
 #include <vector>
 
-#include "serde/json.h"
 #include "zest/zest.h"
+#include "serde/json.h"
 
 namespace eventide::serde {
 
@@ -93,6 +93,73 @@ namespace {
 using serializer_t = eventide::serde::json::yy::Serializer;
 using deserializer_t = eventide::serde::json::yy::Deserializer;
 
+struct any_bool_visitor {
+    using value_type = bool;
+
+    std::string_view expecting() const {
+        return "boolean";
+    }
+
+    deserializer_t::result_t<bool> visit_bool(bool value) {
+        return value;
+    }
+
+    deserializer_t::result_t<bool> visit_str(std::string_view) {
+        return false;
+    }
+};
+
+struct seq_sum_visitor {
+    using value_type = int;
+
+    std::string_view expecting() const {
+        return "sequence of integers";
+    }
+
+    deserializer_t::result_t<int> visit_seq(deserializer_t::SeqAccess& access) {
+        int sum = 0;
+        while(true) {
+            auto element = access.next_element<int>();
+            if(!element) {
+                return std::unexpected(element.error());
+            }
+            if(!*element) {
+                break;
+            }
+            sum += **element;
+        }
+        return sum;
+    }
+};
+
+struct map_sum_visitor {
+    using value_type = int;
+
+    std::string_view expecting() const {
+        return "map of integer values";
+    }
+
+    deserializer_t::result_t<int> visit_map(deserializer_t::MapAccess& access) {
+        int sum = 0;
+        while(true) {
+            auto key = access.next_key<std::string_view>();
+            if(!key) {
+                return std::unexpected(key.error());
+            }
+            if(!*key) {
+                break;
+            }
+
+            auto value = access.next_value<int>();
+            if(!value) {
+                return std::unexpected(value.error());
+            }
+            sum += *value;
+        }
+        return sum;
+    }
+};
+
 TEST_SUITE(serde_yyjson) {
 
 TEST_CASE(serialize_vector) {
@@ -101,7 +168,9 @@ TEST_CASE(serialize_vector) {
     serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
-    auto out = serializer.str();
+    auto dom = serializer.dom();
+    ASSERT_TRUE(dom.has_value());
+    auto out = dom->str();
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"([1,2,3,5,8])");
 }
@@ -109,9 +178,10 @@ TEST_CASE(serialize_vector) {
 TEST_CASE(deserialize_vector) {
     std::string json = R"([13,21,34])";
 
-    deserializer_t deserializer;
-    auto parsed = deserializer.parse(json);
-    ASSERT_TRUE(parsed.has_value());
+    auto dom = eventide::serde::json::yy::parse(json);
+    ASSERT_TRUE(dom.has_value());
+
+    deserializer_t deserializer(std::move(*dom));
 
     auto value = eventide::serde::deserialize<std::vector<int>>(deserializer);
     ASSERT_TRUE(value.has_value());
@@ -131,7 +201,9 @@ TEST_CASE(serialize_map_vector) {
     serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
-    auto out = serializer.str();
+    auto dom = serializer.dom();
+    ASSERT_TRUE(dom.has_value());
+    auto out = dom->str();
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"({"1":[2,3],"4":[5]})");
 }
@@ -139,9 +211,10 @@ TEST_CASE(serialize_map_vector) {
 TEST_CASE(deserialize_map_vector) {
     std::string json = R"({"1":[2,3],"4":[5]})";
 
-    deserializer_t deserializer;
-    auto parsed = deserializer.parse(json);
-    ASSERT_TRUE(parsed.has_value());
+    auto dom = eventide::serde::json::yy::parse(json);
+    ASSERT_TRUE(dom.has_value());
+
+    deserializer_t deserializer(std::move(*dom));
 
     auto value = eventide::serde::deserialize<std::map<int, std::vector<int>>>(deserializer);
     ASSERT_TRUE(value.has_value());
@@ -163,7 +236,9 @@ TEST_CASE(serialize_struct) {
     serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
-    auto out = serializer.str();
+    auto dom = serializer.dom();
+    ASSERT_TRUE(dom.has_value());
+    auto out = dom->str();
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"({"id":7,"name":"alice","scores":[10,20,30]})");
 }
@@ -171,9 +246,10 @@ TEST_CASE(serialize_struct) {
 TEST_CASE(deserialize_struct) {
     std::string json = R"({"id":9,"name":"bob","scores":[4,5]})";
 
-    deserializer_t deserializer;
-    auto parsed = deserializer.parse(json);
-    ASSERT_TRUE(parsed.has_value());
+    auto dom = eventide::serde::json::yy::parse(json);
+    ASSERT_TRUE(dom.has_value());
+
+    deserializer_t deserializer(std::move(*dom));
 
     auto value = eventide::serde::deserialize<person_yy>(deserializer);
     ASSERT_TRUE(value.has_value());
@@ -188,8 +264,7 @@ TEST_CASE(deserialize_struct) {
 TEST_CASE(parse_returns_error) {
     std::string json = R"({)";
 
-    deserializer_t deserializer;
-    auto parsed = deserializer.parse(json);
+    auto parsed = eventide::serde::json::yy::parse(json);
 
     EXPECT_FALSE(parsed.has_value());
     if(!parsed.has_value()) {
@@ -213,9 +288,7 @@ TEST_CASE(serialize_to_dom_and_deserialize_from_dom) {
     ASSERT_TRUE(dom_json.has_value());
     EXPECT_EQ(*dom_json, R"({"id":42,"name":"dom","scores":[3,1,4]})");
 
-    deserializer_t deserializer;
-    auto parsed = deserializer.parse(std::move(*dom));
-    ASSERT_TRUE(parsed.has_value());
+    deserializer_t deserializer(std::move(*dom));
 
     auto roundtrip = eventide::serde::deserialize<person_yy>(deserializer);
     ASSERT_TRUE(roundtrip.has_value());
@@ -227,8 +300,44 @@ TEST_CASE(serialize_to_dom_and_deserialize_from_dom) {
     EXPECT_EQ(roundtrip->scores.at(2), 4);
 }
 
+TEST_CASE(visitor_deserialize_any_bool) {
+    auto dom = eventide::serde::json::yy::parse(R"(true)");
+    ASSERT_TRUE(dom.has_value());
+
+    deserializer_t deserializer(std::move(*dom));
+
+    any_bool_visitor visitor{};
+    auto value = deserializer.deserialize_any(visitor);
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, true);
+}
+
+TEST_CASE(visitor_deserialize_seq_sum) {
+    auto dom = eventide::serde::json::yy::parse(R"([1,2,3,4])");
+    ASSERT_TRUE(dom.has_value());
+
+    deserializer_t deserializer(std::move(*dom));
+
+    seq_sum_visitor visitor{};
+    auto value = deserializer.deserialize_seq(visitor);
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, 10);
+}
+
+TEST_CASE(visitor_deserialize_map_sum) {
+    auto dom = eventide::serde::json::yy::parse(R"({"a":2,"b":3,"c":5})");
+    ASSERT_TRUE(dom.has_value());
+
+    deserializer_t deserializer(std::move(*dom));
+
+    map_sum_visitor visitor{};
+    auto value = deserializer.deserialize_map(visitor);
+    ASSERT_TRUE(value.has_value());
+    EXPECT_EQ(*value, 10);
+}
+
 TEST_CASE(dom_read_helpers) {
-    auto dom = eventide::serde::json::yy::Dom::parse(
+    auto dom = eventide::serde::json::yy::parse(
         R"({"name":"alice","age":20,"scores":[10,20],"active":true})");
     ASSERT_TRUE(dom.has_value());
 
@@ -290,7 +399,7 @@ TEST_CASE(dom_array_mutation_helpers) {
 }
 
 TEST_CASE(dom_thaw_freeze) {
-    auto dom = eventide::serde::json::yy::Dom::parse(R"({"n":1,"arr":[2],"flag":false})");
+    auto dom = eventide::serde::json::yy::parse(R"({"n":1,"arr":[2],"flag":false})");
     ASSERT_TRUE(dom.has_value());
 
     auto mutable_dom = dom->thaw();

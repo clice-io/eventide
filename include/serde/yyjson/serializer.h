@@ -325,34 +325,11 @@ private:
     }
 
 public:
-    result_t<std::string_view> view() const {
-        if(!is_complete()) {
-            const auto error =
-                last_error == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_INVALID_PARAMETER : last_error;
-            return std::unexpected(error);
-        }
-
-        auto out = mutable_dom.str();
-        if(!out) {
-            return std::unexpected(out.error());
-        }
-
-        cached_output = std::move(*out);
-        return std::string_view(cached_output);
-    }
-
-    result_t<std::string> str() const {
-        auto out = view();
-        if(!out) {
-            return std::unexpected(out.error());
-        }
-        return std::string(*out);
-    }
-
     result_t<Dom> dom() const {
         if(!is_complete()) {
-            const auto error =
-                last_error == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_INVALID_PARAMETER : last_error;
+            const auto error = last_error == YYJSON_WRITE_SUCCESS
+                                   ? YYJSON_WRITE_ERROR_INVALID_PARAMETER
+                                   : last_error;
             return std::unexpected(error);
         }
         return mutable_dom.freeze();
@@ -364,7 +341,6 @@ public:
         root_written = false;
         is_valid = mutable_dom.valid();
         last_error = is_valid ? YYJSON_WRITE_SUCCESS : YYJSON_WRITE_ERROR_MEMORY_ALLOCATION;
-        cached_output.clear();
     }
 
     bool valid() const {
@@ -472,7 +448,6 @@ private:
     bool root_written = false;
     bool is_valid = false;
     error_type last_error = YYJSON_WRITE_SUCCESS;
-    mutable std::string cached_output{};
 };
 
 using SerializeSeq = Serializer::SerializeSeq;
