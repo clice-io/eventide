@@ -1,18 +1,13 @@
 #pragma once
 
-#include <array>
-#include <charconv>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <ostream>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -339,77 +334,6 @@ public:
         return SerializeStruct(*this);
     }
 
-    template <class Seq>
-    void collect_seq(const Seq& seq) {
-        std::optional<std::size_t> len{};
-        if constexpr(requires { seq.size(); }) {
-            len = static_cast<std::size_t>(seq.size());
-        }
-
-        auto serializer = serialize_seq(len);
-        for(const auto& item: seq) {
-            serializer.serialize_element(item);
-        }
-        serializer.end();
-    }
-
-    template <class Map>
-    void collect_map(const Map& map) {
-        std::optional<std::size_t> len{};
-        if constexpr(requires { map.size(); }) {
-            len = static_cast<std::size_t>(map.size());
-        }
-
-        auto serializer = serialize_map(len);
-        for(const auto& [key, value]: map) {
-            serializer.serialize_entry(key, value);
-        }
-        serializer.end();
-    }
-
-    template <class T>
-    void collect_str(const T& value) {
-        using value_t = std::remove_cvref_t<T>;
-
-        if constexpr(std::is_same_v<value_t, bool>) {
-            serialize_str(value ? "true" : "false");
-        } else if constexpr(std::is_same_v<value_t, char>) {
-            serialize_char(value);
-        } else if constexpr(std::is_convertible_v<value_t, std::string_view>) {
-            serialize_str(std::string_view(value));
-        } else if constexpr(std::is_integral_v<value_t>) {
-            std::array<char, 64> buffer{};
-            auto [ptr, err] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-            if(err == std::errc{}) {
-                serialize_str(
-                    std::string_view(buffer.data(), static_cast<std::size_t>(ptr - buffer.data())));
-            } else {
-                serialize_none();
-            }
-        } else if constexpr(std::is_floating_point_v<value_t>) {
-            if(!std::isfinite(value)) {
-                serialize_none();
-                return;
-            }
-
-            std::array<char, 64> buffer{};
-            auto [ptr, err] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-            if(err == std::errc{}) {
-                serialize_str(
-                    std::string_view(buffer.data(), static_cast<std::size_t>(ptr - buffer.data())));
-            } else {
-                serialize_none();
-            }
-        } else if constexpr(requires(std::ostream& out, const value_t& v) { out << v; }) {
-            std::ostringstream out;
-            out << value;
-            serialize_str(out.str());
-        } else {
-            static_assert(always_false_v<T>,
-                          "collect_str requires string-like or streamable type.");
-        }
-    }
-
     bool is_human_readable() const {
         return true;
     }
@@ -422,9 +346,6 @@ private:
         bool first = true;
         bool expect_key = true;
     };
-
-    template <class>
-    constexpr static bool always_false_v = false;
 
     void mark_invalid() {
         is_valid = false;

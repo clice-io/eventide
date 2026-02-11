@@ -283,18 +283,12 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
             return std::unexpected(array.error());
         }
         value_t out{};
-        auto error = deserializer.for_each_element(
-            *array,
-            [&](value_type_t<Deserializer> item) -> deserialize_result_t<void, Deserializer> {
-                auto parsed = deserialize<typename value_t::value_type>(deserializer, item);
-                if(!parsed) {
-                    return std::unexpected(parsed.error());
-                }
-                out.push_back(std::move(*parsed));
-                return {};
-            });
-        if(!error) {
-            return std::unexpected(error.error());
+        for(auto item: *array) {
+            auto parsed = deserialize<typename value_t::value_type>(deserializer, item);
+            if(!parsed) {
+                return std::unexpected(parsed.error());
+            }
+            out.push_back(std::move(*parsed));
         }
         return out;
     } else if constexpr(detail::is_map_v<value_t>) {
@@ -303,23 +297,17 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
             return std::unexpected(object.error());
         }
         value_t out{};
-        auto error = deserializer.for_each_member(
-            *object,
-            [&](std::string_view key,
-                value_type_t<Deserializer> item) -> deserialize_result_t<void, Deserializer> {
-                typename value_t::key_type parsed_key{};
-                if(!detail::parse_key(key, parsed_key)) {
-                    return std::unexpected(detail::error_traits<error_t>::invalid_argument());
-                }
-                auto parsed_value = deserialize<typename value_t::mapped_type>(deserializer, item);
-                if(!parsed_value) {
-                    return std::unexpected(parsed_value.error());
-                }
-                out.emplace(std::move(parsed_key), std::move(*parsed_value));
-                return {};
-            });
-        if(!error) {
-            return std::unexpected(error.error());
+        for(auto field: *object) {
+            typename value_t::key_type parsed_key{};
+            if(!detail::parse_key(field.key, parsed_key)) {
+                return std::unexpected(detail::error_traits<error_t>::invalid_argument());
+            }
+            auto parsed_value =
+                deserialize<typename value_t::mapped_type>(deserializer, field.value);
+            if(!parsed_value) {
+                return std::unexpected(parsed_value.error());
+            }
+            out.emplace(std::move(parsed_key), std::move(*parsed_value));
         }
         return out;
     } else if constexpr(detail::is_variant_v<value_t>) {
@@ -352,32 +340,25 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
 
         value_t out{};
         std::size_t index = 0;
-        auto error = deserializer.for_each_element(
-            *array,
-            [&](value_type_t<Deserializer> item) -> deserialize_result_t<void, Deserializer> {
-                bool assigned = false;
-                [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    ((index == Is ? (void)([&] {
-                         using elem_t = std::tuple_element_t<Is, value_t>;
-                         auto parsed = deserialize<elem_t>(deserializer, item);
-                         if(parsed) {
-                             std::get<Is>(out) = std::move(*parsed);
-                             assigned = true;
-                         }
-                     }())
-                                  : void()),
-                     ...);
-                }(std::make_index_sequence<std::tuple_size_v<value_t>>{});
+        for(auto item: *array) {
+            bool assigned = false;
+            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                ((index == Is ? (void)([&] {
+                     using elem_t = std::tuple_element_t<Is, value_t>;
+                     auto parsed = deserialize<elem_t>(deserializer, item);
+                     if(parsed) {
+                         std::get<Is>(out) = std::move(*parsed);
+                         assigned = true;
+                     }
+                 }())
+                              : void()),
+                 ...);
+            }(std::make_index_sequence<std::tuple_size_v<value_t>>{});
 
-                ++index;
-                if(!assigned) {
-                    return std::unexpected(detail::error_traits<error_t>::invalid_argument());
-                }
-                return {};
-            });
-
-        if(!error) {
-            return std::unexpected(error.error());
+            ++index;
+            if(!assigned) {
+                return std::unexpected(detail::error_traits<error_t>::invalid_argument());
+            }
         }
         return out;
     } else if constexpr(refl::serde::has_enum_traits<value_t>) {

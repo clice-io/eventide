@@ -175,10 +175,6 @@ public:
         return root_value;
     }
 
-    bool has_root() const {
-        return has_root_value;
-    }
-
 private:
     template <class T, class D>
     friend eventide::serde::deserialize_result_t<T, D>
@@ -214,38 +210,6 @@ private:
 
     bool is_null(value_type value) const {
         return value.is_null();
-    }
-
-    result_t<value_type> find(object_type object, std::string_view key) const {
-        auto found = std::move(object.at_key(key));
-        value_type out{};
-        auto err = std::move(found).get(out);
-        if(err != simdjson::SUCCESS) {
-            return std::unexpected(err);
-        }
-        return out;
-    }
-
-    template <class Fn>
-    result_t<void> for_each_member(object_type object, Fn&& fn) const {
-        for(auto field: object) {
-            auto result = fn(field.key, field.value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-        }
-        return {};
-    }
-
-    template <class Fn>
-    result_t<void> for_each_element(array_type array, Fn&& fn) const {
-        for(auto element: array) {
-            auto result = fn(element);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-        }
-        return {};
     }
 
 public:
