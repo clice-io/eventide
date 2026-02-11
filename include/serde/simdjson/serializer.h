@@ -31,50 +31,50 @@ class Serializer {
 public:
     class SerializeSeq {
     public:
-        explicit SerializeSeq(Serializer& serializer) noexcept : serializer_(serializer) {}
+        explicit SerializeSeq(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
         void serialize_element(const T& value) {
-            eventide::serde::serialize(serializer_, value);
+            eventide::serde::serialize(serializer, value);
         }
 
         void end() {
-            serializer_.end_array();
+            serializer.end_array();
         }
 
     private:
-        Serializer& serializer_;
+        Serializer& serializer;
     };
 
     class SerializeTuple {
     public:
-        explicit SerializeTuple(Serializer& serializer) noexcept : serializer_(serializer) {}
+        explicit SerializeTuple(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
         void serialize_element(const T& value) {
-            eventide::serde::serialize(serializer_, value);
+            eventide::serde::serialize(serializer, value);
         }
 
         void end() {
-            serializer_.end_array();
+            serializer.end_array();
         }
 
     private:
-        Serializer& serializer_;
+        Serializer& serializer;
     };
 
     class SerializeMap {
     public:
-        explicit SerializeMap(Serializer& serializer) noexcept : serializer_(serializer) {}
+        explicit SerializeMap(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
         void serialize_key(const T& key) {
-            serializer_.key(Serializer::map_key_to_string(key));
+            serializer.key(Serializer::map_key_to_string(key));
         }
 
         template <class T>
         void serialize_value(const T& value) {
-            eventide::serde::serialize(serializer_, value);
+            eventide::serde::serialize(serializer, value);
         }
 
         template <class K, class V>
@@ -84,104 +84,104 @@ public:
         }
 
         void end() {
-            serializer_.end_object();
+            serializer.end_object();
         }
 
     private:
-        Serializer& serializer_;
+        Serializer& serializer;
     };
 
     class SerializeStruct {
     public:
-        explicit SerializeStruct(Serializer& serializer) noexcept : serializer_(serializer) {}
+        explicit SerializeStruct(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
         void serialize_field(std::string_view key, const T& value) {
-            serializer_.key(key);
-            eventide::serde::serialize(serializer_, value);
+            serializer.key(key);
+            eventide::serde::serialize(serializer, value);
         }
 
         void skip_field(std::string_view /*key*/) {}
 
         void end() {
-            serializer_.end_object();
+            serializer.end_object();
         }
 
     private:
-        Serializer& serializer_;
+        Serializer& serializer;
     };
 
     Serializer() = default;
 
-    explicit Serializer(std::size_t initial_capacity) : builder_(initial_capacity) {}
+    explicit Serializer(std::size_t initial_capacity) : builder(initial_capacity) {}
 
 private:
     void begin_object() {
         if(!before_value()) {
             return;
         }
-        builder_.start_object();
-        stack_.push_back(container_frame{container_kind::object, true, true});
+        builder.start_object();
+        stack.push_back(container_frame{container_kind::object, true, true});
     }
 
     void end_object() {
-        if(!valid_ || stack_.empty()) {
+        if(!is_valid || stack.empty()) {
             mark_invalid();
             return;
         }
 
-        const auto frame = stack_.back();
+        const auto frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
             return;
         }
 
-        builder_.end_object();
-        stack_.pop_back();
+        builder.end_object();
+        stack.pop_back();
     }
 
     void begin_array() {
         if(!before_value()) {
             return;
         }
-        builder_.start_array();
-        stack_.push_back(container_frame{container_kind::array, true, false});
+        builder.start_array();
+        stack.push_back(container_frame{container_kind::array, true, false});
     }
 
     void end_array() {
-        if(!valid_ || stack_.empty()) {
+        if(!is_valid || stack.empty()) {
             mark_invalid();
             return;
         }
 
-        if(stack_.back().kind != container_kind::array) {
+        if(stack.back().kind != container_kind::array) {
             mark_invalid();
             return;
         }
 
-        builder_.end_array();
-        stack_.pop_back();
+        builder.end_array();
+        stack.pop_back();
     }
 
     void key(std::string_view key) {
-        if(!valid_ || stack_.empty()) {
+        if(!is_valid || stack.empty()) {
             mark_invalid();
             return;
         }
 
-        auto& frame = stack_.back();
+        auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
             return;
         }
 
         if(!frame.first) {
-            builder_.append_comma();
+            builder.append_comma();
         }
         frame.first = false;
 
-        builder_.escape_and_append_with_quotes(key);
-        builder_.append_colon();
+        builder.escape_and_append_with_quotes(key);
+        builder.append_colon();
         frame.expect_key = false;
     }
 
@@ -189,35 +189,35 @@ private:
         if(!before_value()) {
             return;
         }
-        builder_.append_null();
+        builder.append_null();
     }
 
     void value(std::string_view value) {
         if(!before_value()) {
             return;
         }
-        builder_.escape_and_append_with_quotes(value);
+        builder.escape_and_append_with_quotes(value);
     }
 
     void value(bool value) {
         if(!before_value()) {
             return;
         }
-        builder_.append(value);
+        builder.append(value);
     }
 
     void value(std::int64_t value) {
         if(!before_value()) {
             return;
         }
-        builder_.append(value);
+        builder.append(value);
     }
 
     void value(std::uint64_t value) {
         if(!before_value()) {
             return;
         }
-        builder_.append(value);
+        builder.append(value);
     }
 
     void value(double value) {
@@ -225,20 +225,20 @@ private:
             return;
         }
         if(std::isfinite(value)) {
-            builder_.append(value);
+            builder.append(value);
         } else {
-            builder_.append_null();
+            builder.append_null();
         }
     }
 
 public:
     eventide::result<std::string_view> view() const {
-        if(!valid_ || !stack_.empty() || !root_written_) {
+        if(!is_valid || !stack.empty() || !root_written) {
             return std::unexpected(eventide::error::invalid_argument);
         }
 
         std::string_view out{};
-        auto err = builder_.view().get(out);
+        auto err = builder.view().get(out);
         if(err != simdjson::SUCCESS) {
             return std::unexpected(eventide::error::not_enough_memory);
         }
@@ -254,14 +254,14 @@ public:
     }
 
     void clear() {
-        builder_.clear();
-        stack_.clear();
-        root_written_ = false;
-        valid_ = true;
+        builder.clear();
+        stack.clear();
+        root_written = false;
+        is_valid = true;
     }
 
     bool valid() const {
-        return valid_;
+        return is_valid;
     }
 
     void serialize_bool(bool value) {
@@ -291,7 +291,7 @@ public:
         if(!before_value()) {
             return;
         }
-        builder_.escape_and_append_with_quotes(value);
+        builder.escape_and_append_with_quotes(value);
     }
 
     void serialize_str(std::string_view value) {
@@ -427,27 +427,27 @@ private:
     constexpr static bool always_false_v = false;
 
     void mark_invalid() {
-        valid_ = false;
+        is_valid = false;
     }
 
     bool before_value() {
-        if(!valid_) {
+        if(!is_valid) {
             return false;
         }
 
-        if(stack_.empty()) {
-            if(root_written_) {
+        if(stack.empty()) {
+            if(root_written) {
                 mark_invalid();
                 return false;
             }
-            root_written_ = true;
+            root_written = true;
             return true;
         }
 
-        auto& frame = stack_.back();
+        auto& frame = stack.back();
         if(frame.kind == container_kind::array) {
             if(!frame.first) {
-                builder_.append_comma();
+                builder.append_comma();
             }
             frame.first = false;
             return true;
@@ -476,10 +476,10 @@ private:
         }
     }
 
-    simdjson::builder::string_builder builder_{};
-    std::vector<container_frame> stack_{};
-    bool root_written_ = false;
-    bool valid_ = true;
+    simdjson::builder::string_builder builder{};
+    std::vector<container_frame> stack{};
+    bool root_written = false;
+    bool is_valid = true;
 };
 
 using SerializeSeq = Serializer::SerializeSeq;

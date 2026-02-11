@@ -28,7 +28,7 @@ class when_all : public aggregate_op {
 public:
     template <typename... U>
     explicit when_all(U&&... tasks) :
-        aggregate_op(async_node::NodeKind::WhenAll), tasks_(std::forward<U>(tasks)...) {}
+        aggregate_op(async_node::NodeKind::WhenAll), tasks(std::forward<U>(tasks)...) {}
 
     bool await_ready() const noexcept {
         return sizeof...(Tasks) == 0;
@@ -91,15 +91,15 @@ public:
 private:
     template <std::size_t... I>
     void add_awaitees(std::index_sequence<I...>) {
-        (awaitees.push_back(detail::node_from(std::get<I>(tasks_))), ...);
+        (awaitees.push_back(detail::node_from(std::get<I>(tasks))), ...);
     }
 
     template <std::size_t... I>
     auto collect(std::index_sequence<I...>) {
-        return std::tuple(detail::take_result(std::get<I>(tasks_))...);
+        return std::tuple(detail::take_result(std::get<I>(tasks))...);
     }
 
-    std::tuple<Tasks...> tasks_;
+    std::tuple<Tasks...> tasks;
 };
 
 template <typename... Tasks>
@@ -107,7 +107,7 @@ class when_any : public aggregate_op {
 public:
     template <typename... U>
     explicit when_any(U&&... tasks) :
-        aggregate_op(async_node::NodeKind::WhenAny), tasks_(std::forward<U>(tasks)...) {}
+        aggregate_op(async_node::NodeKind::WhenAny), tasks(std::forward<U>(tasks)...) {}
 
     bool await_ready() const noexcept {
         return sizeof...(Tasks) == 0;
@@ -170,10 +170,10 @@ public:
 private:
     template <std::size_t... I>
     void add_awaitees(std::index_sequence<I...>) {
-        (awaitees.push_back(detail::node_from(std::get<I>(tasks_))), ...);
+        (awaitees.push_back(detail::node_from(std::get<I>(tasks))), ...);
     }
 
-    std::tuple<Tasks...> tasks_;
+    std::tuple<Tasks...> tasks;
 };
 
 template <typename... Tasks>

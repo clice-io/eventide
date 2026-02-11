@@ -59,15 +59,15 @@ public:
     class SeqAccess {
     public:
         SeqAccess(Deserializer& deserializer, array_type array) :
-            deserializer_(deserializer), it_(array.begin()), end_(array.end()) {}
+            deserializer(deserializer), it(array.begin()), end(array.end()) {}
 
         template <class T>
         result_t<std::optional<T>> next_element() {
-            if(it_ == end_) {
+            if(it == end) {
                 return std::optional<T>{};
             }
-            auto value = *it_++;
-            auto parsed = eventide::serde::deserialize<T>(deserializer_, value);
+            auto value = *it++;
+            auto parsed = eventide::serde::deserialize<T>(deserializer, value);
             if(!parsed) {
                 return std::unexpected(parsed.error());
             }
@@ -75,36 +75,36 @@ public:
         }
 
     private:
-        Deserializer& deserializer_;
-        array_type::iterator it_;
-        array_type::iterator end_;
+        Deserializer& deserializer;
+        array_type::iterator it;
+        array_type::iterator end;
     };
 
     class MapAccess {
     public:
         MapAccess(Deserializer& deserializer, object_type object) :
-            deserializer_(deserializer), it_(object.begin()), end_(object.end()) {}
+            deserializer(deserializer), it(object.begin()), end(object.end()) {}
 
         template <class K>
         result_t<std::optional<K>> next_key() {
-            if(expect_value_) {
+            if(expect_value) {
                 return std::unexpected(invalid_argument_error());
             }
-            if(it_ == end_) {
+            if(it == end) {
                 return std::optional<K>{};
             }
 
-            pending_key_ = (*it_).key;
-            pending_value_ = (*it_).value;
-            expect_value_ = true;
+            pending_key = (*it).key;
+            pending_value = (*it).value;
+            expect_value = true;
 
             K out{};
             if constexpr(std::is_same_v<std::remove_cvref_t<K>, std::string>) {
-                out = std::string(pending_key_);
+                out = std::string(pending_key);
             } else if constexpr(std::is_same_v<std::remove_cvref_t<K>, std::string_view>) {
-                out = pending_key_;
+                out = pending_key;
             } else if constexpr(std::is_integral_v<std::remove_cvref_t<K>>) {
-                if(!eventide::serde::detail::parse_key(pending_key_, out)) {
+                if(!eventide::serde::detail::parse_key(pending_key, out)) {
                     return std::unexpected(invalid_argument_error());
                 }
             } else {
@@ -116,26 +116,26 @@ public:
 
         template <class V>
         result_t<V> next_value() {
-            if(!expect_value_) {
+            if(!expect_value) {
                 return std::unexpected(invalid_argument_error());
             }
 
-            expect_value_ = false;
-            auto value = pending_value_;
-            ++it_;
-            return eventide::serde::deserialize<V>(deserializer_, value);
+            expect_value = false;
+            auto value = pending_value;
+            ++it;
+            return eventide::serde::deserialize<V>(deserializer, value);
         }
 
     private:
         template <class>
         constexpr static bool always_false_v = false;
 
-        Deserializer& deserializer_;
-        object_type::iterator it_;
-        object_type::iterator end_;
-        bool expect_value_ = false;
-        std::string_view pending_key_{};
-        value_type pending_value_{};
+        Deserializer& deserializer;
+        object_type::iterator it;
+        object_type::iterator end;
+        bool expect_value = false;
+        std::string_view pending_key{};
+        value_type pending_value{};
     };
 
     Deserializer() = default;
@@ -146,37 +146,37 @@ public:
 
     result_t<void> parse(std::string_view json) {
         value_type parsed{};
-        auto err = std::move(parser_.parse(json.data(), json.size())).get(parsed);
+        auto err = std::move(parser.parse(json.data(), json.size())).get(parsed);
         if(err != simdjson::SUCCESS) {
-            has_root_ = false;
+            has_root_value = false;
             return std::unexpected(err);
         }
-        root_ = parsed;
-        has_root_ = true;
+        root_value = parsed;
+        has_root_value = true;
         return {};
     }
 
     result_t<void> parse(const std::string& json) {
         value_type parsed{};
-        auto err = std::move(parser_.parse(json)).get(parsed);
+        auto err = std::move(parser.parse(json)).get(parsed);
         if(err != simdjson::SUCCESS) {
-            has_root_ = false;
+            has_root_value = false;
             return std::unexpected(err);
         }
-        root_ = parsed;
-        has_root_ = true;
+        root_value = parsed;
+        has_root_value = true;
         return {};
     }
 
     result_t<value_type> root() const {
-        if(!has_root_) {
+        if(!has_root_value) {
             return std::unexpected(simdjson::EMPTY);
         }
-        return root_;
+        return root_value;
     }
 
     bool has_root() const {
-        return has_root_;
+        return has_root_value;
     }
 
 private:
@@ -772,9 +772,9 @@ private:
         }
     }
 
-    simdjson::dom::parser parser_{};
-    value_type root_{};
-    bool has_root_ = false;
+    simdjson::dom::parser parser{};
+    value_type root_value{};
+    bool has_root_value = false;
 };
 
 }  // namespace eventide::serde::json::simd

@@ -25,16 +25,16 @@ public:
     using name##_handler_t = eventide::move_only_function<task<EVENTIDE_LSP_UNWRAP Result>(        \
         EVENTIDE_LSP_UNWRAP Params)>;                                                              \
     void on_##name(name##_handler_t handler) {                                                     \
-        name##_handler_ = std::move(handler);                                                      \
+        name##_handler = std::move(handler);                                                       \
     }                                                                                              \
-    name##_handler_t name##_handler_{};
+    name##_handler_t name##_handler{};
 
 #define EVENTIDE_LSP_DECLARE_NOTIFICATION(name, method, Params)                                    \
     using name##_handler_t = eventide::move_only_function<task<>(EVENTIDE_LSP_UNWRAP Params)>;     \
     void on_##name(name##_handler_t handler) {                                                     \
-        name##_handler_ = std::move(handler);                                                      \
+        name##_handler = std::move(handler);                                                       \
     }                                                                                              \
-    name##_handler_t name##_handler_{};
+    name##_handler_t name##_handler{};
 
 #include "language/lsp_methods.inc"
 
@@ -49,7 +49,7 @@ public:
 
 private:
     struct Self;
-    std::unique_ptr<Self> self_;
+    std::unique_ptr<Self> self;
 };
 
 }  // namespace eventide::language

@@ -91,7 +91,7 @@ struct auto_ {
 
 template <class T>
 struct ref {
-    T& ref_;
+    T& ref_value;
 };
 template <class T>
 ref(T&) -> ref<T>;
@@ -4674,35 +4674,35 @@ struct static_vector {
     constexpr static_vector() = default;
 
     constexpr auto push_back(const T& value) {
-        values_[size_++] = value;
+        values[count++] = value;
     }
 
     [[nodiscard]] constexpr const auto& operator[](auto i) const {
-        return values_[i];
+        return values[i];
     }
 
     [[nodiscard]] constexpr auto begin() const {
-        return &values_[0];
+        return &values[0];
     }
 
     [[nodiscard]] constexpr auto end() const {
-        return &values_[0] + size_;
+        return &values[0] + count;
     }
 
     [[nodiscard]] constexpr auto size() const {
-        return size_;
+        return count;
     }
 
     [[nodiscard]] constexpr auto empty() const {
-        return not size_;
+        return not count;
     }
 
     [[nodiscard]] constexpr auto capacity() const {
         return Size;
     }
 
-    std::array<T, Size> values_{};
-    std::size_t size_{};
+    std::array<T, Size> values{};
+    std::size_t count{};
 };
 
 template <class E, auto N>

@@ -54,31 +54,31 @@ public:
     }
 
     move_only_function& operator=(std::nullptr_t) noexcept {
-        ptr_.reset();
+        target.reset();
         return *this;
     }
 
     explicit operator bool() const noexcept {
-        return static_cast<bool>(ptr_);
+        return static_cast<bool>(target);
     }
 
     R operator()(Args... args) {
-        assert(ptr_ && "move_only_function invoked without a target");
-        return ptr_->invoke(std::forward<Args>(args)...);
+        assert(target && "move_only_function invoked without a target");
+        return target->invoke(std::forward<Args>(args)...);
     }
 
     void reset() noexcept {
-        ptr_.reset();
+        target.reset();
     }
 
 private:
     template <typename F>
     void assign(F&& f) {
         using Fn = std::decay_t<F>;
-        ptr_ = std::make_unique<holder<Fn>>(std::forward<F>(f));
+        target = std::make_unique<holder<Fn>>(std::forward<F>(f));
     }
 
-    std::unique_ptr<base> ptr_{};
+    std::unique_ptr<base> target{};
 };
 
 }  // namespace eventide

@@ -31,29 +31,29 @@ public:
     }
 
     bool initialized() const noexcept {
-        return initialized_;
+        return is_initialized;
     }
 
     void mark_initialized() noexcept {
-        initialized_ = true;
+        is_initialized = true;
     }
 
     bool is_active() const noexcept {
-        if(!initialized_) {
+        if(!is_initialized) {
             return false;
         }
         return uv_is_active(reinterpret_cast<const uv_handle_t*>(handle_ptr())) != 0;
     }
 
     void ref() noexcept {
-        if(!initialized_) {
+        if(!is_initialized) {
             return;
         }
         uv_ref(reinterpret_cast<uv_handle_t*>(handle_ptr()));
     }
 
     void unref() noexcept {
-        if(!initialized_) {
+        if(!is_initialized) {
             return;
         }
         uv_unref(reinterpret_cast<uv_handle_t*>(handle_ptr()));
@@ -64,7 +64,7 @@ public:
         if(!self) {
             return;
         }
-        if(!self->initialized_) {
+        if(!self->is_initialized) {
             delete self;
             return;
         }
@@ -87,7 +87,7 @@ private:
         delete self;
     }
 
-    bool initialized_ = false;
+    bool is_initialized = false;
 };
 
 namespace detail {
