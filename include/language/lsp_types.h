@@ -857,7 +857,8 @@ struct InlineValueEvaluatableExpression {
     std::optional<std::string> expression;
 };
 
-using InlineValue = std::variant<InlineValueText, InlineValueVariableLookup, InlineValueEvaluatableExpression>;
+using InlineValue =
+    std::variant<InlineValueText, InlineValueVariableLookup, InlineValueEvaluatableExpression>;
 
 struct ShowDocumentParams {
     URI uri;
@@ -1080,7 +1081,8 @@ struct WorkspaceUnchangedDocumentDiagnosticReport {
     std::optional<std::int32_t> version;
 };
 
-using WorkspaceDocumentDiagnosticReport = std::variant<WorkspaceFullDocumentDiagnosticReport, WorkspaceUnchangedDocumentDiagnosticReport>;
+using WorkspaceDocumentDiagnosticReport =
+    std::variant<WorkspaceFullDocumentDiagnosticReport, WorkspaceUnchangedDocumentDiagnosticReport>;
 
 struct WorkspaceDiagnosticReportPartialResult {
     std::vector<WorkspaceDocumentDiagnosticReport> items;
@@ -1093,24 +1095,32 @@ struct WorkspaceDiagnosticReport {
 struct RelatedUnchangedDocumentDiagnosticReport {
     rfl::Literal<"unchanged"> kind;
     std::string resultId;
-    std::optional<std::map<DocumentUri, std::variant<FullDocumentDiagnosticReport, UnchangedDocumentDiagnosticReport>>> relatedDocuments;
+    std::optional<
+        std::map<DocumentUri,
+                 std::variant<FullDocumentDiagnosticReport, UnchangedDocumentDiagnosticReport>>>
+        relatedDocuments;
 };
 
 struct DocumentDiagnosticReportPartialResult {
-    std::map<DocumentUri, std::variant<FullDocumentDiagnosticReport, UnchangedDocumentDiagnosticReport>> relatedDocuments;
+    std::map<DocumentUri,
+             std::variant<FullDocumentDiagnosticReport, UnchangedDocumentDiagnosticReport>>
+        relatedDocuments;
 };
 
 struct RelatedFullDocumentDiagnosticReport {
     rfl::Literal<"full"> kind;
     std::optional<std::string> resultId;
     std::vector<Diagnostic> items;
-    std::optional<std::map<DocumentUri, std::variant<FullDocumentDiagnosticReport, UnchangedDocumentDiagnosticReport>>> relatedDocuments;
+    std::optional<
+        std::map<DocumentUri,
+                 std::variant<FullDocumentDiagnosticReport, UnchangedDocumentDiagnosticReport>>>
+        relatedDocuments;
 };
 
-using DocumentDiagnosticReport = std::variant<RelatedFullDocumentDiagnosticReport, RelatedUnchangedDocumentDiagnosticReport>;
+using DocumentDiagnosticReport =
+    std::variant<RelatedFullDocumentDiagnosticReport, RelatedUnchangedDocumentDiagnosticReport>;
 
-struct InitializedParams {
-};
+struct InitializedParams {};
 
 struct TextDocumentIdentifier {
     DocumentUri uri;
@@ -1799,8 +1809,7 @@ struct ShowDocumentResult {
     bool success;
 };
 
-struct LspLiteral6 {
-};
+struct LspLiteral6 {};
 
 struct LspLiteral35 {
     std::optional<std::variant<bool, LspLiteral6>> range;
@@ -1838,37 +1847,54 @@ struct SemanticTokensRegistrationOptions {
 struct ServerCapabilities {
     std::optional<PositionEncodingKind> positionEncoding;
     std::optional<std::variant<TextDocumentSyncOptions, TextDocumentSyncKind>> textDocumentSync;
-    std::optional<std::variant<NotebookDocumentSyncOptions, NotebookDocumentSyncRegistrationOptions>> notebookDocumentSync;
+    std::optional<
+        std::variant<NotebookDocumentSyncOptions, NotebookDocumentSyncRegistrationOptions>>
+        notebookDocumentSync;
     std::optional<CompletionOptions> completionProvider;
     std::optional<std::variant<bool, HoverOptions>> hoverProvider;
     std::optional<SignatureHelpOptions> signatureHelpProvider;
-    std::optional<std::variant<bool, DeclarationOptions, DeclarationRegistrationOptions>> declarationProvider;
+    std::optional<std::variant<bool, DeclarationOptions, DeclarationRegistrationOptions>>
+        declarationProvider;
     std::optional<std::variant<bool, DefinitionOptions>> definitionProvider;
-    std::optional<std::variant<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions>> typeDefinitionProvider;
-    std::optional<std::variant<bool, ImplementationOptions, ImplementationRegistrationOptions>> implementationProvider;
+    std::optional<std::variant<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions>>
+        typeDefinitionProvider;
+    std::optional<std::variant<bool, ImplementationOptions, ImplementationRegistrationOptions>>
+        implementationProvider;
     std::optional<std::variant<bool, ReferenceOptions>> referencesProvider;
     std::optional<std::variant<bool, DocumentHighlightOptions>> documentHighlightProvider;
     std::optional<std::variant<bool, DocumentSymbolOptions>> documentSymbolProvider;
     std::optional<std::variant<bool, CodeActionOptions>> codeActionProvider;
     std::optional<CodeLensOptions> codeLensProvider;
     std::optional<DocumentLinkOptions> documentLinkProvider;
-    std::optional<std::variant<bool, DocumentColorOptions, DocumentColorRegistrationOptions>> colorProvider;
+    std::optional<std::variant<bool, DocumentColorOptions, DocumentColorRegistrationOptions>>
+        colorProvider;
     std::optional<std::variant<bool, WorkspaceSymbolOptions>> workspaceSymbolProvider;
     std::optional<std::variant<bool, DocumentFormattingOptions>> documentFormattingProvider;
-    std::optional<std::variant<bool, DocumentRangeFormattingOptions>> documentRangeFormattingProvider;
+    std::optional<std::variant<bool, DocumentRangeFormattingOptions>>
+        documentRangeFormattingProvider;
     std::optional<DocumentOnTypeFormattingOptions> documentOnTypeFormattingProvider;
     std::optional<std::variant<bool, RenameOptions>> renameProvider;
-    std::optional<std::variant<bool, FoldingRangeOptions, FoldingRangeRegistrationOptions>> foldingRangeProvider;
-    std::optional<std::variant<bool, SelectionRangeOptions, SelectionRangeRegistrationOptions>> selectionRangeProvider;
+    std::optional<std::variant<bool, FoldingRangeOptions, FoldingRangeRegistrationOptions>>
+        foldingRangeProvider;
+    std::optional<std::variant<bool, SelectionRangeOptions, SelectionRangeRegistrationOptions>>
+        selectionRangeProvider;
     std::optional<ExecuteCommandOptions> executeCommandProvider;
-    std::optional<std::variant<bool, CallHierarchyOptions, CallHierarchyRegistrationOptions>> callHierarchyProvider;
-    std::optional<std::variant<bool, LinkedEditingRangeOptions, LinkedEditingRangeRegistrationOptions>> linkedEditingRangeProvider;
-    std::optional<std::variant<SemanticTokensOptions, SemanticTokensRegistrationOptions>> semanticTokensProvider;
+    std::optional<std::variant<bool, CallHierarchyOptions, CallHierarchyRegistrationOptions>>
+        callHierarchyProvider;
+    std::optional<
+        std::variant<bool, LinkedEditingRangeOptions, LinkedEditingRangeRegistrationOptions>>
+        linkedEditingRangeProvider;
+    std::optional<std::variant<SemanticTokensOptions, SemanticTokensRegistrationOptions>>
+        semanticTokensProvider;
     std::optional<std::variant<bool, MonikerOptions, MonikerRegistrationOptions>> monikerProvider;
-    std::optional<std::variant<bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions>> typeHierarchyProvider;
-    std::optional<std::variant<bool, InlineValueOptions, InlineValueRegistrationOptions>> inlineValueProvider;
-    std::optional<std::variant<bool, InlayHintOptions, InlayHintRegistrationOptions>> inlayHintProvider;
-    std::optional<std::variant<DiagnosticOptions, DiagnosticRegistrationOptions>> diagnosticProvider;
+    std::optional<std::variant<bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions>>
+        typeHierarchyProvider;
+    std::optional<std::variant<bool, InlineValueOptions, InlineValueRegistrationOptions>>
+        inlineValueProvider;
+    std::optional<std::variant<bool, InlayHintOptions, InlayHintRegistrationOptions>>
+        inlayHintProvider;
+    std::optional<std::variant<DiagnosticOptions, DiagnosticRegistrationOptions>>
+        diagnosticProvider;
     std::optional<std::variant<bool, InlineCompletionOptions>> inlineCompletionProvider;
     std::optional<LspLiteral12> workspace;
     std::optional<LSPAny> experimental;
@@ -2033,7 +2059,8 @@ struct DeleteFile {
 
 struct WorkspaceEdit {
     std::optional<std::map<DocumentUri, std::vector<TextEdit>>> changes;
-    std::optional<std::vector<std::variant<TextDocumentEdit, CreateFile, RenameFile, DeleteFile>>> documentChanges;
+    std::optional<std::vector<std::variant<TextDocumentEdit, CreateFile, RenameFile, DeleteFile>>>
+        documentChanges;
     std::optional<std::map<ChangeAnnotationIdentifier, ChangeAnnotation>> changeAnnotations;
 };
 
@@ -2506,290 +2533,395 @@ struct Moniker {
 
 namespace refl::serde {
 
-template <> struct enum_traits<eventide::language::proto::SemanticTokenTypesEnum> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::SemanticTokenTypesEnum, std::string_view>, 23> mapping = {{
-        {eventide::language::proto::SemanticTokenTypesEnum::namespace_, "namespace"},
-        {eventide::language::proto::SemanticTokenTypesEnum::type, "type"},
-        {eventide::language::proto::SemanticTokenTypesEnum::class_, "class"},
-        {eventide::language::proto::SemanticTokenTypesEnum::enum_, "enum"},
-        {eventide::language::proto::SemanticTokenTypesEnum::interface, "interface"},
-        {eventide::language::proto::SemanticTokenTypesEnum::struct_, "struct"},
-        {eventide::language::proto::SemanticTokenTypesEnum::typeParameter, "typeParameter"},
-        {eventide::language::proto::SemanticTokenTypesEnum::parameter, "parameter"},
-        {eventide::language::proto::SemanticTokenTypesEnum::variable, "variable"},
-        {eventide::language::proto::SemanticTokenTypesEnum::property, "property"},
-        {eventide::language::proto::SemanticTokenTypesEnum::enumMember, "enumMember"},
-        {eventide::language::proto::SemanticTokenTypesEnum::event, "event"},
-        {eventide::language::proto::SemanticTokenTypesEnum::function, "function"},
-        {eventide::language::proto::SemanticTokenTypesEnum::method, "method"},
-        {eventide::language::proto::SemanticTokenTypesEnum::macro, "macro"},
-        {eventide::language::proto::SemanticTokenTypesEnum::keyword, "keyword"},
-        {eventide::language::proto::SemanticTokenTypesEnum::modifier, "modifier"},
-        {eventide::language::proto::SemanticTokenTypesEnum::comment, "comment"},
-        {eventide::language::proto::SemanticTokenTypesEnum::string, "string"},
-        {eventide::language::proto::SemanticTokenTypesEnum::number, "number"},
-        {eventide::language::proto::SemanticTokenTypesEnum::regexp, "regexp"},
-        {eventide::language::proto::SemanticTokenTypesEnum::operator_, "operator"},
-        {eventide::language::proto::SemanticTokenTypesEnum::decorator, "decorator"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::SemanticTokenTypesEnum> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::SemanticTokenTypesEnum, std::string_view>, 23>
+            mapping = {
+                {
+                 {eventide::language::proto::SemanticTokenTypesEnum::namespace_, "namespace"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::type, "type"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::class_, "class"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::enum_, "enum"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::interface, "interface"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::struct_, "struct"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::typeParameter,
+                     "typeParameter"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::parameter, "parameter"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::variable, "variable"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::property, "property"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::enumMember, "enumMember"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::event, "event"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::function, "function"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::method, "method"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::macro, "macro"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::keyword, "keyword"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::modifier, "modifier"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::comment, "comment"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::string, "string"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::number, "number"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::regexp, "regexp"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::operator_, "operator"},
+                 {eventide::language::proto::SemanticTokenTypesEnum::decorator, "decorator"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::SemanticTokenModifiersEnum> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::SemanticTokenModifiersEnum, std::string_view>, 10> mapping = {{
-        {eventide::language::proto::SemanticTokenModifiersEnum::declaration, "declaration"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::definition, "definition"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::readonly, "readonly"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::static_, "static"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::deprecated, "deprecated"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::abstract, "abstract"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::async, "async"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::modification, "modification"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::documentation, "documentation"},
-        {eventide::language::proto::SemanticTokenModifiersEnum::defaultLibrary, "defaultLibrary"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::SemanticTokenModifiersEnum> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::array<
+        std::pair<eventide::language::proto::SemanticTokenModifiersEnum, std::string_view>,
+        10>
+        mapping = {
+            {
+             {eventide::language::proto::SemanticTokenModifiersEnum::declaration, "declaration"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::definition, "definition"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::readonly, "readonly"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::static_, "static"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::deprecated, "deprecated"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::abstract, "abstract"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::async, "async"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::modification,
+                 "modification"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::documentation,
+                 "documentation"},
+             {eventide::language::proto::SemanticTokenModifiersEnum::defaultLibrary,
+                 "defaultLibrary"},
+             }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::DocumentDiagnosticReportKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::DocumentDiagnosticReportKind, std::string_view>, 2> mapping = {{
-        {eventide::language::proto::DocumentDiagnosticReportKind::Full, "full"},
-        {eventide::language::proto::DocumentDiagnosticReportKind::Unchanged, "unchanged"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::DocumentDiagnosticReportKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::array<
+        std::pair<eventide::language::proto::DocumentDiagnosticReportKind, std::string_view>,
+        2>
+        mapping = {
+            {
+             {eventide::language::proto::DocumentDiagnosticReportKind::Full, "full"},
+             {eventide::language::proto::DocumentDiagnosticReportKind::Unchanged, "unchanged"},
+             }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::ErrorCodes> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::ErrorCodes> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::LSPErrorCodes> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::LSPErrorCodes> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::FoldingRangeKindEnum> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::FoldingRangeKindEnum, std::string_view>, 3> mapping = {{
-        {eventide::language::proto::FoldingRangeKindEnum::Comment, "comment"},
-        {eventide::language::proto::FoldingRangeKindEnum::Imports, "imports"},
-        {eventide::language::proto::FoldingRangeKindEnum::Region, "region"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::FoldingRangeKindEnum> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::FoldingRangeKindEnum, std::string_view>, 3>
+            mapping = {
+                {
+                 {eventide::language::proto::FoldingRangeKindEnum::Comment, "comment"},
+                 {eventide::language::proto::FoldingRangeKindEnum::Imports, "imports"},
+                 {eventide::language::proto::FoldingRangeKindEnum::Region, "region"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::SymbolKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::SymbolKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::SymbolTag> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::SymbolTag> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::UniquenessLevel> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::UniquenessLevel, std::string_view>, 5> mapping = {{
-        {eventide::language::proto::UniquenessLevel::document, "document"},
-        {eventide::language::proto::UniquenessLevel::project, "project"},
-        {eventide::language::proto::UniquenessLevel::group, "group"},
-        {eventide::language::proto::UniquenessLevel::scheme, "scheme"},
-        {eventide::language::proto::UniquenessLevel::global, "global"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::UniquenessLevel> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::UniquenessLevel, std::string_view>, 5>
+            mapping = {
+                {
+                 {eventide::language::proto::UniquenessLevel::document, "document"},
+                 {eventide::language::proto::UniquenessLevel::project, "project"},
+                 {eventide::language::proto::UniquenessLevel::group, "group"},
+                 {eventide::language::proto::UniquenessLevel::scheme, "scheme"},
+                 {eventide::language::proto::UniquenessLevel::global, "global"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::MonikerKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::MonikerKind, std::string_view>, 3> mapping = {{
-        {eventide::language::proto::MonikerKind::import, "import"},
-        {eventide::language::proto::MonikerKind::export_, "export"},
-        {eventide::language::proto::MonikerKind::local, "local"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::MonikerKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::array<std::pair<eventide::language::proto::MonikerKind, std::string_view>,
+                                3>
+        mapping = {
+            {
+             {eventide::language::proto::MonikerKind::import, "import"},
+             {eventide::language::proto::MonikerKind::export_, "export"},
+             {eventide::language::proto::MonikerKind::local, "local"},
+             }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::InlayHintKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::InlayHintKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::MessageType> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::MessageType> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::TextDocumentSyncKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::TextDocumentSyncKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::TextDocumentSaveReason> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::TextDocumentSaveReason> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::CompletionItemKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::CompletionItemKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::CompletionItemTag> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::CompletionItemTag> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::InsertTextFormat> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::InsertTextFormat> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::InsertTextMode> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::InsertTextMode> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::DocumentHighlightKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::DocumentHighlightKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::CodeActionKindEnum> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::CodeActionKindEnum, std::string_view>, 9> mapping = {{
-        {eventide::language::proto::CodeActionKindEnum::Empty, ""},
-        {eventide::language::proto::CodeActionKindEnum::QuickFix, "quickfix"},
-        {eventide::language::proto::CodeActionKindEnum::Refactor, "refactor"},
-        {eventide::language::proto::CodeActionKindEnum::RefactorExtract, "refactor.extract"},
-        {eventide::language::proto::CodeActionKindEnum::RefactorInline, "refactor.inline"},
-        {eventide::language::proto::CodeActionKindEnum::RefactorRewrite, "refactor.rewrite"},
-        {eventide::language::proto::CodeActionKindEnum::Source, "source"},
-        {eventide::language::proto::CodeActionKindEnum::SourceOrganizeImports, "source.organizeImports"},
-        {eventide::language::proto::CodeActionKindEnum::SourceFixAll, "source.fixAll"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::CodeActionKindEnum> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::CodeActionKindEnum, std::string_view>, 9>
+            mapping = {
+                {
+                 {eventide::language::proto::CodeActionKindEnum::Empty, ""},
+                 {eventide::language::proto::CodeActionKindEnum::QuickFix, "quickfix"},
+                 {eventide::language::proto::CodeActionKindEnum::Refactor, "refactor"},
+                 {eventide::language::proto::CodeActionKindEnum::RefactorExtract,
+                     "refactor.extract"},
+                 {eventide::language::proto::CodeActionKindEnum::RefactorInline,
+                     "refactor.inline"},
+                 {eventide::language::proto::CodeActionKindEnum::RefactorRewrite,
+                     "refactor.rewrite"},
+                 {eventide::language::proto::CodeActionKindEnum::Source, "source"},
+                 {eventide::language::proto::CodeActionKindEnum::SourceOrganizeImports,
+                     "source.organizeImports"},
+                 {eventide::language::proto::CodeActionKindEnum::SourceFixAll, "source.fixAll"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::TraceValues> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::TraceValues, std::string_view>, 3> mapping = {{
-        {eventide::language::proto::TraceValues::Off, "off"},
-        {eventide::language::proto::TraceValues::Messages, "messages"},
-        {eventide::language::proto::TraceValues::Verbose, "verbose"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::TraceValues> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::array<std::pair<eventide::language::proto::TraceValues, std::string_view>,
+                                3>
+        mapping = {
+            {
+             {eventide::language::proto::TraceValues::Off, "off"},
+             {eventide::language::proto::TraceValues::Messages, "messages"},
+             {eventide::language::proto::TraceValues::Verbose, "verbose"},
+             }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::MarkupKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::MarkupKind, std::string_view>, 2> mapping = {{
-        {eventide::language::proto::MarkupKind::PlainText, "plaintext"},
-        {eventide::language::proto::MarkupKind::Markdown, "markdown"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::MarkupKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::array<std::pair<eventide::language::proto::MarkupKind, std::string_view>,
+                                2>
+        mapping = {
+            {
+             {eventide::language::proto::MarkupKind::PlainText, "plaintext"},
+             {eventide::language::proto::MarkupKind::Markdown, "markdown"},
+             }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::InlineCompletionTriggerKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::InlineCompletionTriggerKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::PositionEncodingKindEnum> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::PositionEncodingKindEnum, std::string_view>, 3> mapping = {{
-        {eventide::language::proto::PositionEncodingKindEnum::UTF8, "utf-8"},
-        {eventide::language::proto::PositionEncodingKindEnum::UTF16, "utf-16"},
-        {eventide::language::proto::PositionEncodingKindEnum::UTF32, "utf-32"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::PositionEncodingKindEnum> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::PositionEncodingKindEnum, std::string_view>, 3>
+            mapping = {
+                {
+                 {eventide::language::proto::PositionEncodingKindEnum::UTF8, "utf-8"},
+                 {eventide::language::proto::PositionEncodingKindEnum::UTF16, "utf-16"},
+                 {eventide::language::proto::PositionEncodingKindEnum::UTF32, "utf-32"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::FileChangeType> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::FileChangeType> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::WatchKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::WatchKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::DiagnosticSeverity> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::DiagnosticSeverity> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::DiagnosticTag> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::DiagnosticTag> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::CompletionTriggerKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::CompletionTriggerKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::SignatureHelpTriggerKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::SignatureHelpTriggerKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::CodeActionTriggerKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::CodeActionTriggerKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::FileOperationPatternKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::FileOperationPatternKind, std::string_view>, 2> mapping = {{
-        {eventide::language::proto::FileOperationPatternKind::file, "file"},
-        {eventide::language::proto::FileOperationPatternKind::folder, "folder"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::FileOperationPatternKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::FileOperationPatternKind, std::string_view>, 2>
+            mapping = {
+                {
+                 {eventide::language::proto::FileOperationPatternKind::file, "file"},
+                 {eventide::language::proto::FileOperationPatternKind::folder, "folder"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::NotebookCellKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::NotebookCellKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::ResourceOperationKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::ResourceOperationKind, std::string_view>, 3> mapping = {{
-        {eventide::language::proto::ResourceOperationKind::Create, "create"},
-        {eventide::language::proto::ResourceOperationKind::Rename, "rename"},
-        {eventide::language::proto::ResourceOperationKind::Delete, "delete"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::ResourceOperationKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::ResourceOperationKind, std::string_view>, 3>
+            mapping = {
+                {
+                 {eventide::language::proto::ResourceOperationKind::Create, "create"},
+                 {eventide::language::proto::ResourceOperationKind::Rename, "rename"},
+                 {eventide::language::proto::ResourceOperationKind::Delete, "delete"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::FailureHandlingKind> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::FailureHandlingKind, std::string_view>, 4> mapping = {{
-        {eventide::language::proto::FailureHandlingKind::Abort, "abort"},
-        {eventide::language::proto::FailureHandlingKind::Transactional, "transactional"},
-        {eventide::language::proto::FailureHandlingKind::TextOnlyTransactional, "textOnlyTransactional"},
-        {eventide::language::proto::FailureHandlingKind::Undo, "undo"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::FailureHandlingKind> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::
+        array<std::pair<eventide::language::proto::FailureHandlingKind, std::string_view>, 4>
+            mapping = {
+                {
+                 {eventide::language::proto::FailureHandlingKind::Abort, "abort"},
+                 {eventide::language::proto::FailureHandlingKind::Transactional,
+                     "transactional"},
+                 {eventide::language::proto::FailureHandlingKind::TextOnlyTransactional,
+                     "textOnlyTransactional"},
+                 {eventide::language::proto::FailureHandlingKind::Undo, "undo"},
+                 }
+    };
 };
 
-template <> struct enum_traits<eventide::language::proto::PrepareSupportDefaultBehavior> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::integer;
+template <>
+struct enum_traits<eventide::language::proto::PrepareSupportDefaultBehavior> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::integer;
 };
 
-template <> struct enum_traits<eventide::language::proto::TokenFormat> {
-    static constexpr bool enabled = true;
-    static constexpr enum_encoding encoding = enum_encoding::string;
-    static constexpr std::array<std::pair<eventide::language::proto::TokenFormat, std::string_view>, 1> mapping = {{
-        {eventide::language::proto::TokenFormat::Relative, "relative"},
-    }};
+template <>
+struct enum_traits<eventide::language::proto::TokenFormat> {
+    constexpr static bool enabled = true;
+    constexpr static enum_encoding encoding = enum_encoding::string;
+    constexpr static std::array<std::pair<eventide::language::proto::TokenFormat, std::string_view>,
+                                1>
+        mapping = {
+            {
+             {eventide::language::proto::TokenFormat::Relative, "relative"},
+             }
+    };
 };
 
 }  // namespace refl::serde

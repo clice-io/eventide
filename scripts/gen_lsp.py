@@ -589,7 +589,9 @@ def main() -> None:
                 f"template <> struct enum_traits<{DEFAULT_NAMESPACE}::{enum_type}> {{"
             )
             lines.append("    static constexpr bool enabled = true;")
-            lines.append("    static constexpr enum_encoding encoding = enum_encoding::integer;")
+            lines.append(
+                "    static constexpr enum_encoding encoding = enum_encoding::integer;"
+            )
             lines.append("};")
             lines.append("")
             continue
@@ -599,7 +601,9 @@ def main() -> None:
             f"template <> struct enum_traits<{DEFAULT_NAMESPACE}::{enum_type}> {{"
         )
         lines.append("    static constexpr bool enabled = true;")
-        lines.append("    static constexpr enum_encoding encoding = enum_encoding::string;")
+        lines.append(
+            "    static constexpr enum_encoding encoding = enum_encoding::string;"
+        )
         lines.append(
             f"    static constexpr std::array<std::pair<{DEFAULT_NAMESPACE}::{enum_type}, std::string_view>, {len(members)}> mapping = {{{{"
         )

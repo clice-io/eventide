@@ -112,6 +112,7 @@ public:
     };
 
     Serializer() = default;
+
     explicit Serializer(std::size_t initial_capacity) : builder_(initial_capacity) {}
 
 private:
@@ -299,7 +300,7 @@ public:
 
     void serialize_bytes(std::span<const std::byte> value) {
         auto seq = serialize_seq(value.size());
-        for(std::byte byte : value) {
+        for(std::byte byte: value) {
             seq.serialize_element(std::to_integer<std::uint8_t>(byte));
         }
         seq.end();
@@ -346,7 +347,7 @@ public:
         }
 
         auto serializer = serialize_seq(len);
-        for(const auto& item : seq) {
+        for(const auto& item: seq) {
             serializer.serialize_element(item);
         }
         serializer.end();
@@ -360,7 +361,7 @@ public:
         }
 
         auto serializer = serialize_map(len);
-        for(const auto& [key, value] : map) {
+        for(const auto& [key, value]: map) {
             serializer.serialize_entry(key, value);
         }
         serializer.end();
@@ -380,8 +381,8 @@ public:
             std::array<char, 64> buffer{};
             auto [ptr, err] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
             if(err == std::errc{}) {
-                serialize_str(std::string_view(buffer.data(),
-                                               static_cast<std::size_t>(ptr - buffer.data())));
+                serialize_str(
+                    std::string_view(buffer.data(), static_cast<std::size_t>(ptr - buffer.data())));
             } else {
                 serialize_none();
             }
@@ -394,8 +395,8 @@ public:
             std::array<char, 64> buffer{};
             auto [ptr, err] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
             if(err == std::errc{}) {
-                serialize_str(std::string_view(buffer.data(),
-                                               static_cast<std::size_t>(ptr - buffer.data())));
+                serialize_str(
+                    std::string_view(buffer.data(), static_cast<std::size_t>(ptr - buffer.data())));
             } else {
                 serialize_none();
             }
@@ -423,7 +424,7 @@ private:
     };
 
     template <class>
-    static constexpr bool always_false_v = false;
+    constexpr static bool always_false_v = false;
 
     void mark_invalid() {
         valid_ = false;

@@ -24,8 +24,7 @@ template <typename T>
 using result = eventide::result<T>;
 
 template <class Deserializer>
-using deserialize_error_t =
-    typename decltype(std::declval<Deserializer&>().root())::error_type;
+using deserialize_error_t = typename decltype(std::declval<Deserializer&>().root())::error_type;
 
 template <class T, class Deserializer>
 using deserialize_result_t = std::expected<T, deserialize_error_t<Deserializer>>;
@@ -55,11 +54,11 @@ struct error_traits;
 
 template <>
 struct error_traits<eventide::error> {
-    static constexpr eventide::error invalid_argument() {
+    constexpr static eventide::error invalid_argument() {
         return eventide::error::invalid_argument;
     }
 
-    static constexpr eventide::error no_data_available() {
+    constexpr static eventide::error no_data_available() {
         return eventide::error::no_data_available;
     }
 };
@@ -73,6 +72,7 @@ constexpr inline bool is_string_v = std::is_same_v<remove_cvref_t<T>, std::strin
 
 template <class T>
 struct is_optional : std::false_type {};
+
 template <class T>
 struct is_optional<std::optional<T>> : std::true_type {};
 template <class T>
@@ -80,6 +80,7 @@ constexpr inline bool is_optional_v = is_optional<remove_cvref_t<T>>::value;
 
 template <class T>
 struct is_vector : std::false_type {};
+
 template <class T, class A>
 struct is_vector<std::vector<T, A>> : std::true_type {};
 template <class T>
@@ -87,6 +88,7 @@ constexpr inline bool is_vector_v = is_vector<remove_cvref_t<T>>::value;
 
 template <class T>
 struct is_map : std::false_type {};
+
 template <class K, class V, class C, class A>
 struct is_map<std::map<K, V, C, A>> : std::true_type {};
 template <class T>
@@ -94,6 +96,7 @@ constexpr inline bool is_map_v = is_map<remove_cvref_t<T>>::value;
 
 template <class T>
 struct is_variant : std::false_type {};
+
 template <class... Ts>
 struct is_variant<std::variant<Ts...>> : std::true_type {};
 template <class T>
@@ -101,6 +104,7 @@ constexpr inline bool is_variant_v = is_variant<remove_cvref_t<T>>::value;
 
 template <class T>
 struct is_tuple : std::false_type {};
+
 template <class... Ts>
 struct is_tuple<std::tuple<Ts...>> : std::true_type {};
 template <class T>
@@ -163,17 +167,20 @@ concept has_member_serialize = requires(const T& value, Serializer& serializer) 
 };
 
 template <class T, class Deserializer>
-concept has_deserialize_traits = requires(Deserializer& deserializer,
-                                          value_type_t<Deserializer> value) {
-    { deserialize_traits<T>::deserialize(deserializer, value) }
-        -> std::same_as<deserialize_result_t<T, Deserializer>>;
-};
+concept has_deserialize_traits =
+    requires(Deserializer& deserializer, value_type_t<Deserializer> value) {
+        {
+            deserialize_traits<T>::deserialize(deserializer, value)
+        } -> std::same_as<deserialize_result_t<T, Deserializer>>;
+    };
 
 template <class T, class Deserializer>
-concept has_static_deserialize = requires(Deserializer& deserializer,
-                                          value_type_t<Deserializer> value) {
-    { T::deserialize(deserializer, value) } -> std::same_as<deserialize_result_t<T, Deserializer>>;
-};
+concept has_static_deserialize =
+    requires(Deserializer& deserializer, value_type_t<Deserializer> value) {
+        {
+            T::deserialize(deserializer, value)
+        } -> std::same_as<deserialize_result_t<T, Deserializer>>;
+    };
 
 }  // namespace detail
 
@@ -218,14 +225,14 @@ void serialize(Serializer& serializer, const T& value) {
     } else if constexpr(detail::is_vector_v<value_t>) {
         std::optional<std::size_t> len = static_cast<std::size_t>(value.size());
         auto seq = serializer.serialize_seq(len);
-        for(const auto& item : value) {
+        for(const auto& item: value) {
             seq.serialize_element(item);
         }
         seq.end();
     } else if constexpr(detail::is_map_v<value_t>) {
         std::optional<std::size_t> len = static_cast<std::size_t>(value.size());
         auto map = serializer.serialize_map(len);
-        for(const auto& [key, item] : value) {
+        for(const auto& [key, item]: value) {
             map.serialize_entry(key, item);
         }
         map.end();
@@ -245,9 +252,9 @@ void serialize(Serializer& serializer, const T& value) {
     } else if constexpr(std::is_enum_v<value_t>) {
         serializer.serialize_i(static_cast<std::underlying_type_t<value_t>>(value));
     } else {
-        static_assert(detail::always_false_v<T>,
-                      "No Serialize implementation for this type. "
-                      "Provide serialize_traits<T>::serialize or member serialize().");
+        static_assert(
+            detail::always_false_v<T>,
+            "No Serialize implementation for this type. " "Provide serialize_traits<T>::serialize or member serialize().");
     }
 }
 
@@ -276,15 +283,16 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
             return std::unexpected(array.error());
         }
         value_t out{};
-        auto error = deserializer.for_each_element(*array, [&](value_type_t<Deserializer> item)
-                                                       -> deserialize_result_t<void, Deserializer> {
-            auto parsed = deserialize<typename value_t::value_type>(deserializer, item);
-            if(!parsed) {
-                return std::unexpected(parsed.error());
-            }
-            out.push_back(std::move(*parsed));
-            return {};
-        });
+        auto error = deserializer.for_each_element(
+            *array,
+            [&](value_type_t<Deserializer> item) -> deserialize_result_t<void, Deserializer> {
+                auto parsed = deserialize<typename value_t::value_type>(deserializer, item);
+                if(!parsed) {
+                    return std::unexpected(parsed.error());
+                }
+                out.push_back(std::move(*parsed));
+                return {};
+            });
         if(!error) {
             return std::unexpected(error.error());
         }
@@ -295,21 +303,21 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
             return std::unexpected(object.error());
         }
         value_t out{};
-        auto error = deserializer.for_each_member(*object,
-                                                  [&](std::string_view key,
-                                                      value_type_t<Deserializer> item)
-                                                      -> deserialize_result_t<void, Deserializer> {
-            typename value_t::key_type parsed_key{};
-            if(!detail::parse_key(key, parsed_key)) {
-                return std::unexpected(detail::error_traits<error_t>::invalid_argument());
-            }
-            auto parsed_value = deserialize<typename value_t::mapped_type>(deserializer, item);
-            if(!parsed_value) {
-                return std::unexpected(parsed_value.error());
-            }
-            out.emplace(std::move(parsed_key), std::move(*parsed_value));
-            return {};
-        });
+        auto error = deserializer.for_each_member(
+            *object,
+            [&](std::string_view key,
+                value_type_t<Deserializer> item) -> deserialize_result_t<void, Deserializer> {
+                typename value_t::key_type parsed_key{};
+                if(!detail::parse_key(key, parsed_key)) {
+                    return std::unexpected(detail::error_traits<error_t>::invalid_argument());
+                }
+                auto parsed_value = deserialize<typename value_t::mapped_type>(deserializer, item);
+                if(!parsed_value) {
+                    return std::unexpected(parsed_value.error());
+                }
+                out.emplace(std::move(parsed_key), std::move(*parsed_value));
+                return {};
+            });
         if(!error) {
             return std::unexpected(error.error());
         }
@@ -344,29 +352,29 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
 
         value_t out{};
         std::size_t index = 0;
-        auto error = deserializer.for_each_element(*array, [&](value_type_t<Deserializer> item)
-                                                       -> deserialize_result_t<void, Deserializer> {
-            bool assigned = false;
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                ((index == Is
-                      ? (void)([&] {
-                            using elem_t = std::tuple_element_t<Is, value_t>;
-                            auto parsed = deserialize<elem_t>(deserializer, item);
-                            if(parsed) {
-                                std::get<Is>(out) = std::move(*parsed);
-                                assigned = true;
-                            }
-                        }())
-                      : void()),
-                 ...);
-            }(std::make_index_sequence<std::tuple_size_v<value_t>>{});
+        auto error = deserializer.for_each_element(
+            *array,
+            [&](value_type_t<Deserializer> item) -> deserialize_result_t<void, Deserializer> {
+                bool assigned = false;
+                [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                    ((index == Is ? (void)([&] {
+                         using elem_t = std::tuple_element_t<Is, value_t>;
+                         auto parsed = deserialize<elem_t>(deserializer, item);
+                         if(parsed) {
+                             std::get<Is>(out) = std::move(*parsed);
+                             assigned = true;
+                         }
+                     }())
+                                  : void()),
+                     ...);
+                }(std::make_index_sequence<std::tuple_size_v<value_t>>{});
 
-            ++index;
-            if(!assigned) {
-                return std::unexpected(detail::error_traits<error_t>::invalid_argument());
-            }
-            return {};
-        });
+                ++index;
+                if(!assigned) {
+                    return std::unexpected(detail::error_traits<error_t>::invalid_argument());
+                }
+                return {};
+            });
 
         if(!error) {
             return std::unexpected(error.error());
@@ -436,9 +444,9 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
         }
         return static_cast<value_t>(*parsed);
     } else {
-        static_assert(detail::always_false_v<T>,
-                      "No Deserialize implementation for this type. "
-                      "Provide deserialize_traits<T>::deserialize or static deserialize().");
+        static_assert(
+            detail::always_false_v<T>,
+            "No Deserialize implementation for this type. " "Provide deserialize_traits<T>::deserialize or static deserialize().");
     }
 }
 

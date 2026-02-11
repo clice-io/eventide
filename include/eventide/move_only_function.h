@@ -31,6 +31,7 @@ class move_only_function<R(Args...)> {
 
 public:
     move_only_function() noexcept = default;
+
     move_only_function(std::nullptr_t) noexcept {}
 
     move_only_function(move_only_function&&) noexcept = default;

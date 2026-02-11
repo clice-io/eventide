@@ -24,11 +24,11 @@ namespace eventide::serde::detail {
 
 template <>
 struct error_traits<simdjson::error_code> {
-    static constexpr simdjson::error_code invalid_argument() {
+    constexpr static simdjson::error_code invalid_argument() {
         return simdjson::INCORRECT_TYPE;
     }
 
-    static constexpr simdjson::error_code no_data_available() {
+    constexpr static simdjson::error_code no_data_available() {
         return simdjson::NO_SUCH_FIELD;
     }
 };
@@ -48,7 +48,7 @@ public:
     using result_t = std::expected<T, error_type>;
 
     template <class Visitor>
-    static constexpr bool is_visitor_v = requires(const Visitor& visitor) {
+    constexpr static bool is_visitor_v = requires(const Visitor& visitor) {
         typename Visitor::value_type;
         { visitor.expecting() } -> std::convertible_to<std::string_view>;
     };
@@ -58,8 +58,8 @@ public:
 
     class SeqAccess {
     public:
-        SeqAccess(Deserializer& deserializer, array_type array)
-            : deserializer_(deserializer), it_(array.begin()), end_(array.end()) {}
+        SeqAccess(Deserializer& deserializer, array_type array) :
+            deserializer_(deserializer), it_(array.begin()), end_(array.end()) {}
 
         template <class T>
         result_t<std::optional<T>> next_element() {
@@ -82,8 +82,8 @@ public:
 
     class MapAccess {
     public:
-        MapAccess(Deserializer& deserializer, object_type object)
-            : deserializer_(deserializer), it_(object.begin()), end_(object.end()) {}
+        MapAccess(Deserializer& deserializer, object_type object) :
+            deserializer_(deserializer), it_(object.begin()), end_(object.end()) {}
 
         template <class K>
         result_t<std::optional<K>> next_key() {
@@ -108,8 +108,7 @@ public:
                     return std::unexpected(invalid_argument_error());
                 }
             } else {
-                static_assert(always_false_v<K>,
-                              "Map key type must be string-like or integral.");
+                static_assert(always_false_v<K>, "Map key type must be string-like or integral.");
             }
 
             return std::optional<K>(std::move(out));
@@ -129,7 +128,7 @@ public:
 
     private:
         template <class>
-        static constexpr bool always_false_v = false;
+        constexpr static bool always_false_v = false;
 
         Deserializer& deserializer_;
         object_type::iterator it_;
@@ -182,9 +181,8 @@ public:
 
 private:
     template <class T, class D>
-    friend eventide::serde::deserialize_result_t<T, D> eventide::serde::deserialize(
-        D& deserializer,
-        value_type_t<D> value);
+    friend eventide::serde::deserialize_result_t<T, D>
+        eventide::serde::deserialize(D& deserializer, value_type_t<D> value);
 
     result_t<object_type> as_object(value_type value) const {
         return from_simd(std::move(value.get_object()));
@@ -230,7 +228,7 @@ private:
 
     template <class Fn>
     result_t<void> for_each_member(object_type object, Fn&& fn) const {
-        for(auto field : object) {
+        for(auto field: object) {
             auto result = fn(field.key, field.value);
             if(!result) {
                 return std::unexpected(result.error());
@@ -241,7 +239,7 @@ private:
 
     template <class Fn>
     result_t<void> for_each_element(array_type array, Fn&& fn) const {
-        for(auto element : array) {
+        for(auto element: array) {
             auto result = fn(element);
             if(!result) {
                 return std::unexpected(result.error());
@@ -252,7 +250,7 @@ private:
 
 public:
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_any(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -262,7 +260,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_bool(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -272,7 +270,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_i(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -282,7 +280,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_u(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -292,7 +290,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_f(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -302,7 +300,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_char(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -312,7 +310,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_str(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -322,7 +320,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_string(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -332,7 +330,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_bytes(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -342,7 +340,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_byte_buf(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -352,7 +350,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_option(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -362,7 +360,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_unit(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -372,7 +370,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_seq(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -382,7 +380,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_tuple(std::size_t /*len*/, Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -392,7 +390,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_map(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -402,7 +400,7 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_struct(std::string_view /*name*/,
                                                  std::span<const std::string_view> /*fields*/,
                                                  Visitor& visitor) {
@@ -414,13 +412,13 @@ public:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_identifier(Visitor& visitor) {
         return deserialize_str(visitor);
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_ignored_any(Visitor& visitor) {
         auto value = root();
         if(!value) {
@@ -444,7 +442,7 @@ private:
         return out;
     }
 
-    static constexpr error_type invalid_argument_error() {
+    constexpr static error_type invalid_argument_error() {
         return eventide::serde::detail::error_traits<error_type>::invalid_argument();
     }
 
@@ -461,7 +459,7 @@ private:
             }
             std::vector<std::byte> out;
             out.reserve(text->size());
-            for(char ch : *text) {
+            for(char ch: *text) {
                 out.push_back(static_cast<std::byte>(static_cast<unsigned char>(ch)));
             }
             return out;
@@ -474,7 +472,7 @@ private:
 
         std::vector<std::byte> out;
         out.reserve(array->size());
-        for(auto element : *array) {
+        for(auto element: *array) {
             auto number = as_u64(element);
             if(!number || *number > std::numeric_limits<std::uint8_t>::max()) {
                 return std::unexpected(simdjson::NUMBER_OUT_OF_RANGE);
@@ -485,7 +483,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_any(Visitor& visitor, value_type value) {
         switch(value.type()) {
             case simdjson::dom::element_type::OBJECT: return deserialize_map(visitor, value);
@@ -501,7 +499,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_bool(Visitor& visitor, value_type value) {
         auto parsed = as_bool(value);
         if(!parsed) {
@@ -517,7 +515,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_i(Visitor& visitor, value_type value) {
         auto parsed = as_i64(value);
         if(!parsed) {
@@ -533,7 +531,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_u(Visitor& visitor, value_type value) {
         auto parsed = as_u64(value);
         if(!parsed) {
@@ -549,7 +547,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_f(Visitor& visitor, value_type value) {
         auto parsed = as_f64(value);
         if(!parsed) {
@@ -565,7 +563,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_char(Visitor& visitor, value_type value) {
         auto parsed = as_string(value);
         if(!parsed) {
@@ -584,12 +582,13 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_str(Visitor& visitor, value_type value) {
-        static_assert(requires(Visitor& v, std::string_view s) {
-                          { v.visit_str(s) } -> std::same_as<visitor_result_t<Visitor>>;
-                      },
-                      "Visitor for deserialize_str must implement visit_str(std::string_view).");
+        static_assert(
+            requires(Visitor& v, std::string_view s) {
+                { v.visit_str(s) } -> std::same_as<visitor_result_t<Visitor>>;
+            },
+            "Visitor for deserialize_str must implement visit_str(std::string_view).");
 
         auto parsed = as_string(value);
         if(!parsed) {
@@ -606,7 +605,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_string(Visitor& visitor, value_type value) {
         auto parsed = as_string(value);
         if(!parsed) {
@@ -614,7 +613,9 @@ private:
         }
 
         if constexpr(requires(Visitor& v, std::string s) {
-                         { v.visit_string(std::move(s)) } -> std::same_as<visitor_result_t<Visitor>>;
+                         {
+                             v.visit_string(std::move(s))
+                         } -> std::same_as<visitor_result_t<Visitor>>;
                      }) {
             return visitor.visit_string(std::string(*parsed));
         } else {
@@ -623,12 +624,13 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_bytes(Visitor& visitor, value_type value) {
-        static_assert(requires(Visitor& v, std::span<const std::byte> b) {
-                          { v.visit_bytes(b) } -> std::same_as<visitor_result_t<Visitor>>;
-                      },
-                      "Visitor for deserialize_bytes must implement visit_bytes(span<const byte>).");
+        static_assert(
+            requires(Visitor& v, std::span<const std::byte> b) {
+                { v.visit_bytes(b) } -> std::same_as<visitor_result_t<Visitor>>;
+            },
+            "Visitor for deserialize_bytes must implement visit_bytes(span<const byte>).");
 
         if(value.is_string()) {
             auto parsed = as_string(value);
@@ -638,7 +640,9 @@ private:
             const auto span =
                 std::span(reinterpret_cast<const std::byte*>(parsed->data()), parsed->size());
             if constexpr(requires(Visitor& v, std::span<const std::byte> b) {
-                             { v.visit_borrowed_bytes(b) } -> std::same_as<visitor_result_t<Visitor>>;
+                             {
+                                 v.visit_borrowed_bytes(b)
+                             } -> std::same_as<visitor_result_t<Visitor>>;
                          }) {
                 return visitor.visit_borrowed_bytes(span);
             } else {
@@ -654,7 +658,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_byte_buf(Visitor& visitor, value_type value) {
         auto bytes = as_owned_bytes(value);
         if(!bytes) {
@@ -662,7 +666,9 @@ private:
         }
 
         if constexpr(requires(Visitor& v, std::vector<std::byte> b) {
-                         { v.visit_byte_buf(std::move(b)) } -> std::same_as<visitor_result_t<Visitor>>;
+                         {
+                             v.visit_byte_buf(std::move(b))
+                         } -> std::same_as<visitor_result_t<Visitor>>;
                      }) {
             return visitor.visit_byte_buf(std::move(*bytes));
         } else {
@@ -671,7 +677,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_option(Visitor& visitor, value_type value) {
         if(is_null(value)) {
             if constexpr(requires(Visitor& v) {
@@ -696,7 +702,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_unit(Visitor& visitor, value_type value) {
         if(!is_null(value)) {
             return std::unexpected(invalid_argument_error());
@@ -715,7 +721,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_seq(Visitor& visitor, value_type value) {
         auto array = as_array(value);
         if(!array) {
@@ -733,7 +739,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_map(Visitor& visitor, value_type value) {
         auto object = as_object(value);
         if(!object) {
@@ -751,7 +757,7 @@ private:
     }
 
     template <class Visitor>
-    requires(is_visitor_v<Visitor>)
+        requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_ignored_any(Visitor& visitor, value_type /*value*/) {
         if constexpr(requires(Visitor& v) {
                          { v.visit_ignored_any() } -> std::same_as<visitor_result_t<Visitor>>;

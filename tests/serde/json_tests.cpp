@@ -2,8 +2,8 @@
 #include <string>
 #include <vector>
 
-#include "serde/json.h"
 #include "zest/zest.h"
+#include "serde/json.h"
 
 namespace eventide::serde::testing {
 
@@ -12,7 +12,10 @@ namespace {
 TEST_SUITE(serde_json) {
 
 TEST_CASE(simdjson_serialize_map_vector) {
-    std::map<int, std::vector<int>> value{{1, {2, 3}}, {4, {5}}};
+    std::map<int, std::vector<int>> value{
+        {1, {2, 3}},
+        {4, {5}   }
+    };
 
     eventide::serde::json::simd::Serializer serializer;
     eventide::serde::serialize(serializer, value);

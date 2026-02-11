@@ -168,8 +168,8 @@
 //     co_return true;
 // }
 
-// template <typename Params, typename Result, typename Handler, typename SendFn, typename ScheduleFn>
-// bool dispatch_request_impl(message& msg,
+// template <typename Params, typename Result, typename Handler, typename SendFn, typename
+// ScheduleFn> bool dispatch_request_impl(message& msg,
 //                            std::string_view method_name,
 //                            Handler& handler,
 //                            SendFn&& send_fn,
@@ -351,11 +351,12 @@
 //     task<> dispatch_notification(message& msg) {
 // #define EVENTIDE_LSP_UNWRAP(...) __VA_ARGS__
 
-// #define EVENTIDE_LSP_DISPATCH_NOTIFICATION(name, method_name, Params)                              \
-//     if(co_await dispatch_notification_impl<EVENTIDE_LSP_UNWRAP Params>(msg,                        \
-//                                                                        method_name,                \
-//                                                                        owner_->name##_handler_)) { \
-//         co_return;                                                                                 \
+// #define EVENTIDE_LSP_DISPATCH_NOTIFICATION(name, method_name, Params) \
+//     if(co_await dispatch_notification_impl<EVENTIDE_LSP_UNWRAP Params>(msg, \
+//                                                                        method_name, \
+//                                                                        owner_->name##_handler_))
+//                                                                        { \
+//         co_return; \
 //     }
 
 //         EVENTIDE_LSP_NOTIFICATIONS(EVENTIDE_LSP_DISPATCH_NOTIFICATION)
@@ -368,14 +369,14 @@
 //     bool dispatch_request(message& msg) {
 // #define EVENTIDE_LSP_UNWRAP(...) __VA_ARGS__
 
-// #define EVENTIDE_LSP_DISPATCH_REQUEST(name, method_name, Params, Result)                           \
-//     if(dispatch_request_impl<EVENTIDE_LSP_UNWRAP Params, EVENTIDE_LSP_UNWRAP Result>(              \
-//            msg,                                                                                    \
-//            method_name,                                                                            \
-//            owner_->name##_handler_,                                                                \
-//            [this](std::string payload) { return send_payload(std::move(payload)); },               \
-//            [this](auto&& task) { loop_.schedule(std::forward<decltype(task)>(task)); })) {         \
-//         return true;                                                                               \
+// #define EVENTIDE_LSP_DISPATCH_REQUEST(name, method_name, Params, Result) \
+//     if(dispatch_request_impl<EVENTIDE_LSP_UNWRAP Params, EVENTIDE_LSP_UNWRAP Result>( \
+//            msg, \
+//            method_name, \
+//            owner_->name##_handler_, \
+//            [this](std::string payload) { return send_payload(std::move(payload)); }, \
+//            [this](auto&& task) { loop_.schedule(std::forward<decltype(task)>(task)); })) { \
+//         return true; \
 //     }
 
 //         EVENTIDE_LSP_REQUESTS(EVENTIDE_LSP_DISPATCH_REQUEST)
