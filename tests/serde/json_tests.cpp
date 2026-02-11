@@ -5,7 +5,9 @@
 #include "zest/zest.h"
 #include "serde/json.h"
 
-namespace eventide::serde::testing {
+namespace eventide::serde {
+
+namespace {
 
 struct person {
     int id = 0;
@@ -13,14 +15,11 @@ struct person {
     std::vector<int> scores;
 };
 
-}  // namespace eventide::serde::testing
+}  // namespace
 
-namespace eventide::serde {
-
-template <>
-struct serialize_traits<eventide::serde::testing::person> {
-    template <class Serializer>
-    static void serialize(const eventide::serde::testing::person& value, Serializer& serializer) {
+template <class Serializer>
+struct serialize_traits<Serializer, person> {
+    static void serialize(Serializer& serializer, const person& value) {
         auto object = serializer.serialize_struct("person", 3);
         object.serialize_field("id", value.id);
         object.serialize_field("name", value.name);
@@ -29,10 +28,9 @@ struct serialize_traits<eventide::serde::testing::person> {
     }
 };
 
-template <>
-struct deserialize_traits<eventide::serde::testing::person> {
-    template <class Deserializer>
-    static deserialize_result_t<eventide::serde::testing::person, Deserializer>
+template <class Deserializer>
+struct deserialize_traits<Deserializer, person> {
+    static deserialize_result_t<person, Deserializer>
         deserialize(Deserializer& deserializer, value_type_t<Deserializer> value) {
         using object_t = typename Deserializer::object_type;
         object_t object{};
@@ -41,7 +39,7 @@ struct deserialize_traits<eventide::serde::testing::person> {
             return std::unexpected(err);
         }
 
-        eventide::serde::testing::person out{};
+        person out{};
         bool has_id = false;
         bool has_name = false;
         bool has_scores = false;
@@ -81,18 +79,17 @@ struct deserialize_traits<eventide::serde::testing::person> {
     }
 };
 
-}  // namespace eventide::serde
-
-namespace eventide::serde::testing {
-
 namespace {
+
+using serializer_t = eventide::serde::json::simd::Serializer;
+using deserializer_t = eventide::serde::json::simd::Deserializer;
 
 TEST_SUITE(serde_json) {
 
 TEST_CASE(simdjson_serialize_vector) {
     std::vector<int> value{1, 2, 3, 5, 8};
 
-    eventide::serde::json::simd::Serializer serializer;
+    serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
     auto out = serializer.str();
@@ -103,7 +100,7 @@ TEST_CASE(simdjson_serialize_vector) {
 TEST_CASE(simdjson_deserialize_vector) {
     std::string json = R"([13,21,34])";
 
-    eventide::serde::json::simd::Deserializer deserializer;
+    deserializer_t deserializer;
     auto parsed = deserializer.parse(json);
     ASSERT_TRUE(parsed.has_value());
 
@@ -119,10 +116,10 @@ TEST_CASE(simdjson_deserialize_vector) {
 TEST_CASE(simdjson_serialize_map_vector) {
     std::map<int, std::vector<int>> value{
         {1, {2, 3}},
-        {4, {5}   }
+        {4, {5}   },
     };
 
-    eventide::serde::json::simd::Serializer serializer;
+    serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
     auto out = serializer.str();
@@ -133,7 +130,7 @@ TEST_CASE(simdjson_serialize_map_vector) {
 TEST_CASE(simdjson_deserialize_map_vector) {
     std::string json = R"({"1":[2,3],"4":[5]})";
 
-    eventide::serde::json::simd::Deserializer deserializer;
+    deserializer_t deserializer;
     auto parsed = deserializer.parse(json);
     ASSERT_TRUE(parsed.has_value());
 
@@ -154,7 +151,7 @@ TEST_CASE(simdjson_serialize_struct) {
     value.name = "alice";
     value.scores = {10, 20, 30};
 
-    eventide::serde::json::simd::Serializer serializer;
+    serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
     auto out = serializer.str();
@@ -165,7 +162,7 @@ TEST_CASE(simdjson_serialize_struct) {
 TEST_CASE(simdjson_deserialize_struct) {
     std::string json = R"({"id":9,"name":"bob","scores":[4,5]})";
 
-    eventide::serde::json::simd::Deserializer deserializer;
+    deserializer_t deserializer;
     auto parsed = deserializer.parse(json);
     ASSERT_TRUE(parsed.has_value());
 
@@ -180,15 +177,12 @@ TEST_CASE(simdjson_deserialize_struct) {
 }
 
 TEST_CASE(simdjson_serialize_map_struct) {
-    std::map<std::string, person> value;
-    value["alice"] = person{
-        1,
-        "alice",
-        {9, 8}
+    std::map<std::string, person> value{
+        {"alice", person{1, "alice", {9, 8}}},
+        {"bob",   person{2, "bob", {7}}     },
     };
-    value["bob"] = person{2, "bob", {7}};
 
-    eventide::serde::json::simd::Serializer serializer;
+    serializer_t serializer;
     eventide::serde::serialize(serializer, value);
 
     auto out = serializer.str();
@@ -202,7 +196,7 @@ TEST_CASE(simdjson_deserialize_map_struct) {
     std::string json =
         R"({"alice":{"id":1,"name":"alice","scores":[9,8]},"bob":{"id":2,"name":"bob","scores":[7]}})";
 
-    eventide::serde::json::simd::Deserializer deserializer;
+    deserializer_t deserializer;
     auto parsed = deserializer.parse(json);
     ASSERT_TRUE(parsed.has_value());
 
@@ -228,7 +222,7 @@ TEST_CASE(simdjson_deserialize_map_struct) {
 TEST_CASE(simdjson_parse_returns_simd_error) {
     std::string json = R"({)";
 
-    eventide::serde::json::simd::Deserializer deserializer;
+    deserializer_t deserializer;
     auto parsed = deserializer.parse(json);
 
     EXPECT_FALSE(parsed.has_value());
@@ -241,4 +235,4 @@ TEST_CASE(simdjson_parse_returns_simd_error) {
 
 }  // namespace
 
-}  // namespace eventide::serde::testing
+}  // namespace eventide::serde

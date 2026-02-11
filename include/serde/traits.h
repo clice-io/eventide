@@ -38,10 +38,10 @@ using object_type_t = typename Reader::object_type;
 template <class Reader>
 using array_type_t = typename Reader::array_type;
 
-template <class T>
+template <class Serializer, class T>
 struct serialize_traits {};
 
-template <class T>
+template <class Deserializer, class T>
 struct deserialize_traits {};
 
 namespace detail {
@@ -156,9 +156,53 @@ bool parse_key(std::string_view text, K& out) {
     }
 }
 
+template <class Serializer, class T>
+concept has_serialize_traits_for = requires(const T& value, Serializer& serializer) {
+    { serialize_traits<Serializer, T>::serialize(serializer, value) } -> std::same_as<void>;
+};
+
+template <class Serializer>
+concept serializer = requires(Serializer& serializer,
+                              bool b,
+                              char c,
+                              std::int64_t i,
+                              std::uint64_t u,
+                              double f,
+                              std::string_view text,
+                              std::optional<std::size_t> len,
+                              std::size_t tuple_len,
+                              const int& key,
+                              const int& value) {
+    { serializer.serialize_bool(b) } -> std::same_as<void>;
+    { serializer.serialize_i(i) } -> std::same_as<void>;
+    { serializer.serialize_u(u) } -> std::same_as<void>;
+    { serializer.serialize_f(f) } -> std::same_as<void>;
+    { serializer.serialize_char(c) } -> std::same_as<void>;
+    { serializer.serialize_str(text) } -> std::same_as<void>;
+    { serializer.serialize_none() } -> std::same_as<void>;
+    { serializer.serialize_some(value) } -> std::same_as<void>;
+    { serializer.serialize_unit() } -> std::same_as<void>;
+
+    { serializer.serialize_seq(len).serialize_element(value) } -> std::same_as<void>;
+    { serializer.serialize_seq(len).end() } -> std::same_as<void>;
+
+    { serializer.serialize_tuple(tuple_len).serialize_element(value) } -> std::same_as<void>;
+    { serializer.serialize_tuple(tuple_len).end() } -> std::same_as<void>;
+
+    { serializer.serialize_map(len).serialize_entry(key, value) } -> std::same_as<void>;
+    { serializer.serialize_map(len).end() } -> std::same_as<void>;
+
+    {
+        serializer.serialize_struct(text, tuple_len).serialize_field(text, value)
+    } -> std::same_as<void>;
+    { serializer.serialize_struct(text, tuple_len).end() } -> std::same_as<void>;
+
+    { serializer.is_human_readable() } -> std::convertible_to<bool>;
+};
+
 template <class T, class Serializer>
 concept has_serialize_traits = requires(const T& value, Serializer& serializer) {
-    { serialize_traits<T>::serialize(value, serializer) } -> std::same_as<void>;
+    requires has_serialize_traits_for<Serializer, T>;
 };
 
 template <class T, class Serializer>
@@ -166,12 +210,18 @@ concept has_member_serialize = requires(const T& value, Serializer& serializer) 
     { value.serialize(serializer) } -> std::same_as<void>;
 };
 
+template <class Deserializer, class T>
+concept has_deserialize_traits_for =
+    requires(Deserializer& deserializer, value_type_t<Deserializer> value) {
+        {
+            deserialize_traits<Deserializer, T>::deserialize(deserializer, value)
+        } -> std::same_as<deserialize_result_t<T, Deserializer>>;
+    };
+
 template <class T, class Deserializer>
 concept has_deserialize_traits =
     requires(Deserializer& deserializer, value_type_t<Deserializer> value) {
-        {
-            deserialize_traits<T>::deserialize(deserializer, value)
-        } -> std::same_as<deserialize_result_t<T, Deserializer>>;
+        requires has_deserialize_traits_for<Deserializer, T>;
     };
 
 template <class T, class Deserializer>
@@ -185,11 +235,12 @@ concept has_static_deserialize =
 }  // namespace detail
 
 template <class Serializer, class T>
+    requires (detail::serializer<Serializer>)
 void serialize(Serializer& serializer, const T& value) {
     using value_t = detail::remove_cvref_t<T>;
 
-    if constexpr(detail::has_serialize_traits<value_t, Serializer>) {
-        serialize_traits<value_t>::serialize(value, serializer);
+    if constexpr(detail::has_serialize_traits_for<Serializer, value_t>) {
+        serialize_traits<Serializer, value_t>::serialize(serializer, value);
     } else if constexpr(detail::has_member_serialize<value_t, Serializer>) {
         value.serialize(serializer);
     } else if constexpr(std::is_same_v<value_t, const char*> || std::is_same_v<value_t, char*>) {
@@ -264,8 +315,8 @@ deserialize_result_t<T, Deserializer> deserialize(Deserializer& deserializer,
     using value_t = detail::remove_cvref_t<T>;
     using error_t = deserialize_error_t<Deserializer>;
 
-    if constexpr(detail::has_deserialize_traits<value_t, Deserializer>) {
-        return deserialize_traits<value_t>::deserialize(deserializer, value);
+    if constexpr(detail::has_deserialize_traits_for<Deserializer, value_t>) {
+        return deserialize_traits<Deserializer, value_t>::deserialize(deserializer, value);
     } else if constexpr(detail::has_static_deserialize<value_t, Deserializer>) {
         return value_t::deserialize(deserializer, value);
     } else if constexpr(detail::is_optional_v<value_t>) {
