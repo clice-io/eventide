@@ -54,7 +54,11 @@ target("ztest", function()
 	set_kind("$(kind)")
 	add_files("src/zest/*.cpp")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(zest/*.h)", "include/(reflection/*.h)")
+	add_headerfiles(
+		"include/(zest/*.h)",
+		"include/(reflection/*.h)",
+		"include/(reflection/*.inl)"
+	)
 	add_cxflags("cl::/Zc:preprocessor", { public = true })
 	add_packages("cpptrace", { public = true })
 end)
