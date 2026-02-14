@@ -79,8 +79,8 @@ concept enum_type = std::is_enum_v<T>;
 
 template <enum_type T>
 struct reflection<T> {
-    constexpr static int scan_min = -127;
-    constexpr static int scan_max = 128;
+    constexpr static int scan_min = -128;
+    constexpr static int scan_max = 127;
     constexpr static int scan_size = scan_max - scan_min + 1;
 
     using scan_sequence =

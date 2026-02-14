@@ -31,6 +31,11 @@ enum class Sparse : int {
     High = 15,
 };
 
+enum class Edge8 : std::int8_t {
+    Min = -128,
+    Max = 127,
+};
+
 static_assert(refl::reflection<Color>::member_count == 3);
 static_assert(refl::reflection<Color>::member_names.size() == 3);
 static_assert(refl::reflection<Color>::member_names[0] == "Red");
@@ -57,6 +62,12 @@ static_assert(refl::reflection<Sparse>::member_names[0] == "Neg");
 static_assert(refl::reflection<Sparse>::member_names[1] == "Mid");
 static_assert(refl::reflection<Sparse>::member_names[2] == "High");
 
+static_assert(refl::reflection<Edge8>::member_count == 2);
+static_assert(refl::reflection<Edge8>::member_values[0] == Edge8::Min);
+static_assert(refl::reflection<Edge8>::member_values[1] == Edge8::Max);
+static_assert(refl::reflection<Edge8>::member_names[0] == "Min");
+static_assert(refl::reflection<Edge8>::member_names[1] == "Max");
+
 TEST_SUITE(reflection) {
 
 TEST_CASE(enum_member_names) {
@@ -77,6 +88,9 @@ TEST_CASE(enum_member_names) {
     EXPECT_EQ(refl::enum_name(Sparse::High), "High");
     EXPECT_EQ(refl::enum_name(static_cast<Sparse>(42)), "");
     EXPECT_EQ(refl::enum_name(static_cast<Sparse>(42), "Unknown"), "Unknown");
+
+    EXPECT_EQ(refl::enum_name(Edge8::Min), "Min");
+    EXPECT_EQ(refl::enum_name(Edge8::Max), "Max");
 }
 
 };  // TEST_SUITE(reflection)
