@@ -11,37 +11,19 @@
 
 namespace refl::detail {
 
-/// CWG1766: some compilers reject out-of-range enum static_cast in constant evaluation.
-#if defined(__clang__) && __clang_major__ >= 16
-template <typename E, int V, typename = void>
-constexpr inline bool is_constexpr_enum_cast_valid = false;
-
-template <typename E, int V>
-constexpr inline bool
-    is_constexpr_enum_cast_valid<E, V, std::void_t<std::integral_constant<E, static_cast<E>(V)>>> =
-        true;
-#else
-template <typename E, int V, typename = void>
-constexpr inline bool is_constexpr_enum_cast_valid = true;
-#endif
-
 template <typename E, int V>
 consteval E enum_probe_value() {
-    if constexpr(is_constexpr_enum_cast_valid<E, V>) {
-        return static_cast<E>(V);
-    } else {
-        return std::bit_cast<E>(static_cast<std::underlying_type_t<E>>(V));
-    }
+#if defined(__clang__) && __clang_major__ >= 16
+    return std::bit_cast<E>(static_cast<std::underlying_type_t<E>>(V));
+#else
+    return static_cast<E>(V);
+#endif
 }
 
 template <typename E, int V>
 consteval std::string_view enum_probe_name() {
-    if constexpr(is_constexpr_enum_cast_valid<E, V>) {
-        constexpr E value = static_cast<E>(V);
-        return refl::enum_name<value>();
-    } else {
-        return {};
-    }
+    constexpr E value = enum_probe_value<E, V>();
+    return refl::enum_name<value>();
 }
 
 template <typename E, int V>
