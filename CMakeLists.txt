@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(EVENTIDE_ENABLE_LANGUAGE "Enable language features (LSP/JSON)" OFF)
+
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
 if(EVENTIDE_ENABLE_TEST)
     if(MSVC)
         add_compile_options("/Zc:preprocessor")
@@ -61,6 +67,53 @@ target_include_directories(eventide PUBLIC
 )
 target_link_libraries(eventide PUBLIC libuv::libuv)
 
+if(EVENTIDE_ENABLE_LANGUAGE)
+    FetchContent_Declare(
+        reflectcpp
+        GIT_REPOSITORY https://github.com/getml/reflect-cpp.git
+        GIT_TAG main
+        GIT_SHALLOW TRUE
+    )
+    set(REFLECTCPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(reflectcpp)
+
+    FetchContent_Declare(
+        simdjson
+        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(simdjson)
+
+    file(GLOB EVENTIDE_LANGUAGE_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/language/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/language/**/*.cpp"
+    )
+
+    add_library(eventide_language STATIC ${EVENTIDE_LANGUAGE_SOURCES})
+    target_include_directories(eventide_language PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    if(TARGET reflectcpp::reflectcpp)
+        set(REFLECTCPP_TARGET reflectcpp::reflectcpp)
+    elseif(TARGET reflectcpp)
+        set(REFLECTCPP_TARGET reflectcpp)
+    else()
+        message(FATAL_ERROR "reflect-cpp target not found after FetchContent.")
+    endif()
+
+    if(TARGET simdjson::simdjson)
+        set(SIMDJSON_TARGET simdjson::simdjson)
+    elseif(TARGET simdjson)
+        set(SIMDJSON_TARGET simdjson)
+    else()
+        message(FATAL_ERROR "simdjson target not found after FetchContent.")
+    endif()
+
+    target_link_libraries(eventide_language PUBLIC eventide ${REFLECTCPP_TARGET} ${SIMDJSON_TARGET})
+    target_compile_definitions(eventide_language PUBLIC EVENTIDE_ENABLE_LANGUAGE=1)
+endif()
+
 if(EVENTIDE_ENABLE_ZEST)
     FetchContent_Declare(
         cpptrace
@@ -92,4 +145,7 @@ if(EVENTIDE_ENABLE_TEST)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     target_link_libraries(unit_tests PRIVATE eventide zest cpptrace::cpptrace)
+    if(EVENTIDE_ENABLE_LANGUAGE AND TARGET eventide_language)
+        target_link_libraries(unit_tests PRIVATE eventide_language)
+    endif()
 endif()
