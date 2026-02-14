@@ -36,43 +36,35 @@ constexpr std::size_t find_last_top_level_scope(std::string_view sv) {
     for(std::size_t i = 0; i + 1 < sv.size(); ++i) {
         const auto ch = sv[i];
         switch(ch) {
-            case '<':
-                ++angle;
-                break;
+            case '<': ++angle; break;
             case '>':
                 if(angle > 0) {
                     --angle;
                 }
                 break;
-            case '(':
-                ++paren;
-                break;
+            case '(': ++paren; break;
             case ')':
                 if(paren > 0) {
                     --paren;
                 }
                 break;
-            case '[':
-                ++bracket;
-                break;
+            case '[': ++bracket; break;
             case ']':
                 if(bracket > 0) {
                     --bracket;
                 }
                 break;
-            case '{':
-                ++brace;
-                break;
+            case '{': ++brace; break;
             case '}':
                 if(brace > 0) {
                     --brace;
                 }
                 break;
-            default:
-                break;
+            default: break;
         }
 
-        if(ch == ':' && sv[i + 1] == ':' && angle == 0 && paren == 0 && bracket == 0 && brace == 0) {
+        if(ch == ':' && sv[i + 1] == ':' && angle == 0 && paren == 0 && bracket == 0 &&
+           brace == 0) {
             pos = i;
             ++i;
         }
@@ -83,16 +75,6 @@ constexpr std::size_t find_last_top_level_scope(std::string_view sv) {
 constexpr std::string_view unqualify_type_name(std::string_view sv) {
     if(auto pos = find_last_top_level_scope(sv); pos != std::string_view::npos) {
         return sv.substr(pos + 2);
-    }
-    return sv;
-}
-
-constexpr std::string_view strip_parentheses(std::string_view sv) {
-    sv = trim(sv);
-    while(sv.size() >= 2 && sv.front() == '(' && sv.back() == ')') {
-        sv.remove_prefix(1);
-        sv.remove_suffix(1);
-        sv = trim(sv);
     }
     return sv;
 }
