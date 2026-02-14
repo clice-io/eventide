@@ -119,6 +119,9 @@ constexpr std::string_view extract_identifier(std::string_view expression) {
     }
     if(auto pos = expression.rfind("::"); pos != std::string_view::npos) {
         expression = expression.substr(pos + 2);
+    } else if(auto pos = expression.rfind(':'); pos != std::string_view::npos) {
+        // MSVC may format pointer NTTPs like `int*:symbol`.
+        expression = expression.substr(pos + 1);
     }
     if(auto pos = expression.rfind("->"); pos != std::string_view::npos) {
         expression = expression.substr(pos + 2);
