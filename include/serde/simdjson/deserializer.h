@@ -59,7 +59,12 @@ public:
     class SeqAccess {
     public:
         SeqAccess(Deserializer& deserializer, array_type array) :
-            deserializer(deserializer), it(array.begin()), end(array.end()) {}
+            deserializer(deserializer), it(array.begin()), end(array.end()),
+            remaining(array.size()) {}
+
+        std::optional<std::size_t> size_hint() const {
+            return remaining;
+        }
 
         template <class T>
         result_t<std::optional<T>> next_element() {
@@ -67,7 +72,8 @@ public:
                 return std::optional<T>{};
             }
             auto value = *it++;
-            auto parsed = eventide::serde::deserialize<T>(deserializer, value);
+            --remaining;
+            auto parsed = deserializer.template deserialize_from_value<T>(value);
             if(!parsed) {
                 return std::unexpected(parsed.error());
             }
@@ -78,12 +84,18 @@ public:
         Deserializer& deserializer;
         array_type::iterator it;
         array_type::iterator end;
+        std::size_t remaining = 0;
     };
 
     class MapAccess {
     public:
         MapAccess(Deserializer& deserializer, object_type object) :
-            deserializer(deserializer), it(object.begin()), end(object.end()) {}
+            deserializer(deserializer), it(object.begin()), end(object.end()),
+            remaining(object.size()) {}
+
+        std::optional<std::size_t> size_hint() const {
+            return remaining;
+        }
 
         template <class K>
         result_t<std::optional<K>> next_key() {
@@ -123,7 +135,8 @@ public:
             expect_value = false;
             auto value = pending_value;
             ++it;
-            return eventide::serde::deserialize<V>(deserializer, value);
+            --remaining;
+            return deserializer.template deserialize_from_value<V>(value);
         }
 
     private:
@@ -136,6 +149,7 @@ public:
         bool expect_value = false;
         std::string_view pending_key{};
         value_type pending_value{};
+        std::size_t remaining = 0;
     };
 
     Deserializer() = default;
@@ -149,10 +163,12 @@ public:
         auto err = std::move(parser.parse(json.data(), json.size())).get(parsed);
         if(err != simdjson::SUCCESS) {
             has_root_value = false;
+            value_stack.clear();
             return std::unexpected(err);
         }
         root_value = parsed;
         has_root_value = true;
+        value_stack.clear();
         return {};
     }
 
@@ -161,58 +177,25 @@ public:
         auto err = std::move(parser.parse(json)).get(parsed);
         if(err != simdjson::SUCCESS) {
             has_root_value = false;
+            value_stack.clear();
             return std::unexpected(err);
         }
         root_value = parsed;
         has_root_value = true;
+        value_stack.clear();
         return {};
     }
 
     result_t<value_type> root() const {
+        if(!value_stack.empty()) {
+            return value_stack.back();
+        }
         if(!has_root_value) {
             return std::unexpected(simdjson::EMPTY);
         }
         return root_value;
     }
 
-private:
-    template <class T, class D>
-    friend eventide::serde::deserialize_result_t<T, D>
-        eventide::serde::deserialize(D& deserializer, value_type_t<D> value);
-
-    result_t<object_type> as_object(value_type value) const {
-        return from_simd(std::move(value.get_object()));
-    }
-
-    result_t<array_type> as_array(value_type value) const {
-        return from_simd(std::move(value.get_array()));
-    }
-
-    result_t<std::string_view> as_string(value_type value) const {
-        return from_simd(std::move(value.get_string()));
-    }
-
-    result_t<std::int64_t> as_i64(value_type value) const {
-        return from_simd(std::move(value.get_int64()));
-    }
-
-    result_t<std::uint64_t> as_u64(value_type value) const {
-        return from_simd(std::move(value.get_uint64()));
-    }
-
-    result_t<double> as_f64(value_type value) const {
-        return from_simd(std::move(value.get_double()));
-    }
-
-    result_t<bool> as_bool(value_type value) const {
-        return from_simd(std::move(value.get_bool()));
-    }
-
-    bool is_null(value_type value) const {
-        return value.is_null();
-    }
-
-public:
     template <class Visitor>
         requires (is_visitor_v<Visitor>)
     visitor_result_t<Visitor> deserialize_any(Visitor& visitor) {
@@ -396,18 +379,63 @@ public:
     }
 
 private:
-    template <class T>
-    static result_t<T> from_simd(simdjson::simdjson_result<T> value) {
-        T out{};
-        auto err = std::move(value).get(out);
-        if(err != simdjson::SUCCESS) {
-            return std::unexpected(err);
+    class ScopedValue {
+    public:
+        ScopedValue(Deserializer& deserializer, value_type value) : deserializer(deserializer) {
+            deserializer.value_stack.push_back(value);
         }
-        return out;
+
+        ~ScopedValue() {
+            deserializer.value_stack.pop_back();
+        }
+
+        ScopedValue(const ScopedValue&) = delete;
+        ScopedValue& operator=(const ScopedValue&) = delete;
+
+    private:
+        Deserializer& deserializer;
+    };
+
+    template <class T>
+    result_t<T> deserialize_from_value(value_type value) {
+        ScopedValue scoped(*this, value);
+        return eventide::serde::deserialize<T>(*this);
     }
 
-    constexpr static error_type invalid_argument_error() {
-        return eventide::serde::detail::error_traits<error_type>::invalid_argument();
+    template <class T, class D>
+    friend eventide::serde::deserialize_result_t<T, D>
+        eventide::serde::deserialize(D& deserializer);
+
+    result_t<object_type> as_object(value_type value) const {
+        return from_simd(std::move(value.get_object()));
+    }
+
+    result_t<array_type> as_array(value_type value) const {
+        return from_simd(std::move(value.get_array()));
+    }
+
+    result_t<std::string_view> as_string(value_type value) const {
+        return from_simd(std::move(value.get_string()));
+    }
+
+    result_t<std::int64_t> as_i64(value_type value) const {
+        return from_simd(std::move(value.get_int64()));
+    }
+
+    result_t<std::uint64_t> as_u64(value_type value) const {
+        return from_simd(std::move(value.get_uint64()));
+    }
+
+    result_t<double> as_f64(value_type value) const {
+        return from_simd(std::move(value.get_double()));
+    }
+
+    result_t<bool> as_bool(value_type value) const {
+        return from_simd(std::move(value.get_bool()));
+    }
+
+    bool is_null(value_type value) const {
+        return value.is_null();
     }
 
     template <class Visitor>
@@ -421,6 +449,7 @@ private:
             if(!text) {
                 return std::unexpected(text.error());
             }
+
             std::vector<std::byte> out;
             out.reserve(text->size());
             for(char ch: *text) {
@@ -652,14 +681,11 @@ private:
             return deserialize_unit(visitor, value);
         }
 
-        if constexpr(requires(Visitor& v, Deserializer& d, value_type val) {
-                         { v.visit_some(d, val) } -> std::same_as<visitor_result_t<Visitor>>;
+        if constexpr(requires(Visitor& v, Deserializer& d) {
+                         { v.visit_some(d) } -> std::same_as<visitor_result_t<Visitor>>;
                      }) {
-            return visitor.visit_some(*this, value);
-        } else if constexpr(requires(Visitor& v, value_type val) {
-                                { v.visit_some(val) } -> std::same_as<visitor_result_t<Visitor>>;
-                            }) {
-            return visitor.visit_some(value);
+            ScopedValue scoped(*this, value);
+            return visitor.visit_some(*this);
         } else {
             return deserialize_any(visitor, value);
         }
@@ -727,18 +753,31 @@ private:
                          { v.visit_ignored_any() } -> std::same_as<visitor_result_t<Visitor>>;
                      }) {
             return visitor.visit_ignored_any();
-        } else if constexpr(requires(Visitor& v) {
-                                { v.visit_unit() } -> std::same_as<visitor_result_t<Visitor>>;
-                            }) {
-            return visitor.visit_unit();
-        } else {
-            return invalid_type<Visitor>();
         }
+        if constexpr(std::is_void_v<typename Visitor::value_type>) {
+            return {};
+        }
+        return invalid_type<Visitor>();
+    }
+
+    template <class T>
+    static result_t<T> from_simd(simdjson::simdjson_result<T> value) {
+        T out{};
+        auto err = std::move(value).get(out);
+        if(err != simdjson::SUCCESS) {
+            return std::unexpected(err);
+        }
+        return out;
+    }
+
+    constexpr static error_type invalid_argument_error() {
+        return eventide::serde::detail::error_traits<error_type>::invalid_argument();
     }
 
     simdjson::dom::parser parser{};
     value_type root_value{};
     bool has_root_value = false;
+    std::vector<value_type> value_stack{};
 };
 
 }  // namespace eventide::serde::json::simd

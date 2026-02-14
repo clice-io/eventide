@@ -57,13 +57,17 @@ public:
         SeqAccess(Deserializer& deserializer, array_type input_array) :
             deserializer(deserializer), array(std::move(input_array)) {}
 
+        std::optional<std::size_t> size_hint() const {
+            return array.size() - index;
+        }
+
         template <class T>
         result_t<std::optional<T>> next_element() {
             if(index >= array.size()) {
                 return std::optional<T>{};
             }
 
-            auto parsed = eventide::serde::deserialize<T>(deserializer, array[index]);
+            auto parsed = deserializer.template deserialize_from_value<T>(array[index]);
             ++index;
             if(!parsed) {
                 return std::unexpected(parsed.error());
@@ -81,6 +85,10 @@ public:
     public:
         MapAccess(Deserializer& deserializer, object_type input_object) :
             deserializer(deserializer), object(std::move(input_object)) {}
+
+        std::optional<std::size_t> size_hint() const {
+            return object.size() - index;
+        }
 
         template <class K>
         result_t<std::optional<K>> next_key() {
@@ -120,7 +128,7 @@ public:
             expect_value = false;
             auto value = pending_value;
             ++index;
-            return eventide::serde::deserialize<V>(deserializer, value);
+            return deserializer.template deserialize_from_value<V>(value);
         }
 
     private:
@@ -151,6 +159,9 @@ public:
     Deserializer& operator=(Deserializer&&) = delete;
 
     result_t<value_type> root() const {
+        if(!value_stack.empty()) {
+            return value_stack.back();
+        }
         if(!dom.valid()) {
             const auto error =
                 last_error == YYJSON_READ_SUCCESS ? YYJSON_READ_ERROR_EMPTY_CONTENT : last_error;
@@ -167,6 +178,7 @@ public:
     void clear() {
         dom.reset();
         last_error = YYJSON_READ_SUCCESS;
+        value_stack.clear();
     }
 
     template <class Visitor>
@@ -352,9 +364,32 @@ public:
     }
 
 private:
+    class ScopedValue {
+    public:
+        ScopedValue(Deserializer& deserializer, value_type value) : deserializer(deserializer) {
+            deserializer.value_stack.push_back(value);
+        }
+
+        ~ScopedValue() {
+            deserializer.value_stack.pop_back();
+        }
+
+        ScopedValue(const ScopedValue&) = delete;
+        ScopedValue& operator=(const ScopedValue&) = delete;
+
+    private:
+        Deserializer& deserializer;
+    };
+
+    template <class T>
+    result_t<T> deserialize_from_value(value_type value) {
+        ScopedValue scoped(*this, value);
+        return eventide::serde::deserialize<T>(*this);
+    }
+
     template <class T, class D>
     friend eventide::serde::deserialize_result_t<T, D>
-        eventide::serde::deserialize(D& deserializer, value_type_t<D> value);
+        eventide::serde::deserialize(D& deserializer);
 
     result_t<object_type> as_object(value_type value) const {
         auto fields = dom.object_members(value);
@@ -658,9 +693,14 @@ private:
             return deserialize_unit(visitor, value);
         }
 
-        if constexpr(requires(Visitor& v, Deserializer& d, value_type val) {
-                         { v.visit_some(d, val) } -> std::same_as<visitor_result_t<Visitor>>;
+        if constexpr(requires(Visitor& v, Deserializer& d) {
+                         { v.visit_some(d) } -> std::same_as<visitor_result_t<Visitor>>;
                      }) {
+            ScopedValue scoped(*this, value);
+            return visitor.visit_some(*this);
+        } else if constexpr(requires(Visitor& v, Deserializer& d, value_type val) {
+                                { v.visit_some(d, val) } -> std::same_as<visitor_result_t<Visitor>>;
+                            }) {
             return visitor.visit_some(*this, value);
         } else if constexpr(requires(Visitor& v, value_type val) {
                                 { v.visit_some(val) } -> std::same_as<visitor_result_t<Visitor>>;
@@ -744,6 +784,7 @@ private:
 
     Dom dom{};
     error_type last_error = YYJSON_READ_SUCCESS;
+    std::vector<value_type> value_stack{};
 };
 
 }  // namespace eventide::serde::json::yy

@@ -1,4 +1,6 @@
+#include <array>
 #include <map>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,59 +34,74 @@ struct serialize_traits<Serializer, person_yy> {
 template <>
 struct deserialize_traits<eventide::serde::json::yy::Deserializer, person_yy> {
     static deserialize_result_t<person_yy, eventide::serde::json::yy::Deserializer>
-        deserialize(eventide::serde::json::yy::Deserializer& deserializer,
-                    value_type_t<eventide::serde::json::yy::Deserializer> value) {
+        deserialize(eventide::serde::json::yy::Deserializer& deserializer) {
         using yy_deserializer_t = eventide::serde::json::yy::Deserializer;
         using error_t = deserialize_error_t<yy_deserializer_t>;
 
-        if(!yyjson_is_obj(value)) {
-            return std::unexpected(detail::error_traits<error_t>::invalid_argument());
-        }
+        struct person_visitor {
+            using value_type = person_yy;
 
-        person_yy out{};
-        bool has_id = false;
-        bool has_name = false;
-        bool has_scores = false;
-
-        std::size_t idx = 0;
-        std::size_t max = 0;
-        yyjson_val* key = nullptr;
-        yyjson_val* field_value = nullptr;
-        yyjson_obj_foreach(value, idx, max, key, field_value) {
-            const char* key_text = yyjson_get_str(key);
-            std::size_t key_len = yyjson_get_len(key);
-            std::string_view field_name(key_text == nullptr ? "" : key_text, key_len);
-
-            if(field_name == "id") {
-                auto parsed = eventide::serde::deserialize<int>(deserializer, field_value);
-                if(!parsed) {
-                    return std::unexpected(parsed.error());
-                }
-                out.id = *parsed;
-                has_id = true;
-            } else if(field_name == "name") {
-                auto parsed = eventide::serde::deserialize<std::string>(deserializer, field_value);
-                if(!parsed) {
-                    return std::unexpected(parsed.error());
-                }
-                out.name = std::move(*parsed);
-                has_name = true;
-            } else if(field_name == "scores") {
-                auto parsed =
-                    eventide::serde::deserialize<std::vector<int>>(deserializer, field_value);
-                if(!parsed) {
-                    return std::unexpected(parsed.error());
-                }
-                out.scores = std::move(*parsed);
-                has_scores = true;
+            std::string_view expecting() const {
+                return "person_yy object";
             }
-        }
 
-        if(!has_id || !has_name || !has_scores) {
-            return std::unexpected(detail::error_traits<error_t>::invalid_argument());
-        }
+            deserialize_result_t<person_yy, yy_deserializer_t>
+                visit_map(yy_deserializer_t::MapAccess& map) {
+                person_yy out{};
+                bool has_id = false;
+                bool has_name = false;
+                bool has_scores = false;
 
-        return out;
+                while(true) {
+                    auto key = map.template next_key<std::string_view>();
+                    if(!key) {
+                        return std::unexpected(key.error());
+                    }
+                    if(!*key) {
+                        break;
+                    }
+
+                    if(**key == "id") {
+                        auto parsed = map.template next_value<int>();
+                        if(!parsed) {
+                            return std::unexpected(parsed.error());
+                        }
+                        out.id = *parsed;
+                        has_id = true;
+                    } else if(**key == "name") {
+                        auto parsed = map.template next_value<std::string>();
+                        if(!parsed) {
+                            return std::unexpected(parsed.error());
+                        }
+                        out.name = std::move(*parsed);
+                        has_name = true;
+                    } else if(**key == "scores") {
+                        auto parsed = map.template next_value<std::vector<int>>();
+                        if(!parsed) {
+                            return std::unexpected(parsed.error());
+                        }
+                        out.scores = std::move(*parsed);
+                        has_scores = true;
+                    } else {
+                        auto ignored = map.template next_value<eventide::serde::ignored_any>();
+                        if(!ignored) {
+                            return std::unexpected(ignored.error());
+                        }
+                    }
+                }
+
+                if(!has_id || !has_name || !has_scores) {
+                    return std::unexpected(detail::error_traits<error_t>::invalid_argument());
+                }
+
+                return out;
+            }
+        } visitor{};
+
+        constexpr std::array<std::string_view, 3> fields{"id", "name", "scores"};
+        return deserializer.deserialize_struct("person_yy",
+                                               std::span<const std::string_view>(fields),
+                                               visitor);
     }
 };
 

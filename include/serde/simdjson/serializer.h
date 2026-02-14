@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
 #include <string>
@@ -12,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/error.h"
+#include "serde/concepts.h"
 #include "serde/traits.h"
 
 #if __has_include(<simdjson.h>)
@@ -24,17 +27,26 @@ namespace eventide::serde::json::simd {
 
 class Serializer {
 public:
+    using value_type = void;
+    using error_type = eventide::error;
+
+    template <class T>
+    using result_t = std::expected<T, error_type>;
+
+    using status_t = result_t<void>;
+
     class SerializeSeq {
     public:
         explicit SerializeSeq(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_element(const T& value) {
+        status_t serialize_element(const T& value) {
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
-        void end() {
-            serializer.end_array();
+        result_t<value_type> end() {
+            return serializer.end_array();
         }
 
     private:
@@ -46,12 +58,13 @@ public:
         explicit SerializeTuple(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_element(const T& value) {
+        status_t serialize_element(const T& value) {
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
-        void end() {
-            serializer.end_array();
+        result_t<value_type> end() {
+            return serializer.end_array();
         }
 
     private:
@@ -63,23 +76,27 @@ public:
         explicit SerializeMap(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_key(const T& key) {
-            serializer.key(Serializer::map_key_to_string(key));
+        status_t serialize_key(const T& key) {
+            return serializer.key(Serializer::map_key_to_string(key));
         }
 
         template <class T>
-        void serialize_value(const T& value) {
+        status_t serialize_value(const T& value) {
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
         template <class K, class V>
-        void serialize_entry(const K& key, const V& value) {
-            serialize_key(key);
-            serialize_value(value);
+        status_t serialize_entry(const K& key, const V& value) {
+            auto key_status = serialize_key(key);
+            if(!key_status) {
+                return key_status;
+            }
+            return serialize_value(value);
         }
 
-        void end() {
-            serializer.end_object();
+        result_t<value_type> end() {
+            return serializer.end_object();
         }
 
     private:
@@ -91,15 +108,19 @@ public:
         explicit SerializeStruct(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_field(std::string_view key, const T& value) {
-            serializer.key(key);
+        status_t serialize_field(std::string_view key, const T& value) {
+            auto key_status = serializer.key(key);
+            if(!key_status) {
+                return key_status;
+            }
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
         void skip_field(std::string_view /*key*/) {}
 
-        void end() {
-            serializer.end_object();
+        result_t<value_type> end() {
+            return serializer.end_object();
         }
 
     private:
@@ -111,63 +132,67 @@ public:
     explicit Serializer(std::size_t initial_capacity) : builder(initial_capacity) {}
 
 private:
-    void begin_object() {
+    status_t begin_object() {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.start_object();
         stack.push_back(container_frame{container_kind::object, true, true});
+        return {};
     }
 
-    void end_object() {
+    result_t<value_type> end_object() {
         if(!is_valid || stack.empty()) {
             mark_invalid();
-            return;
+            return std::unexpected(current_error());
         }
 
         const auto frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
-            return;
+            return std::unexpected(current_error());
         }
 
         builder.end_object();
         stack.pop_back();
+        return status();
     }
 
-    void begin_array() {
+    status_t begin_array() {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.start_array();
         stack.push_back(container_frame{container_kind::array, true, false});
+        return {};
     }
 
-    void end_array() {
+    result_t<value_type> end_array() {
         if(!is_valid || stack.empty()) {
             mark_invalid();
-            return;
+            return std::unexpected(current_error());
         }
 
         if(stack.back().kind != container_kind::array) {
             mark_invalid();
-            return;
+            return std::unexpected(current_error());
         }
 
         builder.end_array();
         stack.pop_back();
+        return status();
     }
 
-    void key(std::string_view key) {
+    status_t key(std::string_view key) {
         if(!is_valid || stack.empty()) {
             mark_invalid();
-            return;
+            return std::unexpected(current_error());
         }
 
         auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
-            return;
+            return std::unexpected(current_error());
         }
 
         if(!frame.first) {
@@ -178,52 +203,73 @@ private:
         builder.escape_and_append_with_quotes(key);
         builder.append_colon();
         frame.expect_key = false;
+        return status();
     }
 
-    void null() {
+    status_t null() {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.append_null();
+        return status();
     }
 
-    void value(std::string_view value) {
+    status_t value(std::string_view value) {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.escape_and_append_with_quotes(value);
+        return status();
     }
 
-    void value(bool value) {
+    status_t value(bool value) {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.append(value);
+        return status();
     }
 
-    void value(std::int64_t value) {
+    status_t value(std::int64_t value) {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.append(value);
+        return status();
     }
 
-    void value(std::uint64_t value) {
+    status_t value(std::uint64_t value) {
         if(!before_value()) {
-            return;
+            return status();
         }
         builder.append(value);
+        return status();
     }
 
-    void value(double value) {
+    status_t value(double value) {
         if(!before_value()) {
-            return;
+            return status();
         }
         if(std::isfinite(value)) {
             builder.append(value);
         } else {
             builder.append_null();
         }
+        return status();
+    }
+
+    error_type current_error() const {
+        if(last_error.has_error()) {
+            return last_error;
+        }
+        return eventide::error::invalid_argument;
+    }
+
+    status_t status() const {
+        if(is_valid) {
+            return {};
+        }
+        return std::unexpected(current_error());
     }
 
 public:
@@ -253,56 +299,93 @@ public:
         stack.clear();
         root_written = false;
         is_valid = true;
+        last_error = error_type{};
     }
 
     bool valid() const {
         return is_valid;
     }
 
-    void serialize_bool(bool value) {
-        this->value(value);
+    error_type error() const {
+        if(is_valid) {
+            return error_type{};
+        }
+        return current_error();
+    }
+
+    result_t<value_type> serialize_none() {
+        return null();
+    }
+
+    result_t<value_type> serialize_bool(bool value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_int(std::int64_t value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_uint(std::uint64_t value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_float(double value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_char(char value) {
+        if(!before_value()) {
+            return status();
+        }
+        builder.escape_and_append_with_quotes(value);
+        return status();
+    }
+
+    result_t<value_type> serialize_str(std::string_view value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_bytes(std::string_view value) {
+        auto seq = serialize_seq(value.size());
+        if(!seq) {
+            return std::unexpected(seq.error());
+        }
+
+        for(unsigned char byte: value) {
+            auto element = seq->serialize_element(static_cast<std::uint64_t>(byte));
+            if(!element) {
+                return std::unexpected(element.error());
+            }
+        }
+        return seq->end();
     }
 
     template <std::signed_integral T>
     void serialize_i(T value) {
         static_assert(sizeof(T) <= sizeof(std::int64_t),
                       "serialize_i only supports up to 64-bit signed integers.");
-        this->value(static_cast<std::int64_t>(value));
+        (void)serialize_int(static_cast<std::int64_t>(value));
     }
 
     template <std::unsigned_integral T>
     void serialize_u(T value) {
         static_assert(sizeof(T) <= sizeof(std::uint64_t),
                       "serialize_u only supports up to 64-bit unsigned integers.");
-        this->value(static_cast<std::uint64_t>(value));
+        (void)serialize_uint(static_cast<std::uint64_t>(value));
     }
 
     template <std::floating_point T>
     void serialize_f(T value) {
-        this->value(static_cast<double>(value));
-    }
-
-    void serialize_char(char value) {
-        if(!before_value()) {
-            return;
-        }
-        builder.escape_and_append_with_quotes(value);
-    }
-
-    void serialize_str(std::string_view value) {
-        this->value(value);
+        (void)serialize_float(static_cast<double>(value));
     }
 
     void serialize_bytes(std::span<const std::byte> value) {
-        auto seq = serialize_seq(value.size());
-        for(std::byte byte: value) {
-            seq.serialize_element(std::to_integer<std::uint8_t>(byte));
+        if(value.empty()) {
+            (void)serialize_bytes(std::string_view{});
+            return;
         }
-        seq.end();
-    }
-
-    void serialize_none() {
-        null();
+        const char* bytes = reinterpret_cast<const char*>(value.data());
+        (void)serialize_bytes(std::string_view(bytes, value.size()));
     }
 
     template <class T>
@@ -311,27 +394,48 @@ public:
     }
 
     void serialize_unit() {
-        null();
+        (void)serialize_none();
     }
 
-    SerializeSeq serialize_seq(std::optional<std::size_t> /*len*/) {
-        begin_array();
+    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
+        auto started = begin_array();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeSeq(*this);
     }
 
-    SerializeTuple serialize_tuple(std::size_t /*len*/) {
-        begin_array();
+    result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
+        auto started = begin_array();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeTuple(*this);
     }
 
-    SerializeMap serialize_map(std::optional<std::size_t> /*len*/) {
-        begin_object();
+    result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
+        auto started = begin_object();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeMap(*this);
     }
 
-    SerializeStruct serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        begin_object();
+    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
+        auto started = begin_object();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeStruct(*this);
+    }
+
+    SerializeStruct serialize_struct(const char* name, std::size_t len) {
+        auto object =
+            serialize_struct(name == nullptr ? std::string_view{} : std::string_view(name), len);
+        if(!object) {
+            return SerializeStruct(*this);
+        }
+        return *object;
     }
 
     bool is_human_readable() const {
@@ -347,8 +451,15 @@ private:
         bool expect_key = true;
     };
 
-    void mark_invalid() {
+    void set_error(error_type error) {
+        if(!last_error.has_error()) {
+            last_error = error;
+        }
+    }
+
+    void mark_invalid(error_type error = eventide::error::invalid_argument) {
         is_valid = false;
+        set_error(error);
     }
 
     bool before_value() {
@@ -401,11 +512,14 @@ private:
     std::vector<container_frame> stack{};
     bool root_written = false;
     bool is_valid = true;
+    error_type last_error{};
 };
 
 using SerializeSeq = Serializer::SerializeSeq;
 using SerializeTuple = Serializer::SerializeTuple;
 using SerializeMap = Serializer::SerializeMap;
 using SerializeStruct = Serializer::SerializeStruct;
+
+static_assert(eventide::serde::serializer_like<Serializer>);
 
 }  // namespace eventide::serde::json::simd

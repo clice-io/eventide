@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
 #include <string>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "serde/concepts.h"
 #include "serde/traits.h"
 #include "serde/yyjson/dom.h"
 
@@ -18,22 +20,26 @@ namespace eventide::serde::json::yy {
 
 class Serializer {
 public:
+    using value_type = void;
     using error_type = yyjson_write_code;
 
     template <class T>
     using result_t = std::expected<T, error_type>;
+
+    using status_t = result_t<void>;
 
     class SerializeSeq {
     public:
         explicit SerializeSeq(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_element(const T& value) {
+        status_t serialize_element(const T& value) {
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
-        void end() {
-            serializer.end_array();
+        result_t<value_type> end() {
+            return serializer.end_array();
         }
 
     private:
@@ -45,12 +51,13 @@ public:
         explicit SerializeTuple(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_element(const T& value) {
+        status_t serialize_element(const T& value) {
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
-        void end() {
-            serializer.end_array();
+        result_t<value_type> end() {
+            return serializer.end_array();
         }
 
     private:
@@ -62,23 +69,27 @@ public:
         explicit SerializeMap(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_key(const T& key) {
-            serializer.key(Serializer::map_key_to_string(key));
+        status_t serialize_key(const T& key) {
+            return serializer.key(Serializer::map_key_to_string(key));
         }
 
         template <class T>
-        void serialize_value(const T& value) {
+        status_t serialize_value(const T& value) {
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
         template <class K, class V>
-        void serialize_entry(const K& key, const V& value) {
-            serialize_key(key);
-            serialize_value(value);
+        status_t serialize_entry(const K& key, const V& value) {
+            auto key_status = serialize_key(key);
+            if(!key_status) {
+                return key_status;
+            }
+            return serialize_value(value);
         }
 
-        void end() {
-            serializer.end_object();
+        result_t<value_type> end() {
+            return serializer.end_object();
         }
 
     private:
@@ -90,15 +101,19 @@ public:
         explicit SerializeStruct(Serializer& serializer) noexcept : serializer(serializer) {}
 
         template <class T>
-        void serialize_field(std::string_view key, const T& value) {
-            serializer.key(key);
+        status_t serialize_field(std::string_view key, const T& value) {
+            auto key_status = serializer.key(key);
+            if(!key_status) {
+                return key_status;
+            }
             eventide::serde::serialize(serializer, value);
+            return serializer.status();
         }
 
         void skip_field(std::string_view /*key*/) {}
 
-        void end() {
-            serializer.end_object();
+        result_t<value_type> end() {
+            return serializer.end_object();
         }
 
     private:
@@ -132,6 +147,18 @@ private:
 
     bool is_complete() const {
         return is_valid && root_written && stack.empty();
+    }
+
+    error_type current_error() const {
+        return last_error == YYJSON_WRITE_SUCCESS ? YYJSON_WRITE_ERROR_INVALID_PARAMETER
+                                                  : last_error;
+    }
+
+    status_t status() const {
+        if(is_valid) {
+            return {};
+        }
+        return std::unexpected(current_error());
     }
 
     void set_error(error_type error) {
@@ -206,21 +233,21 @@ private:
         frame.expect_key = true;
     }
 
-    void begin_object() {
+    status_t begin_object() {
         if(!is_valid) {
-            return;
+            return status();
         }
 
         auto created = mutable_dom.create_object();
         if(!created) {
             mark_invalid(created.error());
-            return;
+            return std::unexpected(current_error());
         }
 
         auto* object = *created;
         append_value(object);
         if(!is_valid) {
-            return;
+            return std::unexpected(current_error());
         }
 
         stack.push_back(container_frame{
@@ -228,38 +255,40 @@ private:
             .kind = container_kind::object,
             .expect_key = true,
         });
+        return status();
     }
 
-    void end_object() {
+    result_t<value_type> end_object() {
         if(!is_valid || stack.empty()) {
             mark_invalid(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-            return;
+            return std::unexpected(current_error());
         }
 
         auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-            return;
+            return std::unexpected(current_error());
         }
 
         stack.pop_back();
+        return status();
     }
 
-    void begin_array() {
+    status_t begin_array() {
         if(!is_valid) {
-            return;
+            return status();
         }
 
         auto created = mutable_dom.create_array();
         if(!created) {
             mark_invalid(created.error());
-            return;
+            return std::unexpected(current_error());
         }
 
         auto* array = *created;
         append_value(array);
         if(!is_valid) {
-            return;
+            return std::unexpected(current_error());
         }
 
         stack.push_back(container_frame{
@@ -267,70 +296,76 @@ private:
             .kind = container_kind::array,
             .expect_key = false,
         });
+        return status();
     }
 
-    void end_array() {
+    result_t<value_type> end_array() {
         if(!is_valid || stack.empty()) {
             mark_invalid(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-            return;
+            return std::unexpected(current_error());
         }
 
         auto& frame = stack.back();
         if(frame.kind != container_kind::array) {
             mark_invalid(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-            return;
+            return std::unexpected(current_error());
         }
 
         stack.pop_back();
+        return status();
     }
 
-    void key(std::string_view key) {
+    status_t key(std::string_view key) {
         if(!is_valid || stack.empty()) {
             mark_invalid(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-            return;
+            return std::unexpected(current_error());
         }
 
         auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-            return;
+            return std::unexpected(current_error());
         }
 
         frame.pending_key.assign(key.data(), key.size());
         frame.expect_key = false;
+        return status();
     }
 
-    void null() {
+    status_t null() {
         append_created([this] { return mutable_dom.create_null(); });
+        return status();
     }
 
-    void value(std::string_view value) {
+    status_t value(std::string_view value) {
         append_created([this, value] { return mutable_dom.create_string(value); });
+        return status();
     }
 
-    void value(bool value) {
+    status_t value(bool value) {
         append_created([this, value] { return mutable_dom.create_bool(value); });
+        return status();
     }
 
-    void value(std::int64_t value) {
+    status_t value(std::int64_t value) {
         append_created([this, value] { return mutable_dom.create_i64(value); });
+        return status();
     }
 
-    void value(std::uint64_t value) {
+    status_t value(std::uint64_t value) {
         append_created([this, value] { return mutable_dom.create_u64(value); });
+        return status();
     }
 
-    void value(double value) {
+    status_t value(double value) {
         append_created([this, value] { return mutable_dom.create_f64(value); });
+        return status();
     }
 
 public:
     result_t<Dom> dom() const {
         if(!is_complete()) {
-            const auto error = last_error == YYJSON_WRITE_SUCCESS
-                                   ? YYJSON_WRITE_ERROR_INVALID_PARAMETER
-                                   : last_error;
-            return std::unexpected(error);
+            return std::unexpected(current_error());
         }
         return mutable_dom.freeze();
     }
@@ -348,51 +383,79 @@ public:
     }
 
     error_type error() const {
-        return last_error;
+        return is_valid ? YYJSON_WRITE_SUCCESS : current_error();
     }
 
-    void serialize_bool(bool value) {
-        this->value(value);
+    result_t<value_type> serialize_none() {
+        return null();
+    }
+
+    result_t<value_type> serialize_bool(bool value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_int(std::int64_t value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_uint(std::uint64_t value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_float(double value) {
+        return this->value(value);
     }
 
     template <std::signed_integral T>
     void serialize_i(T value) {
         static_assert(sizeof(T) <= sizeof(std::int64_t),
                       "serialize_i only supports up to 64-bit signed integers.");
-        this->value(static_cast<std::int64_t>(value));
+        (void)serialize_int(static_cast<std::int64_t>(value));
     }
 
     template <std::unsigned_integral T>
     void serialize_u(T value) {
         static_assert(sizeof(T) <= sizeof(std::uint64_t),
                       "serialize_u only supports up to 64-bit unsigned integers.");
-        this->value(static_cast<std::uint64_t>(value));
+        (void)serialize_uint(static_cast<std::uint64_t>(value));
     }
 
     template <std::floating_point T>
     void serialize_f(T value) {
-        this->value(static_cast<double>(value));
+        (void)serialize_float(static_cast<double>(value));
     }
 
-    void serialize_char(char value) {
+    result_t<value_type> serialize_char(char value) {
         const char text[2] = {value, '\0'};
-        this->value(std::string_view{text, 1});
+        return this->value(std::string_view{text, 1});
     }
 
-    void serialize_str(std::string_view value) {
-        this->value(value);
+    result_t<value_type> serialize_str(std::string_view value) {
+        return this->value(value);
+    }
+
+    result_t<value_type> serialize_bytes(std::string_view value) {
+        auto seq = serialize_seq(value.size());
+        if(!seq) {
+            return std::unexpected(seq.error());
+        }
+
+        for(unsigned char byte: value) {
+            auto element = seq->serialize_element(static_cast<std::uint64_t>(byte));
+            if(!element) {
+                return std::unexpected(element.error());
+            }
+        }
+        return seq->end();
     }
 
     void serialize_bytes(std::span<const std::byte> value) {
-        auto seq = serialize_seq(value.size());
-        for(std::byte byte: value) {
-            seq.serialize_element(std::to_integer<std::uint8_t>(byte));
+        if(value.empty()) {
+            (void)serialize_bytes(std::string_view{});
+            return;
         }
-        seq.end();
-    }
-
-    void serialize_none() {
-        null();
+        const char* bytes = reinterpret_cast<const char*>(value.data());
+        (void)serialize_bytes(std::string_view(bytes, value.size()));
     }
 
     template <class T>
@@ -401,27 +464,48 @@ public:
     }
 
     void serialize_unit() {
-        null();
+        (void)serialize_none();
     }
 
-    SerializeSeq serialize_seq(std::optional<std::size_t> /*len*/) {
-        begin_array();
+    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
+        auto started = begin_array();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeSeq(*this);
     }
 
-    SerializeTuple serialize_tuple(std::size_t /*len*/) {
-        begin_array();
+    result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
+        auto started = begin_array();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeTuple(*this);
     }
 
-    SerializeMap serialize_map(std::optional<std::size_t> /*len*/) {
-        begin_object();
+    result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
+        auto started = begin_object();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeMap(*this);
     }
 
-    SerializeStruct serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        begin_object();
+    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
+        auto started = begin_object();
+        if(!started) {
+            return std::unexpected(started.error());
+        }
         return SerializeStruct(*this);
+    }
+
+    SerializeStruct serialize_struct(const char* name, std::size_t len) {
+        auto object =
+            serialize_struct(name == nullptr ? std::string_view{} : std::string_view(name), len);
+        if(!object) {
+            return SerializeStruct(*this);
+        }
+        return *object;
     }
 
     bool is_human_readable() const {
@@ -454,5 +538,7 @@ using SerializeSeq = Serializer::SerializeSeq;
 using SerializeTuple = Serializer::SerializeTuple;
 using SerializeMap = Serializer::SerializeMap;
 using SerializeStruct = Serializer::SerializeStruct;
+
+static_assert(eventide::serde::serializer_like<Serializer>);
 
 }  // namespace eventide::serde::json::yy
