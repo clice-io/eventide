@@ -174,9 +174,7 @@ struct field {
 
 template <typename Object, typename Callback>
 constexpr bool for_each(Object&& object, const Callback& callback) {
-    using T = std::remove_cvref_t<Object>;
     using reflect = reflection<std::remove_cvref_t<Object>>;
-    auto addrs = reflect::field_addrs(object);
     auto foldable = [&](auto field) {
         using R = decltype(callback(field));
         if constexpr(std::is_void_v<R>) {
@@ -187,6 +185,7 @@ constexpr bool for_each(Object&& object, const Callback& callback) {
         }
     };
 
+    using T = std::remove_reference_t<Object>;
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
         return (foldable(field<Is, T>{object}) && ...);
     }(std::make_index_sequence<reflect::field_count>());

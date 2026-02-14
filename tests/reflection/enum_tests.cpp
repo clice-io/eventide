@@ -25,6 +25,12 @@ enum class Tiny : std::uint8_t {
     C,
 };
 
+enum class Sparse : int {
+    Neg = -12,
+    Mid = 7,
+    High = 15,
+};
+
 static_assert(refl::reflection<Color>::member_count == 3);
 static_assert(refl::reflection<Color>::member_names.size() == 3);
 static_assert(refl::reflection<Color>::member_names[0] == "Red");
@@ -43,6 +49,14 @@ static_assert(refl::reflection<Tiny>::member_names[0] == "A");
 static_assert(refl::reflection<Tiny>::member_names[1] == "B");
 static_assert(refl::reflection<Tiny>::member_names[2] == "C");
 
+static_assert(refl::reflection<Sparse>::member_count == 3);
+static_assert(refl::reflection<Sparse>::member_values[0] == Sparse::Neg);
+static_assert(refl::reflection<Sparse>::member_values[1] == Sparse::Mid);
+static_assert(refl::reflection<Sparse>::member_values[2] == Sparse::High);
+static_assert(refl::reflection<Sparse>::member_names[0] == "Neg");
+static_assert(refl::reflection<Sparse>::member_names[1] == "Mid");
+static_assert(refl::reflection<Sparse>::member_names[2] == "High");
+
 TEST_SUITE(reflection) {
 
 TEST_CASE(enum_member_names) {
@@ -57,6 +71,12 @@ TEST_CASE(enum_member_names) {
     EXPECT_EQ(refl::enum_name(Tiny::A), "A");
     EXPECT_EQ(refl::enum_name(Tiny::B), "B");
     EXPECT_EQ(refl::enum_name(Tiny::C), "C");
+
+    EXPECT_EQ(refl::enum_name(Sparse::Neg), "Neg");
+    EXPECT_EQ(refl::enum_name(Sparse::Mid), "Mid");
+    EXPECT_EQ(refl::enum_name(Sparse::High), "High");
+    EXPECT_EQ(refl::enum_name(static_cast<Sparse>(42)), "");
+    EXPECT_EQ(refl::enum_name(static_cast<Sparse>(42), "Unknown"), "Unknown");
 }
 
 };  // TEST_SUITE(reflection)
