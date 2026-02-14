@@ -9,12 +9,16 @@
 namespace refl::detail {
 
 template <class T>
-extern const T ext;
+extern const T ext{};
 
 template <class T>
 union uninitialized {
     T value;
     char bytes[sizeof(T)];
+
+    uninitialized() {}
+
+    ~uninitialized() {}
 };
 
 struct any {
@@ -39,9 +43,6 @@ consteval auto field_count() {
         return field_count<T, N + 1>();
     }
 }
-
-template <typename T>
-auto& instance = ext<uninitialized<T>>.value;
 
 }  // namespace refl::detail
 
@@ -73,15 +74,15 @@ struct reflection<Object> {
         }
     }
 
-    constexpr inline static std::array field_names =
-        []<std::size_t... Is>(std::index_sequence<Is...>) {
-            if constexpr(field_count == 0) {
-                return std::array<std::string_view, 1>{"PLACEHOLDER"};
-            } else {
-                constexpr auto addrs = field_addrs(detail::instance<Object>);
-                return std::array{refl::pointer_name<std::get<Is>(addrs)>()...};
-            }
-        }(std::make_index_sequence<field_count>{});
+    constexpr inline static std::array field_names = []<std::size_t... Is>(
+                                                         std::index_sequence<Is...>) {
+        if constexpr(field_count == 0) {
+            return std::array<std::string_view, 1>{"PLACEHOLDER"};
+        } else {
+            constexpr auto addrs = field_addrs(detail::ext<detail::uninitialized<Object>>.value);
+            return std::array{refl::pointer_name<std::get<Is>(addrs)>()...};
+        }
+    }(std::make_index_sequence<field_count>{});
 };
 
 template <typename Object>
