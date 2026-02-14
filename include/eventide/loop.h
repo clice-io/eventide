@@ -39,11 +39,13 @@ public:
 
     template <typename Task>
     void schedule(Task&& task, std::source_location location = std::source_location::current()) {
+        auto& promise = task.h.promise();
         if constexpr(std::is_rvalue_reference_v<Task&&>) {
-            task.h.promise().root = true;
+            promise.root = true;
+            task.release();
         }
 
-        schedule(static_cast<async_node&>(task.h.promise()), location);
+        schedule(static_cast<async_node&>(promise), location);
     }
 
 private:

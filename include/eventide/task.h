@@ -220,6 +220,10 @@ public:
         }
     }
 
+    void release() {
+        this->h = nullptr;
+    }
+
     async_node* operator->() {
         return &h.promise();
     }

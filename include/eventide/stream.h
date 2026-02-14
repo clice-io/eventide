@@ -63,7 +63,7 @@ public:
     void consume(std::size_t n);
 
     /// Write data to the stream; only one writer at a time.
-    task<> write(std::span<const char> data);
+    task<error> write(std::span<const char> data);
 
     /// Try a non-blocking write; returns bytes written or error.
     result<std::size_t> try_write(std::span<const char> data);
@@ -104,6 +104,10 @@ public:
 
     /// Accept one connection; only one pending accept is allowed at a time.
     task<result<Stream>> accept();
+
+    /// Stop pending accept which will complete with error::operation_aborted. If no accept is
+    /// pending, the next accept() will complete with error instead.
+    error stop();
 
 private:
     friend class pipe;

@@ -7,6 +7,8 @@ namespace eventide {
 std::string_view error::message() const {
     if(code == 0) {
         return "success";
+    } else if(code == operation_aborted.value()) {
+        return "operation aborted";
     }
 
     const char* msg = uv_strerror(code);
@@ -16,6 +18,8 @@ std::string_view error::message() const {
 
     return "unknown error";
 }
+
+const error error::operation_aborted{-114514};
 
 const error error::argument_list_too_long{UV_E2BIG};
 const error error::permission_denied{UV_EACCES};

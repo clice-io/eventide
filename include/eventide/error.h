@@ -36,6 +36,10 @@ public:
 
     friend constexpr bool operator==(const error& lhs, const error& rhs) noexcept = default;
 
+    /// eventide-specific error codes:
+    const static error operation_aborted;
+
+    /// libuv error codes:
     const static error argument_list_too_long;
     const static error permission_denied;
     const static error address_already_in_use;
