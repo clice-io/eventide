@@ -5,7 +5,6 @@
 #include <tuple>
 
 #include "name.h"
-#include "traits.h"
 
 namespace refl::detail {
 
@@ -51,7 +50,8 @@ namespace refl {
 template <typename T>
 struct reflection;
 
-template <traits::aggregate_type Object>
+template <typename Object>
+    requires std::is_aggregate_v<Object>
 struct reflection<Object> {
     constexpr inline static auto field_count = refl::detail::field_count<Object>();
 
@@ -79,7 +79,7 @@ struct reflection<Object> {
                 return std::array<std::string_view, 1>{"PLACEHOLDER"};
             } else {
                 constexpr auto addrs = field_addrs(detail::instance<Object>);
-                return std::array{refl::field_name<std::get<Is>(addrs)>()...};
+                return std::array{refl::pointer_name<std::get<Is>(addrs)>()...};
             }
         }(std::make_index_sequence<field_count>{});
 };

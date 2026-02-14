@@ -4,7 +4,6 @@
 #include <string_view>
 
 #include "name.h"
-#include "traits.h"
 
 namespace refl::detail {
 
@@ -25,7 +24,10 @@ namespace refl {
 template <typename T>
 struct reflection;
 
-template <traits::enum_type T>
+template <typename T>
+concept enum_type = std::is_enum_v<T>;
+
+template <enum_type T>
 struct reflection<T> {
     constexpr inline static auto member_count = detail::enum_max<T>();
 
@@ -34,7 +36,7 @@ struct reflection<T> {
     }(std::make_index_sequence<member_count>{});
 };
 
-template <traits::enum_type E>
+template <enum_type E>
 constexpr auto enum_name(E e) {
     return reflection<E>::member_names[static_cast<std::underlying_type_t<E>>(e)];
 }
