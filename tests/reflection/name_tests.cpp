@@ -42,14 +42,14 @@ TEST_CASE(type_name) {
 
 struct struct_y {
     std::string x;
-    std::vector<int> y_;
+    std::vector<int> y;
 };
 
 inline static struct_y ins_y;
 
 union union_z {
     std::string x;
-    std::vector<int> y_;
+    std::vector<int> y;
 
     union_z() {}
 
@@ -60,10 +60,10 @@ inline static union_z ins_y2;
 
 TEST_CASE(field_name) {
     EXPECT_EQ(field_name<&ins_y.x>(), "x");
-    EXPECT_EQ(field_name<&ins_y.y_>(), "y_");
+    EXPECT_EQ(field_name<&ins_y.y>(), "y");
 
     EXPECT_EQ(field_name<&ins_y2.x>(), "x");
-    EXPECT_EQ(field_name<&ins_y2.y_>(), "y_");
+    EXPECT_EQ(field_name<&ins_y2.y>(), "y");
 }
 
 enum class enum_y { RED, YELLOW };
