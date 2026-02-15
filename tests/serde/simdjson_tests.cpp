@@ -27,6 +27,10 @@ struct person {
     std::vector<int> scores;
 };
 
+struct escaped_key_person {
+    int myunique = 0;
+};
+
 struct annotated_person {
     int id;
     serde::rename_alias<std::string, "displayName", "name"> name;
@@ -132,6 +136,26 @@ TEST_CASE(deserialize_reflectable_struct) {
     EXPECT_EQ(value.id, 7);
     EXPECT_EQ(value.name, "alice");
     EXPECT_EQ(value.scores, std::vector<int>({10, 20, 30}));
+}
+
+TEST_CASE(deserialize_reflectable_struct_with_nested_unknown) {
+    person value{.id = 0, .name = "", .scores = {}};
+
+    auto status = from_json(
+        R"({"id":7,"unknown":{"meta":[1,2,{"k":"v"}]},"name":"alice","scores":[10,20,30]})",
+        value);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(value.id, 7);
+    EXPECT_EQ(value.name, "alice");
+    EXPECT_EQ(value.scores, std::vector<int>({10, 20, 30}));
+}
+
+TEST_CASE(deserialize_escaped_key_struct) {
+    escaped_key_person value{};
+
+    auto status = from_json(R"({"my\u0075nique":7})", value);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(value.myunique, 7);
 }
 
 TEST_CASE(serialize_annotated_fields) {

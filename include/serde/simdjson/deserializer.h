@@ -189,7 +189,11 @@ public:
                 return std::unexpected(deserializer.current_error());
             }
 
-            pending_key.assign(field.escaped_key());
+            auto key_err = field.unescaped_key(pending_key);
+            if(key_err != simdjson::SUCCESS) {
+                deserializer.mark_invalid(key_err);
+                return std::unexpected(deserializer.current_error());
+            }
             pending_value = std::move(field).value();
             has_pending_value = true;
             return std::optional<std::string_view>{std::string_view(pending_key)};
@@ -589,7 +593,12 @@ private:
     }
 
     status_t skip_value(simdjson::ondemand::value& value) {
-        static_cast<void>(value.raw_json_token());
+        std::string_view raw{};
+        auto err = value.raw_json().get(raw);
+        if(err != simdjson::SUCCESS) {
+            mark_invalid(err);
+            return std::unexpected(current_error());
+        }
         return {};
     }
 
