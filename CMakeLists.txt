@@ -144,13 +144,12 @@ if(EVENTIDE_ENABLE_ZEST)
     set(CPPTRACE_DISABLE_CXX_20_MODULES ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(cpptrace)
 
-    file(GLOB ZEST_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/zest/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/zest/*/*.cpp"
-    )
-
-    add_library(eventide_zest STATIC ${ZEST_SOURCES})
+    add_library(eventide_zest STATIC)
     add_library(eventide::zest ALIAS eventide_zest)
+
+    target_sources(eventide_zest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/zest/runner.cpp"
+    )
 
     target_include_directories(eventide_zest PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -162,15 +161,35 @@ if(EVENTIDE_ENABLE_ZEST)
 endif()
 
 if(EVENTIDE_ENABLE_TEST)
-    file(GLOB TEST_SOURCES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/**/*.cpp"
+    add_executable(unit_tests)
+
+    file(GLOB_RECURSE TEST_SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS
+        "tests/*.cpp"
     )
-    if(NOT EVENTIDE_ENABLE_ASYNC)
-        list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/tests/eventide/.*")
+
+    set(TEST_BASE_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/(main\\.cpp|reflection/.*\\.cpp)$")
+    target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
+
+    if(EVENTIDE_ENABLE_ASYNC)
+        set(TEST_EVENTIDE_SOURCES ${TEST_SOURCES})
+        list(FILTER TEST_EVENTIDE_SOURCES INCLUDE REGEX "^tests/eventide/.*\\.cpp$")
+        target_sources(unit_tests PRIVATE
+            ${TEST_EVENTIDE_SOURCES}
+        )
+    else()
         message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF: skipping tests/eventide/*")
     endif()
-    add_executable(unit_tests ${TEST_SOURCES})
+
+    if(EVENTIDE_SERDE_ENABLE_SIMEJSON)
+        set(TEST_SERDE_SIMDJSON_SOURCES ${TEST_SOURCES})
+        list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/simdjson.*\\.cpp$")
+        target_sources(unit_tests PRIVATE
+            ${TEST_SERDE_SIMDJSON_SOURCES}
+        )
+    else()
+        message(STATUS "EVENTIDE_SERDE_ENABLE_SIMEJSON=OFF: skipping tests/serde/simdjson_tests.cpp")
+    endif()
 
     target_include_directories(unit_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include

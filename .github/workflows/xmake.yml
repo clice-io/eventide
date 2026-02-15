@@ -23,6 +23,7 @@ on:
 
 jobs:
   build:
+    name: ${{ matrix.os }} | simdjson=ON
     strategy:
       fail-fast: false
       matrix:
@@ -50,10 +51,27 @@ jobs:
           activate-environment: true
           cache: true
 
-      - name: Build (debug)
-        run: |
-          pixi run ci-xmake-build debug
+      - name: Configure
+        if: runner.os != 'macOS'
+        run: >
+          xmake config --clean --yes
+          --mode=debug
+          --test=y
+          --dev=y
+          --serde_simdjson=y
 
-      - name: Build (release)
-        run: |
-          pixi run ci-xmake-build release
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: >
+          xmake config --clean --yes
+          --mode=debug
+          --toolchain=clang
+          --test=y
+          --dev=y
+          --serde_simdjson=y
+
+      - name: Build
+        run: xmake --all --verbose --diagnosis
+
+      - name: Test
+        run: xmake test --verbose
