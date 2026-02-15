@@ -14,7 +14,7 @@ template <serializer_like S,
           typename V,
           typename T = typename S::value_type,
           typename E = S::error_type>
-auto serialize(S& s, const V& v) -> std::expected<T, E> {
+constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     using Serde = serialize_traits<S, V>;
 
     if constexpr(requires { Serde::serialize(s, v); }) {

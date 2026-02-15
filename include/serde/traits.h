@@ -3,11 +3,13 @@
 #include <concepts>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <ranges>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace serde {
 

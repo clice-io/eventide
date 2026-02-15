@@ -164,15 +164,15 @@ struct field {
         return field_of<I>(object);
     }
 
-    consteval static std::size_t index() {
+    constexpr static std::size_t index() {
         return I;
     }
 
-    consteval static std::string_view name() {
+    constexpr static std::string_view name() {
         return field_name<I, Object>();
     }
 
-    consteval static std::size_t offset() {
+    constexpr static std::size_t offset() {
         return field_offset<I, Object>();
     }
 };
