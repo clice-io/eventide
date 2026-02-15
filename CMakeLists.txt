@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(EVENTIDE_ENABLE_ASYNC "Enable async eventide target and libuv dependency" ON)
 option(EVENTIDE_ENABLE_TEST "Build unit tests" OFF)
 option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
+option(EVENTIDE_SERDE_ENABLE_SIMEJSON "Enable simdjson dependency for eventide::serde" OFF)
 
 if(EVENTIDE_ENABLE_TEST)
     if(NOT EVENTIDE_ENABLE_ZEST)
@@ -46,6 +47,43 @@ target_include_directories(eventide_serde INTERFACE
 target_link_libraries(eventide_serde INTERFACE
     eventide::reflection
 )
+
+if(EVENTIDE_SERDE_ENABLE_SIMEJSON)
+    # Keep simdjson in "library consumer" mode.
+    set(SIMDJSON_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_DEVELOPER_MODE OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_DEVELOPMENT_CHECKS OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_STATIC_REFLECTION OFF CACHE BOOL "" FORCE)
+
+    # Lock behavior knobs so parent/toolchain cache does not accidentally change them.
+    set(SIMDJSON_ENABLE_THREADS ON CACHE BOOL "" FORCE)
+    set(SIMDJSON_EXCEPTIONS ON CACHE BOOL "" FORCE)
+    set(SIMDJSON_DISABLE_DEPRECATED_API OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_MINUS_ZERO_AS_FLOAT OFF CACHE BOOL "" FORCE)
+
+    # Keep development / sanitizer toggles off.
+    set(SIMDJSON_CHECK_EOF OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_SANITIZE OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_SANITIZE_UNDEFINED OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_SANITIZE_MEMORY OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_SANITIZE_THREADS OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_GLIBCXX_ASSERTIONS OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_USE_LIBCPP OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_VERBOSE_LOGGING OFF CACHE BOOL "" FORCE)
+    set(SIMDJSON_SKIPUTF8VALIDATION OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        simdjson
+        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+        GIT_TAG master
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(simdjson)
+
+    target_link_libraries(eventide_serde INTERFACE
+        simdjson::simdjson
+    )
+endif()
 
 if(EVENTIDE_ENABLE_ASYNC)
     FetchContent_Declare(
@@ -139,6 +177,7 @@ if(EVENTIDE_ENABLE_TEST)
     )
 
     target_link_libraries(unit_tests PRIVATE
+        eventide::serde
         eventide::zest
         cpptrace::cpptrace
     )

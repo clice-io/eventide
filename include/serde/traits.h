@@ -123,6 +123,7 @@ concept serializer_like = requires(S& s,
                                    std::uint64_t u,
                                    double f,
                                    std::string_view text,
+                                   std::span<const std::byte> bytes,
                                    std::optional<std::size_t> len,
                                    std::size_t tuple_len,
                                    const int& key,
@@ -142,7 +143,7 @@ concept serializer_like = requires(S& s,
     { s.serialize_float(f) } -> result_as<T, E>;
     { s.serialize_char(c) } -> result_as<T, E>;
     { s.serialize_str(text) } -> result_as<T, E>;
-    { s.serialize_bytes(text) } -> result_as<T, E>;
+    { s.serialize_bytes(bytes) } -> result_as<T, E>;
 
     { s.serialize_seq(len) } -> result_as<SerializeSeq, E>;
     requires requires(SerializeSeq& s) {
