@@ -25,6 +25,8 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_int(v);
     } else if constexpr(uint_like<V>) {
         return s.serialize_uint(v);
+    } else if constexpr(floating_like<V>) {
+        return s.serialize_float(static_cast<double>(v));
     } else if constexpr(char_like<V>) {
         return s.serialize_char(v);
     } else if constexpr(str_like<V>) {
@@ -33,9 +35,9 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_bytes(v);
     } else if constexpr(is_specialization_of<std::optional, V>) {
         if(v.has_value()) {
-            return s.serialize_none();
-        } else {
             return s.serialize_some(v.value());
+        } else {
+            return s.serialize_none();
         }
     } else if constexpr(is_specialization_of<std::variant, T>) {
         return std::visit([&](auto&& value) { return s.serialize_some(value); }, v);

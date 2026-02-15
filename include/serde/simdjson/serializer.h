@@ -467,6 +467,18 @@ private:
     simdjson::builder::string_builder builder;
 };
 
+template <typename T>
+auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
+    -> std::expected<std::string, simdjson::error_code> {
+    Serializer serializer =
+        initial_capacity.has_value() ? Serializer(*initial_capacity) : Serializer();
+    auto result = serde::serialize(serializer, value);
+    if(!result) {
+        return std::unexpected(result.error());
+    }
+    return serializer.str();
+}
+
 static_assert(serde::serializer_like<Serializer>);
 
 }  // namespace serde::json::simd

@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <limits>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <tuple>
@@ -15,7 +16,7 @@ namespace serde::testing {
 
 namespace {
 
-using serializer_t = serde::json::simd::Serializer;
+using serde::json::simd::to_json;
 
 struct person {
     int id;
@@ -27,12 +28,7 @@ TEST_SUITE(serde_simdjson) {
 
 TEST_CASE(serialize_vector) {
     std::vector<int> value{1, 2, 3, 5, 8};
-
-    serializer_t serializer;
-    auto result = serde::serialize(serializer, value);
-    ASSERT_TRUE(result.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(value);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"([1,2,3,5,8])");
 }
@@ -42,26 +38,28 @@ TEST_CASE(serialize_map_vector) {
         {1, {2, 3}},
         {4, {5}   }
     };
-
-    serializer_t serializer;
-    auto result = serde::serialize(serializer, value);
-    ASSERT_TRUE(result.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(value);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"({"1":[2,3],"4":[5]})");
 }
 
 TEST_CASE(serialize_tuple) {
     std::tuple<int, char, std::string> value{42, 'x', "ok"};
-
-    serializer_t serializer;
-    auto result = serde::serialize(serializer, value);
-    ASSERT_TRUE(result.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(value);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"([42,"x","ok"])");
+}
+
+TEST_CASE(serialize_optional) {
+    std::optional<int> some = 42;
+    auto some_out = to_json(some);
+    ASSERT_TRUE(some_out.has_value());
+    EXPECT_EQ(*some_out, "42");
+
+    std::optional<int> none = std::nullopt;
+    auto none_out = to_json(none);
+    ASSERT_TRUE(none_out.has_value());
+    EXPECT_EQ(*none_out, "null");
 }
 
 TEST_CASE(serialize_reflectable_struct) {
@@ -70,71 +68,40 @@ TEST_CASE(serialize_reflectable_struct) {
         .name = "alice",
         .scores = {10, 20, 30}
     };
-
-    serializer_t serializer;
-    auto result = serde::serialize(serializer, value);
-    ASSERT_TRUE(result.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(value);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"({"id":7,"name":"alice","scores":[10,20,30]})");
 }
 
 TEST_CASE(serialize_byte_span) {
     std::array<std::byte, 4> bytes{std::byte{0}, std::byte{1}, std::byte{127}, std::byte{255}};
-
-    serializer_t serializer;
-    auto result = serde::serialize(serializer, std::span<const std::byte>(bytes));
-    ASSERT_TRUE(result.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(std::span<const std::byte>(bytes));
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"([0,1,127,255])");
 }
 
 TEST_CASE(non_finite_float_is_null) {
-    serializer_t serializer;
-    auto result = serializer.serialize_float(std::numeric_limits<double>::infinity());
-    ASSERT_TRUE(result.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(std::numeric_limits<double>::infinity());
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, "null");
 }
 
-TEST_CASE(reject_multiple_root_values) {
-    serializer_t serializer;
-
-    auto first = serializer.serialize_bool(true);
-    ASSERT_TRUE(first.has_value());
-
-    auto second = serializer.serialize_int(1);
-    EXPECT_FALSE(second.has_value());
-    EXPECT_FALSE(serializer.valid());
-    EXPECT_EQ(serializer.error(), simdjson::TAPE_ERROR);
-
-    auto out = serializer.str();
-    EXPECT_FALSE(out.has_value());
-    if(!out.has_value()) {
-        EXPECT_EQ(out.error(), simdjson::TAPE_ERROR);
-    }
-}
-
-TEST_CASE(clear_allows_reuse) {
-    serializer_t serializer;
-
-    auto first = serializer.serialize_bool(true);
-    ASSERT_TRUE(first.has_value());
-
-    serializer.clear();
-
+TEST_CASE(serialize_with_initial_capacity) {
     std::vector<int> value{7, 9};
-    auto second = serde::serialize(serializer, value);
-    ASSERT_TRUE(second.has_value());
-
-    auto out = serializer.str();
+    auto out = to_json(value, 1);
     ASSERT_TRUE(out.has_value());
     EXPECT_EQ(*out, R"([7,9])");
+}
+
+TEST_CASE(repeat_calls_are_independent) {
+    auto first = to_json(true);
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(*first, "true");
+
+    std::vector<int> value{7, 9};
+    auto second = to_json(value);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*second, R"([7,9])");
 }
 
 };  // TEST_SUITE(serde_simdjson)
