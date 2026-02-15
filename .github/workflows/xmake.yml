@@ -1,32 +1,16 @@
 name: xmake
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/xmake.yml"
-      - "src/**"
-      - "include/**"
-      - "tests/**"
-      - "xmake.lua"
-      - "pixi.toml"
-
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/xmake.yml"
-      - "src/**"
-      - "include/**"
-      - "tests/**"
-      - "xmake.lua"
-      - "pixi.toml"
+  workflow_call:
 
 jobs:
   build:
+    name: ${{ matrix.os }} | mode=${{ matrix.mode }} | simdjson=ON
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2025, ubuntu-24.04, macos-15]
+        mode: [debug, release]
 
     runs-on: ${{ matrix.os }}
 
@@ -39,9 +23,9 @@ jobs:
         with:
           xmake-version: "3.0.5"
           actions-cache-folder: ".xmake-cache"
-          actions-cache-key: ${{ matrix.os }}
+          actions-cache-key: ${{ matrix.os }}-${{ matrix.mode }}
           package-cache: true
-          package-cache-key: ${{ matrix.os }}
+          package-cache-key: ${{ matrix.os }}-${{ matrix.mode }}
 
       - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.3
@@ -50,10 +34,27 @@ jobs:
           activate-environment: true
           cache: true
 
-      - name: Build (debug)
-        run: |
-          pixi run ci-xmake-build debug
+      - name: Configure
+        if: runner.os != 'macOS'
+        run: >
+          xmake config --clean --yes
+          --mode=${{ matrix.mode }}
+          --test=y
+          --dev=y
+          --serde_simdjson=y
 
-      - name: Build (release)
-        run: |
-          pixi run ci-xmake-build release
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: >
+          xmake config --clean --yes
+          --mode=${{ matrix.mode }}
+          --toolchain=clang
+          --test=y
+          --dev=y
+          --serde_simdjson=y
+
+      - name: Build
+        run: xmake --all --verbose --diagnosis
+
+      - name: Test
+        run: xmake test --verbose

@@ -5,6 +5,11 @@ set_allowedplats("windows", "linux", "macosx")
 
 option("dev", { default = true })
 option("test", { default = true })
+option("serde_simdjson", {
+	default = false,
+	showmenu = true,
+	description = "Enable simdjson dependency for serde tests/headers",
+})
 
 if has_config("dev") then
 	-- Don't fetch system package
@@ -45,7 +50,10 @@ end
 
 set_languages("c++23")
 
-add_requires("libuv v1.51.0", "cpptrace v1.0.4")
+add_requires("libuv v1.52.0", "cpptrace v1.0.4")
+if has_config("serde_simdjson") then
+	add_requires("simdjson v4.2.4")
+end
 if has_config("test") and is_plat("windows") then
 	add_requires("unistd_h")
 end
@@ -65,12 +73,21 @@ target("eventide", function()
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/*.h)")
 	add_packages("libuv")
+
+	if has_config("serde_simdjson") then
+		add_packages("simdjson", { public = true })
+	end
 end)
 
 target("unit_tests", function()
 	set_default(false)
 	set_kind("binary")
-	add_files("tests/**.cpp")
+	if has_config("serde_simdjson") then
+		add_files("tests/**.cpp")
+		add_packages("simdjson")
+	else
+		add_files("tests/**.cpp|serde/**.cpp")
+	end
 	add_includedirs("include")
 	add_deps("ztest", "eventide")
 

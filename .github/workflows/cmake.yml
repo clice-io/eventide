@@ -1,32 +1,16 @@
 name: cmake
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/cmake.yml"
-      - "src/**"
-      - "include/**"
-      - "tests/**"
-      - "CMakeLists.txt"
-      - "pixi.toml"
-
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/cmake.yml"
-      - "src/**"
-      - "include/**"
-      - "tests/**"
-      - "CMakeLists.txt"
-      - "pixi.toml"
+  workflow_call:
 
 jobs:
   build:
+    name: ${{ matrix.os }} | ${{ matrix.build_type }} | async=ON | simdjson=ON
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2025, ubuntu-24.04, macos-15]
+        build_type: [Debug, Release]
 
     runs-on: ${{ matrix.os }}
 
@@ -41,40 +25,26 @@ jobs:
           activate-environment: true
           cache: true
 
-      - name: Configure (debug)
-        run: cmake -S . -B build-cmake-debug -DCMAKE_BUILD_TYPE=Debug -DEVENTIDE_ENABLE_TEST=ON
+      - name: Configure
+        run: >
+          cmake -S . -B build-cmake
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DEVENTIDE_ENABLE_TEST=ON
+          -DEVENTIDE_ENABLE_ASYNC=ON
+          -DEVENTIDE_SERDE_ENABLE_SIMDJSON=ON
 
-      - name: Build (debug)
+      - name: Build
         if: runner.os != 'Windows'
-        run: cmake --build build-cmake-debug
+        run: cmake --build build-cmake
 
-      - name: Build (debug, windows)
+      - name: Build (windows)
         if: runner.os == 'Windows'
-        run: cmake --build build-cmake-debug --config Debug
+        run: cmake --build build-cmake --config ${{ matrix.build_type }}
 
-      - name: Test (debug)
+      - name: Test
         if: runner.os != 'Windows'
-        run: ./build-cmake-debug/unit_tests
+        run: ./build-cmake/unit_tests
 
-      - name: Test (debug, windows)
+      - name: Test (windows)
         if: runner.os == 'Windows'
-        run: .\build-cmake-debug\Debug\unit_tests.exe
-
-      - name: Configure (release)
-        run: cmake -S . -B build-cmake-release -DCMAKE_BUILD_TYPE=Release -DEVENTIDE_ENABLE_TEST=ON
-
-      - name: Build (release)
-        if: runner.os != 'Windows'
-        run: cmake --build build-cmake-release
-
-      - name: Build (release, windows)
-        if: runner.os == 'Windows'
-        run: cmake --build build-cmake-release --config Release
-
-      - name: Test (release)
-        if: runner.os != 'Windows'
-        run: ./build-cmake-release/unit_tests
-
-      - name: Test (release, windows)
-        if: runner.os == 'Windows'
-        run: .\build-cmake-release\Release\unit_tests.exe
+        run: .\build-cmake\${{ matrix.build_type }}\unit_tests.exe

@@ -86,6 +86,11 @@ struct reflection<Object> {
 };
 
 template <typename Object>
+consteval std::size_t field_count() {
+    return reflection<Object>::field_count;
+}
+
+template <typename Object>
 constexpr auto field_refs(Object&& object) {
     auto field_addrs = reflection<std::remove_cvref_t<Object>>::field_addrs(object);
     return std::apply(
@@ -109,10 +114,9 @@ consteval const auto& field_names() {
 }
 
 template <typename Object, std::size_t I>
-using field_type =
-    std::remove_pointer_t<std::tuple_element_t<I,
-                                               decltype(reflection<Object>::field_addrs(
-                                                   reflection<Object>::instance.value))>>;
+using field_type = std::remove_pointer_t<std::tuple_element_t<
+    I,
+    decltype(reflection<Object>::field_addrs(detail::ext<detail::uninitialized<Object>>.value))>>;
 
 template <std::size_t I, typename Object>
 constexpr auto field_addr_of(Object&& object) {
@@ -155,19 +159,21 @@ template <std::size_t I, typename Object>
 struct field {
     Object& object;
 
+    using type = field_type<Object, I>;
+
     constexpr auto&& value() {
         return field_of<I>(object);
     }
 
-    consteval static std::size_t index() {
+    constexpr static std::size_t index() {
         return I;
     }
 
-    consteval static std::string_view name() {
+    constexpr static std::string_view name() {
         return field_name<I, Object>();
     }
 
-    consteval static std::size_t offset() {
+    constexpr static std::size_t offset() {
         return field_offset<I, Object>();
     }
 };
@@ -190,5 +196,11 @@ constexpr bool for_each(Object&& object, const Callback& callback) {
         return (foldable(field<Is, T>{object}) && ...);
     }(std::make_index_sequence<reflect::field_count>());
 }
+
+template <typename T>
+concept reflectable_class = requires {
+    requires std::is_class_v<T>;
+    reflection<T>::field_count;
+};
 
 }  // namespace refl

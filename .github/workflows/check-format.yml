@@ -1,11 +1,12 @@
 name: format
 
 on:
-  push:
-    branches: [main]
-
-  pull_request:
-    branches: [main]
+  workflow_call:
+    inputs:
+      is_pull_request:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   check:
@@ -34,7 +35,7 @@ jobs:
         continue-on-error: true
 
       - name: Suggest changes
-        if: github.event_name == 'pull_request'
+        if: ${{ inputs.is_pull_request }}
         uses: reviewdog/action-suggester@v1.24.0
         with:
           tool_name: "fmt"
