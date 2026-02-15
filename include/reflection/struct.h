@@ -86,6 +86,11 @@ struct reflection<Object> {
 };
 
 template <typename Object>
+consteval std::size_t field_count() {
+    return reflection<Object>::field_count;
+}
+
+template <typename Object>
 constexpr auto field_refs(Object&& object) {
     auto field_addrs = reflection<std::remove_cvref_t<Object>>::field_addrs(object);
     return std::apply(
@@ -190,5 +195,11 @@ constexpr bool for_each(Object&& object, const Callback& callback) {
         return (foldable(field<Is, T>{object}) && ...);
     }(std::make_index_sequence<reflect::field_count>());
 }
+
+template <typename T>
+concept reflectable_class = requires {
+    requires std::is_class_v<T>;
+    reflection<T>::field_count;
+};
 
 }  // namespace refl
