@@ -1,5 +1,7 @@
 #pragma once
 
+#include <concepts>
+#include <expected>
 #include <format>
 #include <optional>
 #include <print>
@@ -16,6 +18,9 @@ namespace zest {
 template <typename T>
 concept Formattable = std::formattable<T, char>;
 
+template <typename... Ts>
+constexpr inline bool dependent_false_v = false;
+
 template <typename T>
 struct is_optional : std::false_type {};
 
@@ -26,18 +31,70 @@ template <typename T>
 constexpr inline bool is_optional_v = is_optional<std::remove_cvref_t<T>>::value;
 
 template <typename T>
+struct is_expected : std::false_type {};
+
+template <typename T, typename E>
+struct is_expected<std::expected<T, E>> : std::true_type {};
+
+template <typename T>
+constexpr inline bool is_expected_v = is_expected<std::remove_cvref_t<T>>::value;
+
+template <typename T>
 inline std::string pretty_dump(const T& value) {
     if constexpr(is_optional_v<T>) {
         if(!value) {
             return std::string("nullopt");
         }
         return zest::pretty_dump(*value);
+    } else if constexpr(is_expected_v<T>) {
+        if(value.has_value()) {
+            return std::format("expected({})", zest::pretty_dump(*value));
+        }
+        return std::format("unexpected({})", zest::pretty_dump(value.error()));
     } else {
         if constexpr(Formattable<T>) {
             return std::format("{}", value);
         } else {
             return std::string("<unformattable>");
         }
+    }
+}
+
+template <typename L, typename R>
+inline bool binary_equal(const L& lhs, const R& rhs) {
+    if constexpr(is_expected_v<L> && !is_expected_v<R>) {
+        if(!lhs.has_value()) {
+            return false;
+        }
+        if constexpr(requires {
+                         { *lhs == rhs } -> std::convertible_to<bool>;
+                     }) {
+            return static_cast<bool>(*lhs == rhs);
+        } else {
+            static_assert(dependent_false_v<L, R>,
+                          "EXPECT_EQ/ASSERT_EQ: expected value and rhs are not comparable");
+            return false;
+        }
+    } else if constexpr(!is_expected_v<L> && is_expected_v<R>) {
+        if(!rhs.has_value()) {
+            return false;
+        }
+        if constexpr(requires {
+                         { lhs == *rhs } -> std::convertible_to<bool>;
+                     }) {
+            return static_cast<bool>(lhs == *rhs);
+        } else {
+            static_assert(dependent_false_v<L, R>,
+                          "EXPECT_EQ/ASSERT_EQ: lhs and expected value are not comparable");
+            return false;
+        }
+    } else if constexpr(requires {
+                            { lhs == rhs } -> std::convertible_to<bool>;
+                        }) {
+        return static_cast<bool>(lhs == rhs);
+    } else {
+        static_assert(dependent_false_v<L, R>, "EXPECT_EQ/ASSERT_EQ: operands are not comparable");
+        return false;
     }
 }
 
@@ -136,18 +193,24 @@ inline bool check_throws_failure(bool failure,
 
 #define EXPECT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), (void)0)
 #define EXPECT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), (void)0)
-#define EXPECT_EQ(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, ==, (_lhs) != (_rhs), (void)0)
-#define EXPECT_NE(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, !=, (_lhs) == (_rhs), (void)0)
+#define EXPECT_EQ(lhs, rhs)                                                                        \
+    ZEST_EXPECT_BINARY(lhs, rhs, ==, !::zest::binary_equal(_lhs, _rhs), (void)0)
+#define EXPECT_NE(lhs, rhs)                                                                        \
+    ZEST_EXPECT_BINARY(lhs, rhs, !=, ::zest::binary_equal(_lhs, _rhs), (void)0)
 
 #define ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), return)
 #define ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), return)
-#define ASSERT_EQ(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, ==, (_lhs) != (_rhs), return)
-#define ASSERT_NE(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, !=, (_lhs) == (_rhs), return)
+#define ASSERT_EQ(lhs, rhs)                                                                        \
+    ZEST_EXPECT_BINARY(lhs, rhs, ==, !::zest::binary_equal(_lhs, _rhs), return)
+#define ASSERT_NE(lhs, rhs)                                                                        \
+    ZEST_EXPECT_BINARY(lhs, rhs, !=, ::zest::binary_equal(_lhs, _rhs), return)
 
 #define CO_ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), co_return)
 #define CO_ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), co_return)
-#define CO_ASSERT_EQ(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, ==, (_lhs) != (_rhs), co_return)
-#define CO_ASSERT_NE(lhs, rhs) ZEST_EXPECT_BINARY(lhs, rhs, !=, (_lhs) == (_rhs), co_return)
+#define CO_ASSERT_EQ(lhs, rhs)                                                                     \
+    ZEST_EXPECT_BINARY(lhs, rhs, ==, !::zest::binary_equal(_lhs, _rhs), co_return)
+#define CO_ASSERT_NE(lhs, rhs)                                                                     \
+    ZEST_EXPECT_BINARY(lhs, rhs, !=, ::zest::binary_equal(_lhs, _rhs), co_return)
 
 #ifdef __cpp_exceptions
 

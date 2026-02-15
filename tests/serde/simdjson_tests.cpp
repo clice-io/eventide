@@ -49,8 +49,7 @@ TEST_SUITE(serde_simdjson) {
 TEST_CASE(serialize_vector) {
     std::vector<int> value{1, 2, 3, 5, 8};
     auto out = to_json(value);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"([1,2,3,5,8])");
+    ASSERT_EQ(out, R"([1,2,3,5,8])");
 }
 
 TEST_CASE(deserialize_vector) {
@@ -66,8 +65,7 @@ TEST_CASE(serialize_map_vector) {
         {4, {5}   }
     };
     auto out = to_json(value);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"({"1":[2,3],"4":[5]})");
+    ASSERT_EQ(out, R"({"1":[2,3],"4":[5]})");
 }
 
 TEST_CASE(deserialize_map_vector) {
@@ -84,8 +82,7 @@ TEST_CASE(deserialize_map_vector) {
 TEST_CASE(serialize_tuple) {
     std::tuple<int, char, std::string> value{42, 'x', "ok"};
     auto out = to_json(value);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"([42,"x","ok"])");
+    ASSERT_EQ(out, R"([42,"x","ok"])");
 }
 
 TEST_CASE(deserialize_tuple) {
@@ -100,25 +97,21 @@ TEST_CASE(deserialize_tuple) {
 TEST_CASE(serialize_optional) {
     std::optional<int> some = 42;
     auto some_out = to_json(some);
-    ASSERT_TRUE(some_out.has_value());
-    EXPECT_EQ(*some_out, "42");
+    ASSERT_EQ(some_out, "42");
 
     std::optional<int> none = std::nullopt;
     auto none_out = to_json(none);
-    ASSERT_TRUE(none_out.has_value());
-    EXPECT_EQ(*none_out, "null");
+    ASSERT_EQ(none_out, "null");
 }
 
 TEST_CASE(serialize_variant) {
     std::variant<int, std::string> as_int = 42;
     auto int_out = to_json(as_int);
-    ASSERT_TRUE(int_out.has_value());
-    EXPECT_EQ(*int_out, "42");
+    ASSERT_EQ(int_out, "42");
 
     std::variant<int, std::string> as_string = std::string("ok");
     auto string_out = to_json(as_string);
-    ASSERT_TRUE(string_out.has_value());
-    EXPECT_EQ(*string_out, R"("ok")");
+    ASSERT_EQ(string_out, R"("ok")");
 }
 
 TEST_CASE(serialize_reflectable_struct) {
@@ -128,8 +121,7 @@ TEST_CASE(serialize_reflectable_struct) {
         .scores = {10, 20, 30}
     };
     auto out = to_json(value);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"({"id":7,"name":"alice","scores":[10,20,30]})");
+    ASSERT_EQ(out, R"({"id":7,"name":"alice","scores":[10,20,30]})");
 }
 
 TEST_CASE(deserialize_reflectable_struct) {
@@ -150,8 +142,7 @@ TEST_CASE(serialize_annotated_fields) {
     static_cast<std::optional<std::string>&>(value.note) = std::nullopt;
 
     auto out = to_json(value);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"({"id":7,"displayName":"alice"})");
+    ASSERT_EQ(out, R"({"id":7,"displayName":"alice"})");
 }
 
 TEST_CASE(deserialize_annotated_fields) {
@@ -165,8 +156,7 @@ TEST_CASE(deserialize_annotated_fields) {
     EXPECT_EQ(static_cast<const int&>(value.internal_id), 41);
 
     const auto& note = static_cast<const std::optional<std::string>&>(value.note);
-    ASSERT_TRUE(note.has_value());
-    EXPECT_EQ(*note, "ok");
+    ASSERT_EQ(note, "ok");
 }
 
 TEST_CASE(serialize_flattened_field) {
@@ -177,8 +167,7 @@ TEST_CASE(serialize_flattened_field) {
     point.y = 3;
 
     auto out = to_json(value);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"({"id":1,"x":2,"y":3})");
+    ASSERT_EQ(out, R"({"id":1,"x":2,"y":3})");
 }
 
 TEST_CASE(deserialize_flattened_field) {
@@ -196,8 +185,7 @@ TEST_CASE(deserialize_flattened_field) {
 TEST_CASE(serialize_byte_span) {
     std::array<std::byte, 4> bytes{std::byte{0}, std::byte{1}, std::byte{127}, std::byte{255}};
     auto out = to_json(std::span<const std::byte>(bytes));
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"([0,1,127,255])");
+    ASSERT_EQ(out, R"([0,1,127,255])");
 }
 
 TEST_CASE(deserialize_byte_vector) {
@@ -213,32 +201,27 @@ TEST_CASE(deserialize_byte_vector) {
 
 TEST_CASE(non_finite_float_is_null) {
     auto out = to_json(std::numeric_limits<double>::infinity());
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, "null");
+    ASSERT_EQ(out, "null");
 }
 
 TEST_CASE(serialize_with_initial_capacity) {
     std::vector<int> value{7, 9};
     auto out = to_json(value, 1);
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, R"([7,9])");
+    ASSERT_EQ(out, R"([7,9])");
 }
 
 TEST_CASE(repeat_calls_are_independent) {
     auto first = to_json(true);
-    ASSERT_TRUE(first.has_value());
-    EXPECT_EQ(*first, "true");
+    ASSERT_EQ(first, "true");
 
     std::vector<int> value{7, 9};
     auto second = to_json(value);
-    ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*second, R"([7,9])");
+    ASSERT_EQ(second, R"([7,9])");
 }
 
 TEST_CASE(deserialize_return_value_overload) {
     auto out = from_json<std::vector<int>>(R"([7,9])");
-    ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(*out, std::vector<int>({7, 9}));
+    ASSERT_EQ(out, std::vector<int>({7, 9}));
 }
 
 };  // TEST_SUITE(serde_simdjson)
