@@ -31,6 +31,14 @@ auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_str(v);
     } else if constexpr(bytes_like<V>) {
         return s.serialize_bytes(v);
+    } else if constexpr(is_specialization_of<std::optional, V>) {
+        if(v.has_value()) {
+            return s.serialize_none();
+        } else {
+            return s.serialize_some(v.value());
+        }
+    } else if constexpr(is_specialization_of<std::variant, T>) {
+        return std::visit([&](auto&& value) { return s.serialize_some(value); }, v);
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {

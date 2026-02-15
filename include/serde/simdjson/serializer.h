@@ -269,7 +269,7 @@ public:
     }
 
 private:
-    enum class container_kind { array, object };
+    enum class container_kind : std::uint8_t { array, object };
 
     struct container_frame {
         container_kind kind;

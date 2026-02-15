@@ -129,13 +129,7 @@ concept serializer_like = requires(S& s,
                                    const int& key,
                                    const int& value) {
     { s.serialize_none() } -> result_as<T, E>;
-    requires (
-        requires {
-            { s.serialize_some(i) } -> result_as<T, E>;
-        } ||
-        requires {
-            { s.serialize_some(i) } -> std::same_as<void>;
-        });
+    { s.serialize_some(i) } -> result_as<T, E>;
 
     { s.serialize_bool(b) } -> result_as<T, E>;
     { s.serialize_int(i) } -> result_as<T, E>;
