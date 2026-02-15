@@ -9,20 +9,20 @@ namespace serde {
 
 // Wrap or inherit depending on whether T is an aggregate class.
 template <typename T>
-concept warp_type = !std::is_class_v<T> || std::is_final_v<T>;
+concept wrap_type = !std::is_class_v<T> || std::is_final_v<T>;
 
 // Aggregate class that can be inherited without losing aggregate-ness.
 template <typename T>
-concept inherit_type = std::is_aggregate_v<T> && !warp_type<T>;
+concept inherit_type = std::is_aggregate_v<T> && !wrap_type<T>;
 
 // Non-aggregate class where inheriting and reusing constructors is desired.
 template <typename T>
-concept inherit_use_type = !std::is_aggregate_v<T> && !warp_type<T>;
+concept inherit_use_type = !std::is_aggregate_v<T> && !wrap_type<T>;
 
 template <typename T, typename... Attrs>
 struct annotate;
 
-template <warp_type T, typename... Attrs>
+template <wrap_type T, typename... Attrs>
 struct annotate<T, Attrs...> {
     T value;
 
