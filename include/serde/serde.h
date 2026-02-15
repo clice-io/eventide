@@ -39,7 +39,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         } else {
             return s.serialize_none();
         }
-    } else if constexpr(is_specialization_of<std::variant, T>) {
+    } else if constexpr(is_specialization_of<std::variant, V>) {
         return std::visit([&](auto&& value) { return s.serialize_some(value); }, v);
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;

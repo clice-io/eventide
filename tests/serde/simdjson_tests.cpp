@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 #include "zest/zest.h"
@@ -60,6 +61,18 @@ TEST_CASE(serialize_optional) {
     auto none_out = to_json(none);
     ASSERT_TRUE(none_out.has_value());
     EXPECT_EQ(*none_out, "null");
+}
+
+TEST_CASE(serialize_variant) {
+    std::variant<int, std::string> as_int = 42;
+    auto int_out = to_json(as_int);
+    ASSERT_TRUE(int_out.has_value());
+    EXPECT_EQ(*int_out, "42");
+
+    std::variant<int, std::string> as_string = std::string("ok");
+    auto string_out = to_json(as_string);
+    ASSERT_TRUE(string_out.has_value());
+    EXPECT_EQ(*string_out, R"("ok")");
 }
 
 TEST_CASE(serialize_reflectable_struct) {
