@@ -7,11 +7,13 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace serde {
 
@@ -165,6 +167,67 @@ concept serializer_like = requires(S& s,
     requires requires(SerializeStruct& s) {
         { s.serialize_field(text, value) } -> result_as<void, E>;
         { s.end() } -> result_as<T, E>;
+    };
+};
+
+template <typename D,
+          typename E = typename D::error_type,
+          typename DeserializeSeq = typename D::DeserializeSeq,
+          typename DeserializeTuple = typename D::DeserializeTuple,
+          typename DeserializeMap = typename D::DeserializeMap,
+          typename DeserializeStruct = typename D::DeserializeStruct>
+concept deserializer_like = requires(D& d,
+                                     bool& b,
+                                     char& c,
+                                     std::int64_t& i64,
+                                     std::uint64_t& u64,
+                                     double& f64,
+                                     std::string& text,
+                                     std::vector<std::byte>& bytes,
+                                     std::optional<std::size_t> len,
+                                     std::size_t tuple_len,
+                                     std::string_view name,
+                                     int& value) {
+    { d.deserialize_none() } -> result_as<bool, E>;
+    { d.deserialize_some(value) } -> result_as<void, E>;
+
+    { d.deserialize_bool(b) } -> result_as<void, E>;
+    { d.deserialize_int(i64) } -> result_as<void, E>;
+    { d.deserialize_uint(u64) } -> result_as<void, E>;
+    { d.deserialize_float(f64) } -> result_as<void, E>;
+    { d.deserialize_char(c) } -> result_as<void, E>;
+    { d.deserialize_str(text) } -> result_as<void, E>;
+    { d.deserialize_bytes(bytes) } -> result_as<void, E>;
+
+    { d.deserialize_seq(len) } -> result_as<DeserializeSeq, E>;
+    requires requires(DeserializeSeq& s) {
+        { s.has_next() } -> result_as<bool, E>;
+        { s.deserialize_element(value) } -> result_as<void, E>;
+        { s.skip_element() } -> result_as<void, E>;
+        { s.end() } -> result_as<void, E>;
+    };
+
+    { d.deserialize_tuple(tuple_len) } -> result_as<DeserializeTuple, E>;
+    requires requires(DeserializeTuple& s) {
+        { s.deserialize_element(value) } -> result_as<void, E>;
+        { s.skip_element() } -> result_as<void, E>;
+        { s.end() } -> result_as<void, E>;
+    };
+
+    { d.deserialize_map(len) } -> result_as<DeserializeMap, E>;
+    requires requires(DeserializeMap& s) {
+        { s.next_key() } -> result_as<std::optional<std::string_view>, E>;
+        { s.deserialize_value(value) } -> result_as<void, E>;
+        { s.skip_value() } -> result_as<void, E>;
+        { s.end() } -> result_as<void, E>;
+    };
+
+    { d.deserialize_struct(name, tuple_len) } -> result_as<DeserializeStruct, E>;
+    requires requires(DeserializeStruct& s) {
+        { s.next_key() } -> result_as<std::optional<std::string_view>, E>;
+        { s.deserialize_value(value) } -> result_as<void, E>;
+        { s.skip_value() } -> result_as<void, E>;
+        { s.end() } -> result_as<void, E>;
     };
 };
 
