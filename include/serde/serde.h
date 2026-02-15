@@ -79,6 +79,269 @@ constexpr bool insert_map_entry(Map& map, Key&& key, Mapped&& value) {
     }
 }
 
+template <typename T>
+concept annotated_field_type = requires {
+    typename std::remove_cvref_t<T>::annotated_type;
+    typename std::remove_cvref_t<T>::attrs;
+};
+
+struct attr_traits_base {
+    constexpr static bool skip = false;
+    constexpr static bool flatten = false;
+    constexpr static bool rename = false;
+    constexpr static std::string_view rename_name{};
+
+    constexpr static bool matches_alias(std::string_view) {
+        return false;
+    }
+
+    template <typename Value>
+    constexpr static bool should_skip(const Value&, bool) {
+        return false;
+    }
+};
+
+template <typename Attr>
+struct attr_traits : attr_traits_base {
+    constexpr static bool skip = std::is_same_v<Attr, attr::skip>;
+    constexpr static bool flatten = std::is_same_v<Attr, attr::flatten>;
+};
+
+template <fixed_string Name>
+struct attr_traits<attr::rename<Name>> : attr_traits_base {
+    constexpr static bool rename = true;
+    constexpr static std::string_view rename_name = Name;
+};
+
+template <fixed_string... Names>
+struct attr_traits<attr::alias<Names...>> : attr_traits_base {
+    constexpr static bool matches_alias(std::string_view key_name) {
+        for(auto alias_name: attr::alias<Names...>::names) {
+            if(alias_name == key_name) {
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
+template <typename Pred>
+struct attr_traits<attr::skip_if<Pred>> : attr_traits_base {
+    template <typename Value>
+    constexpr static bool should_skip(const Value& value, bool is_serialize) {
+        if constexpr(requires {
+                         { Pred{}(value, is_serialize) } -> std::convertible_to<bool>;
+                     }) {
+            return static_cast<bool>(Pred{}(value, is_serialize));
+        } else if constexpr(requires {
+                                { Pred{}(value) } -> std::convertible_to<bool>;
+                            }) {
+            return static_cast<bool>(Pred{}(value));
+        } else {
+            static_assert(
+                dependent_false<Pred>,
+                "attr::skip_if predicate must return bool and accept (const Value&, bool) or (const Value&)");
+            return false;
+        }
+    }
+};
+
+template <typename AttrTuple>
+struct annotated_attr_metadata;
+
+template <typename... Attrs>
+struct annotated_attr_metadata<std::tuple<Attrs...>> {
+    constexpr static bool skip = (false || ... || attr_traits<Attrs>::skip);
+    constexpr static bool flatten = (false || ... || attr_traits<Attrs>::flatten);
+    constexpr static bool has_rename = (false || ... || attr_traits<Attrs>::rename);
+
+    constexpr static std::string_view rename_name = []() constexpr {
+        std::string_view out{};
+        if constexpr(sizeof...(Attrs) > 0) {
+            (([&] {
+                 if constexpr(attr_traits<Attrs>::rename) {
+                     out = attr_traits<Attrs>::rename_name;
+                 }
+             }()),
+             ...);
+        }
+        return out;
+    }();
+
+    constexpr static std::string_view serialized_name(std::string_view default_name) {
+        if constexpr(has_rename) {
+            return rename_name;
+        } else {
+            return default_name;
+        }
+    }
+
+    constexpr static bool matches_key(std::string_view key_name, std::string_view default_name) {
+        bool rename_matched = false;
+        if constexpr(sizeof...(Attrs) > 0) {
+            (([&] {
+                 if constexpr(attr_traits<Attrs>::rename) {
+                     rename_matched =
+                         rename_matched || (attr_traits<Attrs>::rename_name == key_name);
+                 }
+             }()),
+             ...);
+        }
+        if(rename_matched) {
+            return true;
+        }
+
+        const bool alias_matched = (false || ... || attr_traits<Attrs>::matches_alias(key_name));
+        return alias_matched || (!has_rename && key_name == default_name);
+    }
+
+    template <typename Value>
+    constexpr static bool should_skip_serialize(const Value& value) {
+        if constexpr(skip) {
+            return true;
+        } else {
+            return (false || ... || attr_traits<Attrs>::template should_skip<Value>(value, true));
+        }
+    }
+
+    template <typename Value>
+    constexpr static bool should_skip_deserialize(const Value& value) {
+        if constexpr(skip) {
+            return true;
+        } else {
+            return (false || ... || attr_traits<Attrs>::template should_skip<Value>(value, false));
+        }
+    }
+};
+
+template <annotated_field_type FieldType>
+struct annotated_field_metadata :
+    annotated_attr_metadata<typename std::remove_cvref_t<FieldType>::attrs> {};
+
+template <annotated_field_type FieldType, typename Value>
+constexpr decltype(auto) annotated_value(Value&& value) {
+    using annotate_t = std::remove_cvref_t<FieldType>;
+    using underlying_t = typename annotate_t::annotated_type;
+    if constexpr(std::is_const_v<std::remove_reference_t<Value>>) {
+        return static_cast<const underlying_t&>(value);
+    } else {
+        return static_cast<underlying_t&>(value);
+    }
+}
+
+template <typename E, typename SerializeStruct, typename Field>
+constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
+    -> std::expected<void, E> {
+    using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+
+    if constexpr(!annotated_field_type<field_t>) {
+        return s_struct.serialize_field(field.name(), field.value());
+    } else {
+        using meta = annotated_field_metadata<field_t>;
+
+        if constexpr(meta::skip) {
+            return {};
+        } else {
+            auto&& value = annotated_value<field_t>(field.value());
+            if(meta::should_skip_serialize(value)) {
+                return {};
+            }
+
+            if constexpr(meta::flatten) {
+                using nested_t = std::remove_cvref_t<decltype(value)>;
+                static_assert(refl::reflectable_class<nested_t>,
+                              "attr::flatten requires a reflectable class field type");
+
+                std::expected<void, E> nested_result;
+                refl::for_each(value, [&](auto nested_field) {
+                    auto status = serialize_struct_field<E>(s_struct, nested_field);
+                    if(!status) {
+                        nested_result = std::unexpected(status.error());
+                        return false;
+                    }
+                    return true;
+                });
+                return nested_result;
+            }
+
+            return s_struct.serialize_field(meta::serialized_name(field.name()), value);
+        }
+    }
+}
+
+template <typename E, typename DeserializeStruct, typename Field>
+constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
+                                        std::string_view key_name,
+                                        Field field) -> std::expected<bool, E> {
+    using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+
+    if constexpr(!annotated_field_type<field_t>) {
+        if(field.name() != key_name) {
+            return false;
+        }
+
+        auto result = d_struct.deserialize_value(field.value());
+        if(!result) {
+            return std::unexpected(result.error());
+        }
+        return true;
+    } else {
+        using meta = annotated_field_metadata<field_t>;
+
+        if constexpr(meta::skip) {
+            return false;
+        } else {
+            auto&& value = annotated_value<field_t>(field.value());
+            if constexpr(meta::flatten) {
+                if(meta::should_skip_deserialize(value)) {
+                    return false;
+                }
+
+                using nested_t = std::remove_cvref_t<decltype(value)>;
+                static_assert(refl::reflectable_class<nested_t>,
+                              "attr::flatten requires a reflectable class field type");
+
+                std::expected<void, E> nested_error;
+                bool matched = false;
+                refl::for_each(value, [&](auto nested_field) {
+                    auto status = deserialize_struct_field<E>(d_struct, key_name, nested_field);
+                    if(!status) {
+                        nested_error = std::unexpected(status.error());
+                        return false;
+                    }
+                    if(*status) {
+                        matched = true;
+                        return false;
+                    }
+                    return true;
+                });
+                if(!nested_error) {
+                    return std::unexpected(nested_error.error());
+                }
+                return matched;
+            }
+
+            if(!meta::matches_key(key_name, field.name())) {
+                return false;
+            }
+
+            if(meta::should_skip_deserialize(value)) {
+                auto skipped = d_struct.skip_value();
+                if(!skipped) {
+                    return std::unexpected(skipped.error());
+                }
+                return true;
+            }
+
+            auto result = d_struct.deserialize_value(value);
+            if(!result) {
+                return std::unexpected(result.error());
+            }
+            return true;
+        }
+    }
+}
+
 }  // namespace detail
 
 template <serializer_like S,
@@ -184,7 +447,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
         std::expected<void, E> field_result;
         refl::for_each(v, [&](auto field) {
-            auto result = s_struct->serialize_field(field.name(), field.value());
+            auto result = detail::serialize_struct_field<E>(*s_struct, field);
             if(!result) {
                 field_result = std::unexpected(result.error());
                 return false;
@@ -374,16 +637,15 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             std::expected<void, E> field_result;
 
             refl::for_each(v, [&](auto field) {
-                if(field.name() != key_name) {
-                    return true;
+                auto status = detail::deserialize_struct_field<E>(*d_struct, key_name, field);
+                if(!status) {
+                    field_result = std::unexpected(status.error());
+                    return false;
                 }
-
-                matched = true;
-                auto result = d_struct->deserialize_value(field.value());
-                if(!result) {
-                    field_result = std::unexpected(result.error());
+                if(*status) {
+                    matched = true;
                 }
-                return false;
+                return !matched;
             });
 
             if(!field_result) {

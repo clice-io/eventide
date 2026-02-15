@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -105,5 +106,71 @@ template <typename Pred>
 struct skip_if {};
 
 }  // namespace attr
+
+namespace pred {
+
+struct optional_none {
+    template <typename T>
+    constexpr bool operator()(const std::optional<T>& value, bool is_serialize) const {
+        return is_serialize && !value.has_value();
+    }
+};
+
+struct empty {
+    template <typename T>
+    constexpr bool operator()(const T& value, bool is_serialize) const {
+        if constexpr(requires { value.empty(); }) {
+            return is_serialize && value.empty();
+        } else {
+            return false;
+        }
+    }
+};
+
+struct default_value {
+    template <typename T>
+    constexpr bool operator()(const T& value, bool is_serialize) const {
+        if constexpr(requires {
+                         T{};
+                         value == T{};
+                     }) {
+            return is_serialize && static_cast<bool>(value == T{});
+        } else {
+            return false;
+        }
+    }
+};
+
+}  // namespace pred
+
+template <typename T>
+using skip = annotate<T, attr::skip>;
+
+template <typename T>
+using flatten = annotate<T, attr::flatten>;
+
+template <typename T, fixed_string Name>
+using literal = annotate<T, attr::literal<Name>>;
+
+template <typename T, fixed_string Name>
+using rename = annotate<T, attr::rename<Name>>;
+
+template <typename T, fixed_string Name, fixed_string... AliasNames>
+using rename_alias = annotate<T, attr::rename<Name>, attr::alias<AliasNames...>>;
+
+template <typename T, fixed_string... Names>
+using alias = annotate<T, attr::alias<Names...>>;
+
+template <typename T, typename Pred>
+using skip_if = annotate<T, attr::skip_if<Pred>>;
+
+template <typename T>
+using skip_if_none = annotate<std::optional<T>, attr::skip_if<pred::optional_none>>;
+
+template <typename T>
+using skip_if_empty = annotate<T, attr::skip_if<pred::empty>>;
+
+template <typename T>
+using skip_if_default = annotate<T, attr::skip_if<pred::default_value>>;
 
 }  // namespace serde

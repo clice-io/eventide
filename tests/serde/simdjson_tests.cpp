@@ -27,6 +27,23 @@ struct person {
     std::vector<int> scores;
 };
 
+struct annotated_person {
+    int id;
+    serde::rename_alias<std::string, "displayName", "name"> name;
+    serde::skip<int> internal_id;
+    serde::skip_if_none<std::string> note;
+};
+
+struct point2d {
+    int x;
+    int y;
+};
+
+struct flattened_payload {
+    int id;
+    serde::flatten<point2d> point;
+};
+
 TEST_SUITE(serde_simdjson) {
 
 TEST_CASE(serialize_vector) {
@@ -123,6 +140,57 @@ TEST_CASE(deserialize_reflectable_struct) {
     EXPECT_EQ(value.id, 7);
     EXPECT_EQ(value.name, "alice");
     EXPECT_EQ(value.scores, std::vector<int>({10, 20, 30}));
+}
+
+TEST_CASE(serialize_annotated_fields) {
+    annotated_person value{};
+    value.id = 7;
+    static_cast<std::string&>(value.name) = "alice";
+    static_cast<int&>(value.internal_id) = 100;
+    static_cast<std::optional<std::string>&>(value.note) = std::nullopt;
+
+    auto out = to_json(value);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(*out, R"({"id":7,"displayName":"alice"})");
+}
+
+TEST_CASE(deserialize_annotated_fields) {
+    annotated_person value{};
+    static_cast<int&>(value.internal_id) = 41;
+
+    auto status = from_json(R"({"id":8,"name":"bob","internal_id":100,"note":"ok"})", value);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(value.id, 8);
+    EXPECT_EQ(static_cast<const std::string&>(value.name), "bob");
+    EXPECT_EQ(static_cast<const int&>(value.internal_id), 41);
+
+    const auto& note = static_cast<const std::optional<std::string>&>(value.note);
+    ASSERT_TRUE(note.has_value());
+    EXPECT_EQ(*note, "ok");
+}
+
+TEST_CASE(serialize_flattened_field) {
+    flattened_payload value{};
+    value.id = 1;
+    auto& point = static_cast<point2d&>(value.point);
+    point.x = 2;
+    point.y = 3;
+
+    auto out = to_json(value);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(*out, R"({"id":1,"x":2,"y":3})");
+}
+
+TEST_CASE(deserialize_flattened_field) {
+    flattened_payload value{};
+
+    auto status = from_json(R"({"id":4,"x":10,"y":20})", value);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(value.id, 4);
+
+    const auto& point = static_cast<const point2d&>(value.point);
+    EXPECT_EQ(point.x, 10);
+    EXPECT_EQ(point.y, 20);
 }
 
 TEST_CASE(serialize_byte_span) {
