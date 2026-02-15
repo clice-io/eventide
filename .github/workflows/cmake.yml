@@ -1,33 +1,16 @@
 name: cmake
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/cmake.yml"
-      - "src/**"
-      - "include/**"
-      - "tests/**"
-      - "CMakeLists.txt"
-      - "pixi.toml"
-
-  pull_request:
-    branches: [main]
-    paths:
-      - ".github/workflows/cmake.yml"
-      - "src/**"
-      - "include/**"
-      - "tests/**"
-      - "CMakeLists.txt"
-      - "pixi.toml"
+  workflow_call:
 
 jobs:
   build:
-    name: ${{ matrix.os }} | async=ON | simdjson=ON
+    name: ${{ matrix.os }} | ${{ matrix.build_type }} | async=ON | simdjson=ON
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2025, ubuntu-24.04, macos-15]
+        build_type: [Debug, Release]
 
     runs-on: ${{ matrix.os }}
 
@@ -45,7 +28,7 @@ jobs:
       - name: Configure
         run: >
           cmake -S . -B build-cmake
-          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DEVENTIDE_ENABLE_TEST=ON
           -DEVENTIDE_ENABLE_ASYNC=ON
           -DEVENTIDE_SERDE_ENABLE_SIMDJSON=ON
@@ -56,7 +39,7 @@ jobs:
 
       - name: Build (windows)
         if: runner.os == 'Windows'
-        run: cmake --build build-cmake --config Debug
+        run: cmake --build build-cmake --config ${{ matrix.build_type }}
 
       - name: Test
         if: runner.os != 'Windows'
@@ -64,4 +47,4 @@ jobs:
 
       - name: Test (windows)
         if: runner.os == 'Windows'
-        run: .\build-cmake\Debug\unit_tests.exe
+        run: .\build-cmake\${{ matrix.build_type }}\unit_tests.exe
