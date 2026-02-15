@@ -1,10 +1,12 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>

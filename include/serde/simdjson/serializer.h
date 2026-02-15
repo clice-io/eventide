@@ -18,7 +18,7 @@
 #if __has_include(<simdjson.h>)
 #include <simdjson.h>
 #else
-#error "simdjson.h not found. Enable EVENTIDE_SERDE_ENABLE_SIMEJSON or add simdjson include paths."
+#error "simdjson.h not found. Enable EVENTIDE_SERDE_ENABLE_SIMDJSON or add simdjson include paths."
 #endif
 
 namespace serde::json::simd {

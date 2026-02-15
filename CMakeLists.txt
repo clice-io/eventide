@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(EVENTIDE_ENABLE_ASYNC "Enable async eventide target and libuv dependency" ON)
 option(EVENTIDE_ENABLE_TEST "Build unit tests" OFF)
 option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
-option(EVENTIDE_SERDE_ENABLE_SIMEJSON "Enable simdjson dependency for eventide::serde" OFF)
+option(EVENTIDE_SERDE_ENABLE_SIMDJSON "Enable simdjson dependency for eventide::serde" OFF)
 
 if(EVENTIDE_ENABLE_TEST)
     if(NOT EVENTIDE_ENABLE_ZEST)
@@ -48,7 +48,7 @@ target_link_libraries(eventide_serde INTERFACE
     eventide::reflection
 )
 
-if(EVENTIDE_SERDE_ENABLE_SIMEJSON)
+if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     # Keep simdjson in "library consumer" mode.
     set(SIMDJSON_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
     set(SIMDJSON_DEVELOPER_MODE OFF CACHE BOOL "" FORCE)
@@ -75,7 +75,7 @@ if(EVENTIDE_SERDE_ENABLE_SIMEJSON)
     FetchContent_Declare(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_TAG master
+        GIT_TAG v4.2.4
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(simdjson)
@@ -89,7 +89,7 @@ if(EVENTIDE_ENABLE_ASYNC)
     FetchContent_Declare(
         libuv
         GIT_REPOSITORY https://github.com/libuv/libuv.git
-        GIT_TAG v1.x
+        GIT_TAG v1.52.0
         GIT_SHALLOW TRUE
 
     )
@@ -181,14 +181,14 @@ if(EVENTIDE_ENABLE_TEST)
         message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF: skipping tests/eventide/*")
     endif()
 
-    if(EVENTIDE_SERDE_ENABLE_SIMEJSON)
+    if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
         set(TEST_SERDE_SIMDJSON_SOURCES ${TEST_SOURCES})
         list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/simdjson.*\\.cpp$")
         target_sources(unit_tests PRIVATE
             ${TEST_SERDE_SIMDJSON_SOURCES}
         )
     else()
-        message(STATUS "EVENTIDE_SERDE_ENABLE_SIMEJSON=OFF: skipping tests/serde/simdjson_tests.cpp")
+        message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/simdjson_tests.cpp")
     endif()
 
     target_include_directories(unit_tests PRIVATE

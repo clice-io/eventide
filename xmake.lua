@@ -50,9 +50,9 @@ end
 
 set_languages("c++23")
 
-add_requires("libuv v1.51.0", "cpptrace v1.0.4")
+add_requires("libuv v1.52.0", "cpptrace v1.0.4")
 if has_config("serde_simdjson") then
-	add_requires("simdjson v4.1.0")
+	add_requires("simdjson v4.2.4")
 end
 if has_config("test") and is_plat("windows") then
 	add_requires("unistd_h")

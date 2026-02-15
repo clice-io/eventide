@@ -48,7 +48,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DEVENTIDE_ENABLE_TEST=ON
           -DEVENTIDE_ENABLE_ASYNC=ON
-          -DEVENTIDE_SERDE_ENABLE_SIMEJSON=ON
+          -DEVENTIDE_SERDE_ENABLE_SIMDJSON=ON
 
       - name: Build
         if: runner.os != 'Windows'

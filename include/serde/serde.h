@@ -44,12 +44,17 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
-            auto s_seq = s.serialize_seq(std::ranges::size(v));
+            std::optional<std::size_t> len = std::nullopt;
+            if constexpr(std::ranges::sized_range<V>) {
+                len = static_cast<std::size_t>(std::ranges::size(v));
+            }
+
+            auto s_seq = s.serialize_seq(len);
             if(!s_seq) {
                 return std::unexpected(s_seq.error());
             }
 
-            for(auto& e: v) {
+            for(auto&& e: v) {
                 auto element = s_seq->serialize_element(e);
                 if(!element) {
                     return std::unexpected(element.error());
@@ -58,12 +63,17 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
             return s_seq->end();
         } else if constexpr(kind == range_format::map) {
-            auto s_map = s.serialize_map(std::ranges::size(v));
+            std::optional<std::size_t> len = std::nullopt;
+            if constexpr(std::ranges::sized_range<V>) {
+                len = static_cast<std::size_t>(std::ranges::size(v));
+            }
+
+            auto s_map = s.serialize_map(len);
             if(!s_map) {
                 return std::unexpected(s_map.error());
             }
 
-            for(auto& [key, value]: v) {
+            for(auto&& [key, value]: v) {
                 auto entry = s_map->serialize_entry(key, value);
                 if(!entry) {
                     return std::unexpected(entry.error());
