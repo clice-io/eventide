@@ -183,7 +183,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         }
 
         std::expected<void, E> field_result;
-        refl::for_each(v, [&](auto&& field) {
+        refl::for_each(v, [&](auto field) {
             auto result = s_struct->serialize_field(field.name(), field.value());
             if(!result) {
                 field_result = std::unexpected(result.error());
@@ -373,7 +373,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             bool matched = false;
             std::expected<void, E> field_result;
 
-            refl::for_each(v, [&](auto&& field) {
+            refl::for_each(v, [&](auto field) {
                 if(field.name() != key_name) {
                     return true;
                 }

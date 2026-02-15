@@ -114,10 +114,9 @@ consteval const auto& field_names() {
 }
 
 template <typename Object, std::size_t I>
-using field_type =
-    std::remove_pointer_t<std::tuple_element_t<I,
-                                               decltype(reflection<Object>::field_addrs(
-                                                   reflection<Object>::instance.value))>>;
+using field_type = std::remove_pointer_t<std::tuple_element_t<
+    I,
+    decltype(reflection<Object>::field_addrs(detail::ext<detail::uninitialized<Object>>.value))>>;
 
 template <std::size_t I, typename Object>
 constexpr auto field_addr_of(Object&& object) {
@@ -159,6 +158,8 @@ consteval auto field_offset() noexcept -> std::size_t {
 template <std::size_t I, typename Object>
 struct field {
     Object& object;
+
+    using type = field_type<Object, I>;
 
     constexpr auto&& value() {
         return field_of<I>(object);
