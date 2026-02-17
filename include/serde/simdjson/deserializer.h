@@ -199,6 +199,11 @@ public:
             return std::optional<std::string_view>{std::string_view(pending_key)};
         }
 
+        status_t invalid_key(std::string_view /*key_name*/) {
+            deserializer.mark_invalid(simdjson::INCORRECT_TYPE);
+            return std::unexpected(deserializer.current_error());
+        }
+
         template <typename T>
         status_t deserialize_value(T& value) {
             if(!deserializer.is_valid) {

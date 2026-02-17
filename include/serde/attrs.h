@@ -1,10 +1,15 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
+
+#include "spelling.h"
 
 namespace serde {
 
@@ -27,12 +32,25 @@ template <wrap_type T, typename... Attrs>
 struct annotate<T, Attrs...> {
     T value;
 
+    constexpr annotate() = default;
+
+    template <typename U>
+        requires (!std::same_as<std::remove_cvref_t<U>, annotate> && std::constructible_from<T, U>)
+    constexpr annotate(U&& raw) : value(std::forward<U>(raw)) {}
+
     operator T&() {
         return value;
     }
 
     operator const T&() const {
         return value;
+    }
+
+    template <typename U>
+        requires (!std::same_as<std::remove_cvref_t<U>, annotate> && std::assignable_from<T&, U>)
+    constexpr annotate& operator=(U&& raw) {
+        value = std::forward<U>(raw);
+        return *this;
     }
 
     using annotated_type = T;
@@ -100,6 +118,9 @@ struct rename {
     constexpr inline static std::string_view name = Name;
 };
 
+template <typename Policy = rename_policy::lower_camel>
+struct enum_string {};
+
 struct skip {};
 
 template <typename Pred>
@@ -143,6 +164,20 @@ struct default_value {
 
 }  // namespace pred
 
+namespace detail {
+
+template <typename E, typename Policy = rename_policy::lower_camel>
+std::string map_enum_to_string(E value) {
+    return spelling::map_enum_to_string<E, Policy>(value);
+}
+
+template <typename E, typename Policy = rename_policy::lower_camel>
+constexpr std::optional<E> map_string_to_enum(std::string_view value) {
+    return spelling::map_string_to_enum<E, Policy>(value);
+}
+
+}  // namespace detail
+
 template <typename T>
 using skip = annotate<T, attr::skip>;
 
@@ -163,6 +198,9 @@ using alias = annotate<T, attr::alias<Names...>>;
 
 template <typename T, typename Pred>
 using skip_if = annotate<T, attr::skip_if<Pred>>;
+
+template <typename E, typename Policy = rename_policy::lower_camel>
+using enum_string = annotate<E, attr::enum_string<Policy>>;
 
 template <typename T>
 using skip_if_none = annotate<std::optional<T>, attr::skip_if<pred::optional_none>>;

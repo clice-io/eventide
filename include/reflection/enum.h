@@ -3,6 +3,7 @@
 #include <array>
 #include <bit>
 #include <cstddef>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -136,6 +137,18 @@ constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {
         return reflection<E>::member_names[left];
     }
     return fallback;
+}
+
+template <enum_type E>
+constexpr std::optional<E> enum_value(std::string_view name) {
+    const auto& values = reflection<E>::member_values;
+    const auto& names = reflection<E>::member_names;
+    for(std::size_t index = 0; index < names.size(); ++index) {
+        if(names[index] == name) {
+            return values[index];
+        }
+    }
+    return std::nullopt;
 }
 
 }  // namespace refl

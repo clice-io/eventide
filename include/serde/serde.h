@@ -89,7 +89,9 @@ struct attr_traits_base {
     constexpr static bool skip = false;
     constexpr static bool flatten = false;
     constexpr static bool rename = false;
+    constexpr static bool enum_string = false;
     constexpr static std::string_view rename_name{};
+    using enum_policy = void;
 
     constexpr static bool matches_alias(std::string_view) {
         return false;
@@ -105,6 +107,12 @@ template <typename Attr>
 struct attr_traits : attr_traits_base {
     constexpr static bool skip = std::is_same_v<Attr, attr::skip>;
     constexpr static bool flatten = std::is_same_v<Attr, attr::flatten>;
+};
+
+template <typename Policy>
+struct attr_traits<attr::enum_string<Policy>> : attr_traits_base {
+    constexpr static bool enum_string = true;
+    using enum_policy = Policy;
 };
 
 template <fixed_string Name>
@@ -146,6 +154,19 @@ struct attr_traits<attr::skip_if<Pred>> : attr_traits_base {
     }
 };
 
+template <typename... Ts>
+struct first_non_void {
+    using type = void;
+};
+
+template <typename T, typename... Ts>
+struct first_non_void<T, Ts...> {
+    using type = std::conditional_t<std::is_void_v<T>, typename first_non_void<Ts...>::type, T>;
+};
+
+template <typename... Ts>
+using first_non_void_t = typename first_non_void<Ts...>::type;
+
 template <typename AttrTuple>
 struct annotated_attr_metadata;
 
@@ -154,6 +175,8 @@ struct annotated_attr_metadata<std::tuple<Attrs...>> {
     constexpr static bool skip = (false || ... || attr_traits<Attrs>::skip);
     constexpr static bool flatten = (false || ... || attr_traits<Attrs>::flatten);
     constexpr static bool has_rename = (false || ... || attr_traits<Attrs>::rename);
+    constexpr static bool enum_string = (false || ... || attr_traits<Attrs>::enum_string);
+    using enum_policy = first_non_void_t<typename attr_traits<Attrs>::enum_policy...>;
 
     constexpr static std::string_view rename_name = []() constexpr {
         std::string_view out{};
@@ -264,6 +287,16 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
                 return nested_result;
             }
 
+            if constexpr(meta::enum_string) {
+                using enum_t = std::remove_cvref_t<decltype(value)>;
+                static_assert(std::is_enum_v<enum_t>,
+                              "attr::enum_string requires an enum field type");
+
+                auto enum_text =
+                    serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(value);
+                return s_struct.serialize_field(meta::serialized_name(field.name()), enum_text);
+            }
+
             return s_struct.serialize_field(meta::serialized_name(field.name()), value);
         }
     }
@@ -333,6 +366,27 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 return true;
             }
 
+            if constexpr(meta::enum_string) {
+                using enum_t = std::remove_cvref_t<decltype(value)>;
+                static_assert(std::is_enum_v<enum_t>,
+                              "attr::enum_string requires an enum field type");
+
+                std::string enum_text;
+                auto result = d_struct.deserialize_value(enum_text);
+                if(!result) {
+                    return std::unexpected(result.error());
+                }
+
+                auto parsed = serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
+                    enum_text);
+                if(parsed.has_value()) {
+                    value = *parsed;
+                } else {
+                    value = enum_t{};
+                }
+                return true;
+            }
+
             auto result = d_struct.deserialize_value(value);
             if(!result) {
                 return std::unexpected(result.error());
@@ -353,6 +407,23 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
     if constexpr(requires { Serde::serialize(s, v); }) {
         return Serde::serialize(s, v);
+    } else if constexpr(detail::annotated_field_type<V>) {
+        using meta = detail::annotated_field_metadata<V>;
+        auto&& value = detail::annotated_value<V>(v);
+
+        if constexpr(meta::skip || meta::flatten) {
+            static_assert(!meta::skip && !meta::flatten,
+                          "skip/flatten attributes are only valid for struct fields");
+            return s.serialize_none();
+        } else if constexpr(meta::enum_string) {
+            using enum_t = std::remove_cvref_t<decltype(value)>;
+            static_assert(std::is_enum_v<enum_t>, "attr::enum_string requires an enum field type");
+            auto enum_text =
+                serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(value);
+            return s.serialize_str(enum_text);
+        } else {
+            return serialize(s, value);
+        }
     } else if constexpr(bool_like<V>) {
         return s.serialize_bool(v);
     } else if constexpr(int_like<V>) {
@@ -471,6 +542,35 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
 
     if constexpr(requires { Deserde::deserialize(d, v); }) {
         return Deserde::deserialize(d, v);
+    } else if constexpr(detail::annotated_field_type<V>) {
+        using meta = detail::annotated_field_metadata<V>;
+        auto&& value = detail::annotated_value<V>(v);
+
+        if constexpr(meta::skip || meta::flatten) {
+            static_assert(!meta::skip && !meta::flatten,
+                          "skip/flatten attributes are only valid for struct fields");
+            return d.skip_value();
+        } else if constexpr(meta::enum_string) {
+            using enum_t = std::remove_cvref_t<decltype(value)>;
+            static_assert(std::is_enum_v<enum_t>, "attr::enum_string requires an enum field type");
+
+            std::string enum_text;
+            auto parsed = d.deserialize_str(enum_text);
+            if(!parsed) {
+                return std::unexpected(parsed.error());
+            }
+
+            auto mapped =
+                serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(enum_text);
+            if(mapped.has_value()) {
+                value = *mapped;
+            } else {
+                value = enum_t{};
+            }
+            return {};
+        } else {
+            return deserialize(d, value);
+        }
     } else if constexpr(bool_like<V>) {
         return d.deserialize_bool(v);
     } else if constexpr(int_like<V>) {
@@ -481,8 +581,8 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return d.deserialize_float(v);
     } else if constexpr(char_like<V>) {
         return d.deserialize_char(v);
-    } else if constexpr(std::same_as<V, std::string>) {
-        return d.deserialize_str(v);
+    } else if constexpr(std::same_as<V, std::string> || std::derived_from<V, std::string>) {
+        return d.deserialize_str(static_cast<std::string&>(v));
     } else if constexpr(std::same_as<V, std::vector<std::byte>>) {
         return d.deserialize_bytes(v);
     } else if constexpr(is_specialization_of<std::optional, V>) {
@@ -567,8 +667,8 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             }
 
             static_assert(
-                std::constructible_from<key_t, std::string_view>,
-                "auto map deserialization requires key_type constructible from std::string_view");
+                serde::spelling::parseable_map_key<key_t>,
+                "auto map deserialization requires key_type parseable from JSON object keys");
             static_assert(std::default_initializable<mapped_t>,
                           "auto map deserialization requires default-constructible mapped_type");
             static_assert(detail::map_insertable<V, key_t, mapped_t>,
@@ -583,13 +683,30 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     break;
                 }
 
+                auto parsed_key = serde::spelling::parse_map_key<key_t>(**key);
+                if(!parsed_key) {
+                    if constexpr(requires { d_map->invalid_key(**key); }) {
+                        auto invalid = d_map->invalid_key(**key);
+                        if(!invalid) {
+                            return std::unexpected(invalid.error());
+                        }
+                        continue;
+                    } else if constexpr(std::default_initializable<E>) {
+                        return std::unexpected(E{});
+                    } else {
+                        static_assert(
+                            dependent_false<key_t>,
+                            "key parse failed and deserializer does not provide invalid_key");
+                    }
+                }
+
                 mapped_t mapped{};
                 auto mapped_status = d_map->deserialize_value(mapped);
                 if(!mapped_status) {
                     return std::unexpected(mapped_status.error());
                 }
 
-                detail::insert_map_entry(v, key_t(**key), std::move(mapped));
+                detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
             }
 
             return d_map->end();
