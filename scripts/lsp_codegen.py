@@ -1112,7 +1112,7 @@ class Generator:
                     )
                     escaped = json.dumps(str(value.value))
                     lines.append(
-                        f"    constexpr static inline std::string_view {member_name} = {escaped};"
+                        f"    constexpr inline static std::string_view {member_name} = {escaped};"
                     )
                     if index + 1 < len(enum_def.values) and (
                         value_comments or value_comments_list[index + 1]
@@ -1193,7 +1193,9 @@ def write_file(path: pathlib.Path, content: str) -> None:
     path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
 
-def generate_files(schema_path: pathlib.Path, output_file: pathlib.Path) -> dict[str, object]:
+def generate_files(
+    schema_path: pathlib.Path, output_file: pathlib.Path
+) -> dict[str, object]:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     model = parse_schema(schema)
 
@@ -1239,9 +1241,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate C++23 LSP headers from an LSP metaModel schema JSON"
     )
-    parser.add_argument(
-        "--schema", type=pathlib.Path, default=DEFAULT_SCHEMA_PATH
-    )
+    parser.add_argument("--schema", type=pathlib.Path, default=DEFAULT_SCHEMA_PATH)
     parser.add_argument(
         "--fetch-schema",
         action=argparse.BooleanOptionalAction,

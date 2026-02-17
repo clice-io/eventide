@@ -47,13 +47,13 @@ struct CodeActionKind : std::string {
     using std::string::operator=;
 
     /// Empty kind.
-    constexpr static inline std::string_view empty = "";
+    constexpr inline static std::string_view empty = "";
 
     /// Base kind for quickfix actions: 'quickfix'
-    constexpr static inline std::string_view quick_fix = "quickfix";
+    constexpr inline static std::string_view quick_fix = "quickfix";
 
     /// Base kind for refactoring actions: 'refactor'
-    constexpr static inline std::string_view refactor = "refactor";
+    constexpr inline static std::string_view refactor = "refactor";
 
     /// Base kind for refactoring extraction actions: 'refactor.extract'
     ///
@@ -64,7 +64,7 @@ struct CodeActionKind : std::string {
     /// - Extract variable
     /// - Extract interface from class
     /// - ...
-    constexpr static inline std::string_view refactor_extract = "refactor.extract";
+    constexpr inline static std::string_view refactor_extract = "refactor.extract";
 
     /// Base kind for refactoring inline actions: 'refactor.inline'
     ///
@@ -74,7 +74,7 @@ struct CodeActionKind : std::string {
     /// - Inline variable
     /// - Inline constant
     /// - ...
-    constexpr static inline std::string_view refactor_inline = "refactor.inline";
+    constexpr inline static std::string_view refactor_inline = "refactor.inline";
 
     /// Base kind for refactoring move actions: `refactor.move`
     ///
@@ -87,7 +87,7 @@ struct CodeActionKind : std::string {
     ///
     /// @since 3.18.0
     /// @proposed
-    constexpr static inline std::string_view refactor_move = "refactor.move";
+    constexpr inline static std::string_view refactor_move = "refactor.move";
 
     /// Base kind for refactoring rewrite actions: 'refactor.rewrite'
     ///
@@ -99,15 +99,15 @@ struct CodeActionKind : std::string {
     /// - Make method static
     /// - Move method to base class
     /// - ...
-    constexpr static inline std::string_view refactor_rewrite = "refactor.rewrite";
+    constexpr inline static std::string_view refactor_rewrite = "refactor.rewrite";
 
     /// Base kind for source actions: `source`
     ///
     /// Source code actions apply to the entire file.
-    constexpr static inline std::string_view source = "source";
+    constexpr inline static std::string_view source = "source";
 
     /// Base kind for an organize imports source action: `source.organizeImports`
-    constexpr static inline std::string_view source_organize_imports = "source.organizeImports";
+    constexpr inline static std::string_view source_organize_imports = "source.organizeImports";
 
     /// Base kind for auto-fix source actions: `source.fixAll`.
     ///
@@ -115,13 +115,13 @@ struct CodeActionKind : std::string {
     /// They should not suppress errors or perform unsafe fixes such as generating new types or classes.
     ///
     /// @since 3.15.0
-    constexpr static inline std::string_view source_fix_all = "source.fixAll";
+    constexpr inline static std::string_view source_fix_all = "source.fixAll";
 
     /// Base kind for all code actions applying to the entire notebook's scope. CodeActionKinds using
     /// this should always begin with `notebook.`
     ///
     /// @since 3.18.0
-    constexpr static inline std::string_view notebook = "notebook";
+    constexpr inline static std::string_view notebook = "notebook";
 };
 
 /// Code action tags are extra annotations that tweak the behavior of a code action.
@@ -320,13 +320,13 @@ struct FoldingRangeKind : std::string {
     using std::string::operator=;
 
     /// Folding range for a comment
-    constexpr static inline std::string_view comment = "comment";
+    constexpr inline static std::string_view comment = "comment";
 
     /// Folding range for an import or include
-    constexpr static inline std::string_view imports = "imports";
+    constexpr inline static std::string_view imports = "imports";
 
     /// Folding range for a region (e.g. `#region`)
-    constexpr static inline std::string_view region = "region";
+    constexpr inline static std::string_view region = "region";
 };
 
 /// Inlay hint kinds.
@@ -430,78 +430,78 @@ struct LanguageKind : std::string {
     using std::string::string;
     using std::string::operator=;
 
-    constexpr static inline std::string_view abap = "abap";
-    constexpr static inline std::string_view windows_bat = "bat";
-    constexpr static inline std::string_view bib_te_x = "bibtex";
-    constexpr static inline std::string_view clojure = "clojure";
-    constexpr static inline std::string_view coffeescript = "coffeescript";
-    constexpr static inline std::string_view c = "c";
-    constexpr static inline std::string_view cpp = "cpp";
-    constexpr static inline std::string_view c_sharp = "csharp";
-    constexpr static inline std::string_view css = "css";
+    constexpr inline static std::string_view abap = "abap";
+    constexpr inline static std::string_view windows_bat = "bat";
+    constexpr inline static std::string_view bib_te_x = "bibtex";
+    constexpr inline static std::string_view clojure = "clojure";
+    constexpr inline static std::string_view coffeescript = "coffeescript";
+    constexpr inline static std::string_view c = "c";
+    constexpr inline static std::string_view cpp = "cpp";
+    constexpr inline static std::string_view c_sharp = "csharp";
+    constexpr inline static std::string_view css = "css";
 
     /// @since 3.18.0
     /// @proposed
-    constexpr static inline std::string_view d = "d";
+    constexpr inline static std::string_view d = "d";
 
     /// @since 3.18.0
     /// @proposed
-    constexpr static inline std::string_view delphi = "pascal";
+    constexpr inline static std::string_view delphi = "pascal";
 
-    constexpr static inline std::string_view diff = "diff";
-    constexpr static inline std::string_view dart = "dart";
-    constexpr static inline std::string_view dockerfile = "dockerfile";
-    constexpr static inline std::string_view elixir = "elixir";
-    constexpr static inline std::string_view erlang = "erlang";
-    constexpr static inline std::string_view f_sharp = "fsharp";
-    constexpr static inline std::string_view git_commit = "git-commit";
-    constexpr static inline std::string_view git_rebase = "rebase";
-    constexpr static inline std::string_view go = "go";
-    constexpr static inline std::string_view groovy = "groovy";
-    constexpr static inline std::string_view handlebars = "handlebars";
-    constexpr static inline std::string_view haskell = "haskell";
-    constexpr static inline std::string_view html = "html";
-    constexpr static inline std::string_view ini = "ini";
-    constexpr static inline std::string_view java = "java";
-    constexpr static inline std::string_view java_script = "javascript";
-    constexpr static inline std::string_view java_script_react = "javascriptreact";
-    constexpr static inline std::string_view json = "json";
-    constexpr static inline std::string_view la_te_x = "latex";
-    constexpr static inline std::string_view less = "less";
-    constexpr static inline std::string_view lua = "lua";
-    constexpr static inline std::string_view makefile = "makefile";
-    constexpr static inline std::string_view markdown = "markdown";
-    constexpr static inline std::string_view objective_c = "objective-c";
-    constexpr static inline std::string_view objective_cpp = "objective-cpp";
+    constexpr inline static std::string_view diff = "diff";
+    constexpr inline static std::string_view dart = "dart";
+    constexpr inline static std::string_view dockerfile = "dockerfile";
+    constexpr inline static std::string_view elixir = "elixir";
+    constexpr inline static std::string_view erlang = "erlang";
+    constexpr inline static std::string_view f_sharp = "fsharp";
+    constexpr inline static std::string_view git_commit = "git-commit";
+    constexpr inline static std::string_view git_rebase = "rebase";
+    constexpr inline static std::string_view go = "go";
+    constexpr inline static std::string_view groovy = "groovy";
+    constexpr inline static std::string_view handlebars = "handlebars";
+    constexpr inline static std::string_view haskell = "haskell";
+    constexpr inline static std::string_view html = "html";
+    constexpr inline static std::string_view ini = "ini";
+    constexpr inline static std::string_view java = "java";
+    constexpr inline static std::string_view java_script = "javascript";
+    constexpr inline static std::string_view java_script_react = "javascriptreact";
+    constexpr inline static std::string_view json = "json";
+    constexpr inline static std::string_view la_te_x = "latex";
+    constexpr inline static std::string_view less = "less";
+    constexpr inline static std::string_view lua = "lua";
+    constexpr inline static std::string_view makefile = "makefile";
+    constexpr inline static std::string_view markdown = "markdown";
+    constexpr inline static std::string_view objective_c = "objective-c";
+    constexpr inline static std::string_view objective_cpp = "objective-cpp";
 
     /// @since 3.18.0
     /// @proposed
-    constexpr static inline std::string_view pascal = "pascal";
+    constexpr inline static std::string_view pascal = "pascal";
 
-    constexpr static inline std::string_view perl = "perl";
-    constexpr static inline std::string_view perl6 = "perl6";
-    constexpr static inline std::string_view php = "php";
-    constexpr static inline std::string_view powershell = "powershell";
-    constexpr static inline std::string_view pug = "jade";
-    constexpr static inline std::string_view python = "python";
-    constexpr static inline std::string_view r = "r";
-    constexpr static inline std::string_view razor = "razor";
-    constexpr static inline std::string_view ruby = "ruby";
-    constexpr static inline std::string_view rust = "rust";
-    constexpr static inline std::string_view scss = "scss";
-    constexpr static inline std::string_view sass = "sass";
-    constexpr static inline std::string_view scala = "scala";
-    constexpr static inline std::string_view shader_lab = "shaderlab";
-    constexpr static inline std::string_view shell_script = "shellscript";
-    constexpr static inline std::string_view sql = "sql";
-    constexpr static inline std::string_view swift = "swift";
-    constexpr static inline std::string_view type_script = "typescript";
-    constexpr static inline std::string_view type_script_react = "typescriptreact";
-    constexpr static inline std::string_view te_x = "tex";
-    constexpr static inline std::string_view visual_basic = "vb";
-    constexpr static inline std::string_view xml = "xml";
-    constexpr static inline std::string_view xsl = "xsl";
-    constexpr static inline std::string_view yaml = "yaml";
+    constexpr inline static std::string_view perl = "perl";
+    constexpr inline static std::string_view perl6 = "perl6";
+    constexpr inline static std::string_view php = "php";
+    constexpr inline static std::string_view powershell = "powershell";
+    constexpr inline static std::string_view pug = "jade";
+    constexpr inline static std::string_view python = "python";
+    constexpr inline static std::string_view r = "r";
+    constexpr inline static std::string_view razor = "razor";
+    constexpr inline static std::string_view ruby = "ruby";
+    constexpr inline static std::string_view rust = "rust";
+    constexpr inline static std::string_view scss = "scss";
+    constexpr inline static std::string_view sass = "sass";
+    constexpr inline static std::string_view scala = "scala";
+    constexpr inline static std::string_view shader_lab = "shaderlab";
+    constexpr inline static std::string_view shell_script = "shellscript";
+    constexpr inline static std::string_view sql = "sql";
+    constexpr inline static std::string_view swift = "swift";
+    constexpr inline static std::string_view type_script = "typescript";
+    constexpr inline static std::string_view type_script_react = "typescriptreact";
+    constexpr inline static std::string_view te_x = "tex";
+    constexpr inline static std::string_view visual_basic = "vb";
+    constexpr inline static std::string_view xml = "xml";
+    constexpr inline static std::string_view xsl = "xsl";
+    constexpr inline static std::string_view yaml = "yaml";
 };
 
 /// Describes the content type that a client supports in various
@@ -573,20 +573,20 @@ struct PositionEncodingKind : std::string {
     using std::string::operator=;
 
     /// Character offsets count UTF-8 code units (e.g. bytes).
-    constexpr static inline std::string_view utf8 = "utf-8";
+    constexpr inline static std::string_view utf8 = "utf-8";
 
     /// Character offsets count UTF-16 code units.
     ///
     /// This is the default and must always be supported
     /// by servers
-    constexpr static inline std::string_view utf16 = "utf-16";
+    constexpr inline static std::string_view utf16 = "utf-16";
 
     /// Character offsets count UTF-32 code units.
     ///
     /// Implementation note: these are the same as Unicode codepoints,
     /// so this `PositionEncodingKind` may also be used for an
     /// encoding-agnostic representation of character offsets.
-    constexpr static inline std::string_view utf32 = "utf-32";
+    constexpr inline static std::string_view utf32 = "utf-32";
 };
 
 enum class PrepareSupportDefaultBehavior : uinteger {
@@ -616,16 +616,16 @@ struct SemanticTokenModifiers : std::string {
     using std::string::string;
     using std::string::operator=;
 
-    constexpr static inline std::string_view declaration = "declaration";
-    constexpr static inline std::string_view definition = "definition";
-    constexpr static inline std::string_view readonly = "readonly";
-    constexpr static inline std::string_view static_ = "static";
-    constexpr static inline std::string_view deprecated = "deprecated";
-    constexpr static inline std::string_view abstract = "abstract";
-    constexpr static inline std::string_view async = "async";
-    constexpr static inline std::string_view modification = "modification";
-    constexpr static inline std::string_view documentation = "documentation";
-    constexpr static inline std::string_view default_library = "defaultLibrary";
+    constexpr inline static std::string_view declaration = "declaration";
+    constexpr inline static std::string_view definition = "definition";
+    constexpr inline static std::string_view readonly = "readonly";
+    constexpr inline static std::string_view static_ = "static";
+    constexpr inline static std::string_view deprecated = "deprecated";
+    constexpr inline static std::string_view abstract = "abstract";
+    constexpr inline static std::string_view async = "async";
+    constexpr inline static std::string_view modification = "modification";
+    constexpr inline static std::string_view documentation = "documentation";
+    constexpr inline static std::string_view default_library = "defaultLibrary";
 };
 
 /// A set of predefined token types. This set is not fixed
@@ -638,38 +638,38 @@ struct SemanticTokenTypes : std::string {
     using std::string::string;
     using std::string::operator=;
 
-    constexpr static inline std::string_view namespace_ = "namespace";
+    constexpr inline static std::string_view namespace_ = "namespace";
 
     /// Represents a generic type. Acts as a fallback for types which can't be mapped to
     /// a specific type like class or enum.
-    constexpr static inline std::string_view type = "type";
+    constexpr inline static std::string_view type = "type";
 
-    constexpr static inline std::string_view class_ = "class";
-    constexpr static inline std::string_view enum_ = "enum";
-    constexpr static inline std::string_view interface = "interface";
-    constexpr static inline std::string_view struct_ = "struct";
-    constexpr static inline std::string_view type_parameter = "typeParameter";
-    constexpr static inline std::string_view parameter = "parameter";
-    constexpr static inline std::string_view variable = "variable";
-    constexpr static inline std::string_view property = "property";
-    constexpr static inline std::string_view enum_member = "enumMember";
-    constexpr static inline std::string_view event = "event";
-    constexpr static inline std::string_view function = "function";
-    constexpr static inline std::string_view method = "method";
-    constexpr static inline std::string_view macro = "macro";
-    constexpr static inline std::string_view keyword = "keyword";
-    constexpr static inline std::string_view modifier = "modifier";
-    constexpr static inline std::string_view comment = "comment";
-    constexpr static inline std::string_view string = "string";
-    constexpr static inline std::string_view number = "number";
-    constexpr static inline std::string_view regexp = "regexp";
-    constexpr static inline std::string_view operator_ = "operator";
+    constexpr inline static std::string_view class_ = "class";
+    constexpr inline static std::string_view enum_ = "enum";
+    constexpr inline static std::string_view interface = "interface";
+    constexpr inline static std::string_view struct_ = "struct";
+    constexpr inline static std::string_view type_parameter = "typeParameter";
+    constexpr inline static std::string_view parameter = "parameter";
+    constexpr inline static std::string_view variable = "variable";
+    constexpr inline static std::string_view property = "property";
+    constexpr inline static std::string_view enum_member = "enumMember";
+    constexpr inline static std::string_view event = "event";
+    constexpr inline static std::string_view function = "function";
+    constexpr inline static std::string_view method = "method";
+    constexpr inline static std::string_view macro = "macro";
+    constexpr inline static std::string_view keyword = "keyword";
+    constexpr inline static std::string_view modifier = "modifier";
+    constexpr inline static std::string_view comment = "comment";
+    constexpr inline static std::string_view string = "string";
+    constexpr inline static std::string_view number = "number";
+    constexpr inline static std::string_view regexp = "regexp";
+    constexpr inline static std::string_view operator_ = "operator";
 
     /// @since 3.17.0
-    constexpr static inline std::string_view decorator = "decorator";
+    constexpr inline static std::string_view decorator = "decorator";
 
     /// @since 3.18.0
-    constexpr static inline std::string_view label = "label";
+    constexpr inline static std::string_view label = "label";
 };
 
 /// How a signature help was triggered.
