@@ -72,6 +72,15 @@ struct LSPAny : LSPVariant {
     using LSPVariant::operator=;
 };
 
+struct LSPEmpty {};
+
+// LSP request/notification traits (Params -> method/result).
+template <typename Params>
+struct RequestTraits;
+
+template <typename Params>
+struct NotificationTraits;
+
 using boolean = bool;
 using integer = std::int64_t;
 using uinteger = std::uint32_t;

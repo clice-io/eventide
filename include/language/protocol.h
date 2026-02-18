@@ -6690,4 +6690,146 @@ struct InitializeResult {
     optional<ServerInfo> server_info = {};
 };
 
+struct ExitParams { };
+
+struct ShutdownParams { };
+
+struct CodeLensRefreshParams { };
+
+struct DiagnosticRefreshParams { };
+
+struct FoldingRangeRefreshParams { };
+
+struct InlayHintRefreshParams { };
+
+struct InlineValueRefreshParams { };
+
+struct SemanticTokensRefreshParams { };
+
+struct WorkspaceFoldersParams { };
+
+#define LSP_REQUEST_TRAITS_XMACRO(X) \
+    X((CallHierarchyIncomingCallsParams), (nullable<std::vector<CallHierarchyIncomingCall>>), "callHierarchy/incomingCalls") \
+    X((CallHierarchyOutgoingCallsParams), (nullable<std::vector<CallHierarchyOutgoingCall>>), "callHierarchy/outgoingCalls") \
+    X((RegistrationParams), (null), "client/registerCapability") \
+    X((UnregistrationParams), (null), "client/unregisterCapability") \
+    X((CodeAction), (CodeAction), "codeAction/resolve") \
+    X((CodeLens), (CodeLens), "codeLens/resolve") \
+    X((CompletionItem), (CompletionItem), "completionItem/resolve") \
+    X((DocumentLink), (DocumentLink), "documentLink/resolve") \
+    X((InitializeParams), (InitializeResult), "initialize") \
+    X((InlayHint), (InlayHint), "inlayHint/resolve") \
+    X((ShutdownParams), (null), "shutdown") \
+    X((CodeActionParams), (nullable<std::vector<variant<Command, CodeAction>>>), "textDocument/codeAction") \
+    X((CodeLensParams), (nullable<std::vector<CodeLens>>), "textDocument/codeLens") \
+    X((ColorPresentationParams), (std::vector<ColorPresentation>), "textDocument/colorPresentation") \
+    X((CompletionParams), (variant<null, std::vector<CompletionItem>, CompletionList>), "textDocument/completion") \
+    X((DeclarationParams), (variant<null, Declaration, std::vector<DeclarationLink>>), "textDocument/declaration") \
+    X((DefinitionParams), (variant<null, Definition, std::vector<DefinitionLink>>), "textDocument/definition") \
+    X((DocumentDiagnosticParams), (DocumentDiagnosticReport), "textDocument/diagnostic") \
+    X((DocumentColorParams), (std::vector<ColorInformation>), "textDocument/documentColor") \
+    X((DocumentHighlightParams), (nullable<std::vector<DocumentHighlight>>), "textDocument/documentHighlight") \
+    X((DocumentLinkParams), (nullable<std::vector<DocumentLink>>), "textDocument/documentLink") \
+    X((DocumentSymbolParams), (variant<null, std::vector<SymbolInformation>, std::vector<DocumentSymbol>>), "textDocument/documentSymbol") \
+    X((FoldingRangeParams), (nullable<std::vector<FoldingRange>>), "textDocument/foldingRange") \
+    X((DocumentFormattingParams), (nullable<std::vector<TextEdit>>), "textDocument/formatting") \
+    X((HoverParams), (nullable<Hover>), "textDocument/hover") \
+    X((ImplementationParams), (variant<null, Definition, std::vector<DefinitionLink>>), "textDocument/implementation") \
+    X((InlayHintParams), (nullable<std::vector<InlayHint>>), "textDocument/inlayHint") \
+    X((InlineCompletionParams), (variant<null, InlineCompletionList, std::vector<InlineCompletionItem>>), "textDocument/inlineCompletion") \
+    X((InlineValueParams), (nullable<std::vector<InlineValue>>), "textDocument/inlineValue") \
+    X((LinkedEditingRangeParams), (nullable<LinkedEditingRanges>), "textDocument/linkedEditingRange") \
+    X((MonikerParams), (nullable<std::vector<Moniker>>), "textDocument/moniker") \
+    X((DocumentOnTypeFormattingParams), (nullable<std::vector<TextEdit>>), "textDocument/onTypeFormatting") \
+    X((CallHierarchyPrepareParams), (nullable<std::vector<CallHierarchyItem>>), "textDocument/prepareCallHierarchy") \
+    X((PrepareRenameParams), (nullable<PrepareRenameResult>), "textDocument/prepareRename") \
+    X((TypeHierarchyPrepareParams), (nullable<std::vector<TypeHierarchyItem>>), "textDocument/prepareTypeHierarchy") \
+    X((DocumentRangeFormattingParams), (nullable<std::vector<TextEdit>>), "textDocument/rangeFormatting") \
+    X((DocumentRangesFormattingParams), (nullable<std::vector<TextEdit>>), "textDocument/rangesFormatting") \
+    X((ReferenceParams), (nullable<std::vector<Location>>), "textDocument/references") \
+    X((RenameParams), (nullable<WorkspaceEdit>), "textDocument/rename") \
+    X((SelectionRangeParams), (nullable<std::vector<SelectionRange>>), "textDocument/selectionRange") \
+    X((SemanticTokensParams), (nullable<SemanticTokens>), "textDocument/semanticTokens/full") \
+    X((SemanticTokensDeltaParams), (variant<null, SemanticTokens, SemanticTokensDelta>), "textDocument/semanticTokens/full/delta") \
+    X((SemanticTokensRangeParams), (nullable<SemanticTokens>), "textDocument/semanticTokens/range") \
+    X((SignatureHelpParams), (nullable<SignatureHelp>), "textDocument/signatureHelp") \
+    X((TypeDefinitionParams), (variant<null, Definition, std::vector<DefinitionLink>>), "textDocument/typeDefinition") \
+    X((WillSaveTextDocumentParams), (nullable<std::vector<TextEdit>>), "textDocument/willSaveWaitUntil") \
+    X((TypeHierarchySubtypesParams), (nullable<std::vector<TypeHierarchyItem>>), "typeHierarchy/subtypes") \
+    X((TypeHierarchySupertypesParams), (nullable<std::vector<TypeHierarchyItem>>), "typeHierarchy/supertypes") \
+    X((ShowDocumentParams), (ShowDocumentResult), "window/showDocument") \
+    X((ShowMessageRequestParams), (nullable<MessageActionItem>), "window/showMessageRequest") \
+    X((WorkDoneProgressCreateParams), (null), "window/workDoneProgress/create") \
+    X((ApplyWorkspaceEditParams), (ApplyWorkspaceEditResult), "workspace/applyEdit") \
+    X((CodeLensRefreshParams), (null), "workspace/codeLens/refresh") \
+    X((ConfigurationParams), (std::vector<LSPAny>), "workspace/configuration") \
+    X((WorkspaceDiagnosticParams), (WorkspaceDiagnosticReport), "workspace/diagnostic") \
+    X((DiagnosticRefreshParams), (null), "workspace/diagnostic/refresh") \
+    X((ExecuteCommandParams), (nullable<LSPAny>), "workspace/executeCommand") \
+    X((FoldingRangeRefreshParams), (null), "workspace/foldingRange/refresh") \
+    X((InlayHintRefreshParams), (null), "workspace/inlayHint/refresh") \
+    X((InlineValueRefreshParams), (null), "workspace/inlineValue/refresh") \
+    X((SemanticTokensRefreshParams), (null), "workspace/semanticTokens/refresh") \
+    X((WorkspaceSymbolParams), (variant<null, std::vector<SymbolInformation>, std::vector<WorkspaceSymbol>>), "workspace/symbol") \
+    X((TextDocumentContentParams), (TextDocumentContentResult), "workspace/textDocumentContent") \
+    X((TextDocumentContentRefreshParams), (null), "workspace/textDocumentContent/refresh") \
+    X((CreateFilesParams), (nullable<WorkspaceEdit>), "workspace/willCreateFiles") \
+    X((DeleteFilesParams), (nullable<WorkspaceEdit>), "workspace/willDeleteFiles") \
+    X((RenameFilesParams), (nullable<WorkspaceEdit>), "workspace/willRenameFiles") \
+    X((WorkspaceFoldersParams), (nullable<std::vector<WorkspaceFolder>>), "workspace/workspaceFolders") \
+    X((WorkspaceSymbol), (WorkspaceSymbol), "workspaceSymbol/resolve")
+
+#define LSP_NOTIFICATION_TRAITS_XMACRO(X) \
+    X((CancelParams), (void), "$/cancelRequest") \
+    X((LogTraceParams), (void), "$/logTrace") \
+    X((ProgressParams), (void), "$/progress") \
+    X((SetTraceParams), (void), "$/setTrace") \
+    X((ExitParams), (void), "exit") \
+    X((InitializedParams), (void), "initialized") \
+    X((DidChangeNotebookDocumentParams), (void), "notebookDocument/didChange") \
+    X((DidCloseNotebookDocumentParams), (void), "notebookDocument/didClose") \
+    X((DidOpenNotebookDocumentParams), (void), "notebookDocument/didOpen") \
+    X((DidSaveNotebookDocumentParams), (void), "notebookDocument/didSave") \
+    X((LSPAny), (void), "telemetry/event") \
+    X((DidChangeTextDocumentParams), (void), "textDocument/didChange") \
+    X((DidCloseTextDocumentParams), (void), "textDocument/didClose") \
+    X((DidOpenTextDocumentParams), (void), "textDocument/didOpen") \
+    X((DidSaveTextDocumentParams), (void), "textDocument/didSave") \
+    X((PublishDiagnosticsParams), (void), "textDocument/publishDiagnostics") \
+    X((WillSaveTextDocumentParams), (void), "textDocument/willSave") \
+    X((LogMessageParams), (void), "window/logMessage") \
+    X((ShowMessageParams), (void), "window/showMessage") \
+    X((WorkDoneProgressCancelParams), (void), "window/workDoneProgress/cancel") \
+    X((DidChangeConfigurationParams), (void), "workspace/didChangeConfiguration") \
+    X((DidChangeWatchedFilesParams), (void), "workspace/didChangeWatchedFiles") \
+    X((DidChangeWorkspaceFoldersParams), (void), "workspace/didChangeWorkspaceFolders") \
+    X((CreateFilesParams), (void), "workspace/didCreateFiles") \
+    X((DeleteFilesParams), (void), "workspace/didDeleteFiles") \
+    X((RenameFilesParams), (void), "workspace/didRenameFiles")
+
+#define LSP_TRAITS_TYPE(...) __VA_ARGS__
+
+#define LSP_REQUEST_TRAITS_DECLARE(PARAMS, RESULT, METHOD) \
+template <> \
+struct RequestTraits<LSP_TRAITS_TYPE PARAMS> { \
+    using Result = LSP_TRAITS_TYPE RESULT; \
+    constexpr inline static std::string_view method = METHOD; \
+};
+
+LSP_REQUEST_TRAITS_XMACRO(LSP_REQUEST_TRAITS_DECLARE)
+
+#undef LSP_REQUEST_TRAITS_DECLARE
+
+#define LSP_NOTIFICATION_TRAITS_DECLARE(PARAMS, RESULT, METHOD) \
+template <> \
+struct NotificationTraits<LSP_TRAITS_TYPE PARAMS> { \
+    using Result = LSP_TRAITS_TYPE RESULT; \
+    constexpr inline static std::string_view method = METHOD; \
+};
+
+LSP_NOTIFICATION_TRAITS_XMACRO(LSP_NOTIFICATION_TRAITS_DECLARE)
+
+#undef LSP_NOTIFICATION_TRAITS_DECLARE
+#undef LSP_TRAITS_TYPE
+
 }  // namespace language::protocol

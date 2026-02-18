@@ -11,7 +11,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections import Counter, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Keep compact form stable; do not run formatter inside this block.
 # fmt: off
@@ -42,6 +42,7 @@ DEFAULT_FETCH_URL = (
     "https://raw.githubusercontent.com/microsoft/language-server-protocol/"
     "gh-pages/_specifications/lsp/{version}/metaModel/metaModel.json"
 )
+DEFAULT_FETCH_TIMEOUT = 30.0
 
 SUSPICIOUS_BOOL_PATTERNS = [
     re.compile(r"default(?:s)?\s+to\s+true", re.IGNORECASE),
@@ -53,15 +54,20 @@ SUSPICIOUS_BOOL_PATTERNS = [
 
 
 @dataclass
+class DocInfo:
+    documentation: str | None = None
+    since: str | None = None
+    since_tags: list[str] = field(default_factory=list)
+    deprecated: str | None = None
+    proposed: bool = False
+
+
+@dataclass
 class PropertyDef:
     name: str
     type_expr: dict
     optional: bool
-    documentation: str | None
-    since: str | None
-    since_tags: list[str]
-    deprecated: str | None
-    proposed: bool
+    doc: DocInfo
 
 
 @dataclass
@@ -69,20 +75,14 @@ class StructDef:
     name: str
     parents: list[str]
     properties: list[PropertyDef]
-    documentation: str | None
-    since: str | None
-    since_tags: list[str]
-    deprecated: str | None
-    proposed: bool
+    doc: DocInfo
 
 
 @dataclass
 class EnumValueDef:
     name: str
     value: str | int
-    documentation: str | None
-    since: str | None
-    proposed: bool
+    doc: DocInfo
 
 
 @dataclass
@@ -91,19 +91,37 @@ class EnumDef:
     type_expr: dict
     values: list[EnumValueDef]
     supports_custom_values: bool
-    documentation: str | None
-    since: str | None
-    deprecated: str | None
-    proposed: bool
+    doc: DocInfo
 
 
 @dataclass
 class AliasDef:
     name: str
     type_expr: dict
-    documentation: str | None
-    since: str | None
-    deprecated: str | None
+    doc: DocInfo
+
+
+@dataclass
+class RequestDef:
+    method: str
+    type_name: str | None
+    params: dict | None
+    result: dict | None
+    doc: DocInfo
+
+
+@dataclass
+class NotificationDef:
+    method: str
+    type_name: str | None
+    params: dict | None
+    doc: DocInfo
+
+
+@dataclass
+class ExtraParamDef:
+    name: str
+    method: str
 
 
 @dataclass
@@ -111,6 +129,8 @@ class SchemaModel:
     structures: dict[str, StructDef]
     enumerations: dict[str, EnumDef]
     aliases: dict[str, AliasDef]
+    requests: list[RequestDef]
+    notifications: list[NotificationDef]
 
 
 @dataclass
@@ -216,30 +236,24 @@ def documentation_mentions_tag(documentation: str | None, tag: str) -> bool:
     )
 
 
-def build_doc_lines(
-    documentation: str | None,
-    since: str | None,
-    since_tags: list[str] | None,
-    deprecated: str | None,
-    proposed: bool,
-) -> list[str]:
-    lines = split_documentation(documentation)
-    has_since = documentation_mentions_tag(documentation, "since")
-    has_since_tags = documentation_mentions_tag(documentation, "sinceTags")
-    has_deprecated = documentation_mentions_tag(documentation, "deprecated")
-    has_proposed = documentation_mentions_tag(documentation, "proposed")
+def build_doc_lines(doc: DocInfo) -> list[str]:
+    lines = split_documentation(doc.documentation)
+    has_since = documentation_mentions_tag(doc.documentation, "since")
+    has_since_tags = documentation_mentions_tag(doc.documentation, "sinceTags")
+    has_deprecated = documentation_mentions_tag(doc.documentation, "deprecated")
+    has_proposed = documentation_mentions_tag(doc.documentation, "proposed")
 
     def append_tag_line(tag_line: str) -> None:
         for chunk in str(tag_line).splitlines():
             lines.append(chunk.rstrip())
 
-    if since and not has_since:
-        append_tag_line(f"@since {since}")
-    if since_tags and not has_since and not has_since_tags:
-        append_tag_line(f"@sinceTags {', '.join(str(x) for x in since_tags)}")
-    if deprecated and not has_deprecated:
-        append_tag_line(f"@deprecated {deprecated}")
-    if proposed and not has_proposed:
+    if doc.since and not has_since:
+        append_tag_line(f"@since {doc.since}")
+    if doc.since_tags and not has_since and not has_since_tags:
+        append_tag_line(f"@sinceTags {', '.join(str(x) for x in doc.since_tags)}")
+    if doc.deprecated and not has_deprecated:
+        append_tag_line(f"@deprecated {doc.deprecated}")
+    if doc.proposed and not has_proposed:
         append_tag_line("@proposed")
 
     while lines and not lines[-1]:
@@ -257,6 +271,16 @@ def append_doc(out: list[str], indent: str, comments: list[str]) -> None:
         out.append(f"{indent}/// {line}")
 
 
+def parse_doc(item: dict) -> DocInfo:
+    return DocInfo(
+        documentation=item.get("documentation"),
+        since=item.get("since"),
+        since_tags=list(item.get("sinceTags", [])),
+        deprecated=item.get("deprecated"),
+        proposed=bool(item.get("proposed", False)),
+    )
+
+
 def parse_schema(schema: dict) -> SchemaModel:
     structures: dict[str, StructDef] = {}
     for item in schema.get("structures", []):
@@ -267,11 +291,7 @@ def parse_schema(schema: dict) -> SchemaModel:
                     name=prop["name"],
                     type_expr=prop["type"],
                     optional=bool(prop.get("optional", False)),
-                    documentation=prop.get("documentation"),
-                    since=prop.get("since"),
-                    since_tags=list(prop.get("sinceTags", [])),
-                    deprecated=prop.get("deprecated"),
-                    proposed=bool(prop.get("proposed", False)),
+                    doc=parse_doc(prop),
                 )
             )
 
@@ -285,11 +305,7 @@ def parse_schema(schema: dict) -> SchemaModel:
             name=item["name"],
             parents=parents,
             properties=properties,
-            documentation=item.get("documentation"),
-            since=item.get("since"),
-            since_tags=list(item.get("sinceTags", [])),
-            deprecated=item.get("deprecated"),
-            proposed=bool(item.get("proposed", False)),
+            doc=parse_doc(item),
         )
 
     enumerations: dict[str, EnumDef] = {}
@@ -300,9 +316,7 @@ def parse_schema(schema: dict) -> SchemaModel:
                 EnumValueDef(
                     name=str(value.get("name", "value")),
                     value=value.get("value", ""),
-                    documentation=value.get("documentation"),
-                    since=value.get("since"),
-                    proposed=bool(value.get("proposed", False)),
+                    doc=parse_doc(value),
                 )
             )
         enumerations[item["name"]] = EnumDef(
@@ -310,10 +324,7 @@ def parse_schema(schema: dict) -> SchemaModel:
             type_expr=item.get("type", {}),
             values=values,
             supports_custom_values=bool(item.get("supportsCustomValues", False)),
-            documentation=item.get("documentation"),
-            since=item.get("since"),
-            deprecated=item.get("deprecated"),
-            proposed=bool(item.get("proposed", False)),
+            doc=parse_doc(item),
         )
 
     aliases: dict[str, AliasDef] = {}
@@ -321,13 +332,38 @@ def parse_schema(schema: dict) -> SchemaModel:
         aliases[item["name"]] = AliasDef(
             name=item["name"],
             type_expr=item["type"],
-            documentation=item.get("documentation"),
-            since=item.get("since"),
-            deprecated=item.get("deprecated"),
+            doc=parse_doc(item),
+        )
+
+    requests: list[RequestDef] = []
+    for item in schema.get("requests", []):
+        requests.append(
+            RequestDef(
+                method=item["method"],
+                type_name=item.get("typeName"),
+                params=item.get("params"),
+                result=item.get("result"),
+                doc=parse_doc(item),
+            )
+        )
+
+    notifications: list[NotificationDef] = []
+    for item in schema.get("notifications", []):
+        notifications.append(
+            NotificationDef(
+                method=item["method"],
+                type_name=item.get("typeName"),
+                params=item.get("params"),
+                doc=parse_doc(item),
+            )
         )
 
     return SchemaModel(
-        structures=structures, enumerations=enumerations, aliases=aliases
+        structures=structures,
+        enumerations=enumerations,
+        aliases=aliases,
+        requests=requests,
+        notifications=notifications,
     )
 
 
@@ -335,13 +371,11 @@ def fetch_schema(
     output: pathlib.Path,
     *,
     version: str,
-    url: str | None,
-    timeout: float,
 ) -> dict[str, object]:
-    source = url or DEFAULT_FETCH_URL.format(version=version)
+    source = DEFAULT_FETCH_URL.format(version=version)
 
     try:
-        with urllib.request.urlopen(source, timeout=timeout) as response:
+        with urllib.request.urlopen(source, timeout=DEFAULT_FETCH_TIMEOUT) as response:
             payload = response.read()
     except urllib.error.URLError as exc:
         raise RuntimeError(f"download failed: {exc}") from exc
@@ -398,6 +432,42 @@ def topological_order(
             if node not in existing:
                 ordered.append(node)
     return ordered
+
+
+def method_to_type_name(method: str, suffix: str) -> str:
+    parts = [part for part in re.split(r"[^0-9A-Za-z]+", method) if part]
+    if parts:
+        base = "".join(part[:1].upper() + part[1:] for part in parts)
+    else:
+        base = "Method"
+    return f"{base}{suffix}"
+
+
+def derive_params_name(type_name: str | None, method: str) -> str:
+    if type_name:
+        if type_name.endswith("Request"):
+            return f"{type_name[: -len('Request')]}Params"
+        if type_name.endswith("Notification"):
+            return f"{type_name[: -len('Notification')]}Params"
+    return method_to_type_name(method, "Params")
+
+
+def collect_extra_params(
+    requests: list[RequestDef], notifications: list[NotificationDef]
+) -> list[ExtraParamDef]:
+    def missing_params(
+        items: list[RequestDef] | list[NotificationDef],
+    ) -> list[ExtraParamDef]:
+        return [
+            ExtraParamDef(
+                name=derive_params_name(item.type_name, item.method),
+                method=item.method,
+            )
+            for item in items
+            if item.params is None
+        ]
+
+    return [*missing_params(requests), *missing_params(notifications)]
 
 
 class TypeRenderer:
@@ -495,9 +565,6 @@ class TypeRenderer:
             return f"std::tuple<{', '.join(items)}>"
 
         if kind == "literal":
-            properties = type_expr.get("value", {}).get("properties", [])
-            if not properties:
-                return "LspEmptyObject"
             return "LspEmptyObject"
 
         if kind == "stringLiteral":
@@ -722,7 +789,7 @@ class Generator:
         )
 
     def bool_default_needs_warning(self, prop: PropertyDef) -> bool:
-        doc = prop.documentation or ""
+        doc = prop.doc.documentation or ""
         if not doc.strip():
             return False
         return any(pattern.search(doc) for pattern in SUSPICIOUS_BOOL_PATTERNS)
@@ -875,13 +942,7 @@ class Generator:
                 f"{owner_struct}.{prop.name}: renamed to `{member_name}` due to C++ keyword collision."
             )
 
-        comments = build_doc_lines(
-            prop.documentation,
-            since=prop.since,
-            since_tags=prop.since_tags,
-            deprecated=prop.deprecated,
-            proposed=prop.proposed,
-        )
+        comments = build_doc_lines(prop.doc)
         if not comments:
             comments = [f"Schema field: {prop.name}."]
 
@@ -982,13 +1043,7 @@ class Generator:
         append_doc(
             lines,
             indent="",
-            comments=build_doc_lines(
-                alias.documentation,
-                since=alias.since,
-                since_tags=None,
-                deprecated=alias.deprecated,
-                proposed=False,
-            ),
+            comments=build_doc_lines(alias.doc),
         )
         lines.append(f"using {alias_cpp} = {alias_type};")
         return "\n".join(lines)
@@ -1001,13 +1056,7 @@ class Generator:
         append_doc(
             lines,
             indent="",
-            comments=build_doc_lines(
-                struct_def.documentation,
-                since=struct_def.since,
-                since_tags=struct_def.since_tags,
-                deprecated=struct_def.deprecated,
-                proposed=struct_def.proposed,
-            ),
+            comments=build_doc_lines(struct_def.doc),
         )
         lines.append(f"struct {struct_cpp} {{")
 
@@ -1038,13 +1087,7 @@ class Generator:
         base_name = enum_def.type_expr.get("name")
 
         lines: list[str] = []
-        comments = build_doc_lines(
-            enum_def.documentation,
-            since=enum_def.since,
-            since_tags=None,
-            deprecated=enum_def.deprecated,
-            proposed=enum_def.proposed,
-        )
+        comments = build_doc_lines(enum_def.doc)
         if enum_def.supports_custom_values:
             comments.append("supportsCustomValues: true")
         append_doc(lines, indent="", comments=comments)
@@ -1054,14 +1097,7 @@ class Generator:
             lines.append(f"enum class {enum_cpp} : {underlying} {{")
             used_member_names: Counter[str] = Counter()
             value_comments_list = [
-                build_doc_lines(
-                    value.documentation,
-                    since=value.since,
-                    since_tags=None,
-                    deprecated=None,
-                    proposed=value.proposed,
-                )
-                for value in enum_def.values
+                build_doc_lines(value.doc) for value in enum_def.values
             ]
             for index, value in enumerate(enum_def.values):
                 value_comments = value_comments_list[index]
@@ -1095,14 +1131,7 @@ class Generator:
                     lines.append("")
 
                 value_comments_list = [
-                    build_doc_lines(
-                        value.documentation,
-                        since=value.since,
-                        since_tags=None,
-                        deprecated=None,
-                        proposed=value.proposed,
-                    )
-                    for value in enum_def.values
+                    build_doc_lines(value.doc) for value in enum_def.values
                 ]
                 for index, value in enumerate(enum_def.values):
                     value_comments = value_comments_list[index]
@@ -1126,14 +1155,7 @@ class Generator:
             used_member_names: Counter[str] = Counter()
 
             value_comments_list = [
-                build_doc_lines(
-                    value.documentation,
-                    since=value.since,
-                    since_tags=None,
-                    deprecated=None,
-                    proposed=value.proposed,
-                )
-                for value in enum_def.values
+                build_doc_lines(value.doc) for value in enum_def.values
             ]
             for index, value in enumerate(enum_def.values):
                 value_comments = value_comments_list[index]
@@ -1163,14 +1185,182 @@ class Generator:
         return "\n".join(lines)
 
 
-def make_header(includes: list[str], body_blocks: list[str], source_tag: str) -> str:
+def emit_extra_param_structs(
+    extra_params: list[ExtraParamDef], name_map: dict[str, str]
+) -> list[str]:
+    blocks: list[str] = []
+    for extra in sorted(extra_params, key=lambda item: item.method):
+        params_cpp = name_map[extra.name]
+        blocks.append(f"struct {params_cpp} {{ }};")
+    return blocks
+
+
+def render_method_params(
+    renderer: TypeRenderer,
+    name_map: dict[str, str],
+    extra_params_by_method: dict[str, ExtraParamDef],
+    method: str,
+    params: dict | None,
+) -> str:
+    if params is None:
+        extra = extra_params_by_method.get(method)
+        if extra is None:
+            return "LSPEmpty"
+        return name_map[extra.name]
+    if not isinstance(params, dict):
+        return "LSPEmpty"
+    return renderer.render_type(params, owner=f"method[{method}].params")
+
+
+def sorted_by_method(items: list[RequestDef] | list[NotificationDef]):
+    return sorted(items, key=lambda item: item.method)
+
+
+def build_trait_entries(
+    items: list[RequestDef] | list[NotificationDef],
+    *,
+    result_for,
+    renderer: TypeRenderer,
+    name_map: dict[str, str],
+    extra_params_by_method: dict[str, ExtraParamDef],
+) -> list[tuple[str, str, str]]:
+    entries: list[tuple[str, str, str]] = []
+    for item in sorted_by_method(items):
+        params_cpp = render_method_params(
+            renderer,
+            name_map,
+            extra_params_by_method,
+            item.method,
+            item.params,
+        )
+        entries.append((params_cpp, result_for(item), json.dumps(item.method)))
+    return entries
+
+
+def emit_xmacro(name: str, entries: list[tuple[str, str, str]]) -> list[str]:
+    lines: list[str] = [f"#define {name}(X) \\"]
+    for index, (params_cpp, result_cpp, method) in enumerate(entries):
+        suffix = " \\" if index + 1 < len(entries) else ""
+        lines.append(f"    X(({params_cpp}), ({result_cpp}), {method}){suffix}")
+    return lines
+
+
+def emit_method_traits(
+    generator: Generator,
+    requests: list[RequestDef],
+    notifications: list[NotificationDef],
+    extra_params: list[ExtraParamDef],
+    name_map: dict[str, str],
+) -> str:
+    extra_params_by_method = {extra.method: extra for extra in extra_params}
+
+    def request_result(req: RequestDef) -> str:
+        if isinstance(req.result, dict):
+            return generator.renderer.render_type(
+                req.result, owner=f"method[{req.method}].result"
+            )
+        return "null"
+
+    lines: list[str] = []
+    lines.extend(
+        emit_xmacro(
+            "LSP_REQUEST_TRAITS_XMACRO",
+            build_trait_entries(
+                requests,
+                result_for=request_result,
+                renderer=generator.renderer,
+                name_map=name_map,
+                extra_params_by_method=extra_params_by_method,
+            ),
+        )
+    )
+    lines.append("")
+    lines.extend(
+        emit_xmacro(
+            "LSP_NOTIFICATION_TRAITS_XMACRO",
+            build_trait_entries(
+                notifications,
+                result_for=lambda _: "void",
+                renderer=generator.renderer,
+                name_map=name_map,
+                extra_params_by_method=extra_params_by_method,
+            ),
+        )
+    )
+
+    lines.extend([
+            "",
+            "#define LSP_TRAITS_TYPE(...) __VA_ARGS__",
+            "",
+            "#define LSP_REQUEST_TRAITS_DECLARE(PARAMS, RESULT, METHOD) \\",
+            "template <> \\",
+            "struct RequestTraits<LSP_TRAITS_TYPE PARAMS> { \\",
+            "    using Result = LSP_TRAITS_TYPE RESULT; \\",
+            "    constexpr inline static std::string_view method = METHOD; \\",
+            "};",
+            "",
+            "LSP_REQUEST_TRAITS_XMACRO(LSP_REQUEST_TRAITS_DECLARE)",
+            "",
+            "#undef LSP_REQUEST_TRAITS_DECLARE",
+            "",
+            "#define LSP_NOTIFICATION_TRAITS_DECLARE(PARAMS, RESULT, METHOD) \\",
+            "template <> \\",
+            "struct NotificationTraits<LSP_TRAITS_TYPE PARAMS> { \\",
+            "    using Result = LSP_TRAITS_TYPE RESULT; \\",
+            "    constexpr inline static std::string_view method = METHOD; \\",
+            "};",
+            "",
+            "LSP_NOTIFICATION_TRAITS_XMACRO(LSP_NOTIFICATION_TRAITS_DECLARE)",
+            "",
+            "#undef LSP_NOTIFICATION_TRAITS_DECLARE",
+            "#undef LSP_TRAITS_TYPE",
+    ])
+
+    return "\n".join(lines)
+
+
+def generate_protocol_header(
+    schema_path: pathlib.Path, output_file: pathlib.Path
+) -> dict[str, object]:
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    model = parse_schema(schema)
+    extra_params = collect_extra_params(model.requests, model.notifications)
+
+    definition_names = [
+        *model.structures.keys(),
+        *model.enumerations.keys(),
+        *model.aliases.keys(),
+        *(extra.name for extra in extra_params),
+    ]
+    name_map = build_name_map(definition_names)
+
+    generator = Generator(model, name_map)
+    node_order = generator.build_node_order()
+
+    emitters = {
+        "A": generator.emit_alias,
+        "S": generator.emit_struct,
+        "E": generator.emit_enum,
+    }
+    body_blocks = [emitters[kind](name) for kind, name in node_order]
+
+    body_blocks.extend(emit_extra_param_structs(extra_params, name_map))
+    body_blocks.append(
+        emit_method_traits(
+            generator,
+            model.requests,
+            model.notifications,
+            extra_params,
+            name_map,
+        )
+    )
+
     lines: list[str] = ["#pragma once", ""]
-    for include in includes:
-        lines.append(f'#include "{include}"')
+    lines.append(f'#include "{TS_HEADER_INCLUDE}"')
     lines.extend(
         [
             "",
-            f"// Generated by {source_tag}. DO NOT EDIT.",
+            f"// Generated by {SOURCE_TAG}. DO NOT EDIT.",
             "",
             f"namespace {GENERATED_NAMESPACE} {{",
             "",
@@ -1185,45 +1375,9 @@ def make_header(includes: list[str], body_blocks: list[str], source_tag: str) ->
         lines.append(block.rstrip())
 
     lines.extend(["", f"}}  // namespace {GENERATED_NAMESPACE}", ""])
-    return "\n".join(lines)
-
-
-def write_file(path: pathlib.Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content.rstrip() + "\n", encoding="utf-8")
-
-
-def generate_files(
-    schema_path: pathlib.Path, output_file: pathlib.Path
-) -> dict[str, object]:
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    model = parse_schema(schema)
-
-    definition_names: list[str] = []
-    definition_names.extend(model.structures.keys())
-    definition_names.extend(model.enumerations.keys())
-    definition_names.extend(model.aliases.keys())
-    name_map = build_name_map(definition_names)
-
-    generator = Generator(model, name_map)
-    nodes, node_deps = generator.build_node_dependencies()
-    node_order = topological_order(nodes, node_deps)
-
-    body_blocks: list[str] = []
-    for node_kind, node_name in node_order:
-        if node_kind == "A":
-            body_blocks.append(generator.emit_alias(node_name))
-        elif node_kind == "S":
-            body_blocks.append(generator.emit_struct(node_name))
-        else:
-            body_blocks.append(generator.emit_enum(node_name))
-
-    header = make_header(
-        includes=[TS_HEADER_INCLUDE],
-        body_blocks=body_blocks,
-        source_tag=SOURCE_TAG,
-    )
-    write_file(output_file, header)
+    content = "\n".join(lines)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(content.rstrip() + "\n", encoding="utf-8")
 
     return {
         "struct_count": len(model.structures),
@@ -1243,34 +1397,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--schema", type=pathlib.Path, default=DEFAULT_SCHEMA_PATH)
     parser.add_argument(
-        "--fetch-schema",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Download official LSP metaModel.json into --schema before generation "
-            "(default: enabled)."
-        ),
-    )
-    parser.add_argument(
-        "--fetch-version",
+        "--version",
         default="3.18",
-        help="LSP version folder used for --fetch-schema (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--fetch-url",
-        default=None,
-        help="Override schema download URL used by --fetch-schema.",
-    )
-    parser.add_argument(
-        "--fetch-timeout",
-        type=float,
-        default=30.0,
-        help="Network timeout in seconds used by --fetch-schema (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--fetch-quiet",
-        action="store_true",
-        help="Only print fetch errors.",
+        help="LSP version folder used when fetching schema (default: %(default)s)",
     )
     parser.add_argument(
         "--output",
@@ -1278,51 +1407,28 @@ def parse_args() -> argparse.Namespace:
         default=pathlib.Path("include/language/protocol.h"),
         help="Path to generated protocol header file (default: %(default)s)",
     )
-    parser.add_argument(
-        "--output-dir",
-        type=pathlib.Path,
-        default=None,
-        help=(
-            "Deprecated: output directory from old multi-file mode. "
-            "If provided, generated file will be <output-dir>/protocol.h."
-        ),
-    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
-    if args.fetch_schema:
+    if not args.schema.exists():
         try:
-            fetch_summary = fetch_schema(
-                output=args.schema,
-                version=args.fetch_version,
-                url=args.fetch_url,
-                timeout=args.fetch_timeout,
-            )
+            fetch_summary = fetch_schema(output=args.schema, version=args.version)
         except RuntimeError as exc:
             print(f"[fetch_schema] {exc}", file=sys.stderr)
             return 1
 
-        if not args.fetch_quiet:
-            schema_version = fetch_summary.get("schema_version")
-            if schema_version:
-                print(f"[fetch_schema] schema metaData.version={schema_version}")
-            print(f"[fetch_schema] source={fetch_summary['source']}")
-            print(
-                f"[fetch_schema] wrote {fetch_summary['bytes']} bytes -> {fetch_summary['output']}"
-            )
-
-    output_path = args.output
-    if args.output_dir is not None:
-        output_path = args.output_dir / "protocol.h"
+        schema_version = fetch_summary.get("schema_version")
+        if schema_version:
+            print(f"[fetch_schema] schema metaData.version={schema_version}")
+        print(f"[fetch_schema] source={fetch_summary['source']}")
         print(
-            "[WARNING] --output-dir is deprecated; using "
-            f"--output {output_path} instead."
+            f"[fetch_schema] wrote {fetch_summary['bytes']} bytes -> {fetch_summary['output']}"
         )
 
-    summary = generate_files(schema_path=args.schema, output_file=output_path)
+    summary = generate_protocol_header(schema_path=args.schema, output_file=args.output)
 
     print(f"[codegen] input={args.schema}")
     print(f"[codegen] output_file={summary['output_file']}")
