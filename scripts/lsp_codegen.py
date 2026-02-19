@@ -434,6 +434,26 @@ def topological_order(
     return ordered
 
 
+def smallest_unsigned_type(max_value: int) -> str:
+    if max_value <= 0xFF:
+        return "std::uint8_t"
+    if max_value <= 0xFFFF:
+        return "std::uint16_t"
+    if max_value <= 0xFFFFFFFF:
+        return "std::uint32_t"
+    return "std::uint64_t"
+
+
+def smallest_signed_type(min_value: int, max_value: int) -> str:
+    if min_value >= -(1 << 7) and max_value <= (1 << 7) - 1:
+        return "std::int8_t"
+    if min_value >= -(1 << 15) and max_value <= (1 << 15) - 1:
+        return "std::int16_t"
+    if min_value >= -(1 << 31) and max_value <= (1 << 31) - 1:
+        return "std::int32_t"
+    return "std::int64_t"
+
+
 def method_to_type_name(method: str, suffix: str) -> str:
     parts = [part for part in re.split(r"[^0-9A-Za-z]+", method) if part]
     if parts:
@@ -1088,12 +1108,20 @@ class Generator:
 
         lines: list[str] = []
         comments = build_doc_lines(enum_def.doc)
-        if enum_def.supports_custom_values:
-            comments.append("supportsCustomValues: true")
+        comments.append(
+            f"supportsCustomValues: {str(enum_def.supports_custom_values).lower()}"
+        )
         append_doc(lines, indent="", comments=comments)
 
         if base_name in {"integer", "uinteger"}:
-            underlying = "integer" if base_name == "integer" else "uinteger"
+            underlying = base_name
+            if not enum_def.supports_custom_values:
+                values = [v.value for v in enum_def.values if isinstance(v.value, int)]
+                if values:
+                    if base_name == "integer":
+                        underlying = smallest_signed_type(min(values), max(values))
+                    else:
+                        underlying = smallest_unsigned_type(max(values))
             lines.append(f"enum class {enum_cpp} : {underlying} {{")
             used_member_names: Counter[str] = Counter()
             value_comments_list = [
@@ -1151,7 +1179,9 @@ class Generator:
                 lines.append("};")
                 return "\n".join(lines)
 
-            lines.append(f"enum class {enum_cpp} {{")
+            max_value = max(len(enum_def.values) - 1, 0)
+            underlying = smallest_unsigned_type(max_value)
+            lines.append(f"enum class {enum_cpp} : {underlying} {{")
             used_member_names: Counter[str] = Counter()
 
             value_comments_list = [
@@ -1223,8 +1253,8 @@ def build_trait_entries(
     renderer: TypeRenderer,
     name_map: dict[str, str],
     extra_params_by_method: dict[str, ExtraParamDef],
-) -> list[tuple[str, str, str]]:
-    entries: list[tuple[str, str, str]] = []
+) -> list[tuple[str, str] | tuple[str, str, str]]:
+    entries: list[tuple[str, str] | tuple[str, str, str]] = []
     for item in sorted_by_method(items):
         params_cpp = render_method_params(
             renderer,
@@ -1233,15 +1263,27 @@ def build_trait_entries(
             item.method,
             item.params,
         )
-        entries.append((params_cpp, result_for(item), json.dumps(item.method)))
+        result = result_for(item)
+        method = json.dumps(item.method)
+        entries.append(
+            (params_cpp, method) if result is None else (params_cpp, result, method)
+        )
     return entries
 
 
-def emit_xmacro(name: str, entries: list[tuple[str, str, str]]) -> list[str]:
+def emit_xmacro(
+    name: str, entries: list[tuple[str, str] | tuple[str, str, str]]
+) -> list[str]:
     lines: list[str] = [f"#define {name}(X) \\"]
-    for index, (params_cpp, result_cpp, method) in enumerate(entries):
+    for index, entry in enumerate(entries):
+        if len(entry) == 2:
+            params_cpp, method = entry
+            payload = f"X(({params_cpp}), {method})"
+        else:
+            params_cpp, result_cpp, method = entry
+            payload = f"X(({params_cpp}), ({result_cpp}), {method})"
         suffix = " \\" if index + 1 < len(entries) else ""
-        lines.append(f"    X(({params_cpp}), ({result_cpp}), {method}){suffix}")
+        lines.append(f"    {payload}{suffix}")
     return lines
 
 
@@ -1280,7 +1322,7 @@ def emit_method_traits(
             "LSP_NOTIFICATION_TRAITS_XMACRO",
             build_trait_entries(
                 notifications,
-                result_for=lambda _: "void",
+                result_for=lambda _: None,
                 renderer=generator.renderer,
                 name_map=name_map,
                 extra_params_by_method=extra_params_by_method,
@@ -1288,7 +1330,8 @@ def emit_method_traits(
         )
     )
 
-    lines.extend([
+    lines.extend(
+        [
             "",
             "#define LSP_TRAITS_TYPE(...) __VA_ARGS__",
             "",
@@ -1303,10 +1346,9 @@ def emit_method_traits(
             "",
             "#undef LSP_REQUEST_TRAITS_DECLARE",
             "",
-            "#define LSP_NOTIFICATION_TRAITS_DECLARE(PARAMS, RESULT, METHOD) \\",
+            "#define LSP_NOTIFICATION_TRAITS_DECLARE(PARAMS, METHOD) \\",
             "template <> \\",
             "struct NotificationTraits<LSP_TRAITS_TYPE PARAMS> { \\",
-            "    using Result = LSP_TRAITS_TYPE RESULT; \\",
             "    constexpr inline static std::string_view method = METHOD; \\",
             "};",
             "",
@@ -1314,7 +1356,8 @@ def emit_method_traits(
             "",
             "#undef LSP_NOTIFICATION_TRAITS_DECLARE",
             "#undef LSP_TRAITS_TYPE",
-    ])
+        ]
+    )
 
     return "\n".join(lines)
 

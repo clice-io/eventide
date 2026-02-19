@@ -28,7 +28,8 @@ using RegularExpressionEngineKind = string;
 /// merged.
 ///
 /// @since 3.18.0
-enum class ApplyKind : uinteger {
+/// supportsCustomValues: false
+enum class ApplyKind : std::uint8_t {
     /// The value from the individual item (if provided and not `null`) will be
     /// used instead of the default.
     Replace = 1,
@@ -127,7 +128,8 @@ struct CodeActionKind : std::string {
 /// Code action tags are extra annotations that tweak the behavior of a code action.
 ///
 /// @since 3.18.0 - proposed
-enum class CodeActionTag : uinteger {
+/// supportsCustomValues: false
+enum class CodeActionTag : std::uint8_t {
     /// Marks the code action as LLM-generated.
     LlmGenerated = 1
 };
@@ -135,7 +137,8 @@ enum class CodeActionTag : uinteger {
 /// The reason why code actions were requested.
 ///
 /// @since 3.17.0
-enum class CodeActionTriggerKind : uinteger {
+/// supportsCustomValues: false
+enum class CodeActionTriggerKind : std::uint8_t {
     /// Code actions were explicitly requested by the user or by an extension.
     Invoked = 1,
 
@@ -147,7 +150,8 @@ enum class CodeActionTriggerKind : uinteger {
 };
 
 /// The kind of a completion entry.
-enum class CompletionItemKind : uinteger {
+/// supportsCustomValues: false
+enum class CompletionItemKind : std::uint8_t {
     Text = 1,
     Method = 2,
     Function = 3,
@@ -179,13 +183,15 @@ enum class CompletionItemKind : uinteger {
 /// item.
 ///
 /// @since 3.15.0
-enum class CompletionItemTag : uinteger {
+/// supportsCustomValues: false
+enum class CompletionItemTag : std::uint8_t {
     /// Render a completion as obsolete, usually using a strike-out.
     Deprecated = 1
 };
 
 /// How a completion was triggered
-enum class CompletionTriggerKind : uinteger {
+/// supportsCustomValues: false
+enum class CompletionTriggerKind : std::uint8_t {
     /// Completion was triggered by typing an identifier (24x7 code
     /// complete), manual invocation (e.g Ctrl+Space) or via API.
     Invoked = 1,
@@ -199,7 +205,8 @@ enum class CompletionTriggerKind : uinteger {
 };
 
 /// The diagnostic's severity.
-enum class DiagnosticSeverity : uinteger {
+/// supportsCustomValues: false
+enum class DiagnosticSeverity : std::uint8_t {
     /// Reports an error.
     Error = 1,
 
@@ -216,7 +223,8 @@ enum class DiagnosticSeverity : uinteger {
 /// The diagnostic tags.
 ///
 /// @since 3.15.0
-enum class DiagnosticTag : uinteger {
+/// supportsCustomValues: false
+enum class DiagnosticTag : std::uint8_t {
     /// Unused or unnecessary code.
     ///
     /// Clients are allowed to render diagnostics with this tag faded out instead of having
@@ -232,7 +240,8 @@ enum class DiagnosticTag : uinteger {
 /// The document diagnostic report kinds.
 ///
 /// @since 3.17.0
-enum class DocumentDiagnosticReportKind {
+/// supportsCustomValues: false
+enum class DocumentDiagnosticReportKind : std::uint8_t {
     /// A diagnostic report with a full
     /// set of problems.
     Full,
@@ -243,7 +252,8 @@ enum class DocumentDiagnosticReportKind {
 };
 
 /// A document highlight kind.
-enum class DocumentHighlightKind : uinteger {
+/// supportsCustomValues: false
+enum class DocumentHighlightKind : std::uint8_t {
     /// A textual occurrence.
     Text = 1,
 
@@ -270,7 +280,8 @@ enum class ErrorCodes : integer {
     UnknownErrorCode = -32001
 };
 
-enum class FailureHandlingKind {
+/// supportsCustomValues: false
+enum class FailureHandlingKind : std::uint8_t {
     /// Applying the workspace change is simply aborted if one of the changes provided
     /// fails. All operations executed before the failing operation stay executed.
     Abort,
@@ -290,7 +301,8 @@ enum class FailureHandlingKind {
 };
 
 /// The file event type
-enum class FileChangeType : uinteger {
+/// supportsCustomValues: false
+enum class FileChangeType : std::uint8_t {
     /// The file got created.
     Created = 1,
 
@@ -305,7 +317,8 @@ enum class FileChangeType : uinteger {
 /// both.
 ///
 /// @since 3.16.0
-enum class FileOperationPatternKind {
+/// supportsCustomValues: false
+enum class FileOperationPatternKind : std::uint8_t {
     /// The pattern matches a file only.
     File,
 
@@ -332,7 +345,8 @@ struct FoldingRangeKind : std::string {
 /// Inlay hint kinds.
 ///
 /// @since 3.17.0
-enum class InlayHintKind : uinteger {
+/// supportsCustomValues: false
+enum class InlayHintKind : std::uint8_t {
     /// An inlay hint that for a type annotation.
     Type = 1,
 
@@ -344,7 +358,8 @@ enum class InlayHintKind : uinteger {
 ///
 /// @since 3.18.0
 /// @proposed
-enum class InlineCompletionTriggerKind : uinteger {
+/// supportsCustomValues: false
+enum class InlineCompletionTriggerKind : std::uint8_t {
     /// Completion was triggered explicitly by a user gesture.
     Invoked = 1,
 
@@ -354,7 +369,8 @@ enum class InlineCompletionTriggerKind : uinteger {
 
 /// Defines whether the insert text in a completion item should be interpreted as
 /// plain text or a snippet.
-enum class InsertTextFormat : uinteger {
+/// supportsCustomValues: false
+enum class InsertTextFormat : std::uint8_t {
     /// The primary text to be inserted is treated as a plain string.
     PlainText = 1,
 
@@ -373,7 +389,8 @@ enum class InsertTextFormat : uinteger {
 /// item insertion.
 ///
 /// @since 3.16.0
-enum class InsertTextMode : uinteger {
+/// supportsCustomValues: false
+enum class InsertTextMode : std::uint8_t {
     /// The insertion or replace strings is taken as it is. If the
     /// value is multi line the lines below the cursor will be
     /// inserted using the indentation defined in the string value.
@@ -509,7 +526,8 @@ struct LanguageKind : std::string {
 ///
 /// Please note that `MarkupKinds` must not start with a `$`. This kinds
 /// are reserved for internal usage.
-enum class MarkupKind {
+/// supportsCustomValues: false
+enum class MarkupKind : std::uint8_t {
     /// Plain text is supported as a content format
     Plaintext,
 
@@ -518,7 +536,8 @@ enum class MarkupKind {
 };
 
 /// The message type
-enum class MessageType : uinteger {
+/// supportsCustomValues: false
+enum class MessageType : std::uint8_t {
     /// An error message.
     Error = 1,
 
@@ -541,7 +560,8 @@ enum class MessageType : uinteger {
 /// The moniker kind.
 ///
 /// @since 3.16.0
-enum class MonikerKind {
+/// supportsCustomValues: false
+enum class MonikerKind : std::uint8_t {
     /// The moniker represent a symbol that is imported into a project
     Import,
 
@@ -556,7 +576,8 @@ enum class MonikerKind {
 /// A notebook cell kind.
 ///
 /// @since 3.17.0
-enum class NotebookCellKind : uinteger {
+/// supportsCustomValues: false
+enum class NotebookCellKind : std::uint8_t {
     /// A markup-cell is formatted source that is used for display.
     Markup = 1,
 
@@ -589,13 +610,15 @@ struct PositionEncodingKind : std::string {
     constexpr inline static std::string_view utf32 = "utf-32";
 };
 
-enum class PrepareSupportDefaultBehavior : uinteger {
+/// supportsCustomValues: false
+enum class PrepareSupportDefaultBehavior : std::uint8_t {
     /// The client's default behavior is to select the identifier
     /// according the to language's syntax rule.
     Identifier = 1
 };
 
-enum class ResourceOperationKind {
+/// supportsCustomValues: false
+enum class ResourceOperationKind : std::uint8_t {
     /// Supports creating new files and folders.
     Create,
 
@@ -675,7 +698,8 @@ struct SemanticTokenTypes : std::string {
 /// How a signature help was triggered.
 ///
 /// @since 3.15.0
-enum class SignatureHelpTriggerKind : uinteger {
+/// supportsCustomValues: false
+enum class SignatureHelpTriggerKind : std::uint8_t {
     /// Signature help was invoked manually by the user or by a command.
     Invoked = 1,
 
@@ -687,7 +711,8 @@ enum class SignatureHelpTriggerKind : uinteger {
 };
 
 /// A symbol kind.
-enum class SymbolKind : uinteger {
+/// supportsCustomValues: false
+enum class SymbolKind : std::uint8_t {
     File = 1,
     Module = 2,
     Namespace = 3,
@@ -719,13 +744,15 @@ enum class SymbolKind : uinteger {
 /// Symbol tags are extra annotations that tweak the rendering of a symbol.
 ///
 /// @since 3.16
-enum class SymbolTag : uinteger {
+/// supportsCustomValues: false
+enum class SymbolTag : std::uint8_t {
     /// Render a symbol as obsolete, usually using a strike-out.
     Deprecated = 1
 };
 
 /// Represents reasons why a text document is saved.
-enum class TextDocumentSaveReason : uinteger {
+/// supportsCustomValues: false
+enum class TextDocumentSaveReason : std::uint8_t {
     /// Manually triggered, e.g. by the user pressing save, by starting debugging,
     /// or by an API call.
     Manual = 1,
@@ -739,7 +766,8 @@ enum class TextDocumentSaveReason : uinteger {
 
 /// Defines how the host (editor) should sync
 /// document changes to the language server.
-enum class TextDocumentSyncKind : uinteger {
+/// supportsCustomValues: false
+enum class TextDocumentSyncKind : std::uint8_t {
     /// Documents should not be synced at all.
     None = 0,
 
@@ -753,11 +781,13 @@ enum class TextDocumentSyncKind : uinteger {
     Incremental = 2
 };
 
-enum class TokenFormat {
+/// supportsCustomValues: false
+enum class TokenFormat : std::uint8_t {
     Relative
 };
 
-enum class TraceValue {
+/// supportsCustomValues: false
+enum class TraceValue : std::uint8_t {
     /// Turn tracing off.
     Off,
 
@@ -771,7 +801,8 @@ enum class TraceValue {
 /// Moniker uniqueness level to define scope of the moniker.
 ///
 /// @since 3.16.0
-enum class UniquenessLevel {
+/// supportsCustomValues: false
+enum class UniquenessLevel : std::uint8_t {
     /// The moniker is only unique inside a document
     Document,
 
@@ -6780,32 +6811,32 @@ struct WorkspaceFoldersParams { };
     X((WorkspaceSymbol), (WorkspaceSymbol), "workspaceSymbol/resolve")
 
 #define LSP_NOTIFICATION_TRAITS_XMACRO(X) \
-    X((CancelParams), (void), "$/cancelRequest") \
-    X((LogTraceParams), (void), "$/logTrace") \
-    X((ProgressParams), (void), "$/progress") \
-    X((SetTraceParams), (void), "$/setTrace") \
-    X((ExitParams), (void), "exit") \
-    X((InitializedParams), (void), "initialized") \
-    X((DidChangeNotebookDocumentParams), (void), "notebookDocument/didChange") \
-    X((DidCloseNotebookDocumentParams), (void), "notebookDocument/didClose") \
-    X((DidOpenNotebookDocumentParams), (void), "notebookDocument/didOpen") \
-    X((DidSaveNotebookDocumentParams), (void), "notebookDocument/didSave") \
-    X((LSPAny), (void), "telemetry/event") \
-    X((DidChangeTextDocumentParams), (void), "textDocument/didChange") \
-    X((DidCloseTextDocumentParams), (void), "textDocument/didClose") \
-    X((DidOpenTextDocumentParams), (void), "textDocument/didOpen") \
-    X((DidSaveTextDocumentParams), (void), "textDocument/didSave") \
-    X((PublishDiagnosticsParams), (void), "textDocument/publishDiagnostics") \
-    X((WillSaveTextDocumentParams), (void), "textDocument/willSave") \
-    X((LogMessageParams), (void), "window/logMessage") \
-    X((ShowMessageParams), (void), "window/showMessage") \
-    X((WorkDoneProgressCancelParams), (void), "window/workDoneProgress/cancel") \
-    X((DidChangeConfigurationParams), (void), "workspace/didChangeConfiguration") \
-    X((DidChangeWatchedFilesParams), (void), "workspace/didChangeWatchedFiles") \
-    X((DidChangeWorkspaceFoldersParams), (void), "workspace/didChangeWorkspaceFolders") \
-    X((CreateFilesParams), (void), "workspace/didCreateFiles") \
-    X((DeleteFilesParams), (void), "workspace/didDeleteFiles") \
-    X((RenameFilesParams), (void), "workspace/didRenameFiles")
+    X((CancelParams), "$/cancelRequest") \
+    X((LogTraceParams), "$/logTrace") \
+    X((ProgressParams), "$/progress") \
+    X((SetTraceParams), "$/setTrace") \
+    X((ExitParams), "exit") \
+    X((InitializedParams), "initialized") \
+    X((DidChangeNotebookDocumentParams), "notebookDocument/didChange") \
+    X((DidCloseNotebookDocumentParams), "notebookDocument/didClose") \
+    X((DidOpenNotebookDocumentParams), "notebookDocument/didOpen") \
+    X((DidSaveNotebookDocumentParams), "notebookDocument/didSave") \
+    X((LSPAny), "telemetry/event") \
+    X((DidChangeTextDocumentParams), "textDocument/didChange") \
+    X((DidCloseTextDocumentParams), "textDocument/didClose") \
+    X((DidOpenTextDocumentParams), "textDocument/didOpen") \
+    X((DidSaveTextDocumentParams), "textDocument/didSave") \
+    X((PublishDiagnosticsParams), "textDocument/publishDiagnostics") \
+    X((WillSaveTextDocumentParams), "textDocument/willSave") \
+    X((LogMessageParams), "window/logMessage") \
+    X((ShowMessageParams), "window/showMessage") \
+    X((WorkDoneProgressCancelParams), "window/workDoneProgress/cancel") \
+    X((DidChangeConfigurationParams), "workspace/didChangeConfiguration") \
+    X((DidChangeWatchedFilesParams), "workspace/didChangeWatchedFiles") \
+    X((DidChangeWorkspaceFoldersParams), "workspace/didChangeWorkspaceFolders") \
+    X((CreateFilesParams), "workspace/didCreateFiles") \
+    X((DeleteFilesParams), "workspace/didDeleteFiles") \
+    X((RenameFilesParams), "workspace/didRenameFiles")
 
 #define LSP_TRAITS_TYPE(...) __VA_ARGS__
 
@@ -6820,10 +6851,9 @@ LSP_REQUEST_TRAITS_XMACRO(LSP_REQUEST_TRAITS_DECLARE)
 
 #undef LSP_REQUEST_TRAITS_DECLARE
 
-#define LSP_NOTIFICATION_TRAITS_DECLARE(PARAMS, RESULT, METHOD) \
+#define LSP_NOTIFICATION_TRAITS_DECLARE(PARAMS, METHOD) \
 template <> \
 struct NotificationTraits<LSP_TRAITS_TYPE PARAMS> { \
-    using Result = LSP_TRAITS_TYPE RESULT; \
     constexpr inline static std::string_view method = METHOD; \
 };
 
