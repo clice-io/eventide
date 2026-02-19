@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "zest/zest.h"
+#include "eventide/compiler.h"
 #include "language/server.h"
 #include "serde/simdjson/deserializer.h"
 
@@ -80,6 +81,12 @@ namespace language::testing {
 TEST_SUITE(language_server) {
 
 TEST_CASE(traits_registration_and_dispatch_order) {
+// Visual Studio issue:
+// https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
         R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
@@ -127,6 +134,10 @@ TEST_CASE(traits_registration_and_dispatch_order) {
 }
 
 TEST_CASE(explicit_method_registration) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":2,"method":"custom/add","params":{"a":7,"b":8}})",
         R"({"jsonrpc":"2.0","method":"custom/note","params":{"text":"hello"}})",

@@ -14,6 +14,8 @@ namespace et = eventide;
 
 namespace {
 
+constexpr std::size_t max_header_bytes = 8 * 1024;
+
 std::string_view trim_ascii(std::string_view value) {
     auto start = value.find_first_not_of(" \t");
     if(start == std::string_view::npos) {
@@ -175,6 +177,10 @@ et::task<std::optional<std::string>> StreamTransport::read_message() {
         const auto old_size = header.size();
         header.append(chunk.data(), chunk.size());
 
+        if(header.size() > max_header_bytes) {
+            co_return std::nullopt;
+        }
+
         auto marker = header.find("\r\n\r\n");
         if(marker == std::string::npos) {
             read_stream.consume(chunk.size());
@@ -182,6 +188,9 @@ et::task<std::optional<std::string>> StreamTransport::read_message() {
         }
 
         const auto header_end = marker + 4;
+        if(header_end > max_header_bytes) {
+            co_return std::nullopt;
+        }
         const auto consumed_from_chunk = header_end > old_size ? header_end - old_size : 0;
         read_stream.consume(consumed_from_chunk);
 

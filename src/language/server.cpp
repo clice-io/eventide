@@ -166,20 +166,21 @@ struct LanguageServer::Self {
             return std::unexpected(id_json.error());
         }
 
-        auto message_json = LanguageServer::serialize_json(message);
-        if(!message_json) {
-            return std::unexpected(message_json.error());
+        auto error_json = LanguageServer::serialize_json(protocol::ResponseError{
+            .code = code,
+            .message = std::move(message),
+        });
+        if(!error_json) {
+            return std::unexpected(error_json.error());
         }
 
         std::string response;
-        response.reserve(80 + id_json->size() + message_json->size());
+        response.reserve(56 + id_json->size() + error_json->size());
         response.append("{\"jsonrpc\":\"2.0\",\"id\":");
         response.append(*id_json);
-        response.append(",\"error\":{\"code\":");
-        response.append(std::to_string(code));
-        response.append(",\"message\":");
-        response.append(*message_json);
-        response.append("}}");
+        response.append(",\"error\":");
+        response.append(*error_json);
+        response.push_back('}');
         return response;
     }
 

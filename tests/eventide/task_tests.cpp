@@ -2,6 +2,7 @@
 
 #include "zest/macro.h"
 #include "zest/zest.h"
+#include "eventide/compiler.h"
 #include "eventide/loop.h"
 #include "eventide/task.h"
 
@@ -26,8 +27,9 @@ TEST_CASE(task_await) {
         co_return res + res1;
     };
 
-// MSVC's implementation of coroutines has some problems, so we cannot run the test case to pass ci.
-#ifndef _MSC_VER
+// Visual Studio issue:
+// https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
+#if !EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     {
         event_loop loop;
         loop.schedule(foo());

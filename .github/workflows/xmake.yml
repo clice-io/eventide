@@ -5,12 +5,20 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }} | mode=${{ matrix.mode }} | all_tests=ON
+    name: ${{ matrix.os }} | mode=${{ matrix.mode }} | toolchain=${{ matrix.toolchain }} | all_tests=ON
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2025, ubuntu-24.04, macos-15]
         mode: [debug, release]
+        toolchain: [default]
+        include:
+          - os: windows-2025
+            mode: debug
+            toolchain: clang-cl
+          - os: windows-2025
+            mode: release
+            toolchain: clang-cl
 
     runs-on: ${{ matrix.os }}
 
@@ -23,9 +31,9 @@ jobs:
         with:
           xmake-version: "3.0.5"
           actions-cache-folder: ".xmake-cache"
-          actions-cache-key: ${{ matrix.os }}-${{ matrix.mode }}
+          actions-cache-key: ${{ matrix.os }}-${{ matrix.mode }}-${{ matrix.toolchain }}
           package-cache: true
-          package-cache-key: ${{ matrix.os }}-${{ matrix.mode }}
+          package-cache-key: ${{ matrix.os }}-${{ matrix.mode }}-${{ matrix.toolchain }}
 
       - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.3
@@ -35,15 +43,24 @@ jobs:
           cache: true
 
       - name: Configure
-        if: runner.os != 'macOS'
+        if: runner.os != 'macOS' && matrix.toolchain == 'default'
         run: >
           xmake config --clean --yes
           --mode=${{ matrix.mode }}
           --dev=y
           --build_all_tests=y
 
+      - name: Configure (windows clang-cl)
+        if: runner.os == 'Windows' && matrix.toolchain == 'clang-cl'
+        run: >
+          xmake config --clean --yes
+          --mode=${{ matrix.mode }}
+          --toolchain=clang-cl
+          --dev=y
+          --build_all_tests=y
+
       - name: Configure (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && matrix.toolchain == 'default'
         run: >
           xmake config --clean --yes
           --mode=${{ matrix.mode }}

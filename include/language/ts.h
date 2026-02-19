@@ -83,7 +83,7 @@ template <typename Params>
 struct NotificationTraits;
 
 using boolean = bool;
-using integer = std::int64_t;
+using integer = std::int32_t;
 using uinteger = std::uint32_t;
 using decimal = double;
 using string = std::string;
@@ -99,7 +99,11 @@ struct IncomingMessage {
     optional<string> params_json;
 };
 
-struct ResponseError {};
+struct ResponseError {
+    integer code = 0;
+    string message;
+    optional<LSPAny> data = {};
+};
 
 }  // namespace language::protocol
 
