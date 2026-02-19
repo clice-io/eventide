@@ -8,6 +8,7 @@
 #include <string_view>
 #include <tuple>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -90,4 +91,48 @@ using null = std::nullptr_t;
 using URI = string;
 using DocumentUri = string;
 
+using RequestID = variant<integer, string>;
+
+struct IncomingMessage {
+    optional<string> method;
+    optional<RequestID> id;
+    optional<string> params_json;
+};
+
+struct ResponseError {};
+
 }  // namespace language::protocol
+
+namespace serde {
+
+template <serializer_like S>
+struct serialize_traits<S, language::protocol::LSPAny> {
+    using value_type = typename S::value_type;
+    using error_type = typename S::error_type;
+
+    static auto serialize(S& serializer, const language::protocol::LSPAny& value)
+        -> std::expected<value_type, error_type> {
+        const auto& variant = static_cast<const language::protocol::LSPVariant&>(value);
+        return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
+                          variant);
+    }
+};
+
+template <deserializer_like D>
+struct deserialize_traits<D, language::protocol::LSPAny> {
+    using error_type = typename D::error_type;
+
+    static auto deserialize(D& deserializer, language::protocol::LSPAny& value)
+        -> std::expected<void, error_type> {
+        language::protocol::LSPVariant variant{};
+        auto status = serde::deserialize(deserializer, variant);
+        if(!status) {
+            return std::unexpected(status.error());
+        }
+        std::visit([&](auto&& item) { value = std::forward<decltype(item)>(item); },
+                   std::move(variant));
+        return {};
+    }
+};
+
+}  // namespace serde

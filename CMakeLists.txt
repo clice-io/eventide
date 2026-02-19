@@ -11,6 +11,24 @@ option(EVENTIDE_ENABLE_ASYNC "Enable async eventide target and libuv dependency"
 option(EVENTIDE_ENABLE_TEST "Build unit tests" OFF)
 option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
 option(EVENTIDE_SERDE_ENABLE_SIMDJSON "Enable simdjson dependency for eventide::serde" OFF)
+option(EVENTIDE_BUILD_ALL_TESTS "Enable all optional test suites for CI" OFF)
+
+if(EVENTIDE_BUILD_ALL_TESTS)
+    if(NOT EVENTIDE_ENABLE_TEST)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_ENABLE_TEST")
+        set(EVENTIDE_ENABLE_TEST ON CACHE BOOL "Build unit tests" FORCE)
+    endif()
+
+    if(NOT EVENTIDE_ENABLE_ASYNC)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_ENABLE_ASYNC")
+        set(EVENTIDE_ENABLE_ASYNC ON CACHE BOOL "Enable async eventide target and libuv dependency" FORCE)
+    endif()
+
+    if(NOT EVENTIDE_SERDE_ENABLE_SIMDJSON)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_SERDE_ENABLE_SIMDJSON")
+        set(EVENTIDE_SERDE_ENABLE_SIMDJSON ON CACHE BOOL "Enable simdjson dependency for eventide::serde" FORCE)
+    endif()
+endif()
 
 if(EVENTIDE_ENABLE_TEST)
     if(NOT EVENTIDE_ENABLE_ZEST)
@@ -189,6 +207,18 @@ if(EVENTIDE_ENABLE_TEST)
         )
     else()
         message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/simdjson_tests.cpp")
+    endif()
+
+    if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+        set(TEST_LANGUAGE_SOURCES ${TEST_SOURCES})
+        list(FILTER TEST_LANGUAGE_SOURCES INCLUDE REGEX "^tests/language/.*\\.cpp$")
+        target_sources(unit_tests PRIVATE
+            ${TEST_LANGUAGE_SOURCES}
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/language/server.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/language/transport.cpp"
+        )
+    else()
+        message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF or EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/language/*")
     endif()
 
     target_include_directories(unit_tests PRIVATE

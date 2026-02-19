@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }} | ${{ matrix.build_type }} | async=ON | simdjson=ON
+    name: ${{ matrix.os }} | ${{ matrix.build_type }} | all_tests=ON
     strategy:
       fail-fast: false
       matrix:
@@ -29,9 +29,7 @@ jobs:
         run: >
           cmake -S . -B build-cmake
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DEVENTIDE_ENABLE_TEST=ON
-          -DEVENTIDE_ENABLE_ASYNC=ON
-          -DEVENTIDE_SERDE_ENABLE_SIMDJSON=ON
+          -DEVENTIDE_BUILD_ALL_TESTS=ON
 
       - name: Build
         if: runner.os != 'Windows'
