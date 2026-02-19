@@ -17,6 +17,7 @@ option("build_all_tests", {
 })
 
 local build_all_tests = has_config("build_all_tests")
+local enable_simdjson = build_all_tests or has_config("serde_simdjson")
 
 if has_config("dev") then
 	-- Don't fetch system package
@@ -58,7 +59,7 @@ end
 set_languages("c++23")
 
 add_requires("libuv v1.52.0", "cpptrace v1.0.4")
-if build_all_tests or has_config("serde_simdjson") then
+if enable_simdjson then
 	add_requires("simdjson v4.2.4")
 end
 if (build_all_tests or has_config("test")) and is_plat("windows") then
@@ -81,7 +82,7 @@ target("eventide", function()
 	add_headerfiles("include/(eventide/*.h)")
 	add_packages("libuv")
 
-	if build_all_tests or has_config("serde_simdjson") then
+	if enable_simdjson then
 		add_packages("simdjson", { public = true })
 	end
 end)
@@ -89,11 +90,12 @@ end)
 target("unit_tests", function()
 	set_default(false)
 	set_kind("binary")
-	if build_all_tests or has_config("serde_simdjson") then
+	if enable_simdjson then
 		add_files("tests/**.cpp")
+		add_files("src/language/server.cpp", "src/language/transport.cpp")
 		add_packages("simdjson")
 	else
-		add_files("tests/**.cpp|serde/**.cpp")
+		add_files("tests/**.cpp|serde/**.cpp|language/**.cpp")
 	end
 	add_includedirs("include")
 	add_deps("ztest", "eventide")
