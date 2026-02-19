@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -15,6 +16,7 @@ namespace et = eventide;
 namespace {
 
 constexpr std::size_t max_header_bytes = 8 * 1024;
+constexpr std::size_t max_payload_bytes = 64 * 1024 * 1024;
 
 std::string_view trim_ascii(std::string_view value) {
     auto start = value.find_first_not_of(" \t");
@@ -69,7 +71,15 @@ std::optional<std::size_t> parse_content_length(std::string_view header) {
             if(ch < '0' || ch > '9') {
                 return std::nullopt;
             }
-            parsed = parsed * 10 + static_cast<std::size_t>(ch - '0');
+            const auto digit = static_cast<std::size_t>(ch - '0');
+            if(parsed > ((std::numeric_limits<std::size_t>::max)() - digit) / 10) {
+                return std::nullopt;
+            }
+            parsed = parsed * 10 + digit;
+        }
+
+        if(parsed > max_payload_bytes) {
+            return std::nullopt;
         }
         return parsed;
     }

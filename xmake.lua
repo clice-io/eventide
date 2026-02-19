@@ -23,7 +23,9 @@ if has_config("dev") then
 	-- Don't fetch system package
 	set_policy("package.install_only", true)
 	set_policy("build.ccache", true)
-	if is_mode("debug") then
+	-- Keep Windows toolchains aligned with third-party prebuilt packages (e.g. cpptrace),
+	-- otherwise ASan-specific /failifmismatch metadata can break linking.
+	if is_mode("debug") and not is_plat("windows") then
 		set_policy("build.sanitizer.address", true)
 	end
 

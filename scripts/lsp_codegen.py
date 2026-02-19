@@ -1495,7 +1495,7 @@ def main() -> int:
         for warning in bool_warnings:
             print(f"[WARNING] {warning}")
     else:
-        print("[WARNING] no suspicious optional-bool defaults detected")
+        print("[INFO] no suspicious optional-bool defaults detected")
 
     unsafe_overrides: list[str] = summary["unsafe_overrides"]  # type: ignore[assignment]
     for warning in unsafe_overrides:
