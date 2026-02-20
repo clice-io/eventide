@@ -10,6 +10,11 @@ option("serde_simdjson", {
 	showmenu = true,
 	description = "Enable simdjson dependency for serde tests/headers",
 })
+option("serde_flatbuffers", {
+	default = false,
+	showmenu = true,
+	description = "Enable flatbuffers dependency for serde tests/headers",
+})
 option("build_all_tests", {
 	default = false,
 	showmenu = true,
@@ -18,6 +23,7 @@ option("build_all_tests", {
 
 local build_all_tests = has_config("build_all_tests")
 local enable_simdjson = build_all_tests or has_config("serde_simdjson")
+local enable_flatbuffers = build_all_tests or has_config("serde_flatbuffers")
 
 if has_config("dev") then
 	-- Don't fetch system package
@@ -64,6 +70,9 @@ add_requires("libuv v1.52.0", "cpptrace v1.0.4")
 if enable_simdjson then
 	add_requires("simdjson v4.2.4")
 end
+if enable_flatbuffers then
+	add_requires("flatbuffers v25.2.10")
+end
 if (build_all_tests or has_config("test")) and is_plat("windows") then
 	add_requires("unistd_h")
 end
@@ -89,18 +98,33 @@ target("eventide", function()
 	end
 end)
 
+if enable_flatbuffers then
+	target("serde_flatbuffers", function()
+		set_kind("$(kind)")
+		add_files("src/serde/flatbuffers/flex/*.cpp")
+		add_includedirs("include", { public = true })
+		add_packages("flatbuffers", { public = true })
+	end)
+end
+
 target("unit_tests", function()
 	set_default(false)
 	set_kind("binary")
+	add_files("tests/**.cpp|serde/**.cpp|language/**.cpp")
 	if enable_simdjson then
-		add_files("tests/**.cpp")
+		add_files("tests/serde/simdjson*.cpp")
+		add_files("tests/language/**.cpp")
 		add_files("src/language/server.cpp", "src/language/transport.cpp")
 		add_packages("simdjson")
-	else
-		add_files("tests/**.cpp|serde/**.cpp|language/**.cpp")
+	end
+	if enable_flatbuffers then
+		add_files("tests/serde/flatbuffers*.cpp")
 	end
 	add_includedirs("include")
 	add_deps("ztest", "eventide")
+	if enable_flatbuffers then
+		add_deps("serde_flatbuffers")
+	end
 
 	if (build_all_tests or has_config("test")) and is_plat("windows") then
 		add_packages("unistd_h")
