@@ -3,6 +3,7 @@
 #include <array>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 #include "name.h"
 
@@ -134,25 +135,39 @@ consteval std::string_view field_name() {
     return field_names<Object>()[I];
 }
 
-template <std::size_t N, class Object>
-consteval auto field_offset() noexcept -> std::size_t {
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundefined-var-template"
-#endif
+template <class Object>
+consteval auto field_offset(std::size_t index) noexcept -> std::size_t {
+    constexpr std::size_t count = reflection<Object>::field_count;
+    if(index >= count) {
+        std::unreachable();
+    }
+
     const auto& unknown = detail::ext<detail::uninitialized<Object>>;
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
-    const void* address = field_addr_of<N>(unknown.value);
+    auto typed_addrs = reflection<Object>::field_addrs(unknown.value);
+    std::array<const void*, count> addrs{};
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        ((addrs[Is] = static_cast<const void*>(std::get<Is>(typed_addrs))), ...);
+    }(std::make_index_sequence<count>{});
+
+    const void* address = addrs[index];
     for(std::size_t i = 0; i < sizeof(unknown.bytes); ++i) {
         if(address == &unknown.bytes[i]) {
             return i;
         }
     }
-#if defined(__clang__)
-    __builtin_unreachable();
-#endif
+    std::unreachable();
+}
+
+template <typename C, typename M>
+consteval auto field_offset(M C::* member) noexcept -> std::size_t {
+    const auto& unknown = detail::ext<detail::uninitialized<C>>;
+    const void* address = &(unknown.value.*member);
+    for(std::size_t i = 0; i < sizeof(unknown.bytes); ++i) {
+        if(address == &unknown.bytes[i]) {
+            return i;
+        }
+    }
+    std::unreachable();
 }
 
 template <std::size_t I, typename Object>
@@ -174,7 +189,7 @@ struct field {
     }
 
     constexpr static std::size_t offset() {
-        return field_offset<I, Object>();
+        return field_offset<Object>(I);
     }
 };
 
