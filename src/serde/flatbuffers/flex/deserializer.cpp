@@ -105,7 +105,8 @@ auto Deserializer::DeserializeObject::end() -> status_t {
     return {};
 }
 
-Deserializer::Deserializer(std::span<const std::uint8_t> bytes) : buffer_storage(bytes.begin(), bytes.end()) {
+Deserializer::Deserializer(std::span<const std::uint8_t> bytes) :
+    buffer_storage(bytes.begin(), bytes.end()) {
     initialize();
 }
 

@@ -72,11 +72,7 @@ end)
 target("unit_tests", function()
 	set_default(false)
 	set_kind("binary")
-	add_files(
-		"tests/main.cpp",
-		"tests/eventide/**.cpp",
-		"tests/reflection/**.cpp"
-	)
+	add_files("tests/main.cpp", "tests/eventide/**.cpp", "tests/reflection/**.cpp")
 	add_includedirs("include")
 	add_deps("ztest", "eventide")
 

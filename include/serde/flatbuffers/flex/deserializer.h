@@ -20,7 +20,8 @@
 #if __has_include(<flatbuffers/flexbuffers.h>)
 #include <flatbuffers/flexbuffers.h>
 #else
-#error "flatbuffers/flexbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+#error                                                                                             \
+    "flatbuffers/flexbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
 namespace serde::flex {
@@ -343,6 +344,8 @@ static_assert(serde::deserializer_like<Deserializer>);
 }  // namespace serde::flex
 
 namespace serde::flatbuffers {
+
 using Deserializer = serde::flex::Deserializer;
 using serde::flex::from_flatbuffer;
+
 }  // namespace serde::flatbuffers

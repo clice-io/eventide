@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "serde/flatbuffers/schema/schema.h"
 #include "zest/zest.h"
+#include "serde/flatbuffers/schema/schema.h"
 
 namespace serde::testing {
 
@@ -45,9 +45,9 @@ TEST_CASE(map_field_emits_binary_search_entry_table) {
 
 TEST_CASE(sorted_entries_support_binary_search_lookup) {
     const std::map<std::string, int> input{
-        {"zeta", 3},
+        {"zeta",  3},
         {"alpha", 1},
-        {"mid", 2},
+        {"mid",   2},
     };
 
     auto entries = serde::flatbuffers::schema::to_sorted_entries(input);

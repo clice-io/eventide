@@ -19,7 +19,8 @@
 #if __has_include(<flatbuffers/flexbuffers.h>)
 #include <flatbuffers/flexbuffers.h>
 #else
-#error "flatbuffers/flexbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
+#error                                                                                             \
+    "flatbuffers/flexbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
 namespace serde::flex {
@@ -183,8 +184,8 @@ private:
 template <typename T>
 auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::vector<std::uint8_t>, error_code> {
-    Serializer serializer = initial_capacity.has_value() ? Serializer(*initial_capacity)
-                                                         : Serializer();
+    Serializer serializer =
+        initial_capacity.has_value() ? Serializer(*initial_capacity) : Serializer();
     auto result = serde::serialize(serializer, value);
     if(!result) {
         return std::unexpected(result.error());
@@ -197,6 +198,8 @@ static_assert(serde::serializer_like<Serializer>);
 }  // namespace serde::flex
 
 namespace serde::flatbuffers {
+
 using Serializer = serde::flex::Serializer;
 using serde::flex::to_flatbuffer;
+
 }  // namespace serde::flatbuffers

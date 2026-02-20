@@ -44,27 +44,23 @@ auto Serializer::error() const -> error_type {
 }
 
 auto Serializer::serialize_none() -> result_t<value_type> {
-    return write_leaf([&] { builder.Null(); }, [&](const std::string& key_name) {
-        builder.Null(key_name.c_str());
-    });
+    return write_leaf([&] { builder.Null(); },
+                      [&](const std::string& key_name) { builder.Null(key_name.c_str()); });
 }
 
 auto Serializer::serialize_bool(bool value) -> result_t<value_type> {
-    return write_leaf([&] { builder.Bool(value); }, [&](const std::string& key_name) {
-        builder.Bool(key_name.c_str(), value);
-    });
+    return write_leaf([&] { builder.Bool(value); },
+                      [&](const std::string& key_name) { builder.Bool(key_name.c_str(), value); });
 }
 
 auto Serializer::serialize_int(std::int64_t value) -> result_t<value_type> {
-    return write_leaf([&] { builder.Int(value); }, [&](const std::string& key_name) {
-        builder.Int(key_name.c_str(), value);
-    });
+    return write_leaf([&] { builder.Int(value); },
+                      [&](const std::string& key_name) { builder.Int(key_name.c_str(), value); });
 }
 
 auto Serializer::serialize_uint(std::uint64_t value) -> result_t<value_type> {
-    return write_leaf([&] { builder.UInt(value); }, [&](const std::string& key_name) {
-        builder.UInt(key_name.c_str(), value);
-    });
+    return write_leaf([&] { builder.UInt(value); },
+                      [&](const std::string& key_name) { builder.UInt(key_name.c_str(), value); });
 }
 
 auto Serializer::serialize_float(double value) -> result_t<value_type> {
@@ -72,16 +68,15 @@ auto Serializer::serialize_float(double value) -> result_t<value_type> {
         return serialize_none();
     }
 
-    return write_leaf([&] { builder.Double(value); }, [&](const std::string& key_name) {
-        builder.Double(key_name.c_str(), value);
-    });
+    return write_leaf(
+        [&] { builder.Double(value); },
+        [&](const std::string& key_name) { builder.Double(key_name.c_str(), value); });
 }
 
 auto Serializer::serialize_char(char value) -> result_t<value_type> {
     const std::string text(1, value);
-    return write_leaf([&] { builder.String(text); }, [&](const std::string& key_name) {
-        builder.String(key_name.c_str(), text);
-    });
+    return write_leaf([&] { builder.String(text); },
+                      [&](const std::string& key_name) { builder.String(key_name.c_str(), text); });
 }
 
 auto Serializer::serialize_str(std::string_view value) -> result_t<value_type> {

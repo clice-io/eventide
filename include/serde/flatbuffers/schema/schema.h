@@ -145,18 +145,16 @@ struct schema_struct_trait {
         }
     }
 
-    static constexpr bool value =
-        refl::reflectable_class<T> && std::is_trivial_v<T> && std::is_standard_layout_v<T> &&
-        fields_supported();
+    constexpr static bool value = refl::reflectable_class<T> && std::is_trivial_v<T> &&
+                                  std::is_standard_layout_v<T> && fields_supported();
 };
 
 template <typename T>
 constexpr bool is_schema_struct_v = schema_struct_trait<T>::value;
 
 template <typename T>
-constexpr bool is_string_like_field_v =
-    std::same_as<remove_optional_t<T>, std::string> ||
-    std::same_as<remove_optional_t<T>, std::string_view>;
+constexpr bool is_string_like_field_v = std::same_as<remove_optional_t<T>, std::string> ||
+                                        std::same_as<remove_optional_t<T>, std::string_view>;
 
 std::string map_entry_identifier(std::string_view owner_name, std::string_view field_name) {
     return normalize_identifier(std::string(owner_name) + "_" + std::string(field_name) + "Entry");
@@ -199,8 +197,7 @@ private:
             return;
         }
 
-        out += "enum " + enum_name + ":" + scalar_schema_name<std::underlying_type_t<E>>() +
-               " {\n";
+        out += "enum " + enum_name + ":" + scalar_schema_name<std::underlying_type_t<E>>() + " {\n";
 
         const auto& names = refl::reflection<E>::member_names;
         const auto& values = refl::reflection<E>::member_values;
@@ -338,11 +335,12 @@ auto to_sorted_entries(const Map& map)
 }
 
 template <typename EntryVec, typename Key>
-auto bsearch_entry(const EntryVec& entries, const Key& key)
-    -> const typename EntryVec::value_type* {
-    auto it = std::lower_bound(entries.begin(), entries.end(), key, [](const auto& entry, const auto& k) {
-        return entry.key < k;
-    });
+auto bsearch_entry(const EntryVec& entries, const Key& key) -> const
+    typename EntryVec::value_type* {
+    auto it =
+        std::lower_bound(entries.begin(), entries.end(), key, [](const auto& entry, const auto& k) {
+            return entry.key < k;
+        });
     if(it == entries.end() || it->key != key) {
         return nullptr;
     }
