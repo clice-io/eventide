@@ -53,17 +53,21 @@ endif()
 include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
-add_subdirectory(cmake/subprojects/reflection)
-add_subdirectory(cmake/subprojects/serde)
+add_subdirectory(src/reflection)
+add_subdirectory(src/serde)
 
 if(EVENTIDE_ENABLE_ASYNC)
-    add_subdirectory(cmake/subprojects/eventide)
+    add_subdirectory(src/eventide)
+endif()
+
+if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    add_subdirectory(src/language)
 endif()
 
 if(EVENTIDE_ENABLE_ZEST)
-    add_subdirectory(cmake/subprojects/zest)
+    add_subdirectory(src/zest)
 endif()
 
 if(EVENTIDE_ENABLE_TEST)
-    add_subdirectory(cmake/subprojects/tests)
+    add_subdirectory(tests)
 endif()

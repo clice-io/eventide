@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }} | mode=${{ matrix.mode }} | toolchain=${{ matrix.toolchain }} | all_tests=ON
+    name: ${{ matrix.os }} | mode=${{ matrix.mode }} | toolchain=${{ matrix.toolchain }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +48,6 @@ jobs:
           xmake config --clean --yes
           --mode=${{ matrix.mode }}
           --dev=y
-          --build_all_tests=y
 
       - name: Configure (windows clang-cl)
         if: runner.os == 'Windows' && matrix.toolchain == 'clang-cl'
@@ -57,7 +56,6 @@ jobs:
           --mode=${{ matrix.mode }}
           --toolchain=clang-cl
           --dev=y
-          --build_all_tests=y
 
       - name: Configure (macOS)
         if: runner.os == 'macOS' && matrix.toolchain == 'default'
@@ -66,7 +64,6 @@ jobs:
           --mode=${{ matrix.mode }}
           --toolchain=clang
           --dev=y
-          --build_all_tests=y
 
       - name: Build
         run: xmake --all --verbose --diagnosis

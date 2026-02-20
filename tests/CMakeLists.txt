@@ -1,4 +1,11 @@
 add_executable(unit_tests)
+set_target_properties(unit_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
+)
 
 file(GLOB_RECURSE TEST_SOURCES RELATIVE "${CMAKE_SOURCE_DIR}" CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/tests/*.cpp"
@@ -48,8 +55,9 @@ if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
     list(TRANSFORM TEST_LANGUAGE_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_LANGUAGE_SOURCES}
-        "${CMAKE_SOURCE_DIR}/src/language/server.cpp"
-        "${CMAKE_SOURCE_DIR}/src/language/transport.cpp"
+    )
+    target_link_libraries(unit_tests PRIVATE
+        eventide::language
     )
 else()
     message(STATUS "EVENTIDE_ENABLE_ASYNC=OFF or EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/language/*")
