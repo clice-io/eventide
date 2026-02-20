@@ -54,4 +54,4 @@ jobs:
 
       - name: Test (windows)
         if: runner.os == 'Windows'
-        run: .\build-cmake\${{ matrix.build_type }}\unit_tests.exe
+        run: .\build-cmake\unit_tests.exe
