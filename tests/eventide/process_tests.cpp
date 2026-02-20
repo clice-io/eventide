@@ -70,7 +70,7 @@ TEST_CASE(spawn_pipe_stdout) {
     auto spawn_res = process::spawn(opts, loop);
     ASSERT_TRUE(spawn_res.has_value());
 
-    auto capture_stdout = [&]() mutable -> task<void> {
+    auto capture_stdout = [&]() -> task<void> {
         auto stdout_out = co_await spawn_res->stdout_pipe.read();
         auto status = co_await spawn_res->proc.wait();
 
