@@ -6,10 +6,10 @@
 #include <utility>
 #include <vector>
 
-#include "zest/zest.h"
-#include "eventide/compiler.h"
-#include "language/server.h"
-#include "serde/simdjson/deserializer.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/compiler.h"
+#include "eventide/language/server.h"
+#include "eventide/serde/simdjson/deserializer.h"
 
 namespace eventide::language {
 

@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "serde/serde.h"
+#include "eventide/serde/serde.h"
 
 #if __has_include(<simdjson.h>)
 #include <simdjson.h>

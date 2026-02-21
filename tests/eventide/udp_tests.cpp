@@ -1,9 +1,9 @@
 #include <string>
 #include <string_view>
 
-#include "zest/zest.h"
-#include "eventide/loop.h"
-#include "eventide/udp.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/udp.h"
 
 namespace eventide {
 

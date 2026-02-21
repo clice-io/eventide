@@ -1,4 +1,4 @@
-#include "serde/flatbuffers/flex/deserializer.h"
+#include "eventide/serde/flatbuffers/flex/deserializer.h"
 
 namespace eventide::serde::flex {
 

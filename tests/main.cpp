@@ -3,9 +3,9 @@
 #include <string>
 #include <string_view>
 
-#include "zest/zest.h"
-#include "eventide/loop.h"
-#include "eventide/stream.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/stream.h"
 
 namespace zest = eventide::zest;
 

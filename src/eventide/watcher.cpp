@@ -1,12 +1,12 @@
-#include "eventide/watcher.h"
+#include "eventide/async/watcher.h"
 
 #include <cassert>
 #include <chrono>
 #include <memory>
 
 #include "libuv.h"
-#include "eventide/error.h"
-#include "eventide/loop.h"
+#include "eventide/async/error.h"
+#include "eventide/async/loop.h"
 
 namespace eventide {
 

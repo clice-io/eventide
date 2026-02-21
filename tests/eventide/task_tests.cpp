@@ -1,10 +1,10 @@
 #include <stdexcept>
 
-#include "zest/macro.h"
-#include "zest/zest.h"
-#include "eventide/compiler.h"
-#include "eventide/loop.h"
-#include "eventide/task.h"
+#include "eventide/zest/macro.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/compiler.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/task.h"
 
 namespace eventide {
 

@@ -12,7 +12,7 @@
 #include <variant>
 #include <vector>
 
-#include "serde/serde.h"
+#include "eventide/serde/serde.h"
 
 namespace eventide::language::protocol {
 

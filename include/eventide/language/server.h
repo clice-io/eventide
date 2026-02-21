@@ -12,12 +12,12 @@
 #include <unordered_map>
 #include <utility>
 
-#include "eventide/task.h"
-#include "language/protocol.h"
-#include "language/transport.h"
-#include "reflection/function.h"
-#include "serde/simdjson/deserializer.h"
-#include "serde/simdjson/serializer.h"
+#include "eventide/async/task.h"
+#include "eventide/language/protocol.h"
+#include "eventide/language/transport.h"
+#include "eventide/reflection/function.h"
+#include "eventide/serde/simdjson/deserializer.h"
+#include "eventide/serde/simdjson/serializer.h"
 
 namespace eventide::language {
 

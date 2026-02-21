@@ -1,9 +1,9 @@
 #include <chrono>
 
-#include "zest/zest.h"
-#include "eventide/loop.h"
-#include "eventide/sync.h"
-#include "eventide/watcher.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/sync.h"
+#include "eventide/async/watcher.h"
 
 namespace eventide {
 

@@ -1,4 +1,4 @@
-#include "language/server.h"
+#include "eventide/language/server.h"
 
 #include <deque>
 #include <limits>

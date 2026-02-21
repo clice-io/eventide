@@ -1,7 +1,7 @@
 #include <cstdint>
 
-#include "zest/zest.h"
-#include "reflection/enum.h"
+#include "eventide/zest/zest.h"
+#include "eventide/reflection/enum.h"
 
 namespace eventide::refl {
 

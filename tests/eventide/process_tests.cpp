@@ -1,8 +1,8 @@
 #include <string>
 
-#include "zest/zest.h"
-#include "eventide/loop.h"
-#include "eventide/process.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/process.h"
 
 namespace eventide {
 

@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "serde/serde.h"
+#include "eventide/serde/serde.h"
 
 namespace eventide::serde::flatbuffers::schema {
 

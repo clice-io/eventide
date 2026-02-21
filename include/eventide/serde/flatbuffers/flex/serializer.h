@@ -13,8 +13,8 @@
 #include <utility>
 #include <vector>
 
-#include "serde/flatbuffers/error.h"
-#include "serde/serde.h"
+#include "eventide/serde/flatbuffers/error.h"
+#include "eventide/serde/serde.h"
 
 #if __has_include(<flatbuffers/flexbuffers.h>)
 #include <flatbuffers/flexbuffers.h>

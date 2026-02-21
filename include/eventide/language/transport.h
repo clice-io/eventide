@@ -6,8 +6,8 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/stream.h"
-#include "eventide/task.h"
+#include "eventide/async/stream.h"
+#include "eventide/async/task.h"
 
 namespace eventide::language {
 
