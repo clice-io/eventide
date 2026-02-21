@@ -121,7 +121,7 @@ bool bump_and_stop(int& done, int target) {
     return false;
 }
 
-task<std::string> read_from_pipe(pipe p) {
+task<result<std::string>> read_from_pipe(pipe p) {
     auto out = co_await p.read();
     event_loop::current().stop();
     co_return out;
@@ -136,12 +136,20 @@ task<std::string> read_some_from_pipe(pipe p) {
 
 task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
     auto view = co_await p.read_chunk();
-    std::string out(view.begin(), view.end());
-    p.consume(view.size());
+    if(!view) {
+        event_loop::current().stop();
+        co_return std::make_pair(std::string{}, static_cast<std::size_t>(0));
+    }
+    std::string out(view->begin(), view->end());
+    p.consume(view->size());
 
     auto next = co_await p.read_chunk();
     event_loop::current().stop();
-    co_return std::make_pair(out, next.size());
+
+    if(!next) {
+        co_return std::make_pair(out, static_cast<std::size_t>(0));
+    }
+    co_return std::make_pair(out, next->size());
 }
 
 task<result<pipe>> connect_pipe(std::string_view name, int& done, int target = 2) {
@@ -256,7 +264,11 @@ TEST_CASE(read_from_fd) {
     loop.schedule(reader);
     loop.run();
 
-    EXPECT_EQ(reader.result(), message);
+    auto result = reader.result();
+    EXPECT_TRUE(result.has_value());
+    if(result.has_value()) {
+        EXPECT_EQ(*result, message);
+    }
 }
 
 TEST_CASE(read_some_from_fd) {

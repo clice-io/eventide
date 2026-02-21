@@ -49,7 +49,7 @@ public:
     const void* handle() const noexcept;
 
     /// Read available data into a std::string; waits for at least one read if empty.
-    task<std::string> read();
+    task<result<std::string>> read();
 
     /// Read up to dst.size() bytes into dst; returns bytes read (0 on EOF/invalid).
     task<std::size_t> read_some(std::span<char> dst);
@@ -57,7 +57,7 @@ public:
     using chunk = std::span<const char>;
 
     /// Read a chunk view into the internal buffer; call consume() after processing.
-    task<chunk> read_chunk();
+    task<result<chunk>> read_chunk();
 
     /// Consume bytes from the internal buffer.
     void consume(std::size_t n);
