@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
-#include "eventide/async/compiler.h"
+#include "eventide/common/compiler.h"
 #include "eventide/serde/simdjson/deserializer.h"
 #include "eventide/language/server.h"
 
