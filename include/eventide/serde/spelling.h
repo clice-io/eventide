@@ -10,16 +10,14 @@
 #include <type_traits>
 #include <utility>
 
-#include "../reflection/enum.h"
+#include "eventide/common/meta.h"
+#include "eventide/reflection/enum.h"
 
 namespace eventide::serde {
 
 namespace spelling {
 
 namespace detail {
-
-template <typename T>
-constexpr inline bool dependent_false_v = false;
 
 template <typename Mapped>
 std::string to_string_storage(Mapped&& mapped) {
@@ -29,7 +27,7 @@ std::string to_string_storage(Mapped&& mapped) {
     } else if constexpr(std::convertible_to<Mapped, std::string_view>) {
         return std::string(static_cast<std::string_view>(mapped));
     } else {
-        static_assert(dependent_false_v<mapped_t>,
+        static_assert(dependent_false<mapped_t>,
                       "rename policy must return std::string or string-like value");
         return {};
     }
@@ -225,7 +223,7 @@ std::string apply_rename_policy(bool is_serialize, std::string_view value) {
     if constexpr(requires(Policy policy) { policy(is_serialize, value); }) {
         return detail::to_string_storage(Policy{}(is_serialize, value));
     } else {
-        static_assert(detail::dependent_false_v<Policy>,
+        static_assert(dependent_false<Policy>,
                       "rename policy must support operator()(bool, std::string_view)");
     }
     return std::string(value);
@@ -319,7 +317,7 @@ std::string map_key_to_string(const Key& key) {
     } else if constexpr(std::floating_point<key_t>) {
         return std::to_string(static_cast<double>(key));
     } else {
-        static_assert(detail::dependent_false_v<key_t>,
+        static_assert(dependent_false<key_t>,
                       "Unsupported map key type for serializer key mapping");
     }
 }
@@ -363,7 +361,7 @@ std::optional<Key> parse_map_key(std::string_view key_text) {
     } else if constexpr(std::floating_point<key_t>) {
         return detail::parse_floating<key_t>(key_text);
     } else {
-        static_assert(detail::dependent_false_v<key_t>,
+        static_assert(dependent_false<key_t>,
                       "Unsupported map key type for deserializer key parsing");
     }
 }

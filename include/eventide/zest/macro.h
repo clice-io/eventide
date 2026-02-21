@@ -14,32 +14,9 @@
 
 #include "suite.h"
 #include "trace.h"
+#include "eventide/common/meta.h"
 
 namespace eventide::zest {
-
-template <typename T>
-concept Formattable = std::formattable<T, char>;
-
-template <typename... Ts>
-constexpr inline bool dependent_false_v = false;
-
-template <typename T>
-struct is_optional : std::false_type {};
-
-template <typename T>
-struct is_optional<std::optional<T>> : std::true_type {};
-
-template <typename T>
-constexpr inline bool is_optional_v = is_optional<std::remove_cvref_t<T>>::value;
-
-template <typename T>
-struct is_expected : std::false_type {};
-
-template <typename T, typename E>
-struct is_expected<std::expected<T, E>> : std::true_type {};
-
-template <typename T>
-constexpr inline bool is_expected_v = is_expected<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 inline std::string pretty_dump(const T& value) {
@@ -80,7 +57,7 @@ inline bool binary_equal(const L& lhs, const R& rhs) {
                      }) {
             return static_cast<bool>(*lhs == rhs);
         } else {
-            static_assert(dependent_false_v<L, R>,
+            static_assert(dependent_false<L>,
                           "EXPECT_EQ/ASSERT_EQ: expected value and rhs are not comparable");
             return false;
         }
@@ -93,7 +70,7 @@ inline bool binary_equal(const L& lhs, const R& rhs) {
                      }) {
             return static_cast<bool>(lhs == *rhs);
         } else {
-            static_assert(dependent_false_v<L, R>,
+            static_assert(dependent_false<L>,
                           "EXPECT_EQ/ASSERT_EQ: lhs and expected value are not comparable");
             return false;
         }
@@ -102,7 +79,7 @@ inline bool binary_equal(const L& lhs, const R& rhs) {
                         }) {
         return static_cast<bool>(lhs == rhs);
     } else {
-        static_assert(dependent_false_v<L, R>, "EXPECT_EQ/ASSERT_EQ: operands are not comparable");
+        static_assert(dependent_false<L>, "EXPECT_EQ/ASSERT_EQ: operands are not comparable");
         return false;
     }
 }

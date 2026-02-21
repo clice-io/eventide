@@ -1,6 +1,9 @@
 #pragma once
 
 #include <concepts>
+#include <expected>
+#include <format>
+#include <optional>
 #include <type_traits>
 
 namespace eventide {
@@ -16,5 +19,26 @@ constexpr inline bool is_specialization_of = false;
 
 template <template <typename...> typename HKT, typename... Ts>
 constexpr inline bool is_specialization_of<HKT, HKT<Ts...>> = true;
+
+template <typename T>
+concept Formattable = std::formattable<T, char>;
+
+template <typename T>
+struct is_optional : std::false_type {};
+
+template <typename T>
+struct is_optional<std::optional<T>> : std::true_type {};
+
+template <typename T>
+constexpr inline bool is_optional_v = is_optional<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+struct is_expected : std::false_type {};
+
+template <typename T, typename E>
+struct is_expected<std::expected<T, E>> : std::true_type {};
+
+template <typename T>
+constexpr inline bool is_expected_v = is_expected<std::remove_cvref_t<T>>::value;
 
 }  // namespace eventide
