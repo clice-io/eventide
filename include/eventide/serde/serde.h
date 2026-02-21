@@ -2,8 +2,8 @@
 
 #include "attrs.h"
 #include "traits.h"
-#include "../reflection/enum.h"
-#include "../reflection/struct.h"
+#include "eventide/reflection/enum.h"
+#include "eventide/reflection/struct.h"
 
 namespace eventide::serde {
 
