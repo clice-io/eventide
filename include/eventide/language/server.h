@@ -13,11 +13,11 @@
 #include <utility>
 
 #include "eventide/async/task.h"
-#include "eventide/language/protocol.h"
-#include "eventide/language/transport.h"
 #include "eventide/reflection/function.h"
 #include "eventide/serde/simdjson/deserializer.h"
 #include "eventide/serde/simdjson/serializer.h"
+#include "eventide/language/protocol.h"
+#include "eventide/language/transport.h"
 
 namespace eventide::language {
 

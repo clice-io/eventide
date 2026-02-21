@@ -3,9 +3,9 @@
 #include <string>
 #include <string_view>
 
+#include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/stream.h"
-#include "eventide/zest/zest.h"
 
 int main(int argc, char** argv) {
     std::string filter;

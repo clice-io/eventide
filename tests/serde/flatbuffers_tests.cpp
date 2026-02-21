@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "eventide/zest/zest.h"
 #include "eventide/serde/flatbuffers/flex/deserializer.h"
 #include "eventide/serde/flatbuffers/flex/serializer.h"
-#include "eventide/zest/zest.h"
 
 namespace eventide::serde {
 

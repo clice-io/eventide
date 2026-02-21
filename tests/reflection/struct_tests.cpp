@@ -4,8 +4,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "eventide/reflection/struct.h"
 #include "eventide/zest/zest.h"
+#include "eventide/reflection/struct.h"
 
 namespace eventide::refl {
 
