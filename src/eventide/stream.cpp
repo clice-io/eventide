@@ -156,6 +156,7 @@ struct stream_read_await : system_op {
         if(s->reader) {
             auto reader = s->reader;
             s->reader = nullptr;
+            s->error_code = {};
             reader->complete();
         }
     }
@@ -182,7 +183,7 @@ struct stream_read_await : system_op {
     }
 
     error await_resume() noexcept {
-        return self ? self->error_code : error(error::invalid_argument);
+        return self->error_code;
     }
 };
 
