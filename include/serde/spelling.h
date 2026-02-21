@@ -234,7 +234,7 @@ std::string apply_rename_policy(bool is_serialize, std::string_view value) {
 template <typename E, typename Policy = rename_policy::lower_camel>
 std::string map_enum_to_string(E value) {
     static_assert(std::is_enum_v<E>, "map_enum_to_string requires an enum type");
-    return apply_rename_policy<Policy>(true, eventide::refl::enum_name(value));
+    return apply_rename_policy<Policy>(true, refl::enum_name(value));
 }
 
 template <typename E, typename Policy = rename_policy::lower_camel>
@@ -242,25 +242,25 @@ constexpr std::optional<E> map_string_to_enum(std::string_view value) {
     static_assert(std::is_enum_v<E>, "map_string_to_enum requires an enum type");
     auto mapped = apply_rename_policy<Policy>(false, value);
     auto try_parse = [](std::string_view candidate) -> std::optional<E> {
-        if(auto parsed = eventide::refl::enum_value<E>(candidate)) {
+        if(auto parsed = refl::enum_value<E>(candidate)) {
             return parsed;
         }
 
         // Keyword-safe fallback for generated enum members like `Delete_`/`Import_`.
         auto keyword_suffixed = std::string(candidate);
         keyword_suffixed.push_back('_');
-        if(auto parsed = eventide::refl::enum_value<E>(keyword_suffixed)) {
+        if(auto parsed = refl::enum_value<E>(keyword_suffixed)) {
             return parsed;
         }
 
         if(!candidate.empty() && detail::is_ascii_digit(candidate.front())) {
             auto underscored = std::string("_") + std::string(candidate);
-            if(auto parsed = eventide::refl::enum_value<E>(underscored)) {
+            if(auto parsed = refl::enum_value<E>(underscored)) {
                 return parsed;
             }
 
             auto value_prefixed = std::string("V") + std::string(candidate);
-            if(auto parsed = eventide::refl::enum_value<E>(value_prefixed)) {
+            if(auto parsed = refl::enum_value<E>(value_prefixed)) {
                 return parsed;
             }
         }

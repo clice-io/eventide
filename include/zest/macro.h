@@ -47,12 +47,12 @@ inline std::string pretty_dump(const T& value) {
         if(!value) {
             return std::string("nullopt");
         }
-        return eventide::zest::pretty_dump(*value);
+        return zest::pretty_dump(*value);
     } else if constexpr(is_expected_v<T>) {
         if(value.has_value()) {
-            return std::format("expected({})", eventide::zest::pretty_dump(*value));
+            return std::format("expected({})", zest::pretty_dump(*value));
         }
-        return std::format("unexpected({})", eventide::zest::pretty_dump(value.error()));
+        return std::format("unexpected({})", zest::pretty_dump(value.error()));
     } else {
         if constexpr(Formattable<T>) {
             return std::format("{}", value);
@@ -115,7 +115,7 @@ inline bool check_unary_failure(bool failure,
                                 std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} (expected {})", expr, expectation);
-        std::println("           got: {}", eventide::zest::pretty_dump(value));
+        std::println("           got: {}", zest::pretty_dump(value));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
@@ -131,8 +131,8 @@ inline bool check_binary_failure(bool failure,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
-        std::println("           lhs: {}", eventide::zest::pretty_dump(lhs));
-        std::println("           rhs: {}", eventide::zest::pretty_dump(rhs));
+        std::println("           lhs: {}", zest::pretty_dump(lhs));
+        std::println("           rhs: {}", zest::pretty_dump(rhs));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;

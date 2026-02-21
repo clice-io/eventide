@@ -24,7 +24,7 @@ consteval E enum_probe_value() {
 template <typename E, int V>
 consteval std::string_view enum_probe_name() {
     constexpr E value = enum_probe_value<E, V>();
-    return eventide::refl::enum_name<value>();
+    return refl::enum_name<value>();
 }
 
 template <typename E, int V>

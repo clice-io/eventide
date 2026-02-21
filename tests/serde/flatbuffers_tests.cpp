@@ -12,12 +12,12 @@
 #include "serde/flatbuffers/flex/deserializer.h"
 #include "serde/flatbuffers/flex/serializer.h"
 
-namespace eventide::serde::testing {
+namespace eventide::serde {
 
 namespace {
 
-using eventide::serde::flex::from_flatbuffer;
-using eventide::serde::flex::to_flatbuffer;
+using flex::from_flatbuffer;
+using flex::to_flatbuffer;
 
 struct person {
     int id;
@@ -34,9 +34,9 @@ struct person_with_extra {
 
 struct annotated_person {
     int id;
-    eventide::serde::rename_alias<std::string, "displayName", "name"> name;
-    eventide::serde::skip<int> internal_id;
-    eventide::serde::skip_if_none<std::string> note;
+    rename_alias<std::string, "displayName", "name"> name;
+    skip<int> internal_id;
+    skip_if_none<std::string> note;
 };
 
 struct public_person {
@@ -148,6 +148,6 @@ TEST_CASE(optional_and_return_value_overload) {
 
 }  // namespace
 
-}  // namespace eventide::serde::testing
+}  // namespace eventide::serde
 
 #endif

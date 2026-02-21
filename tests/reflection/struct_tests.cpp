@@ -7,7 +7,7 @@
 #include "zest/zest.h"
 #include "reflection/struct.h"
 
-namespace eventide::refl::testing {
+namespace eventide::refl {
 
 namespace {
 
@@ -40,7 +40,7 @@ struct Packed {
 
 struct Empty {};
 
-using point_rvalue_refs = decltype(eventide::refl::field_refs(std::declval<Point&&>()));
+using point_rvalue_refs = decltype(field_refs(std::declval<Point&&>()));
 
 struct MoveOnly {
     MoveOnly() = default;
@@ -137,9 +137,8 @@ consteval bool field_count_robustness_check() {
         T f;
     };
 
-    return eventide::refl::reflection<S4>::field_count == 4 &&
-           eventide::refl::reflection<S5>::field_count == 5 &&
-           eventide::refl::reflection<S6>::field_count == 6;
+    return reflection<S4>::field_count == 4 && reflection<S5>::field_count == 5 &&
+           reflection<S6>::field_count == 6;
 }
 
 TEST_SUITE(reflection) {
@@ -147,18 +146,18 @@ TEST_SUITE(reflection) {
 TEST_CASE(field_addr_and_field_of) {
     Point p{.x = 1, .c = 'A', .z = 2.5, .y = 4};
 
-    EXPECT_EQ(eventide::refl::field_addr_of<0>(p), &p.x);
-    EXPECT_EQ(eventide::refl::field_addr_of<1>(p), &p.c);
-    EXPECT_EQ(eventide::refl::field_addr_of<2>(p), &p.z);
-    EXPECT_EQ(eventide::refl::field_addr_of<3>(p), &p.y);
+    EXPECT_EQ(field_addr_of<0>(p), &p.x);
+    EXPECT_EQ(field_addr_of<1>(p), &p.c);
+    EXPECT_EQ(field_addr_of<2>(p), &p.z);
+    EXPECT_EQ(field_addr_of<3>(p), &p.y);
 
-    eventide::refl::field_of<0>(p) = 11;
-    eventide::refl::field_of<3>(p) = 44;
+    field_of<0>(p) = 11;
+    field_of<3>(p) = 44;
     EXPECT_EQ(p.x, 11);
     EXPECT_EQ(p.y, 44);
 
-    eventide::refl::field<0, Point> fx{p};
-    eventide::refl::field<1, Point> fc{p};
+    field<0, Point> fx{p};
+    field<1, Point> fc{p};
     fx.value() = 21;
     fc.value() = 'Z';
     EXPECT_EQ(p.x, 21);
@@ -166,29 +165,29 @@ TEST_CASE(field_addr_and_field_of) {
 }
 
 TEST_CASE(field_name_values) {
-    EXPECT_EQ(eventide::refl::field_names<Point>().size(), 4U);
-    EXPECT_EQ(eventide::refl::field_name<0, Point>(), "x");
-    EXPECT_EQ(eventide::refl::field_name<1, Point>(), "c");
-    EXPECT_EQ(eventide::refl::field_name<2, Point>(), "z");
-    EXPECT_EQ(eventide::refl::field_name<3, Point>(), "y");
+    EXPECT_EQ(field_names<Point>().size(), 4U);
+    EXPECT_EQ(field_name<0, Point>(), "x");
+    EXPECT_EQ(field_name<1, Point>(), "c");
+    EXPECT_EQ(field_name<2, Point>(), "z");
+    EXPECT_EQ(field_name<3, Point>(), "y");
 
-    EXPECT_EQ(eventide::refl::field_names<Empty>().size(), 1U);
-    EXPECT_EQ(eventide::refl::field_names<Empty>()[0], "PLACEHOLDER");
+    EXPECT_EQ(field_names<Empty>().size(), 1U);
+    EXPECT_EQ(field_names<Empty>()[0], "PLACEHOLDER");
 
-    EXPECT_EQ(eventide::refl::field_names<Many36>().size(), 36U);
-    EXPECT_EQ(eventide::refl::field_name<0, Many36>(), "f01");
-    EXPECT_EQ(eventide::refl::field_name<35, Many36>(), "f36");
+    EXPECT_EQ(field_names<Many36>().size(), 36U);
+    EXPECT_EQ(field_name<0, Many36>(), "f01");
+    EXPECT_EQ(field_name<35, Many36>(), "f36");
 
-    EXPECT_EQ(eventide::refl::field<0, Point>::name(), "x");
-    EXPECT_EQ(eventide::refl::field<1, Point>::name(), "c");
-    EXPECT_EQ(eventide::refl::field<2, Point>::name(), "z");
-    EXPECT_EQ(eventide::refl::field<3, Point>::name(), "y");
+    EXPECT_EQ(field<0, Point>::name(), "x");
+    EXPECT_EQ(field<1, Point>::name(), "c");
+    EXPECT_EQ(field<2, Point>::name(), "z");
+    EXPECT_EQ(field<3, Point>::name(), "y");
 }
 
 TEST_CASE(reflection_static_values) {
-    EXPECT_EQ(eventide::refl::reflection<Point>::field_count, 4U);
-    EXPECT_EQ(eventide::refl::reflection<Empty>::field_count, 0U);
-    EXPECT_EQ(eventide::refl::reflection<Many36>::field_count, 36U);
+    EXPECT_EQ(reflection<Point>::field_count, 4U);
+    EXPECT_EQ(reflection<Empty>::field_count, 0U);
+    EXPECT_EQ(reflection<Many36>::field_count, 36U);
     EXPECT_EQ(field_count_robustness_check<MoveOnly>(), true);
     EXPECT_EQ(field_count_robustness_check<FromIntOnly>(), true);
 
@@ -198,48 +197,48 @@ TEST_CASE(reflection_static_values) {
     EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>>, true);
     EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>>, true);
 
-    EXPECT_EQ(eventide::refl::field<0, Point>::index(), 0U);
-    EXPECT_EQ(eventide::refl::field<1, Point>::index(), 1U);
-    EXPECT_EQ(eventide::refl::field<2, Point>::index(), 2U);
-    EXPECT_EQ(eventide::refl::field<3, Point>::index(), 3U);
+    EXPECT_EQ(field<0, Point>::index(), 0U);
+    EXPECT_EQ(field<1, Point>::index(), 1U);
+    EXPECT_EQ(field<2, Point>::index(), 2U);
+    EXPECT_EQ(field<3, Point>::index(), 3U);
 }
 
 TEST_CASE(field_offset_values) {
-    EXPECT_EQ(eventide::refl::field_offset<Layout>(0), offsetof(Layout, a));
-    EXPECT_EQ(eventide::refl::field_offset<Layout>(1), offsetof(Layout, b));
-    EXPECT_EQ(eventide::refl::field_offset<Layout>(2), offsetof(Layout, bb));
-    EXPECT_EQ(eventide::refl::field_offset<Layout>(3), offsetof(Layout, c));
-    EXPECT_EQ(eventide::refl::field_offset(&Layout::a), offsetof(Layout, a));
-    EXPECT_EQ(eventide::refl::field_offset(&Layout::b), offsetof(Layout, b));
-    EXPECT_EQ(eventide::refl::field_offset(&Layout::bb), offsetof(Layout, bb));
-    EXPECT_EQ(eventide::refl::field_offset(&Layout::c), offsetof(Layout, c));
+    EXPECT_EQ(field_offset<Layout>(0), offsetof(Layout, a));
+    EXPECT_EQ(field_offset<Layout>(1), offsetof(Layout, b));
+    EXPECT_EQ(field_offset<Layout>(2), offsetof(Layout, bb));
+    EXPECT_EQ(field_offset<Layout>(3), offsetof(Layout, c));
+    EXPECT_EQ(field_offset(&Layout::a), offsetof(Layout, a));
+    EXPECT_EQ(field_offset(&Layout::b), offsetof(Layout, b));
+    EXPECT_EQ(field_offset(&Layout::bb), offsetof(Layout, bb));
+    EXPECT_EQ(field_offset(&Layout::c), offsetof(Layout, c));
 
-    EXPECT_EQ(eventide::refl::field_offset<Packed>(0), offsetof(Packed, a));
-    EXPECT_EQ(eventide::refl::field_offset<Packed>(1), offsetof(Packed, b));
-    EXPECT_EQ(eventide::refl::field_offset<Packed>(2), offsetof(Packed, bb));
-    EXPECT_EQ(eventide::refl::field_offset<Packed>(3), offsetof(Packed, c));
-    EXPECT_EQ(eventide::refl::field_offset<Packed>(4), offsetof(Packed, d));
-    EXPECT_EQ(eventide::refl::field_offset<Packed>(5), offsetof(Packed, e));
-    EXPECT_EQ(eventide::refl::field_offset(&Packed::a), offsetof(Packed, a));
-    EXPECT_EQ(eventide::refl::field_offset(&Packed::b), offsetof(Packed, b));
-    EXPECT_EQ(eventide::refl::field_offset(&Packed::bb), offsetof(Packed, bb));
-    EXPECT_EQ(eventide::refl::field_offset(&Packed::c), offsetof(Packed, c));
-    EXPECT_EQ(eventide::refl::field_offset(&Packed::d), offsetof(Packed, d));
-    EXPECT_EQ(eventide::refl::field_offset(&Packed::e), offsetof(Packed, e));
-    EXPECT_EQ(eventide::refl::field_offset<NoUniqueAddress>(1), offsetof(NoUniqueAddress, e));
-    EXPECT_EQ(eventide::refl::field_offset(&NoUniqueAddress::e), offsetof(NoUniqueAddress, e));
-    EXPECT_EQ(eventide::refl::field_offset(&NoDefault::x), offsetof(NoDefault, x));
-    EXPECT_EQ(eventide::refl::field_offset(&NoDefault::y), offsetof(NoDefault, y));
+    EXPECT_EQ(field_offset<Packed>(0), offsetof(Packed, a));
+    EXPECT_EQ(field_offset<Packed>(1), offsetof(Packed, b));
+    EXPECT_EQ(field_offset<Packed>(2), offsetof(Packed, bb));
+    EXPECT_EQ(field_offset<Packed>(3), offsetof(Packed, c));
+    EXPECT_EQ(field_offset<Packed>(4), offsetof(Packed, d));
+    EXPECT_EQ(field_offset<Packed>(5), offsetof(Packed, e));
+    EXPECT_EQ(field_offset(&Packed::a), offsetof(Packed, a));
+    EXPECT_EQ(field_offset(&Packed::b), offsetof(Packed, b));
+    EXPECT_EQ(field_offset(&Packed::bb), offsetof(Packed, bb));
+    EXPECT_EQ(field_offset(&Packed::c), offsetof(Packed, c));
+    EXPECT_EQ(field_offset(&Packed::d), offsetof(Packed, d));
+    EXPECT_EQ(field_offset(&Packed::e), offsetof(Packed, e));
+    EXPECT_EQ(field_offset<NoUniqueAddress>(1), offsetof(NoUniqueAddress, e));
+    EXPECT_EQ(field_offset(&NoUniqueAddress::e), offsetof(NoUniqueAddress, e));
+    EXPECT_EQ(field_offset(&NoDefault::x), offsetof(NoDefault, x));
+    EXPECT_EQ(field_offset(&NoDefault::y), offsetof(NoDefault, y));
 
-    EXPECT_EQ(eventide::refl::field<0, Point>::offset(), offsetof(Point, x));
-    EXPECT_EQ(eventide::refl::field<1, Point>::offset(), offsetof(Point, c));
-    EXPECT_EQ(eventide::refl::field<2, Point>::offset(), offsetof(Point, z));
-    EXPECT_EQ(eventide::refl::field<3, Point>::offset(), offsetof(Point, y));
+    EXPECT_EQ(field<0, Point>::offset(), offsetof(Point, x));
+    EXPECT_EQ(field<1, Point>::offset(), offsetof(Point, c));
+    EXPECT_EQ(field<2, Point>::offset(), offsetof(Point, z));
+    EXPECT_EQ(field<3, Point>::offset(), offsetof(Point, y));
 }
 
 TEST_CASE(field_refs_lvalue) {
     Point p{.x = 3, .c = 'b', .z = 1.0, .y = 5};
-    auto refs = eventide::refl::field_refs(p);
+    auto refs = field_refs(p);
 
     std::get<0>(refs) = 13;
     std::get<3>(refs) = 15;
@@ -254,7 +253,7 @@ TEST_CASE(for_each_void_callback) {
     std::array<std::size_t, 4> offsets{};
     std::size_t visited = 0;
 
-    const bool all_ok = eventide::refl::for_each(p, [&](auto f) {
+    const bool all_ok = for_each(p, [&](auto f) {
         names[visited] = f.name();
         offsets[visited] = f.offset();
         ++visited;
@@ -276,7 +275,7 @@ TEST_CASE(for_each_bool_short_circuit) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::size_t visited = 0;
-    const bool all_ok = eventide::refl::for_each(p, [&](auto f) {
+    const bool all_ok = for_each(p, [&](auto f) {
         ++visited;
         return f.index() < 2;
     });
@@ -289,7 +288,7 @@ TEST_CASE(for_each_bool_all_true) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::size_t visited = 0;
-    const bool all_ok = eventide::refl::for_each(p, [&](auto f) {
+    const bool all_ok = for_each(p, [&](auto f) {
         ++visited;
         return f.index() <= 3;
     });
@@ -302,7 +301,7 @@ TEST_CASE(for_each_int_return_short_circuit) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
     std::size_t visited = 0;
-    const bool all_ok = eventide::refl::for_each(p, [&](auto f) {
+    const bool all_ok = for_each(p, [&](auto f) {
         ++visited;
         return f.index() == 0 ? 1 : 0;
     });
@@ -314,7 +313,7 @@ TEST_CASE(for_each_int_return_short_circuit) {
 TEST_CASE(for_each_mutation_void_return) {
     Point p{.x = 1, .c = 'a', .z = 2.0, .y = 3};
 
-    const bool all_ok = eventide::refl::for_each(p, [](auto f) {
+    const bool all_ok = for_each(p, [](auto f) {
         using value_t = std::remove_cvref_t<decltype(f.value())>;
         if constexpr(std::is_same_v<value_t, int>) {
             f.value() *= 10;
@@ -329,7 +328,7 @@ TEST_CASE(for_each_mutation_void_return) {
 TEST_CASE(for_each_empty_object) {
     Empty e{};
     std::size_t visited = 0;
-    const bool all_ok = eventide::refl::for_each(e, [&](auto) {
+    const bool all_ok = for_each(e, [&](auto) {
         ++visited;
         return true;
     });
@@ -380,7 +379,7 @@ TEST_CASE(for_each_many36) {
 
     std::size_t visited = 0;
     int sum = 0;
-    const bool all_ok = eventide::refl::for_each(v, [&](auto f) {
+    const bool all_ok = for_each(v, [&](auto f) {
         using value_t = std::remove_cvref_t<decltype(f.value())>;
         if constexpr(std::is_same_v<value_t, int>) {
             sum += f.value();
@@ -397,4 +396,4 @@ TEST_CASE(for_each_many36) {
 
 }  // namespace
 
-}  // namespace eventide::refl::testing
+}  // namespace eventide::refl

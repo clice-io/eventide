@@ -49,7 +49,7 @@ public:
     template <typename Callback>
     void on_request(Callback&& callback) {
         using F = std::remove_cvref_t<Callback>;
-        using Args = eventide::refl::callable_args_t<F>;
+        using Args = refl::callable_args_t<F>;
         static_assert(std::tuple_size_v<Args> == 2, "request callback should have two parameters");
 
         using Context = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
@@ -63,7 +63,7 @@ public:
             Traits::method;
         });
 
-        using Ret = eventide::refl::callable_return_t<F>;
+        using Ret = refl::callable_return_t<F>;
         static_assert(request_return_traits<Ret>::valid,
                       "request callback return type should be task<expected<Result, std::string>>");
         using Result = typename request_return_traits<Ret>::result_type;
@@ -76,7 +76,7 @@ public:
     template <typename Callback>
     void on_request(std::string_view method, Callback&& callback) {
         using F = std::remove_cvref_t<Callback>;
-        using Args = eventide::refl::callable_args_t<F>;
+        using Args = refl::callable_args_t<F>;
         static_assert(std::tuple_size_v<Args> == 2, "request callback should have two parameters");
 
         using Context = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
@@ -85,7 +85,7 @@ public:
         static_assert(std::is_same_v<Context, RequestContext>,
                       "request callback first parameter should be RequestContext");
 
-        using Ret = eventide::refl::callable_return_t<F>;
+        using Ret = refl::callable_return_t<F>;
         static_assert(request_return_traits<Ret>::valid,
                       "request callback return type should be task<expected<Result, std::string>>");
 
@@ -120,7 +120,7 @@ public:
     template <typename Callback>
     void on_notification(Callback&& callback) {
         using F = std::remove_cvref_t<Callback>;
-        using Args = eventide::refl::callable_args_t<F>;
+        using Args = refl::callable_args_t<F>;
         static_assert(std::tuple_size_v<Args> == 1,
                       "notification callback should have one parameter");
 
@@ -128,7 +128,7 @@ public:
         using Traits = protocol::NotificationTraits<Params>;
         static_assert(requires { Traits::method; });
 
-        using Ret = eventide::refl::callable_return_t<F>;
+        using Ret = refl::callable_return_t<F>;
         static_assert(std::is_same_v<Ret, void>, "notification callback should return void");
 
         on_notification(Traits::method, std::forward<Callback>(callback));
@@ -137,12 +137,12 @@ public:
     template <typename Callback>
     void on_notification(std::string_view method, Callback&& callback) {
         using F = std::remove_cvref_t<Callback>;
-        using Args = eventide::refl::callable_args_t<F>;
+        using Args = refl::callable_args_t<F>;
         static_assert(std::tuple_size_v<Args> == 1,
                       "notification callback should have one parameter");
 
         using Params = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
-        using Ret = eventide::refl::callable_return_t<F>;
+        using Ret = refl::callable_return_t<F>;
         static_assert(std::is_same_v<Ret, void>, "notification callback should return void");
 
         auto wrapped = [cb = std::forward<Callback>(callback)](std::string_view params_json) {
@@ -187,7 +187,7 @@ private:
 
     template <typename T>
     static std::expected<T, std::string> deserialize_json(std::string_view json) {
-        auto parsed = eventide::serde::json::simd::from_json<T>(json);
+        auto parsed = serde::json::simd::from_json<T>(json);
         if(!parsed) {
             return std::unexpected(std::string(simdjson::error_message(parsed.error())));
         }
@@ -196,7 +196,7 @@ private:
 
     template <typename T>
     static std::expected<std::string, std::string> serialize_json(const T& value) {
-        auto serialized = eventide::serde::json::simd::to_json(value);
+        auto serialized = serde::json::simd::to_json(value);
         if(!serialized) {
             return std::unexpected(std::string(simdjson::error_message(serialized.error())));
         }

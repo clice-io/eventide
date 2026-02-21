@@ -374,7 +374,7 @@ public:
 
     template <typename T>
     status_t deserialize_some(T& value) {
-        return eventide::serde::deserialize(*this, value);
+        return serde::deserialize(*this, value);
     }
 
     status_t deserialize_bool(bool& value) {
@@ -384,7 +384,7 @@ public:
             [](simdjson::ondemand::value& value) { return value.get_bool(); });
     }
 
-    template <eventide::serde::int_like T>
+    template <serde::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(
@@ -404,7 +404,7 @@ public:
         return {};
     }
 
-    template <eventide::serde::uint_like T>
+    template <serde::uint_like T>
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
         auto status = read_scalar(
@@ -424,7 +424,7 @@ public:
         return {};
     }
 
-    template <eventide::serde::floating_like T>
+    template <serde::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
         auto status = read_scalar(
@@ -624,7 +624,7 @@ private:
         };
 
         ValueScope scope(*this, value);
-        return eventide::serde::deserialize(*this, out);
+        return serde::deserialize(*this, out);
     }
 
     result_t<simdjson::ondemand::array> open_array() {
@@ -719,7 +719,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, simdjson:
         return std::unexpected(deserializer.error());
     }
 
-    auto result = eventide::serde::deserialize(deserializer, value);
+    auto result = serde::deserialize(deserializer, value);
     if(!result) {
         return std::unexpected(result.error());
     }
@@ -738,6 +738,6 @@ auto from_json(std::string_view json) -> std::expected<T, simdjson::error_code> 
     return value;
 }
 
-static_assert(eventide::serde::deserializer_like<Deserializer>);
+static_assert(serde::deserializer_like<Deserializer>);
 
 }  // namespace eventide::serde::json::simd

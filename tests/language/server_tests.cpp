@@ -11,7 +11,7 @@
 #include "language/server.h"
 #include "serde/simdjson/deserializer.h"
 
-namespace eventide::language::testing {
+namespace eventide::language {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -59,24 +59,24 @@ private:
     std::size_t read_index = 0;
 };
 
-}  // namespace eventide::language::testing
+}  // namespace eventide::language
 
 namespace eventide::language::protocol {
 
 template <>
-struct RequestTraits<eventide::language::testing::AddParams> {
-    using Result = eventide::language::testing::AddResult;
+struct RequestTraits<AddParams> {
+    using Result = AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct NotificationTraits<eventide::language::testing::NoteParams> {
+struct NotificationTraits<NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
 }  // namespace eventide::language::protocol
 
-namespace eventide::language::testing {
+namespace eventide::language {
 
 TEST_SUITE(language_server) {
 
@@ -125,8 +125,7 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response =
-        eventide::serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_EQ(std::get<protocol::integer>(response->id), 1);
@@ -166,8 +165,7 @@ TEST_CASE(explicit_method_registration) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response =
-        eventide::serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(std::get<protocol::integer>(response->id), 2);
     ASSERT_TRUE(response->result.has_value());
@@ -176,4 +174,4 @@ TEST_CASE(explicit_method_registration) {
 
 };  // TEST_SUITE(language_server)
 
-}  // namespace eventide::language::testing
+}  // namespace eventide::language

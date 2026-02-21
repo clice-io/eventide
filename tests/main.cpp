@@ -7,8 +7,11 @@
 #include "eventide/loop.h"
 #include "eventide/stream.h"
 
+namespace zest = eventide::zest;
+
 int main(int argc, char** argv) {
     std::string filter;
+    using zest::Runner;
     constexpr std::string_view filter_prefix = "--test-filter=";
     for(int i = 1; i < argc; ++i) {
         std::string_view arg{argv[i]};
@@ -22,5 +25,5 @@ int main(int argc, char** argv) {
         }
     }
 
-    return eventide::zest::Runner::instance().run_tests(filter);
+    return Runner::instance().run_tests(filter);
 }

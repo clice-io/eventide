@@ -17,11 +17,11 @@
 namespace eventide::language::protocol {
 
 /// For `undefined | bool` .
-using optional_bool = eventide::serde::skip_if_default<bool>;
+using optional_bool = serde::skip_if_default<bool>;
 
 /// For `undefined | T` .
 template <typename T>
-using optional = eventide::serde::skip_if_none<T>;
+using optional = serde::skip_if_none<T>;
 
 /// For `a: T | null`
 template <typename T>
@@ -35,10 +35,10 @@ template <typename... Ts>
 using optional_variant = optional<variant<Ts...>>;
 
 /// For multiple inherit.
-using eventide::serde::flatten;
+using serde::flatten;
 
 /// For closed string enum.
-using eventide::serde::enum_string;
+using serde::enum_string;
 
 /// For empty object literal.
 struct LspEmptyObject {};
@@ -110,26 +110,26 @@ struct ResponseError {
 namespace eventide::serde {
 
 template <serializer_like S>
-struct serialize_traits<S, eventide::language::protocol::LSPAny> {
+struct serialize_traits<S, language::protocol::LSPAny> {
     using value_type = typename S::value_type;
     using error_type = typename S::error_type;
 
-    static auto serialize(S& serializer, const eventide::language::protocol::LSPAny& value)
+    static auto serialize(S& serializer, const language::protocol::LSPAny& value)
         -> std::expected<value_type, error_type> {
-        const auto& variant = static_cast<const eventide::language::protocol::LSPVariant&>(value);
+        const auto& variant = static_cast<const language::protocol::LSPVariant&>(value);
         return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
                           variant);
     }
 };
 
 template <deserializer_like D>
-struct deserialize_traits<D, eventide::language::protocol::LSPAny> {
+struct deserialize_traits<D, language::protocol::LSPAny> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& deserializer, eventide::language::protocol::LSPAny& value)
+    static auto deserialize(D& deserializer, language::protocol::LSPAny& value)
         -> std::expected<void, error_type> {
-        eventide::language::protocol::LSPVariant variant{};
-        auto status = eventide::serde::deserialize(deserializer, variant);
+        language::protocol::LSPVariant variant{};
+        auto status = serde::deserialize(deserializer, variant);
         if(!status) {
             return std::unexpected(status.error());
         }

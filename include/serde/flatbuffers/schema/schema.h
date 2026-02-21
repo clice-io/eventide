@@ -46,17 +46,14 @@ template <typename T>
 using remove_optional_t = typename remove_optional<remove_annotation_t<T>>::type;
 
 template <typename T>
-constexpr bool is_std_vector_v =
-    eventide::serde::is_specialization_of<std::vector, std::remove_cvref_t<T>>;
+constexpr bool is_std_vector_v = serde::is_specialization_of<std::vector, std::remove_cvref_t<T>>;
 
 template <typename T>
-constexpr bool is_std_map_v =
-    eventide::serde::is_specialization_of<std::map, std::remove_cvref_t<T>>;
+constexpr bool is_std_map_v = serde::is_specialization_of<std::map, std::remove_cvref_t<T>>;
 
 template <typename T>
 constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || eventide::serde::int_like<T> || eventide::serde::uint_like<T> ||
-    eventide::serde::floating_like<T>;
+    std::same_as<T, bool> || serde::int_like<T> || serde::uint_like<T> || serde::floating_like<T>;
 
 inline std::string normalize_identifier(std::string_view text) {
     std::string out;
@@ -83,7 +80,7 @@ inline std::string normalize_identifier(std::string_view text) {
 
 template <typename T>
 std::string type_identifier() {
-    return normalize_identifier(eventide::refl::type_name<T>());
+    return normalize_identifier(refl::type_name<T>());
 }
 
 template <typename T>
@@ -117,7 +114,7 @@ std::string scalar_schema_name() {
         using underlying_t = std::underlying_type_t<U>;
         return scalar_schema_name<underlying_t>();
     } else {
-        static_assert(eventide::serde::dependent_false<U>, "unsupported scalar schema type");
+        static_assert(serde::dependent_false<U>, "unsupported scalar schema type");
     }
 }
 
@@ -129,7 +126,7 @@ constexpr bool is_schema_struct_field_v = [] {
     using U = remove_optional_t<T>;
     if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
         return true;
-    } else if constexpr(eventide::refl::reflectable_class<U>) {
+    } else if constexpr(refl::reflectable_class<U>) {
         return schema_struct_trait<U>::value;
     } else {
         return false;
@@ -139,16 +136,16 @@ constexpr bool is_schema_struct_field_v = [] {
 template <typename T>
 struct schema_struct_trait {
     static consteval bool fields_supported() {
-        if constexpr(!eventide::refl::reflectable_class<T>) {
+        if constexpr(!refl::reflectable_class<T>) {
             return false;
         } else {
             return []<std::size_t... I>(std::index_sequence<I...>) {
-                return (is_schema_struct_field_v<eventide::refl::field_type<T, I>> && ...);
-            }(std::make_index_sequence<eventide::refl::field_count<T>()>{});
+                return (is_schema_struct_field_v<refl::field_type<T, I>> && ...);
+            }(std::make_index_sequence<refl::field_count<T>()>{});
         }
     }
 
-    constexpr static bool value = eventide::refl::reflectable_class<T> && std::is_trivial_v<T> &&
+    constexpr static bool value = refl::reflectable_class<T> && std::is_trivial_v<T> &&
                                   std::is_standard_layout_v<T> && fields_supported();
 };
 
@@ -187,7 +184,7 @@ private:
             using mapped_t = typename U::mapped_type;
             emit_dependencies<key_t>();
             emit_dependencies<mapped_t>();
-        } else if constexpr(eventide::refl::reflectable_class<U>) {
+        } else if constexpr(refl::reflectable_class<U>) {
             emit_object_if_needed<U>();
         }
     }
@@ -202,8 +199,8 @@ private:
 
         out += "enum " + enum_name + ":" + scalar_schema_name<std::underlying_type_t<E>>() + " {\n";
 
-        const auto& names = eventide::refl::reflection<E>::member_names;
-        const auto& values = eventide::refl::reflection<E>::member_values;
+        const auto& names = refl::reflection<E>::member_names;
+        const auto& values = refl::reflection<E>::member_values;
         for(std::size_t i = 0; i < names.size(); ++i) {
             const auto member_name = normalize_identifier(names[i]);
             const auto member_value =
@@ -216,11 +213,11 @@ private:
 
     template <typename Owner, std::size_t I>
     void emit_map_entry_if_needed() {
-        using field_t = remove_optional_t<eventide::refl::field_type<Owner, I>>;
+        using field_t = remove_optional_t<refl::field_type<Owner, I>>;
         if constexpr(!is_std_map_v<field_t>) {
             return;
         } else {
-            constexpr auto field_name = eventide::refl::field_name<I, Owner>();
+            constexpr auto field_name = refl::field_name<I, Owner>();
             const auto owner_name = type_identifier<Owner>();
             const auto entry_name = map_entry_identifier(owner_name, field_name);
             if(!emitted_entries.insert(entry_name).second) {
@@ -251,19 +248,18 @@ private:
             return "[" + field_schema_type<element_t, Owner, FieldIndex>() + "]";
         } else if constexpr(is_std_map_v<U>) {
             const auto owner_name = type_identifier<Owner>();
-            constexpr auto field_name = eventide::refl::field_name<FieldIndex, Owner>();
+            constexpr auto field_name = refl::field_name<FieldIndex, Owner>();
             return "[" + map_entry_identifier(owner_name, field_name) + "]";
-        } else if constexpr(eventide::refl::reflectable_class<U>) {
+        } else if constexpr(refl::reflectable_class<U>) {
             return type_identifier<U>();
         } else {
-            static_assert(eventide::serde::dependent_false<U>,
-                          "unsupported field type for schema emission");
+            static_assert(serde::dependent_false<U>, "unsupported field type for schema emission");
         }
     }
 
     template <typename T>
     void emit_object_if_needed() {
-        static_assert(eventide::refl::reflectable_class<T>, "reflectable type required");
+        static_assert(refl::reflectable_class<T>, "reflectable type required");
 
         const auto object_name = type_identifier<T>();
         if(!emitted_objects.insert(object_name).second) {
@@ -271,22 +267,22 @@ private:
         }
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
-            (self->template emit_dependencies<eventide::refl::field_type<T, I>>(), ...);
-        }(this, std::make_index_sequence<eventide::refl::field_count<T>()>{});
+            (self->template emit_dependencies<refl::field_type<T, I>>(), ...);
+        }(this, std::make_index_sequence<refl::field_count<T>()>{});
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
             (self->template emit_map_entry_if_needed<T, I>(), ...);
-        }(this, std::make_index_sequence<eventide::refl::field_count<T>()>{});
+        }(this, std::make_index_sequence<refl::field_count<T>()>{});
 
         out += (is_schema_struct_v<T> ? "struct " : "table ");
         out += object_name + " {\n";
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
-            ((self->out +=
-              "  " + normalize_identifier(eventide::refl::field_name<I, T>()) + ":" +
-              self->template field_schema_type<eventide::refl::field_type<T, I>, T, I>() + ";\n"),
+            ((self->out += "  " + normalize_identifier(refl::field_name<I, T>()) + ":" +
+                           self->template field_schema_type<refl::field_type<T, I>, T, I>() +
+                           ";\n"),
              ...);
-        }(this, std::make_index_sequence<eventide::refl::field_count<T>()>{});
+        }(this, std::make_index_sequence<refl::field_count<T>()>{});
 
         out += "}\n\n";
     }
@@ -310,8 +306,7 @@ std::string type_identifier() {
 
 template <typename Root>
 std::string render() {
-    static_assert(eventide::refl::reflectable_class<Root>,
-                  "render requires a reflectable root type");
+    static_assert(refl::reflectable_class<Root>, "render requires a reflectable root type");
     return detail::schema_emitter{}.template emit<Root>();
 }
 

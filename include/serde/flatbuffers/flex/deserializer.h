@@ -138,12 +138,12 @@ public:
 
     template <typename T>
     status_t deserialize_some(T& value) {
-        return eventide::serde::deserialize(*this, value);
+        return serde::deserialize(*this, value);
     }
 
     status_t deserialize_bool(bool& value);
 
-    template <eventide::serde::int_like T>
+    template <serde::int_like T>
     status_t deserialize_int(T& value) {
         auto reference = active_reference();
         if(!reference) {
@@ -175,7 +175,7 @@ public:
         return {};
     }
 
-    template <eventide::serde::uint_like T>
+    template <serde::uint_like T>
     status_t deserialize_uint(T& value) {
         auto reference = active_reference();
         if(!reference) {
@@ -207,7 +207,7 @@ public:
         return {};
     }
 
-    template <eventide::serde::floating_like T>
+    template <serde::floating_like T>
     status_t deserialize_float(T& value) {
         auto reference = active_reference();
         if(!reference) {
@@ -258,7 +258,7 @@ private:
     template <typename T>
     status_t deserialize_from_reference(const ::flexbuffers::Reference& reference, T& out) {
         value_scope scope(*this, reference);
-        return eventide::serde::deserialize(*this, out);
+        return serde::deserialize(*this, out);
     }
 
     result_t<::flexbuffers::Reference> active_reference();
@@ -288,7 +288,7 @@ auto from_flatbuffer(std::span<const std::uint8_t> bytes, T& value)
         return std::unexpected(deserializer.error());
     }
 
-    auto result = eventide::serde::deserialize(deserializer, value);
+    auto result = serde::deserialize(deserializer, value);
     if(!result) {
         return std::unexpected(result.error());
     }
@@ -339,13 +339,13 @@ auto from_flatbuffer(const std::vector<std::uint8_t>& bytes) -> std::expected<T,
     return from_flatbuffer<T>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
-static_assert(eventide::serde::deserializer_like<Deserializer>);
+static_assert(serde::deserializer_like<Deserializer>);
 
 }  // namespace eventide::serde::flex
 
 namespace eventide::serde::flatbuffers {
 
-using Deserializer = eventide::serde::flex::Deserializer;
-using eventide::serde::flex::from_flatbuffer;
+using Deserializer = serde::flex::Deserializer;
+using serde::flex::from_flatbuffer;
 
 }  // namespace eventide::serde::flatbuffers

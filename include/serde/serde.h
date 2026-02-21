@@ -272,11 +272,11 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
 
             if constexpr(meta::flatten) {
                 using nested_t = std::remove_cvref_t<decltype(value)>;
-                static_assert(eventide::refl::reflectable_class<nested_t>,
+                static_assert(refl::reflectable_class<nested_t>,
                               "attr::flatten requires a reflectable class field type");
 
                 std::expected<void, E> nested_result;
-                eventide::refl::for_each(value, [&](auto nested_field) {
+                refl::for_each(value, [&](auto nested_field) {
                     auto status = serialize_struct_field<E>(s_struct, nested_field);
                     if(!status) {
                         nested_result = std::unexpected(status.error());
@@ -293,8 +293,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
                               "attr::enum_string requires an enum field type");
 
                 auto enum_text =
-                    eventide::serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(
-                        value);
+                    serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(value);
                 return s_struct.serialize_field(meta::serialized_name(field.name()), enum_text);
             }
 
@@ -332,12 +331,12 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 }
 
                 using nested_t = std::remove_cvref_t<decltype(value)>;
-                static_assert(eventide::refl::reflectable_class<nested_t>,
+                static_assert(refl::reflectable_class<nested_t>,
                               "attr::flatten requires a reflectable class field type");
 
                 std::expected<void, E> nested_error;
                 bool matched = false;
-                eventide::refl::for_each(value, [&](auto nested_field) {
+                refl::for_each(value, [&](auto nested_field) {
                     auto status = deserialize_struct_field<E>(d_struct, key_name, nested_field);
                     if(!status) {
                         nested_error = std::unexpected(status.error());
@@ -378,9 +377,8 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                     return std::unexpected(result.error());
                 }
 
-                auto parsed =
-                    eventide::serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
-                        enum_text);
+                auto parsed = serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
+                    enum_text);
                 if(parsed.has_value()) {
                     value = *parsed;
                 } else {
@@ -421,8 +419,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
             using enum_t = std::remove_cvref_t<decltype(value)>;
             static_assert(std::is_enum_v<enum_t>, "attr::enum_string requires an enum field type");
             auto enum_text =
-                eventide::serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(
-                    value);
+                serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(value);
             return s.serialize_str(enum_text);
         } else {
             return serialize(s, value);
@@ -515,15 +512,14 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         }
 
         return s_tuple->end();
-    } else if constexpr(eventide::refl::reflectable_class<V>) {
-        auto s_struct =
-            s.serialize_struct(eventide::refl::type_name<V>(), eventide::refl::field_count<V>());
+    } else if constexpr(refl::reflectable_class<V>) {
+        auto s_struct = s.serialize_struct(refl::type_name<V>(), refl::field_count<V>());
         if(!s_struct) {
             return std::unexpected(s_struct.error());
         }
 
         std::expected<void, E> field_result;
-        eventide::refl::for_each(v, [&](auto field) {
+        refl::for_each(v, [&](auto field) {
             auto result = detail::serialize_struct_field<E>(*s_struct, field);
             if(!result) {
                 field_result = std::unexpected(result.error());
@@ -567,8 +563,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             }
 
             auto mapped =
-                eventide::serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
-                    enum_text);
+                serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(enum_text);
             if(mapped.has_value()) {
                 value = *mapped;
             } else {
@@ -684,7 +679,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             }
 
             static_assert(
-                eventide::serde::spelling::parseable_map_key<key_t>,
+                serde::spelling::parseable_map_key<key_t>,
                 "auto map deserialization requires key_type parseable from JSON object keys");
             static_assert(std::default_initializable<mapped_t>,
                           "auto map deserialization requires default-constructible mapped_type");
@@ -700,7 +695,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     break;
                 }
 
-                auto parsed_key = eventide::serde::spelling::parse_map_key<key_t>(**key);
+                auto parsed_key = serde::spelling::parse_map_key<key_t>(**key);
                 if(!parsed_key) {
                     if constexpr(requires { d_map->invalid_key(**key); }) {
                         auto invalid = d_map->invalid_key(**key);
@@ -751,9 +746,8 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         }
 
         return d_tuple->end();
-    } else if constexpr(eventide::refl::reflectable_class<V>) {
-        auto d_struct =
-            d.deserialize_struct(eventide::refl::type_name<V>(), eventide::refl::field_count<V>());
+    } else if constexpr(refl::reflectable_class<V>) {
+        auto d_struct = d.deserialize_struct(refl::type_name<V>(), refl::field_count<V>());
         if(!d_struct) {
             return std::unexpected(d_struct.error());
         }
@@ -771,7 +765,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             bool matched = false;
             std::expected<void, E> field_result;
 
-            eventide::refl::for_each(v, [&](auto field) {
+            refl::for_each(v, [&](auto field) {
                 auto status = detail::deserialize_struct_field<E>(*d_struct, key_name, field);
                 if(!status) {
                     field_result = std::unexpected(status.error());
