@@ -117,7 +117,7 @@ struct serialize_traits<S, eventide::language::protocol::LSPAny> {
     static auto serialize(S& serializer, const eventide::language::protocol::LSPAny& value)
         -> std::expected<value_type, error_type> {
         const auto& variant = static_cast<const eventide::language::protocol::LSPVariant&>(value);
-        return std::visit([&](const auto& item) { return eventide::serde::serialize(serializer, item); },
+        return std::visit([&](const auto& item) { return serde::serialize(serializer, item); },
                           variant);
     }
 };

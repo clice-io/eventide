@@ -125,7 +125,8 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = eventide::serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response =
+        eventide::serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_EQ(std::get<protocol::integer>(response->id), 1);
@@ -165,7 +166,8 @@ TEST_CASE(explicit_method_registration) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = eventide::serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response =
+        eventide::serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(std::get<protocol::integer>(response->id), 2);
     ASSERT_TRUE(response->result.has_value());

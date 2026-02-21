@@ -60,7 +60,8 @@ TEST_CASE(sorted_entries_support_binary_search_lookup) {
     ASSERT_TRUE(found != nullptr);
     EXPECT_EQ(found->value, 2);
 
-    auto missing = eventide::serde::flatbuffers::schema::bsearch_entry(entries, std::string("none"));
+    auto missing =
+        eventide::serde::flatbuffers::schema::bsearch_entry(entries, std::string("none"));
     EXPECT_TRUE(missing == nullptr);
 }
 

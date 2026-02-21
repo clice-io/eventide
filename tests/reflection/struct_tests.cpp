@@ -137,7 +137,8 @@ consteval bool field_count_robustness_check() {
         T f;
     };
 
-    return eventide::refl::reflection<S4>::field_count == 4 && eventide::refl::reflection<S5>::field_count == 5 &&
+    return eventide::refl::reflection<S4>::field_count == 4 &&
+           eventide::refl::reflection<S5>::field_count == 5 &&
            eventide::refl::reflection<S6>::field_count == 6;
 }
 

@@ -293,7 +293,8 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
                               "attr::enum_string requires an enum field type");
 
                 auto enum_text =
-                    eventide::serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(value);
+                    eventide::serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(
+                        value);
                 return s_struct.serialize_field(meta::serialized_name(field.name()), enum_text);
             }
 
@@ -377,8 +378,9 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                     return std::unexpected(result.error());
                 }
 
-                auto parsed = eventide::serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
-                    enum_text);
+                auto parsed =
+                    eventide::serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
+                        enum_text);
                 if(parsed.has_value()) {
                     value = *parsed;
                 } else {
@@ -419,7 +421,8 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
             using enum_t = std::remove_cvref_t<decltype(value)>;
             static_assert(std::is_enum_v<enum_t>, "attr::enum_string requires an enum field type");
             auto enum_text =
-                eventide::serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(value);
+                eventide::serde::detail::map_enum_to_string<enum_t, typename meta::enum_policy>(
+                    value);
             return s.serialize_str(enum_text);
         } else {
             return serialize(s, value);
@@ -513,7 +516,8 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
         return s_tuple->end();
     } else if constexpr(eventide::refl::reflectable_class<V>) {
-        auto s_struct = s.serialize_struct(eventide::refl::type_name<V>(), eventide::refl::field_count<V>());
+        auto s_struct =
+            s.serialize_struct(eventide::refl::type_name<V>(), eventide::refl::field_count<V>());
         if(!s_struct) {
             return std::unexpected(s_struct.error());
         }
@@ -563,7 +567,8 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             }
 
             auto mapped =
-                eventide::serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(enum_text);
+                eventide::serde::detail::map_string_to_enum<enum_t, typename meta::enum_policy>(
+                    enum_text);
             if(mapped.has_value()) {
                 value = *mapped;
             } else {
@@ -747,7 +752,8 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
 
         return d_tuple->end();
     } else if constexpr(eventide::refl::reflectable_class<V>) {
-        auto d_struct = d.deserialize_struct(eventide::refl::type_name<V>(), eventide::refl::field_count<V>());
+        auto d_struct =
+            d.deserialize_struct(eventide::refl::type_name<V>(), eventide::refl::field_count<V>());
         if(!d_struct) {
             return std::unexpected(d_struct.error());
         }

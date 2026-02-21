@@ -46,14 +46,17 @@ template <typename T>
 using remove_optional_t = typename remove_optional<remove_annotation_t<T>>::type;
 
 template <typename T>
-constexpr bool is_std_vector_v = eventide::serde::is_specialization_of<std::vector, std::remove_cvref_t<T>>;
+constexpr bool is_std_vector_v =
+    eventide::serde::is_specialization_of<std::vector, std::remove_cvref_t<T>>;
 
 template <typename T>
-constexpr bool is_std_map_v = eventide::serde::is_specialization_of<std::map, std::remove_cvref_t<T>>;
+constexpr bool is_std_map_v =
+    eventide::serde::is_specialization_of<std::map, std::remove_cvref_t<T>>;
 
 template <typename T>
 constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || eventide::serde::int_like<T> || eventide::serde::uint_like<T> || eventide::serde::floating_like<T>;
+    std::same_as<T, bool> || eventide::serde::int_like<T> || eventide::serde::uint_like<T> ||
+    eventide::serde::floating_like<T>;
 
 inline std::string normalize_identifier(std::string_view text) {
     std::string out;
@@ -253,7 +256,8 @@ private:
         } else if constexpr(eventide::refl::reflectable_class<U>) {
             return type_identifier<U>();
         } else {
-            static_assert(eventide::serde::dependent_false<U>, "unsupported field type for schema emission");
+            static_assert(eventide::serde::dependent_false<U>,
+                          "unsupported field type for schema emission");
         }
     }
 
@@ -278,9 +282,9 @@ private:
         out += object_name + " {\n";
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
-            ((self->out += "  " + normalize_identifier(eventide::refl::field_name<I, T>()) + ":" +
-                           self->template field_schema_type<eventide::refl::field_type<T, I>, T, I>() +
-                           ";\n"),
+            ((self->out +=
+              "  " + normalize_identifier(eventide::refl::field_name<I, T>()) + ":" +
+              self->template field_schema_type<eventide::refl::field_type<T, I>, T, I>() + ";\n"),
              ...);
         }(this, std::make_index_sequence<eventide::refl::field_count<T>()>{});
 
@@ -306,7 +310,8 @@ std::string type_identifier() {
 
 template <typename Root>
 std::string render() {
-    static_assert(eventide::refl::reflectable_class<Root>, "render requires a reflectable root type");
+    static_assert(eventide::refl::reflectable_class<Root>,
+                  "render requires a reflectable root type");
     return detail::schema_emitter{}.template emit<Root>();
 }
 
