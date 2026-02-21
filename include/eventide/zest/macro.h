@@ -19,7 +19,7 @@
     }                                                                                              \
     void test_##name()
 
-#define CLICE_CHECK_IMPL(condition, return_action)                                                 \
+#define ZEST_CHECK_IMPL(condition, return_action)                                                  \
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
             ::eventide::zest::print_trace(std::source_location::current());                        \
@@ -28,78 +28,73 @@
         }                                                                                          \
     } while(0)
 
-#define ZEST_EXPECT_UNARY(expr, expectation, failure_pred, return_action)                          \
+#define ZEST_EXPECT_UNARY(expectation, failure_pred, return_action, ...)                           \
     do {                                                                                           \
-        auto _failed = ([&](auto&& _expr) {                                                        \
+        auto failed = ([&](auto&& value) {                                                         \
             return ::eventide::zest::check_unary_failure((failure_pred),                           \
-                                                         #expr,                                    \
+                                                         #__VA_ARGS__,                             \
                                                          (expectation),                            \
-                                                         _expr);                                   \
-        }((expr)));                                                                                \
-        CLICE_CHECK_IMPL(_failed, return_action);                                                  \
+                                                         value);                                   \
+        }(__VA_ARGS__));                                                                           \
+        ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
 
 #define ZEST_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                            \
     do {                                                                                           \
-        auto _failed = ([&]<typename... _Args>(_Args&&... _args) {                                 \
-            static_assert(sizeof...(_args) == 2,                                                   \
-                          "EXPECT_EQ/EXPECT_NE/ASSERT_EQ/ASSERT_NE require exactly 2 arguments");  \
-            auto _args_tuple = std::forward_as_tuple(std::forward<_Args>(_args)...);               \
-            auto&& _lhs = std::get<0>(_args_tuple);                                                \
-            auto&& _rhs = std::get<1>(_args_tuple);                                                \
-            const auto _exprs = ::eventide::zest::parse_binary_exprs(#__VA_ARGS__);                \
+        auto failed = ([&](auto&& lhs, auto&& rhs) {                                               \
+            const auto exprs = ::eventide::zest::parse_binary_exprs(#__VA_ARGS__);                 \
             return ::eventide::zest::check_binary_failure((failure_pred),                          \
                                                           #op_string,                              \
-                                                          _exprs.lhs,                              \
-                                                          _exprs.rhs,                              \
-                                                          _lhs,                                    \
-                                                          _rhs);                                   \
+                                                          exprs.lhs,                               \
+                                                          exprs.rhs,                               \
+                                                          lhs,                                     \
+                                                          rhs);                                    \
         }(__VA_ARGS__));                                                                           \
-        CLICE_CHECK_IMPL(_failed, return_action);                                                  \
+        ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
 
-#define EXPECT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), (void)0)
-#define EXPECT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), (void)0)
-#define EXPECT_EQ(...)                                                                             \
-    ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
-#define EXPECT_NE(...)                                                                             \
-    ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
+// clang-format off
+#define EXPECT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), (void)0, __VA_ARGS__)
+#define EXPECT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), (void)0, __VA_ARGS__)
+#define EXPECT_EQ(...) ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(lhs, rhs), (void)0, __VA_ARGS__)
+#define EXPECT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(lhs, rhs), (void)0, __VA_ARGS__)
 
-#define ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), return)
-#define ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), return)
-#define ASSERT_EQ(...)                                                                             \
-    ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
-#define ASSERT_NE(...)                                                                             \
-    ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
+#define ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), return, __VA_ARGS__)
+#define ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), return, __VA_ARGS__)
+#define ASSERT_EQ(...) ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(lhs, rhs), return, __VA_ARGS__)
+#define ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(lhs, rhs), return, __VA_ARGS__)
 
-#define CO_ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), co_return)
-#define CO_ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), co_return)
-#define CO_ASSERT_EQ(...)                                                                          \
-    ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_NE(...)                                                                          \
-    ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), co_return, __VA_ARGS__)
+#define CO_ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), co_return, __VA_ARGS__)
+#define CO_ASSERT_EQ(...) ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(lhs, rhs), co_return, __VA_ARGS__)
+// clang-format on
 
 #ifdef __cpp_exceptions
 
-#define CAUGHT(expr)                                                                               \
+#define CAUGHT(...)                                                                                \
     ([&]() {                                                                                       \
         try {                                                                                      \
-            (expr);                                                                                \
+            (__VA_ARGS__);                                                                         \
             return false;                                                                          \
         } catch(...) {                                                                             \
             return true;                                                                           \
         }                                                                                          \
     }())
 
-#define ZEST_EXPECT_THROWS(expr, expectation, failure_pred, return_action)                         \
+#define ZEST_EXPECT_THROWS(expectation, failure_pred, return_action, ...)                          \
     do {                                                                                           \
-        auto _failed = ([&]() {                                                                    \
-            return ::eventide::zest::check_throws_failure((failure_pred), #expr, (expectation));   \
+        auto failed = ([&]() {                                                                     \
+            return ::eventide::zest::check_throws_failure((failure_pred),                          \
+                                                          #__VA_ARGS__,                            \
+                                                          (expectation));                          \
         }());                                                                                      \
-        CLICE_CHECK_IMPL(_failed, return_action);                                                  \
+        ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
 
-#define EXPECT_THROWS(expr) ZEST_EXPECT_THROWS(expr, "throw exception", !CAUGHT(expr), (void)0)
-#define EXPECT_NOTHROWS(expr) ZEST_EXPECT_THROWS(expr, "not throw exception", CAUGHT(expr), (void)0)
+// clang-format off
+#define EXPECT_THROWS(...) ZEST_EXPECT_THROWS("throw exception", !CAUGHT(__VA_ARGS__), (void)0, __VA_ARGS__)
+#define EXPECT_NOTHROWS(...) ZEST_EXPECT_THROWS("not throw exception", CAUGHT(__VA_ARGS__), (void)0, __VA_ARGS__)
+// clang-format on
 
 #endif

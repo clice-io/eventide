@@ -56,10 +56,7 @@ target("ztest", function()
 	set_kind("$(kind)")
 	add_files("src/zest/*.cpp")
 	add_includedirs("include", { public = true })
-	add_headerfiles(
-		"include/(eventide/common/*.h)",
-		"include/(eventide/zest/*.h)"
-	)
+	add_headerfiles("include/(eventide/common/*.h)", "include/(eventide/zest/*.h)")
 	add_cxflags("cl::/Zc:preprocessor", { public = true })
 	add_packages("cpptrace", { public = true })
 end)
