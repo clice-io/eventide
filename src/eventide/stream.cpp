@@ -1,4 +1,4 @@
-#include "eventide/stream.h"
+#include "eventide/async/stream.h"
 
 #include <algorithm>
 #include <array>
@@ -12,8 +12,8 @@
 
 #include "libuv.h"
 #include "ringbuffer.h"
-#include "eventide/error.h"
-#include "eventide/loop.h"
+#include "eventide/async/error.h"
+#include "eventide/async/loop.h"
 
 namespace eventide {
 

@@ -3,9 +3,9 @@
 #include <string>
 #include <string_view>
 
-#include "zest/zest.h"
-#include "eventide/loop.h"
-#include "eventide/stream.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/stream.h"
 
 int main(int argc, char** argv) {
     std::string filter;
@@ -22,5 +22,5 @@ int main(int argc, char** argv) {
         }
     }
 
-    return zest::Runner::instance().run_tests(filter);
+    return eventide::zest::Runner::instance().run_tests(filter);
 }

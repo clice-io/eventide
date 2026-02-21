@@ -6,12 +6,12 @@
 #include <utility>
 #include <vector>
 
-#include "zest/zest.h"
-#include "eventide/compiler.h"
-#include "language/server.h"
-#include "serde/simdjson/deserializer.h"
+#include "eventide/zest/zest.h"
+#include "eventide/common/compiler.h"
+#include "eventide/serde/simdjson/deserializer.h"
+#include "eventide/language/server.h"
 
-namespace language::testing {
+namespace eventide::language {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -37,14 +37,14 @@ public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
 
-    et::task<std::optional<std::string>> read_message() override {
+    task<std::optional<std::string>> read_message() override {
         if(read_index >= incoming_messages.size()) {
             co_return std::nullopt;
         }
         co_return incoming_messages[read_index++];
     }
 
-    et::task<bool> write_message(std::string_view payload) override {
+    task<bool> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         co_return true;
     }
@@ -59,24 +59,24 @@ private:
     std::size_t read_index = 0;
 };
 
-}  // namespace language::testing
+}  // namespace eventide::language
 
-namespace language::protocol {
+namespace eventide::language::protocol {
 
 template <>
-struct RequestTraits<language::testing::AddParams> {
-    using Result = language::testing::AddResult;
+struct RequestTraits<AddParams> {
+    using Result = AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct NotificationTraits<language::testing::NoteParams> {
+struct NotificationTraits<NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-}  // namespace language::protocol
+}  // namespace eventide::language::protocol
 
-namespace language::testing {
+namespace eventide::language {
 
 TEST_SUITE(language_server) {
 
@@ -174,4 +174,4 @@ TEST_CASE(explicit_method_registration) {
 
 };  // TEST_SUITE(language_server)
 
-}  // namespace language::testing
+}  // namespace eventide::language

@@ -1,10 +1,10 @@
-#include "eventide/fs.h"
+#include "eventide/async/fs.h"
 
 #include <functional>
 
 #include "libuv.h"
-#include "eventide/error.h"
-#include "eventide/loop.h"
+#include "eventide/async/error.h"
+#include "eventide/async/loop.h"
 
 namespace eventide {
 

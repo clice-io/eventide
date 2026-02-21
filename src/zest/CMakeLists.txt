@@ -11,6 +11,7 @@ add_library(eventide_zest STATIC)
 add_library(eventide::zest ALIAS eventide_zest)
 
 target_sources(eventide_zest PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/zest/expr.cpp"
     "${CMAKE_SOURCE_DIR}/src/zest/runner.cpp"
 )
 

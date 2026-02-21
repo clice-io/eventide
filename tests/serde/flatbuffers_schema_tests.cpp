@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "zest/zest.h"
-#include "serde/flatbuffers/schema/schema.h"
+#include "eventide/zest/zest.h"
+#include "eventide/serde/flatbuffers/schema/schema.h"
 
-namespace serde::testing {
+namespace eventide::serde {
 
 namespace {
 
@@ -26,14 +26,14 @@ struct payload {
 TEST_SUITE(serde_flatbuffers_schema) {
 
 TEST_CASE(trivial_struct_maps_to_schema_struct) {
-    ASSERT_TRUE((serde::flatbuffers::schema::is_schema_struct_v<point2d>));
-    ASSERT_FALSE((serde::flatbuffers::schema::is_schema_struct_v<payload>));
+    ASSERT_TRUE((flatbuffers::schema::is_schema_struct_v<point2d>));
+    ASSERT_FALSE((flatbuffers::schema::is_schema_struct_v<payload>));
 }
 
 TEST_CASE(map_field_emits_binary_search_entry_table) {
-    const auto schema = serde::flatbuffers::schema::render<payload>();
-    const auto point_name = serde::flatbuffers::schema::type_identifier<point2d>();
-    const auto payload_name = serde::flatbuffers::schema::type_identifier<payload>();
+    const auto schema = flatbuffers::schema::render<payload>();
+    const auto point_name = flatbuffers::schema::type_identifier<point2d>();
+    const auto payload_name = flatbuffers::schema::type_identifier<payload>();
     const auto map_entry_name = payload_name + "_attrsEntry";
 
     EXPECT_NE(schema.find("struct " + point_name), std::string::npos);
@@ -50,17 +50,17 @@ TEST_CASE(sorted_entries_support_binary_search_lookup) {
         {"mid",   2},
     };
 
-    auto entries = serde::flatbuffers::schema::to_sorted_entries(input);
+    auto entries = flatbuffers::schema::to_sorted_entries(input);
     ASSERT_EQ(entries.size(), 3U);
     EXPECT_EQ(entries[0].key, "alpha");
     EXPECT_EQ(entries[1].key, "mid");
     EXPECT_EQ(entries[2].key, "zeta");
 
-    auto found = serde::flatbuffers::schema::bsearch_entry(entries, std::string("mid"));
+    auto found = flatbuffers::schema::bsearch_entry(entries, std::string("mid"));
     ASSERT_TRUE(found != nullptr);
     EXPECT_EQ(found->value, 2);
 
-    auto missing = serde::flatbuffers::schema::bsearch_entry(entries, std::string("none"));
+    auto missing = flatbuffers::schema::bsearch_entry(entries, std::string("none"));
     EXPECT_TRUE(missing == nullptr);
 }
 
@@ -68,6 +68,6 @@ TEST_CASE(sorted_entries_support_binary_search_lookup) {
 
 }  // namespace
 
-}  // namespace serde::testing
+}  // namespace eventide::serde
 
 #endif

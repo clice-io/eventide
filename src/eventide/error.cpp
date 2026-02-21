@@ -1,4 +1,4 @@
-#include "eventide/error.h"
+#include "eventide/async/error.h"
 
 #include "libuv.h"
 

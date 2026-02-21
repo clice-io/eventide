@@ -1,8 +1,8 @@
-#include "eventide/process.h"
+#include "eventide/async/process.h"
 
 #include "libuv.h"
-#include "eventide/error.h"
-#include "eventide/loop.h"
+#include "eventide/async/error.h"
+#include "eventide/async/loop.h"
 
 namespace eventide {
 
