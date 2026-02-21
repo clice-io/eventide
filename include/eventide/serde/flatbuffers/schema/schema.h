@@ -46,10 +46,10 @@ template <typename T>
 using remove_optional_t = typename remove_optional<remove_annotation_t<T>>::type;
 
 template <typename T>
-constexpr bool is_std_vector_v = serde::is_specialization_of<std::vector, std::remove_cvref_t<T>>;
+constexpr bool is_std_vector_v = is_specialization_of<std::vector, std::remove_cvref_t<T>>;
 
 template <typename T>
-constexpr bool is_std_map_v = serde::is_specialization_of<std::map, std::remove_cvref_t<T>>;
+constexpr bool is_std_map_v = is_specialization_of<std::map, std::remove_cvref_t<T>>;
 
 template <typename T>
 constexpr bool is_scalar_field_v =
@@ -114,7 +114,7 @@ std::string scalar_schema_name() {
         using underlying_t = std::underlying_type_t<U>;
         return scalar_schema_name<underlying_t>();
     } else {
-        static_assert(serde::dependent_false<U>, "unsupported scalar schema type");
+        static_assert(dependent_false<U>, "unsupported scalar schema type");
     }
 }
 
@@ -253,7 +253,7 @@ private:
         } else if constexpr(refl::reflectable_class<U>) {
             return type_identifier<U>();
         } else {
-            static_assert(serde::dependent_false<U>, "unsupported field type for schema emission");
+            static_assert(dependent_false<U>, "unsupported field type for schema emission");
         }
     }
 

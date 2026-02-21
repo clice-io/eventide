@@ -3,15 +3,12 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/stream.h"
-
-namespace zest = eventide::zest;
+#include "eventide/zest/zest.h"
 
 int main(int argc, char** argv) {
     std::string filter;
-    using zest::Runner;
     constexpr std::string_view filter_prefix = "--test-filter=";
     for(int i = 1; i < argc; ++i) {
         std::string_view arg{argv[i]};
@@ -25,5 +22,5 @@ int main(int argc, char** argv) {
         }
     }
 
-    return Runner::instance().run_tests(filter);
+    return eventide::zest::Runner::instance().run_tests(filter);
 }

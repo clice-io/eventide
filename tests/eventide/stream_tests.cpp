@@ -3,8 +3,8 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/zest/macro.h"
 #include "eventide/async/error.h"
+#include "eventide/zest/macro.h"
 
 #ifdef _WIN32
 #include <BaseTsd.h>
@@ -19,9 +19,9 @@
 #include <unistd.h>
 #endif
 
-#include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/stream.h"
+#include "eventide/zest/zest.h"
 
 namespace eventide {
 

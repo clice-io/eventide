@@ -35,10 +35,3 @@ constexpr std::string_view error_message(error_code code) {
 }
 
 }  // namespace eventide::serde::flex
-
-namespace eventide::serde::flatbuffers {
-
-using error_code = serde::flex::error_code;
-using serde::flex::error_message;
-
-}  // namespace eventide::serde::flatbuffers

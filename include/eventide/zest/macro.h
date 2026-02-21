@@ -163,7 +163,7 @@ inline bool check_throws_failure(bool failure,
         (void)_register_suites<>;                                                                  \
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
-                                  ::eventide::zest::fixed_string<file_len>(file_name),             \
+                                  ::eventide::fixed_string<file_len>(file_name),                   \
                                   std::source_location::current().line() __VA_OPT__(, )            \
                                       __VA_ARGS__>;                                                \
     }                                                                                              \

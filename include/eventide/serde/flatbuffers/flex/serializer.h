@@ -196,10 +196,3 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
 static_assert(serde::serializer_like<Serializer>);
 
 }  // namespace eventide::serde::flex
-
-namespace eventide::serde::flatbuffers {
-
-using Serializer = serde::flex::Serializer;
-using serde::flex::to_flatbuffer;
-
-}  // namespace eventide::serde::flatbuffers

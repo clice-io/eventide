@@ -57,6 +57,7 @@ target("ztest", function()
 	add_files("src/zest/*.cpp")
 	add_includedirs("include", { public = true })
 	add_headerfiles(
+		"include/(eventide/common/*.h)",
 		"include/(eventide/zest/*.h)",
 		"include/(eventide/reflection/*.h)",
 		"include/(eventide/reflection/*.inl)"

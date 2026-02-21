@@ -342,10 +342,3 @@ auto from_flatbuffer(const std::vector<std::uint8_t>& bytes) -> std::expected<T,
 static_assert(serde::deserializer_like<Deserializer>);
 
 }  // namespace eventide::serde::flex
-
-namespace eventide::serde::flatbuffers {
-
-using Deserializer = serde::flex::Deserializer;
-using serde::flex::from_flatbuffer;
-
-}  // namespace eventide::serde::flatbuffers

@@ -21,15 +21,13 @@
 
 namespace eventide::language {
 
-namespace et = eventide;
-
 struct RequestContext {
     std::string_view method{};
 };
 
 template <typename Params>
 using RequestResult =
-    et::task<std::expected<typename protocol::RequestTraits<Params>::Result, std::string>>;
+    task<std::expected<typename protocol::RequestTraits<Params>::Result, std::string>>;
 
 class LanguageServer {
 public:
@@ -91,7 +89,7 @@ public:
 
         auto wrapped =
             [cb = std::forward<Callback>(callback), method_name = std::string(method)](
-                std::string_view params_json) -> et::task<std::expected<std::string, std::string>> {
+                std::string_view params_json) -> task<std::expected<std::string, std::string>> {
             auto parsed_params = LanguageServer::template deserialize_json<Params>(
                 LanguageServer::template normalize_params_json<Params>(params_json));
             if(!parsed_params) {
@@ -159,7 +157,7 @@ public:
 
 private:
     using RequestHandler =
-        std::function<et::task<std::expected<std::string, std::string>>(std::string_view)>;
+        std::function<task<std::expected<std::string, std::string>>(std::string_view)>;
     using NotificationHandler = std::function<void(std::string_view)>;
 
     template <typename T>
@@ -168,7 +166,7 @@ private:
     };
 
     template <typename Result>
-    struct request_return_traits<et::task<std::expected<Result, std::string>>> {
+    struct request_return_traits<task<std::expected<Result, std::string>>> {
         constexpr static bool valid = true;
         using result_type = Result;
     };

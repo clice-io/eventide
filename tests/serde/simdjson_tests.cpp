@@ -9,10 +9,10 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/zest/zest.h"
 #include "eventide/serde/serde.h"
 #include "eventide/serde/simdjson/deserializer.h"
 #include "eventide/serde/simdjson/serializer.h"
+#include "eventide/zest/zest.h"
 
 namespace eventide::serde {
 

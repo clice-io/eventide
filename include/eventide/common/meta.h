@@ -1,0 +1,20 @@
+#pragma once
+
+#include <concepts>
+#include <type_traits>
+
+namespace eventide {
+
+template <typename T>
+constexpr inline bool dependent_false = false;
+
+template <typename T, typename... Ts>
+concept if_one_of = (std::same_as<T, Ts> || ...);
+
+template <template <typename...> typename HKT, typename T>
+constexpr inline bool is_specialization_of = false;
+
+template <template <typename...> typename HKT, typename... Ts>
+constexpr inline bool is_specialization_of<HKT, HKT<Ts...>> = true;
+
+}  // namespace eventide

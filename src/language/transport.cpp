@@ -11,8 +11,6 @@
 
 namespace eventide::language {
 
-namespace et = eventide;
-
 namespace {
 
 constexpr std::size_t max_header_bytes = 8 * 1024;
@@ -86,45 +84,43 @@ std::optional<std::size_t> parse_content_length(std::string_view header) {
     return std::nullopt;
 }
 
-std::string to_error_text(et::error err) {
+std::string to_error_text(error err) {
     return std::string(err.message());
 }
 
-std::expected<et::stream, std::string> to_stream(et::result<et::tcp_socket> socket) {
+std::expected<stream, std::string> to_stream(result<tcp_socket> socket) {
     if(!socket) {
         return std::unexpected(to_error_text(socket.error()));
     }
-    return et::stream(std::move(*socket));
+    return stream(std::move(*socket));
 }
 
-std::expected<et::stream, std::string> open_stdio_stream(int fd,
-                                                         bool readable,
-                                                         et::event_loop& loop) {
-    switch(et::guess_handle(fd)) {
-        case et::handle_type::tty: {
-            auto opened = et::console::open(fd, et::console::options{readable}, loop);
+std::expected<stream, std::string> open_stdio_stream(int fd, bool readable, event_loop& loop) {
+    switch(guess_handle(fd)) {
+        case handle_type::tty: {
+            auto opened = console::open(fd, console::options{readable}, loop);
             if(!opened) {
                 return std::unexpected(to_error_text(opened.error()));
             }
-            return et::stream(std::move(*opened));
+            return stream(std::move(*opened));
         }
 
-        case et::handle_type::pipe:
-        case et::handle_type::file:
-        case et::handle_type::unknown: {
-            auto opened = et::pipe::open(fd, et::pipe::options{}, loop);
+        case handle_type::pipe:
+        case handle_type::file:
+        case handle_type::unknown: {
+            auto opened = pipe::open(fd, pipe::options{}, loop);
             if(!opened) {
                 return std::unexpected(to_error_text(opened.error()));
             }
-            return et::stream(std::move(*opened));
+            return stream(std::move(*opened));
         }
 
-        case et::handle_type::tcp: {
-            auto opened = et::tcp_socket::open(fd, loop);
+        case handle_type::tcp: {
+            auto opened = tcp_socket::open(fd, loop);
             if(!opened) {
                 return std::unexpected(to_error_text(opened.error()));
             }
-            return et::stream(std::move(*opened));
+            return stream(std::move(*opened));
         }
 
         default: return std::unexpected("unsupported stdio handle type");
@@ -133,14 +129,14 @@ std::expected<et::stream, std::string> open_stdio_stream(int fd,
 
 }  // namespace
 
-StreamTransport::StreamTransport(et::stream input, et::stream output) :
+StreamTransport::StreamTransport(stream input, stream output) :
     read_stream(std::move(input)), write_stream(std::move(output)) {}
 
-StreamTransport::StreamTransport(et::stream stream) :
+StreamTransport::StreamTransport(stream stream) :
     read_stream(std::move(stream)), shared_stream(true) {}
 
 std::expected<std::unique_ptr<StreamTransport>, std::string>
-    StreamTransport::open_stdio(et::event_loop& loop) {
+    StreamTransport::open_stdio(event_loop& loop) {
     auto input = open_stdio_stream(0, true, loop);
     if(!input) {
         return std::unexpected(input.error());
@@ -154,9 +150,9 @@ std::expected<std::unique_ptr<StreamTransport>, std::string>
     return std::make_unique<StreamTransport>(std::move(*input), std::move(*output));
 }
 
-et::task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
-    StreamTransport::connect_tcp(std::string_view host, int port, et::event_loop& loop) {
-    auto connected = co_await et::tcp_socket::connect(host, port, loop);
+task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
+    StreamTransport::connect_tcp(std::string_view host, int port, event_loop& loop) {
+    auto connected = co_await tcp_socket::connect(host, port, loop);
     auto channel = to_stream(std::move(connected));
     if(!channel) {
         co_return std::unexpected(channel.error());
@@ -166,15 +162,15 @@ et::task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
 }
 
 std::expected<std::unique_ptr<StreamTransport>, std::string>
-    StreamTransport::open_tcp(int fd, et::event_loop& loop) {
-    auto channel = to_stream(et::tcp_socket::open(fd, loop));
+    StreamTransport::open_tcp(int fd, event_loop& loop) {
+    auto channel = to_stream(tcp_socket::open(fd, loop));
     if(!channel) {
         return std::unexpected(channel.error());
     }
     return std::make_unique<StreamTransport>(std::move(*channel));
 }
 
-et::task<std::optional<std::string>> StreamTransport::read_message() {
+task<std::optional<std::string>> StreamTransport::read_message() {
     std::string header;
     std::optional<std::size_t> content_length;
 
@@ -229,7 +225,7 @@ et::task<std::optional<std::string>> StreamTransport::read_message() {
     co_return payload;
 }
 
-et::task<bool> StreamTransport::write_message(std::string_view payload) {
+task<bool> StreamTransport::write_message(std::string_view payload) {
     std::string framed;
     framed.reserve(32 + payload.size());
     framed.append("Content-Length: ");

@@ -6,10 +6,10 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/zest/zest.h"
 #include "eventide/async/compiler.h"
 #include "eventide/language/server.h"
 #include "eventide/serde/simdjson/deserializer.h"
+#include "eventide/zest/zest.h"
 
 namespace eventide::language {
 
@@ -37,14 +37,14 @@ public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
 
-    et::task<std::optional<std::string>> read_message() override {
+    task<std::optional<std::string>> read_message() override {
         if(read_index >= incoming_messages.size()) {
             co_return std::nullopt;
         }
         co_return incoming_messages[read_index++];
     }
 
-    et::task<bool> write_message(std::string_view payload) override {
+    task<bool> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         co_return true;
     }

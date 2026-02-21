@@ -11,38 +11,36 @@
 
 namespace eventide::language {
 
-namespace et = eventide;
-
 class Transport {
 public:
     virtual ~Transport() = default;
 
-    virtual et::task<std::optional<std::string>> read_message() = 0;
+    virtual task<std::optional<std::string>> read_message() = 0;
 
-    virtual et::task<bool> write_message(std::string_view payload) = 0;
+    virtual task<bool> write_message(std::string_view payload) = 0;
 };
 
 class StreamTransport : public Transport {
 public:
-    StreamTransport(et::stream input, et::stream output);
-    explicit StreamTransport(et::stream stream);
+    StreamTransport(stream input, stream output);
+    explicit StreamTransport(stream stream);
 
     static std::expected<std::unique_ptr<StreamTransport>, std::string>
-        open_stdio(et::event_loop& loop);
+        open_stdio(event_loop& loop);
 
-    static et::task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
-        connect_tcp(std::string_view host, int port, et::event_loop& loop);
+    static task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
+        connect_tcp(std::string_view host, int port, event_loop& loop);
 
-    static std::expected<std::unique_ptr<StreamTransport>, std::string>
-        open_tcp(int fd, et::event_loop& loop);
+    static std::expected<std::unique_ptr<StreamTransport>, std::string> open_tcp(int fd,
+                                                                                 event_loop& loop);
 
-    et::task<std::optional<std::string>> read_message() override;
+    task<std::optional<std::string>> read_message() override;
 
-    et::task<bool> write_message(std::string_view payload) override;
+    task<bool> write_message(std::string_view payload) override;
 
 private:
-    et::stream read_stream;
-    et::stream write_stream;
+    stream read_stream;
+    stream write_stream;
     bool shared_stream = false;
 };
 

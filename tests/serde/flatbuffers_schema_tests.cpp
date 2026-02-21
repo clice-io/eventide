@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "eventide/zest/zest.h"
 #include "eventide/serde/flatbuffers/schema/schema.h"
+#include "eventide/zest/zest.h"
 
 namespace eventide::serde {
 

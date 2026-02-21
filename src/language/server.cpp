@@ -10,8 +10,6 @@
 
 namespace eventide::language {
 
-namespace et = eventide;
-
 namespace {
 
 template <typename T>
@@ -111,7 +109,7 @@ std::expected<protocol::IncomingMessage, std::string>
 }  // namespace
 
 struct LanguageServer::Self {
-    et::event_loop loop;
+    event_loop loop;
     std::unique_ptr<Transport> transport;
     std::unordered_map<std::string, RequestHandler> request_handlers;
     std::unordered_map<std::string, NotificationHandler> notification_handlers;
@@ -191,7 +189,7 @@ struct LanguageServer::Self {
         }
     }
 
-    et::task<> write_loop() {
+    task<> write_loop() {
         while(!outgoing_queue.empty()) {
             auto payload = std::move(outgoing_queue.front());
             outgoing_queue.pop_front();
@@ -220,9 +218,7 @@ struct LanguageServer::Self {
         it->second(params_json);
     }
 
-    et::task<> run_request(protocol::RequestID id,
-                           RequestHandler handler,
-                           std::string params_json) {
+    task<> run_request(protocol::RequestID id, RequestHandler handler, std::string params_json) {
         auto result_json = co_await handler(params_json);
         if(!result_json) {
             send_error(id,
@@ -258,7 +254,7 @@ struct LanguageServer::Self {
         loop.schedule(run_request(id, std::move(handler), std::string(params_json)));
     }
 
-    et::task<> main_loop() {
+    task<> main_loop() {
         while(transport) {
             auto payload = co_await transport->read_message();
             if(!payload.has_value()) {
