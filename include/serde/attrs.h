@@ -11,7 +11,7 @@
 
 #include "spelling.h"
 
-namespace serde {
+namespace eventide::serde {
 
 // Wrap or inherit depending on whether T is an aggregate class.
 template <typename T>
@@ -211,4 +211,4 @@ using skip_if_empty = annotate<T, attr::skip_if<pred::empty>>;
 template <typename T>
 using skip_if_default = annotate<T, attr::skip_if<pred::default_value>>;
 
-}  // namespace serde
+}  // namespace eventide::serde

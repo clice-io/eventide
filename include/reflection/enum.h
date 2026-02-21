@@ -10,7 +10,7 @@
 
 #include "name.h"
 
-namespace refl::detail {
+namespace eventide::refl::detail {
 
 template <typename E, int V>
 consteval E enum_probe_value() {
@@ -24,7 +24,7 @@ consteval E enum_probe_value() {
 template <typename E, int V>
 consteval std::string_view enum_probe_name() {
     constexpr E value = enum_probe_value<E, V>();
-    return refl::enum_name<value>();
+    return eventide::refl::enum_name<value>();
 }
 
 template <typename E, int V>
@@ -68,9 +68,9 @@ consteval auto count_valid(const std::array<bool, N>& valid) {
     return count;
 }
 
-}  // namespace refl::detail
+}  // namespace eventide::refl::detail
 
-namespace refl {
+namespace eventide::refl {
 
 template <typename T>
 struct reflection;
@@ -151,4 +151,4 @@ constexpr std::optional<E> enum_value(std::string_view name) {
     return std::nullopt;
 }
 
-}  // namespace refl
+}  // namespace eventide::refl

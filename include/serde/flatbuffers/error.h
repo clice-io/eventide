@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace serde::flex {
+namespace eventide::serde::flex {
 
 enum class error_code : std::uint8_t {
     unknown = 0,
@@ -34,11 +34,11 @@ constexpr std::string_view error_message(error_code code) {
     return "unknown";
 }
 
-}  // namespace serde::flex
+}  // namespace eventide::serde::flex
 
-namespace serde::flatbuffers {
+namespace eventide::serde::flatbuffers {
 
-using error_code = serde::flex::error_code;
-using serde::flex::error_message;
+using error_code = eventide::serde::flex::error_code;
+using eventide::serde::flex::error_message;
 
-}  // namespace serde::flatbuffers
+}  // namespace eventide::serde::flatbuffers

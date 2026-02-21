@@ -15,7 +15,7 @@
 #include "suite.h"
 #include "trace.h"
 
-namespace zest {
+namespace eventide::zest {
 
 template <typename T>
 concept Formattable = std::formattable<T, char>;
@@ -47,12 +47,12 @@ inline std::string pretty_dump(const T& value) {
         if(!value) {
             return std::string("nullopt");
         }
-        return zest::pretty_dump(*value);
+        return eventide::zest::pretty_dump(*value);
     } else if constexpr(is_expected_v<T>) {
         if(value.has_value()) {
-            return std::format("expected({})", zest::pretty_dump(*value));
+            return std::format("expected({})", eventide::zest::pretty_dump(*value));
         }
-        return std::format("unexpected({})", zest::pretty_dump(value.error()));
+        return std::format("unexpected({})", eventide::zest::pretty_dump(value.error()));
     } else {
         if constexpr(Formattable<T>) {
             return std::format("{}", value);
@@ -115,7 +115,7 @@ inline bool check_unary_failure(bool failure,
                                 std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} (expected {})", expr, expectation);
-        std::println("           got: {}", zest::pretty_dump(value));
+        std::println("           got: {}", eventide::zest::pretty_dump(value));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
@@ -131,8 +131,8 @@ inline bool check_binary_failure(bool failure,
                                  std::source_location loc = std::source_location::current()) {
     if(failure) {
         std::println("[ expect ] {} {} {}", lhs_expr, op, rhs_expr);
-        std::println("           lhs: {}", zest::pretty_dump(lhs));
-        std::println("           rhs: {}", zest::pretty_dump(rhs));
+        std::println("           lhs: {}", eventide::zest::pretty_dump(lhs));
+        std::println("           rhs: {}", eventide::zest::pretty_dump(rhs));
         std::println("           at {}:{}", loc.file_name(), loc.line());
     }
     return failure;
@@ -152,9 +152,9 @@ inline bool check_throws_failure(bool failure,
 }
 #endif
 
-}  // namespace zest
+}  // namespace eventide::zest
 
-#define TEST_SUITE(name) struct name##TEST : ::zest::TestSuiteDef<#name, name##TEST>
+#define TEST_SUITE(name) struct name##TEST : ::eventide::zest::TestSuiteDef<#name, name##TEST>
 
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
@@ -163,7 +163,7 @@ inline bool check_throws_failure(bool failure,
         (void)_register_suites<>;                                                                  \
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
-                                  ::zest::fixed_string<file_len>(file_name),                       \
+                                  ::eventide::zest::fixed_string<file_len>(file_name),                       \
                                   std::source_location::current().line() __VA_OPT__(, )            \
                                       __VA_ARGS__>;                                                \
     }                                                                                              \
@@ -173,7 +173,7 @@ inline bool check_throws_failure(bool failure,
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
             auto trace = cpptrace::generate_trace();                                               \
-            ::zest::print_trace(trace, std::source_location::current());                           \
+            ::eventide::zest::print_trace(trace, std::source_location::current());                           \
             failure();                                                                             \
             return_action;                                                                         \
         }                                                                                          \
@@ -182,7 +182,7 @@ inline bool check_throws_failure(bool failure,
 #define ZEST_EXPECT_UNARY(expr, expectation, failure_pred, return_action)                          \
     do {                                                                                           \
         auto _failed = ([&](auto&& _expr) {                                                        \
-            return ::zest::check_unary_failure((failure_pred), #expr, (expectation), _expr);       \
+            return ::eventide::zest::check_unary_failure((failure_pred), #expr, (expectation), _expr);       \
         }((expr)));                                                                                \
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
@@ -195,8 +195,8 @@ inline bool check_throws_failure(bool failure,
             auto _args_tuple = std::forward_as_tuple(std::forward<_Args>(_args)...);               \
             auto&& _lhs = std::get<0>(_args_tuple);                                                \
             auto&& _rhs = std::get<1>(_args_tuple);                                                \
-            const auto _exprs = ::zest::parse_binary_exprs(#__VA_ARGS__);                          \
-            return ::zest::check_binary_failure((failure_pred),                                    \
+            const auto _exprs = ::eventide::zest::parse_binary_exprs(#__VA_ARGS__);                          \
+            return ::eventide::zest::check_binary_failure((failure_pred),                                    \
                                                 #op_string,                                        \
                                                 _exprs.lhs,                                        \
                                                 _exprs.rhs,                                        \
@@ -209,22 +209,22 @@ inline bool check_throws_failure(bool failure,
 #define EXPECT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), (void)0)
 #define EXPECT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), (void)0)
 #define EXPECT_EQ(...)                                                                             \
-    ZEST_EXPECT_BINARY(==, !::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
+    ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
 #define EXPECT_NE(...)                                                                             \
-    ZEST_EXPECT_BINARY(!=, ::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
+    ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
 
 #define ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), return)
 #define ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), return)
 #define ASSERT_EQ(...)                                                                             \
-    ZEST_EXPECT_BINARY(==, !::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
-#define ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
+    ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
+#define ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
 
 #define CO_ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), co_return)
 #define CO_ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), co_return)
 #define CO_ASSERT_EQ(...)                                                                          \
-    ZEST_EXPECT_BINARY(==, !::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
+    ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
 #define CO_ASSERT_NE(...)                                                                          \
-    ZEST_EXPECT_BINARY(!=, ::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
+    ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
 
 #ifdef __cpp_exceptions
 
@@ -241,7 +241,7 @@ inline bool check_throws_failure(bool failure,
 #define ZEST_EXPECT_THROWS(expr, expectation, failure_pred, return_action)                         \
     do {                                                                                           \
         auto _failed = ([&]() {                                                                    \
-            return ::zest::check_throws_failure((failure_pred), #expr, (expectation));             \
+            return ::eventide::zest::check_throws_failure((failure_pred), #expr, (expectation));             \
         }());                                                                                      \
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)

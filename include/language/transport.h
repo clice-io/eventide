@@ -9,7 +9,7 @@
 #include "eventide/stream.h"
 #include "eventide/task.h"
 
-namespace language {
+namespace eventide::language {
 
 namespace et = eventide;
 
@@ -46,4 +46,4 @@ private:
     bool shared_stream = false;
 };
 
-}  // namespace language
+}  // namespace eventide::language

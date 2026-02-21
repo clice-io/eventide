@@ -9,7 +9,7 @@
 #include <string_view>
 #include <utility>
 
-namespace language {
+namespace eventide::language {
 
 namespace et = eventide;
 
@@ -242,4 +242,4 @@ et::task<bool> StreamTransport::write_message(std::string_view payload) {
     co_return !status.has_error();
 }
 
-}  // namespace language
+}  // namespace eventide::language

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace zest {
+namespace eventide::zest {
 
 enum class TestState {
     Passed,
@@ -44,4 +44,4 @@ private:
     std::vector<TestSuite> suites;
 };
 
-}  // namespace zest
+}  // namespace eventide::zest

@@ -5,7 +5,7 @@
 
 #include "runner.h"
 
-namespace zest {
+namespace eventide::zest {
 
 template <std::size_t N>
 struct fixed_string : std::array<char, N + 1> {
@@ -97,4 +97,4 @@ public:
     }();
 };
 
-}  // namespace zest
+}  // namespace eventide::zest

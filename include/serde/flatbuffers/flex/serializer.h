@@ -23,7 +23,7 @@
     "flatbuffers/flexbuffers.h not found. Enable EVENTIDE_SERDE_ENABLE_FLATBUFFERS or add flatbuffers include paths."
 #endif
 
-namespace serde::flex {
+namespace eventide::serde::flex {
 
 class Serializer {
 public:
@@ -41,7 +41,7 @@ public:
 
         template <typename T>
         status_t serialize_element(const T& value) {
-            auto result = serde::serialize(serializer, value);
+            auto result = eventide::serde::serialize(serializer, value);
             if(!result) {
                 return std::unexpected(result.error());
             }
@@ -62,12 +62,12 @@ public:
 
         template <typename K, typename V>
         status_t serialize_entry(const K& key, const V& value) {
-            auto key_status = serializer.key(serde::spelling::map_key_to_string(key));
+            auto key_status = serializer.key(eventide::serde::spelling::map_key_to_string(key));
             if(!key_status) {
                 return std::unexpected(key_status.error());
             }
 
-            return serde::serialize(serializer, value);
+            return eventide::serde::serialize(serializer, value);
         }
 
         template <typename T>
@@ -77,7 +77,7 @@ public:
                 return std::unexpected(key_status.error());
             }
 
-            return serde::serialize(serializer, value);
+            return eventide::serde::serialize(serializer, value);
         }
 
         result_t<value_type> end() {
@@ -109,7 +109,7 @@ public:
 
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
-        return serde::serialize(*this, value);
+        return eventide::serde::serialize(*this, value);
     }
 
     result_t<value_type> serialize_bool(bool value);
@@ -186,20 +186,20 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
     -> std::expected<std::vector<std::uint8_t>, error_code> {
     Serializer serializer =
         initial_capacity.has_value() ? Serializer(*initial_capacity) : Serializer();
-    auto result = serde::serialize(serializer, value);
+    auto result = eventide::serde::serialize(serializer, value);
     if(!result) {
         return std::unexpected(result.error());
     }
     return serializer.bytes();
 }
 
-static_assert(serde::serializer_like<Serializer>);
+static_assert(eventide::serde::serializer_like<Serializer>);
 
-}  // namespace serde::flex
+}  // namespace eventide::serde::flex
 
-namespace serde::flatbuffers {
+namespace eventide::serde::flatbuffers {
 
-using Serializer = serde::flex::Serializer;
-using serde::flex::to_flatbuffer;
+using Serializer = eventide::serde::flex::Serializer;
+using eventide::serde::flex::to_flatbuffer;
 
-}  // namespace serde::flatbuffers
+}  // namespace eventide::serde::flatbuffers

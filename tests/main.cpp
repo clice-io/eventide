@@ -22,5 +22,5 @@ int main(int argc, char** argv) {
         }
     }
 
-    return zest::Runner::instance().run_tests(filter);
+    return eventide::zest::Runner::instance().run_tests(filter);
 }

@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace language {
+namespace eventide::language {
 
 namespace et = eventide;
 
@@ -16,7 +16,7 @@ namespace {
 
 template <typename T>
 std::expected<T, std::string> parse_json_value(std::string_view json) {
-    auto parsed = serde::json::simd::from_json<T>(json);
+    auto parsed = eventide::serde::json::simd::from_json<T>(json);
     if(!parsed) {
         return std::unexpected(std::string(simdjson::error_message(parsed.error())));
     }
@@ -324,4 +324,4 @@ int LanguageServer::start() {
     return self->loop.run();
 }
 
-}  // namespace language
+}  // namespace eventide::language

@@ -5,7 +5,7 @@
 
 #include "cpptrace/cpptrace.hpp"
 
-namespace zest {
+namespace eventide::zest {
 
 inline void print_trace(cpptrace::stacktrace& trace, std::source_location location) {
     auto& frames = trace.frames;
@@ -16,4 +16,4 @@ inline void print_trace(cpptrace::stacktrace& trace, std::source_location locati
     trace.print();
 }
 
-}  // namespace zest
+}  // namespace eventide::zest

@@ -16,7 +16,7 @@ std::string_view trim_expr(std::string_view sv) {
 
 }  // namespace
 
-namespace zest {
+namespace eventide::zest {
 
 binary_expr_pair parse_binary_exprs(std::string_view exprs) {
     int angle = 0;
@@ -92,4 +92,4 @@ binary_expr_pair parse_binary_exprs(std::string_view exprs) {
     return {trim_expr(exprs), "<unknown>"};
 }
 
-}  // namespace zest
+}  // namespace eventide::zest

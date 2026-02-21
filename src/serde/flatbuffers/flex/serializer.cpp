@@ -1,6 +1,6 @@
 #include "serde/flatbuffers/flex/serializer.h"
 
-namespace serde::flex {
+namespace eventide::serde::flex {
 
 Serializer::Serializer(std::size_t initial_capacity, ::flexbuffers::BuilderFlag flags) :
     builder(initial_capacity, flags) {}
@@ -339,4 +339,4 @@ auto Serializer::status() const -> status_t {
     return std::unexpected(current_error());
 }
 
-}  // namespace serde::flex
+}  // namespace eventide::serde::flex

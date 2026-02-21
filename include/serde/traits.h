@@ -15,7 +15,7 @@
 #include <variant>
 #include <vector>
 
-namespace serde {
+namespace eventide::serde {
 
 template <typename T>
 constexpr inline bool dependent_false = false;
@@ -231,4 +231,4 @@ concept deserializer_like = requires(D& d,
     };
 };
 
-}  // namespace serde
+}  // namespace eventide::serde

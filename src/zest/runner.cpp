@@ -33,7 +33,7 @@ bool matches_pattern(std::string_view text, std::string_view pattern) {
 
 }  // namespace
 
-namespace zest {
+namespace eventide::zest {
 
 Runner& Runner::instance() {
     static Runner runner;
@@ -222,4 +222,4 @@ int Runner::run_tests(std::string_view filter) {
     return total_failed_tests_count != 0;
 }
 
-}  // namespace zest
+}  // namespace eventide::zest

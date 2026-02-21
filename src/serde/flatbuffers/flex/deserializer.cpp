@@ -1,6 +1,6 @@
 #include "serde/flatbuffers/flex/deserializer.h"
 
-namespace serde::flex {
+namespace eventide::serde::flex {
 
 Deserializer::DeserializeArray::DeserializeArray(Deserializer& deserializer,
                                                  ::flexbuffers::Vector vector,
@@ -388,4 +388,4 @@ auto Deserializer::current_error() const -> error_type {
     return error_code::unknown;
 }
 
-}  // namespace serde::flex
+}  // namespace eventide::serde::flex

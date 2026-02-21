@@ -4,7 +4,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace refl::detail {
+namespace eventide::refl::detail {
 
 constexpr std::string_view ltrim(std::string_view sv, std::string_view chars = " \t\n\v\f\r") {
     auto pos = sv.find_first_not_of(chars);
@@ -147,9 +147,9 @@ struct wrapper {
     constexpr wrapper(T value) : value(value) {}
 };
 
-}  // namespace refl::detail
+}  // namespace eventide::refl::detail
 
-namespace refl {
+namespace eventide::refl {
 
 template <typename T>
 consteval auto type_name(bool qualified = false) {
@@ -208,4 +208,4 @@ consteval auto member_name() {
     return detail::extract_identifier(name);
 }
 
-}  // namespace refl
+}  // namespace eventide::refl

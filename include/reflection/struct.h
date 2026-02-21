@@ -7,7 +7,7 @@
 
 #include "name.h"
 
-namespace refl::detail {
+namespace eventide::refl::detail {
 
 template <class T>
 extern const T ext{};
@@ -45,9 +45,9 @@ consteval auto field_count() {
     }
 }
 
-}  // namespace refl::detail
+}  // namespace eventide::refl::detail
 
-namespace refl {
+namespace eventide::refl {
 
 template <typename T>
 struct reflection;
@@ -55,7 +55,7 @@ struct reflection;
 template <typename Object>
     requires std::is_aggregate_v<Object>
 struct reflection<Object> {
-    constexpr inline static auto field_count = refl::detail::field_count<Object>();
+    constexpr inline static auto field_count = eventide::refl::detail::field_count<Object>();
 
     constexpr static auto field_addrs(auto&& object) {
         if constexpr(field_count == 0) {
@@ -81,7 +81,7 @@ struct reflection<Object> {
             return std::array<std::string_view, 1>{"PLACEHOLDER"};
         } else {
             constexpr auto addrs = field_addrs(detail::ext<detail::uninitialized<Object>>.value);
-            return std::array{refl::pointer_name<std::get<Is>(addrs)>()...};
+            return std::array{eventide::refl::pointer_name<std::get<Is>(addrs)>()...};
         }
     }(std::make_index_sequence<field_count>{});
 };
@@ -218,4 +218,4 @@ concept reflectable_class = requires {
     reflection<T>::field_count;
 };
 
-}  // namespace refl
+}  // namespace eventide::refl
