@@ -189,7 +189,17 @@ constexpr bool compare_set_eq_unordered(const L& lhs, const R& rhs) {
 
 template <typename L, typename R>
 constexpr bool compare_eq(const L& lhs, const R& rhs) {
-    if constexpr(ordered_map_range_pair<L, R>) {
+    if constexpr(is_expected_v<L> && !is_expected_v<R>) {
+        if(!lhs.has_value()) {
+            return false;
+        }
+        return compare_eq(*lhs, rhs);
+    } else if constexpr(!is_expected_v<L> && is_expected_v<R>) {
+        if(!rhs.has_value()) {
+            return false;
+        }
+        return compare_eq(lhs, *rhs);
+    } else if constexpr(ordered_map_range_pair<L, R>) {
         return compare_map_eq(lhs, rhs);
     } else if constexpr(map_range_pair<L, R>) {
         return compare_map_eq_unordered(lhs, rhs);

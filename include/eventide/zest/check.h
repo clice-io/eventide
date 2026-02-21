@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "eventide/common/meta.h"
+#include "eventide/reflection/compare.h"
 
 namespace eventide::zest {
 
@@ -43,78 +44,6 @@ struct binary_expr_pair {
 };
 
 binary_expr_pair parse_binary_exprs(std::string_view exprs);
-
-template <typename L, typename R>
-inline bool binary_equal(const L& lhs, const R& rhs) {
-    if constexpr(is_expected_v<L> && !is_expected_v<R>) {
-        if(!lhs.has_value()) {
-            return false;
-        }
-        if constexpr(eq_comparable_with<decltype(*lhs), R>) {
-            return static_cast<bool>(*lhs == rhs);
-        } else {
-            static_assert(dependent_false<L>,
-                          "EXPECT_EQ/ASSERT_EQ: expected value and rhs are not comparable");
-            return false;
-        }
-    } else if constexpr(!is_expected_v<L> && is_expected_v<R>) {
-        if(!rhs.has_value()) {
-            return false;
-        }
-        if constexpr(eq_comparable_with<L, decltype(*rhs)>) {
-            return static_cast<bool>(lhs == *rhs);
-        } else {
-            static_assert(dependent_false<L>,
-                          "EXPECT_EQ/ASSERT_EQ: lhs and expected value are not comparable");
-            return false;
-        }
-    } else if constexpr(eq_comparable_with<L, R>) {
-        return static_cast<bool>(lhs == rhs);
-    } else {
-        static_assert(dependent_false<L>, "EXPECT_EQ/ASSERT_EQ: operands are not comparable");
-        return false;
-    }
-}
-
-template <typename L, typename R>
-inline bool binary_less(const L& lhs, const R& rhs) {
-    if constexpr(lt_comparable_with<L, R>) {
-        return static_cast<bool>(lhs < rhs);
-    } else {
-        static_assert(dependent_false<L>, "EXPECT_LT/ASSERT_LT: operands are not comparable");
-        return false;
-    }
-}
-
-template <typename L, typename R>
-inline bool binary_less_equal(const L& lhs, const R& rhs) {
-    if constexpr(le_comparable_with<L, R>) {
-        return static_cast<bool>(lhs <= rhs);
-    } else {
-        static_assert(dependent_false<L>, "EXPECT_LE/ASSERT_LE: operands are not comparable");
-        return false;
-    }
-}
-
-template <typename L, typename R>
-inline bool binary_greater(const L& lhs, const R& rhs) {
-    if constexpr(gt_comparable_with<L, R>) {
-        return static_cast<bool>(lhs > rhs);
-    } else {
-        static_assert(dependent_false<L>, "EXPECT_GT/ASSERT_GT: operands are not comparable");
-        return false;
-    }
-}
-
-template <typename L, typename R>
-inline bool binary_greater_equal(const L& lhs, const R& rhs) {
-    if constexpr(ge_comparable_with<L, R>) {
-        return static_cast<bool>(lhs >= rhs);
-    } else {
-        static_assert(dependent_false<L>, "EXPECT_GE/ASSERT_GE: operands are not comparable");
-        return false;
-    }
-}
 
 template <typename V>
 inline bool check_unary_failure(bool failure,
