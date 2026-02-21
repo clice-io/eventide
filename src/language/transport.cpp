@@ -180,12 +180,12 @@ et::task<std::optional<std::string>> StreamTransport::read_message() {
 
     while(!content_length.has_value()) {
         auto chunk = co_await read_stream.read_chunk();
-        if(chunk.empty()) {
+        if(!chunk) {
             co_return std::nullopt;
         }
 
         const auto old_size = header.size();
-        header.append(chunk.data(), chunk.size());
+        header.append(chunk->data(), chunk->size());
 
         if(header.size() > max_header_bytes) {
             co_return std::nullopt;
@@ -193,7 +193,7 @@ et::task<std::optional<std::string>> StreamTransport::read_message() {
 
         auto marker = header.find("\r\n\r\n");
         if(marker == std::string::npos) {
-            read_stream.consume(chunk.size());
+            read_stream.consume(chunk->size());
             continue;
         }
 
@@ -216,13 +216,13 @@ et::task<std::optional<std::string>> StreamTransport::read_message() {
 
     while(payload.size() < *content_length) {
         auto chunk = co_await read_stream.read_chunk();
-        if(chunk.empty()) {
+        if(!chunk) {
             co_return std::nullopt;
         }
 
         const auto need = *content_length - payload.size();
-        const auto take = std::min<std::size_t>(need, chunk.size());
-        payload.append(chunk.data(), take);
+        const auto take = std::min<std::size_t>(need, chunk->size());
+        payload.append(chunk->data(), take);
         read_stream.consume(take);
     }
 
