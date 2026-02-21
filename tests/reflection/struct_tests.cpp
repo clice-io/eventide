@@ -93,13 +93,22 @@ struct Many36 {
     int f36;
 };
 
-struct NoUniqueAddressHolder {
+struct NoUniqueAddress {
     int i;
 #ifdef _MSC_VER
     [[msvc::no_unique_address]] Empty e;
 #else
     [[no_unique_address]] Empty e;
 #endif
+};
+
+struct NoDefault {
+    NoDefault() = delete;
+
+    explicit NoDefault(int value) : x(value) {}
+
+    int x;
+    double y;
 };
 
 template <class T>
@@ -132,56 +141,6 @@ consteval bool field_count_robustness_check() {
            refl::reflection<S6>::field_count == 6;
 }
 
-static_assert(refl::reflection<Point>::field_count == 4);
-static_assert(refl::field_names<Point>().size() == 4);
-static_assert(refl::field_name<0, Point>() == "x");
-static_assert(refl::field_name<1, Point>() == "c");
-static_assert(refl::field_name<2, Point>() == "z");
-static_assert(refl::field_name<3, Point>() == "y");
-
-static_assert(refl::reflection<Empty>::field_count == 0);
-static_assert(refl::field_names<Empty>().size() == 1);
-static_assert(refl::field_names<Empty>()[0] == "PLACEHOLDER");
-
-static_assert(refl::reflection<Many36>::field_count == 36);
-static_assert(refl::field_names<Many36>().size() == 36);
-static_assert(refl::field_name<0, Many36>() == "f01");
-static_assert(refl::field_name<35, Many36>() == "f36");
-static_assert(field_count_robustness_check<MoveOnly>());
-static_assert(field_count_robustness_check<FromIntOnly>());
-
-static_assert(std::tuple_size_v<point_rvalue_refs> == 4);
-static_assert(std::is_rvalue_reference_v<std::tuple_element_t<0, point_rvalue_refs>>);
-static_assert(std::is_rvalue_reference_v<std::tuple_element_t<1, point_rvalue_refs>>);
-static_assert(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>>);
-static_assert(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>>);
-
-static_assert(refl::field_offset<0, Layout>() == offsetof(Layout, a));
-static_assert(refl::field_offset<1, Layout>() == offsetof(Layout, b));
-static_assert(refl::field_offset<2, Layout>() == offsetof(Layout, bb));
-static_assert(refl::field_offset<3, Layout>() == offsetof(Layout, c));
-
-static_assert(refl::field_offset<0, Packed>() == offsetof(Packed, a));
-static_assert(refl::field_offset<1, Packed>() == offsetof(Packed, b));
-static_assert(refl::field_offset<2, Packed>() == offsetof(Packed, bb));
-static_assert(refl::field_offset<3, Packed>() == offsetof(Packed, c));
-static_assert(refl::field_offset<4, Packed>() == offsetof(Packed, d));
-static_assert(refl::field_offset<5, Packed>() == offsetof(Packed, e));
-static_assert(refl::field_offset<1, NoUniqueAddressHolder>() == offsetof(NoUniqueAddressHolder, e));
-
-static_assert(refl::field<0, Point>::index() == 0);
-static_assert(refl::field<1, Point>::index() == 1);
-static_assert(refl::field<2, Point>::index() == 2);
-static_assert(refl::field<3, Point>::index() == 3);
-static_assert(refl::field<0, Point>::name() == "x");
-static_assert(refl::field<1, Point>::name() == "c");
-static_assert(refl::field<2, Point>::name() == "z");
-static_assert(refl::field<3, Point>::name() == "y");
-static_assert(refl::field<0, Point>::offset() == offsetof(Point, x));
-static_assert(refl::field<1, Point>::offset() == offsetof(Point, c));
-static_assert(refl::field<2, Point>::offset() == offsetof(Point, z));
-static_assert(refl::field<3, Point>::offset() == offsetof(Point, y));
-
 TEST_SUITE(reflection) {
 
 TEST_CASE(field_addr_and_field_of) {
@@ -203,6 +162,78 @@ TEST_CASE(field_addr_and_field_of) {
     fc.value() = 'Z';
     EXPECT_EQ(p.x, 21);
     EXPECT_EQ(p.c, 'Z');
+}
+
+TEST_CASE(field_name_values) {
+    EXPECT_EQ(refl::field_names<Point>().size(), 4U);
+    EXPECT_EQ(refl::field_name<0, Point>(), "x");
+    EXPECT_EQ(refl::field_name<1, Point>(), "c");
+    EXPECT_EQ(refl::field_name<2, Point>(), "z");
+    EXPECT_EQ(refl::field_name<3, Point>(), "y");
+
+    EXPECT_EQ(refl::field_names<Empty>().size(), 1U);
+    EXPECT_EQ(refl::field_names<Empty>()[0], "PLACEHOLDER");
+
+    EXPECT_EQ(refl::field_names<Many36>().size(), 36U);
+    EXPECT_EQ(refl::field_name<0, Many36>(), "f01");
+    EXPECT_EQ(refl::field_name<35, Many36>(), "f36");
+
+    EXPECT_EQ(refl::field<0, Point>::name(), "x");
+    EXPECT_EQ(refl::field<1, Point>::name(), "c");
+    EXPECT_EQ(refl::field<2, Point>::name(), "z");
+    EXPECT_EQ(refl::field<3, Point>::name(), "y");
+}
+
+TEST_CASE(reflection_static_values) {
+    EXPECT_EQ(refl::reflection<Point>::field_count, 4U);
+    EXPECT_EQ(refl::reflection<Empty>::field_count, 0U);
+    EXPECT_EQ(refl::reflection<Many36>::field_count, 36U);
+    EXPECT_EQ(field_count_robustness_check<MoveOnly>(), true);
+    EXPECT_EQ(field_count_robustness_check<FromIntOnly>(), true);
+
+    EXPECT_EQ(std::tuple_size_v<point_rvalue_refs>, 4U);
+    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<0, point_rvalue_refs>>, true);
+    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<1, point_rvalue_refs>>, true);
+    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>>, true);
+    EXPECT_EQ(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>>, true);
+
+    EXPECT_EQ(refl::field<0, Point>::index(), 0U);
+    EXPECT_EQ(refl::field<1, Point>::index(), 1U);
+    EXPECT_EQ(refl::field<2, Point>::index(), 2U);
+    EXPECT_EQ(refl::field<3, Point>::index(), 3U);
+}
+
+TEST_CASE(field_offset_values) {
+    EXPECT_EQ(refl::field_offset<Layout>(0), offsetof(Layout, a));
+    EXPECT_EQ(refl::field_offset<Layout>(1), offsetof(Layout, b));
+    EXPECT_EQ(refl::field_offset<Layout>(2), offsetof(Layout, bb));
+    EXPECT_EQ(refl::field_offset<Layout>(3), offsetof(Layout, c));
+    EXPECT_EQ(refl::field_offset(&Layout::a), offsetof(Layout, a));
+    EXPECT_EQ(refl::field_offset(&Layout::b), offsetof(Layout, b));
+    EXPECT_EQ(refl::field_offset(&Layout::bb), offsetof(Layout, bb));
+    EXPECT_EQ(refl::field_offset(&Layout::c), offsetof(Layout, c));
+
+    EXPECT_EQ(refl::field_offset<Packed>(0), offsetof(Packed, a));
+    EXPECT_EQ(refl::field_offset<Packed>(1), offsetof(Packed, b));
+    EXPECT_EQ(refl::field_offset<Packed>(2), offsetof(Packed, bb));
+    EXPECT_EQ(refl::field_offset<Packed>(3), offsetof(Packed, c));
+    EXPECT_EQ(refl::field_offset<Packed>(4), offsetof(Packed, d));
+    EXPECT_EQ(refl::field_offset<Packed>(5), offsetof(Packed, e));
+    EXPECT_EQ(refl::field_offset(&Packed::a), offsetof(Packed, a));
+    EXPECT_EQ(refl::field_offset(&Packed::b), offsetof(Packed, b));
+    EXPECT_EQ(refl::field_offset(&Packed::bb), offsetof(Packed, bb));
+    EXPECT_EQ(refl::field_offset(&Packed::c), offsetof(Packed, c));
+    EXPECT_EQ(refl::field_offset(&Packed::d), offsetof(Packed, d));
+    EXPECT_EQ(refl::field_offset(&Packed::e), offsetof(Packed, e));
+    EXPECT_EQ(refl::field_offset<NoUniqueAddress>(1), offsetof(NoUniqueAddress, e));
+    EXPECT_EQ(refl::field_offset(&NoUniqueAddress::e), offsetof(NoUniqueAddress, e));
+    EXPECT_EQ(refl::field_offset(&NoDefault::x), offsetof(NoDefault, x));
+    EXPECT_EQ(refl::field_offset(&NoDefault::y), offsetof(NoDefault, y));
+
+    EXPECT_EQ(refl::field<0, Point>::offset(), offsetof(Point, x));
+    EXPECT_EQ(refl::field<1, Point>::offset(), offsetof(Point, c));
+    EXPECT_EQ(refl::field<2, Point>::offset(), offsetof(Point, z));
+    EXPECT_EQ(refl::field<3, Point>::offset(), offsetof(Point, y));
 }
 
 TEST_CASE(field_refs_lvalue) {

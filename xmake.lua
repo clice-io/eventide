@@ -5,19 +5,6 @@ set_allowedplats("windows", "linux", "macosx")
 
 option("dev", { default = true })
 option("test", { default = true })
-option("serde_simdjson", {
-	default = false,
-	showmenu = true,
-	description = "Enable simdjson dependency for serde tests/headers",
-})
-option("build_all_tests", {
-	default = false,
-	showmenu = true,
-	description = "Enable all optional unit-test features (CI preset)",
-})
-
-local build_all_tests = has_config("build_all_tests")
-local enable_simdjson = build_all_tests or has_config("serde_simdjson")
 
 if has_config("dev") then
 	-- Don't fetch system package
@@ -61,10 +48,7 @@ end
 set_languages("c++23")
 
 add_requires("libuv v1.52.0", "cpptrace v1.0.4")
-if enable_simdjson then
-	add_requires("simdjson v4.2.4")
-end
-if (build_all_tests or has_config("test")) and is_plat("windows") then
+if has_config("test") and is_plat("windows") then
 	add_requires("unistd_h")
 end
 
@@ -83,26 +67,16 @@ target("eventide", function()
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/*.h)")
 	add_packages("libuv")
-
-	if enable_simdjson then
-		add_packages("simdjson", { public = true })
-	end
 end)
 
 target("unit_tests", function()
 	set_default(false)
 	set_kind("binary")
-	if enable_simdjson then
-		add_files("tests/**.cpp")
-		add_files("src/language/server.cpp", "src/language/transport.cpp")
-		add_packages("simdjson")
-	else
-		add_files("tests/**.cpp|serde/**.cpp|language/**.cpp")
-	end
+	add_files("tests/main.cpp", "tests/eventide/**.cpp", "tests/reflection/**.cpp")
 	add_includedirs("include")
 	add_deps("ztest", "eventide")
 
-	if (build_all_tests or has_config("test")) and is_plat("windows") then
+	if has_config("test") and is_plat("windows") then
 		add_packages("unistd_h")
 	end
 

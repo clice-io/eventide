@@ -8,7 +8,9 @@
 #include <source_location>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "suite.h"
 #include "trace.h"
@@ -58,6 +60,97 @@ inline std::string pretty_dump(const T& value) {
             return std::string("<unformattable>");
         }
     }
+}
+
+constexpr std::string_view trim_expr(std::string_view sv) {
+    while(!sv.empty() && (sv.front() == ' ' || sv.front() == '\t' || sv.front() == '\n' ||
+                          sv.front() == '\v' || sv.front() == '\f' || sv.front() == '\r')) {
+        sv.remove_prefix(1);
+    }
+    while(!sv.empty() && (sv.back() == ' ' || sv.back() == '\t' || sv.back() == '\n' ||
+                          sv.back() == '\v' || sv.back() == '\f' || sv.back() == '\r')) {
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
+struct binary_expr_pair {
+    std::string_view lhs;
+    std::string_view rhs;
+};
+
+constexpr binary_expr_pair parse_binary_exprs(std::string_view exprs) {
+    int angle = 0;
+    int paren = 0;
+    int bracket = 0;
+    int brace = 0;
+    bool in_single_quote = false;
+    bool in_double_quote = false;
+    bool escaped = false;
+
+    for(std::size_t i = 0; i < exprs.size(); ++i) {
+        const auto ch = exprs[i];
+
+        if(escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if(in_single_quote) {
+            if(ch == '\\') {
+                escaped = true;
+            } else if(ch == '\'') {
+                in_single_quote = false;
+            }
+            continue;
+        }
+
+        if(in_double_quote) {
+            if(ch == '\\') {
+                escaped = true;
+            } else if(ch == '"') {
+                in_double_quote = false;
+            }
+            continue;
+        }
+
+        switch(ch) {
+            case '\'': in_single_quote = true; break;
+            case '"': in_double_quote = true; break;
+            case '<': ++angle; break;
+            case '>':
+                if(angle > 0) {
+                    --angle;
+                }
+                break;
+            case '(': ++paren; break;
+            case ')':
+                if(paren > 0) {
+                    --paren;
+                }
+                break;
+            case '[': ++bracket; break;
+            case ']':
+                if(bracket > 0) {
+                    --bracket;
+                }
+                break;
+            case '{': ++brace; break;
+            case '}':
+                if(brace > 0) {
+                    --brace;
+                }
+                break;
+            case ',':
+                if(angle == 0 && paren == 0 && bracket == 0 && brace == 0) {
+                    return {trim_expr(exprs.substr(0, i)), trim_expr(exprs.substr(i + 1))};
+                }
+                break;
+            default: break;
+        }
+    }
+
+    return {trim_expr(exprs), "<unknown>"};
 }
 
 template <typename L, typename R>
@@ -178,39 +271,44 @@ inline bool check_throws_failure(bool failure,
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
 
-#define ZEST_EXPECT_BINARY(lhs, rhs, op_string, failure_pred, return_action)                       \
+#define ZEST_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                            \
     do {                                                                                           \
-        auto _failed = ([&](auto&& _lhs, auto&& _rhs) {                                            \
+        auto _failed = ([&]<typename... _Args>(_Args&&... _args) {                                 \
+            static_assert(sizeof...(_args) == 2,                                                   \
+                          "EXPECT_EQ/EXPECT_NE/ASSERT_EQ/ASSERT_NE require exactly 2 arguments");  \
+            auto _args_tuple = std::forward_as_tuple(std::forward<_Args>(_args)...);               \
+            auto&& _lhs = std::get<0>(_args_tuple);                                                \
+            auto&& _rhs = std::get<1>(_args_tuple);                                                \
+            const auto _exprs = ::zest::parse_binary_exprs(#__VA_ARGS__);                          \
             return ::zest::check_binary_failure((failure_pred),                                    \
                                                 #op_string,                                        \
-                                                #lhs,                                              \
-                                                #rhs,                                              \
+                                                _exprs.lhs,                                        \
+                                                _exprs.rhs,                                        \
                                                 _lhs,                                              \
                                                 _rhs);                                             \
-        }((lhs), (rhs)));                                                                          \
+        }(__VA_ARGS__));                                                                           \
         CLICE_CHECK_IMPL(_failed, return_action);                                                  \
     } while(0)
 
 #define EXPECT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), (void)0)
 #define EXPECT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), (void)0)
-#define EXPECT_EQ(lhs, rhs)                                                                        \
-    ZEST_EXPECT_BINARY(lhs, rhs, ==, !::zest::binary_equal(_lhs, _rhs), (void)0)
-#define EXPECT_NE(lhs, rhs)                                                                        \
-    ZEST_EXPECT_BINARY(lhs, rhs, !=, ::zest::binary_equal(_lhs, _rhs), (void)0)
+#define EXPECT_EQ(...)                                                                             \
+    ZEST_EXPECT_BINARY(==, !::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
+#define EXPECT_NE(...)                                                                             \
+    ZEST_EXPECT_BINARY(!=, ::zest::binary_equal(_lhs, _rhs), (void)0, __VA_ARGS__)
 
 #define ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), return)
 #define ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), return)
-#define ASSERT_EQ(lhs, rhs)                                                                        \
-    ZEST_EXPECT_BINARY(lhs, rhs, ==, !::zest::binary_equal(_lhs, _rhs), return)
-#define ASSERT_NE(lhs, rhs)                                                                        \
-    ZEST_EXPECT_BINARY(lhs, rhs, !=, ::zest::binary_equal(_lhs, _rhs), return)
+#define ASSERT_EQ(...)                                                                             \
+    ZEST_EXPECT_BINARY(==, !::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
+#define ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::zest::binary_equal(_lhs, _rhs), return, __VA_ARGS__)
 
 #define CO_ASSERT_TRUE(expr) ZEST_EXPECT_UNARY(expr, "true", !(_expr), co_return)
 #define CO_ASSERT_FALSE(expr) ZEST_EXPECT_UNARY(expr, "false", (_expr), co_return)
-#define CO_ASSERT_EQ(lhs, rhs)                                                                     \
-    ZEST_EXPECT_BINARY(lhs, rhs, ==, !::zest::binary_equal(_lhs, _rhs), co_return)
-#define CO_ASSERT_NE(lhs, rhs)                                                                     \
-    ZEST_EXPECT_BINARY(lhs, rhs, !=, ::zest::binary_equal(_lhs, _rhs), co_return)
+#define CO_ASSERT_EQ(...)                                                                          \
+    ZEST_EXPECT_BINARY(==, !::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_NE(...)                                                                          \
+    ZEST_EXPECT_BINARY(!=, ::zest::binary_equal(_lhs, _rhs), co_return, __VA_ARGS__)
 
 #ifdef __cpp_exceptions
 
