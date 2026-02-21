@@ -1,4 +1,4 @@
-#include "eventide/zest/macro.h"
+#include "eventide/zest/check.h"
 
 namespace {
 

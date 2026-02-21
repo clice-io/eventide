@@ -58,9 +58,7 @@ target("ztest", function()
 	add_includedirs("include", { public = true })
 	add_headerfiles(
 		"include/(eventide/common/*.h)",
-		"include/(eventide/zest/*.h)",
-		"include/(eventide/reflection/*.h)",
-		"include/(eventide/reflection/*.inl)"
+		"include/(eventide/zest/*.h)"
 	)
 	add_cxflags("cl::/Zc:preprocessor", { public = true })
 	add_packages("cpptrace", { public = true })
@@ -77,7 +75,7 @@ end)
 target("unit_tests", function()
 	set_default(false)
 	set_kind("binary")
-	add_files("tests/main.cpp", "tests/eventide/**.cpp", "tests/reflection/**.cpp")
+	add_files("tests/main.cpp", "tests/eventide/**.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
 	add_includedirs("include")
 	add_deps("ztest", "eventide")
 
