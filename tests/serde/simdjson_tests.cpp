@@ -9,17 +9,17 @@
 #include <variant>
 #include <vector>
 
-#include "zest/zest.h"
-#include "serde/serde.h"
-#include "serde/simdjson/deserializer.h"
-#include "serde/simdjson/serializer.h"
+#include "eventide/zest/zest.h"
+#include "eventide/serde/serde.h"
+#include "eventide/serde/simdjson/deserializer.h"
+#include "eventide/serde/simdjson/serializer.h"
 
-namespace serde::testing {
+namespace eventide::serde {
 
 namespace {
 
-using serde::json::simd::to_json;
-using serde::json::simd::from_json;
+using json::simd::to_json;
+using json::simd::from_json;
 
 struct person {
     int id;
@@ -33,9 +33,9 @@ struct escaped_key_person {
 
 struct annotated_person {
     int id;
-    serde::rename_alias<std::string, "displayName", "name"> name;
-    serde::skip<int> internal_id;
-    serde::skip_if_none<std::string> note;
+    rename_alias<std::string, "displayName", "name"> name;
+    skip<int> internal_id;
+    skip_if_none<std::string> note;
 };
 
 struct point2d {
@@ -45,7 +45,7 @@ struct point2d {
 
 struct flattened_payload {
     int id;
-    serde::flatten<point2d> point;
+    flatten<point2d> point;
 };
 
 TEST_SUITE(serde_simdjson) {
@@ -252,4 +252,4 @@ TEST_CASE(deserialize_return_value_overload) {
 
 }  // namespace
 
-}  // namespace serde::testing
+}  // namespace eventide::serde

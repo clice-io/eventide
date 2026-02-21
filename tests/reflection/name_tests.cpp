@@ -1,7 +1,7 @@
-#include "zest/zest.h"
-#include "reflection/name.h"
+#include "eventide/zest/zest.h"
+#include "eventide/reflection/name.h"
 
-namespace refl::testing {
+namespace eventide::refl {
 
 namespace {
 
@@ -282,4 +282,4 @@ TEST_CASE(enum_name_sparse_values) {
 
 }  // namespace
 
-}  // namespace refl::testing
+}  // namespace eventide::refl

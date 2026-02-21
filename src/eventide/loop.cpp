@@ -1,10 +1,10 @@
-#include "eventide/loop.h"
+#include "eventide/async/loop.h"
 
 #include <cassert>
 #include <deque>
 
 #include "libuv.h"
-#include "eventide/frame.h"
+#include "eventide/async/frame.h"
 
 namespace eventide {
 

@@ -11,10 +11,10 @@
 #include <unistd.h>
 #endif
 
-#include "zest/zest.h"
-#include "eventide/fs.h"
-#include "eventide/loop.h"
-#include "eventide/task.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/fs.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/task.h"
 
 namespace eventide {
 

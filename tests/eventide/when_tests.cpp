@@ -1,8 +1,8 @@
-#include "zest/zest.h"
-#include "eventide/loop.h"
-#include "eventide/task.h"
-#include "eventide/watcher.h"
-#include "eventide/when.h"
+#include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/task.h"
+#include "eventide/async/watcher.h"
+#include "eventide/async/when.h"
 
 namespace eventide {
 

@@ -1,4 +1,4 @@
-#include "eventide/udp.h"
+#include "eventide/async/udp.h"
 
 #include <cstring>
 #include <memory>
@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "libuv.h"
-#include "eventide/error.h"
-#include "eventide/loop.h"
+#include "eventide/async/error.h"
+#include "eventide/async/loop.h"
 
 namespace eventide {
 

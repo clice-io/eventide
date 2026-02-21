@@ -103,34 +103,42 @@ IncludeBlocks: Regroup
 IncludeCategories:
   - Regex: '^["<](spdlog|toml\+\+|coraing|cpptrace|flatbuffers)/'
     Priority: 30
-    SortPriority: 31
+    SortPriority: 50
 
-  - Regex: '^["<](llvm)/'
+  - Regex: '^["<](eventide/zest)/'
     Priority: 30
-    SortPriority: 32
+    SortPriority: 40
 
-  - Regex: '^["<](clang)/'
+  - Regex: '^["<](eventide/common)/'
     Priority: 30
-    SortPriority: 33
+    SortPriority: 41
 
-  - Regex: '^["<](clang-tidy)/'
+  - Regex: '^["<](eventide/async)/'
     Priority: 30
-    SortPriority: 34
+    SortPriority: 42
 
-  - Regex: '^["<](zest)/'
-    Priority: 20
-    SortPriority: 22
+  - Regex: '^["<](eventide/reflection)/'
+    Priority: 30
+    SortPriority: 43
+
+  - Regex: '^["<](eventide/serde)/'
+    Priority: 30
+    SortPriority: 44
+
+  - Regex: '^["<](eventide/language)/'
+    Priority: 30
+    SortPriority: 45
 
   - Regex: "^<.*"
     Priority: 10
     SortPriority: 10
 
   - Regex: '^".*/.*"'
-    Priority: 20
+    Priority: 30
     SortPriority: 23
 
   - Regex: ".*"
-    Priority: 20
+    Priority: 30
     SortPriority: 21
 
 ForEachMacros: ["REFLECTABLE_RECORD"]

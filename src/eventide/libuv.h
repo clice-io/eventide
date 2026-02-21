@@ -7,8 +7,8 @@
 #include <utility>
 
 #include "uv.h"
-#include "eventide/error.h"
-#include "eventide/frame.h"
+#include "eventide/async/error.h"
+#include "eventide/async/frame.h"
 
 #ifdef min
 #undef min

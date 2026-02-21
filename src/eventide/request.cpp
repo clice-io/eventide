@@ -1,9 +1,9 @@
-#include "eventide/request.h"
+#include "eventide/async/request.h"
 
 #include "libuv.h"
-#include "eventide/error.h"
-#include "eventide/loop.h"
-#include "eventide/task.h"
+#include "eventide/async/error.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/task.h"
 
 namespace eventide {
 
