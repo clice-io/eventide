@@ -58,16 +58,28 @@
 #define EXPECT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), (void)0, __VA_ARGS__)
 #define EXPECT_EQ(...) ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(lhs, rhs), (void)0, __VA_ARGS__)
 #define EXPECT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(lhs, rhs), (void)0, __VA_ARGS__)
+#define EXPECT_LT(...) ZEST_EXPECT_BINARY(<, !::eventide::zest::binary_less(lhs, rhs), (void)0, __VA_ARGS__)
+#define EXPECT_LE(...) ZEST_EXPECT_BINARY(<=, !::eventide::zest::binary_less_equal(lhs, rhs), (void)0, __VA_ARGS__)
+#define EXPECT_GT(...) ZEST_EXPECT_BINARY(>, !::eventide::zest::binary_greater(lhs, rhs), (void)0, __VA_ARGS__)
+#define EXPECT_GE(...) ZEST_EXPECT_BINARY(>=, !::eventide::zest::binary_greater_equal(lhs, rhs), (void)0, __VA_ARGS__)
 
 #define ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), return, __VA_ARGS__)
 #define ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), return, __VA_ARGS__)
 #define ASSERT_EQ(...) ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(lhs, rhs), return, __VA_ARGS__)
 #define ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(lhs, rhs), return, __VA_ARGS__)
+#define ASSERT_LT(...) ZEST_EXPECT_BINARY(<, !::eventide::zest::binary_less(lhs, rhs), return, __VA_ARGS__)
+#define ASSERT_LE(...) ZEST_EXPECT_BINARY(<=, !::eventide::zest::binary_less_equal(lhs, rhs), return, __VA_ARGS__)
+#define ASSERT_GT(...) ZEST_EXPECT_BINARY(>, !::eventide::zest::binary_greater(lhs, rhs), return, __VA_ARGS__)
+#define ASSERT_GE(...) ZEST_EXPECT_BINARY(>=, !::eventide::zest::binary_greater_equal(lhs, rhs), return, __VA_ARGS__)
 
 #define CO_ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), co_return, __VA_ARGS__)
 #define CO_ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), co_return, __VA_ARGS__)
 #define CO_ASSERT_EQ(...) ZEST_EXPECT_BINARY(==, !::eventide::zest::binary_equal(lhs, rhs), co_return, __VA_ARGS__)
 #define CO_ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::eventide::zest::binary_equal(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_LT(...) ZEST_EXPECT_BINARY(<, !::eventide::zest::binary_less(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_LE(...) ZEST_EXPECT_BINARY(<=, !::eventide::zest::binary_less_equal(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_GT(...) ZEST_EXPECT_BINARY(>, !::eventide::zest::binary_greater(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_GE(...) ZEST_EXPECT_BINARY(>=, !::eventide::zest::binary_greater_equal(lhs, rhs), co_return, __VA_ARGS__)
 // clang-format on
 
 #ifdef __cpp_exceptions

@@ -82,6 +82,54 @@ inline bool binary_equal(const L& lhs, const R& rhs) {
     }
 }
 
+template <typename L, typename R>
+inline bool binary_less(const L& lhs, const R& rhs) {
+    if constexpr(requires {
+                     { lhs < rhs } -> std::convertible_to<bool>;
+                 }) {
+        return static_cast<bool>(lhs < rhs);
+    } else {
+        static_assert(dependent_false<L>, "EXPECT_LT/ASSERT_LT: operands are not comparable");
+        return false;
+    }
+}
+
+template <typename L, typename R>
+inline bool binary_less_equal(const L& lhs, const R& rhs) {
+    if constexpr(requires {
+                     { lhs <= rhs } -> std::convertible_to<bool>;
+                 }) {
+        return static_cast<bool>(lhs <= rhs);
+    } else {
+        static_assert(dependent_false<L>, "EXPECT_LE/ASSERT_LE: operands are not comparable");
+        return false;
+    }
+}
+
+template <typename L, typename R>
+inline bool binary_greater(const L& lhs, const R& rhs) {
+    if constexpr(requires {
+                     { lhs > rhs } -> std::convertible_to<bool>;
+                 }) {
+        return static_cast<bool>(lhs > rhs);
+    } else {
+        static_assert(dependent_false<L>, "EXPECT_GT/ASSERT_GT: operands are not comparable");
+        return false;
+    }
+}
+
+template <typename L, typename R>
+inline bool binary_greater_equal(const L& lhs, const R& rhs) {
+    if constexpr(requires {
+                     { lhs >= rhs } -> std::convertible_to<bool>;
+                 }) {
+        return static_cast<bool>(lhs >= rhs);
+    } else {
+        static_assert(dependent_false<L>, "EXPECT_GE/ASSERT_GE: operands are not comparable");
+        return false;
+    }
+}
+
 template <typename V>
 inline bool check_unary_failure(bool failure,
                                 std::string_view expr,

@@ -89,6 +89,29 @@ TEST_CASE(binary_equal_expected_and_optional) {
     EXPECT_FALSE(binary_equal(none, exp_err));
 }
 
+TEST_CASE(binary_ordering_expect_macros) {
+    EXPECT_LT(1, 2);
+    EXPECT_LE(1, 1);
+    EXPECT_LE(1, 2);
+    EXPECT_GT(2, 1);
+    EXPECT_GE(2, 2);
+    EXPECT_GE(2, 1);
+
+    std::string a = "alpha";
+    std::string b = "beta";
+    EXPECT_LT(a, b);
+    EXPECT_GT(b, a);
+}
+
+TEST_CASE(binary_ordering_assert_macros) {
+    ASSERT_LT(3, 4);
+    ASSERT_LE(3, 3);
+    ASSERT_LE(3, 4);
+    ASSERT_GT(4, 3);
+    ASSERT_GE(4, 4);
+    ASSERT_GE(4, 3);
+}
+
 };  // TEST_SUITE(zest_check)
 
 }  // namespace
