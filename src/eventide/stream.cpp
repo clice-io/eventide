@@ -51,6 +51,7 @@ struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
     system_op* reader = nullptr;
     system_op* writer = nullptr;
     ring_buffer buffer{};
+    error error_code{};
 
     template <typename T>
     T* as() noexcept {
@@ -143,6 +144,7 @@ struct stream_read_await : system_op {
                 if(s->reader) {
                     auto reader = s->reader;
                     s->reader = nullptr;
+                    s->error_code = error(nread);
                     reader->complete();
                 }
             }
@@ -170,13 +172,18 @@ struct stream_read_await : system_op {
             return waiting;
         }
 
-        self->reader = this;
         int err = uv_read_start(self->as<uv_stream_t>(), on_alloc, on_read);
-        (void)err;
+        if(err != 0) {
+            self->error_code = error(err);
+            return waiting;
+        }
+        self->reader = this;
         return link_continuation(&waiting.promise(), location);
     }
 
-    void await_resume() noexcept {}
+    error await_resume() noexcept {
+        return self ? self->error_code : error(error::invalid_argument);
+    }
 };
 
 struct stream_read_some_await : system_op {
@@ -707,16 +714,19 @@ handle_type guess_handle(int fd) {
     return to_handle_type(uv_guess_handle(fd));
 }
 
-task<std::string> stream::read() {
+task<result<std::string>> stream::read() {
     if(!self) {
-        co_return std::string{};
+        co_return std::unexpected(error::invalid_argument);
     }
 
     auto stream_handle = self->as<uv_stream_t>();
     stream_handle->data = self.get();
 
     if(self->buffer.readable_bytes() == 0) {
-        co_await stream_read_await{self.get()};
+        auto err = co_await stream_read_await{self.get()};
+        if(err.has_error()) {
+            co_return std::unexpected(err);
+        }
     }
 
     std::string out;
@@ -743,17 +753,20 @@ task<std::size_t> stream::read_some(std::span<char> dst) {
     co_return co_await stream_read_some_await{self.get(), dst};
 }
 
-task<stream::chunk> stream::read_chunk() {
+task<result<stream::chunk>> stream::read_chunk() {
     chunk out{};
     if(!self) {
-        co_return out;
+        co_return std::unexpected(error::invalid_argument);
     }
 
     auto stream_handle = self->as<uv_stream_t>();
     stream_handle->data = self.get();
 
     if(self->buffer.readable_bytes() == 0) {
-        co_await stream_read_await{self.get()};
+        auto err = co_await stream_read_await{self.get()};
+        if(err.has_error()) {
+            co_return std::unexpected(err);
+        }
     }
 
     auto [ptr, len] = self->buffer.get_read_ptr();

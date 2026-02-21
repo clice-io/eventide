@@ -3,6 +3,7 @@
 #include <string_view>
 #include <utility>
 
+#include "zest/macro.h"
 #include "zest/zest.h"
 #include "eventide/loop.h"
 #include "eventide/process.h"
@@ -75,8 +76,14 @@ TEST_CASE(spawn_pipe_stdout) {
         auto status = co_await spawn_res->proc.wait();
 
         EXPECT_TRUE(status.has_value());
-        EXPECT_EQ(status->status, 0);
-        EXPECT_EQ(stdout_out, expected);
+        if(status.has_value()) {
+            EXPECT_EQ(status->status, 0);
+        }
+
+        EXPECT_TRUE(stdout_out.has_value());
+        if(stdout_out.has_value()) {
+            EXPECT_EQ(*stdout_out, expected);
+        }
 
         event_loop::current().stop();
     };
@@ -115,8 +122,11 @@ TEST_CASE(spawn_pipe_stdin_stdout) {
         auto stdout_out = co_await spawn_res->stdout_pipe.read();
         auto status = co_await spawn_res->proc.wait();
 
+        EXPECT_TRUE(stdout_out.has_value());
         EXPECT_TRUE(status.has_value());
-        EXPECT_EQ(status->status, 0);
+        if(status.has_value()) {
+            EXPECT_EQ(status->status, 0);
+        }
 
         auto trim_newlines = [](std::string value) {
             while(!value.empty() && (value.back() == '\n' || value.back() == '\r')) {
@@ -125,7 +135,9 @@ TEST_CASE(spawn_pipe_stdin_stdout) {
             return value;
         };
 
-        EXPECT_EQ(trim_newlines(stdout_out), trim_newlines(payload));
+        if(stdout_out.has_value()) {
+            EXPECT_EQ(trim_newlines(*stdout_out), trim_newlines(payload));
+        }
 
         event_loop::current().stop();
     };
@@ -158,10 +170,16 @@ TEST_CASE(spawn_pipe_stderr) {
         auto status = co_await spawn_res->proc.wait();
 
         EXPECT_TRUE(status.has_value());
-        EXPECT_EQ(status->status, 0);
+        if(status.has_value()) {
+            EXPECT_EQ(status->status, 0);
+        }
 
-        EXPECT_TRUE(stdout_out.empty());
-        EXPECT_TRUE(stderr_out.find("eventide-stderr") != std::string::npos);
+        EXPECT_TRUE(!stdout_out.has_value());
+        EXPECT_TRUE(stderr_out.has_value());
+
+        if(stderr_out.has_value()) {
+            EXPECT_TRUE(stderr_out->find("eventide-stderr") != std::string::npos);
+        }
 
         event_loop::current().stop();
     };
