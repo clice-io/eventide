@@ -29,24 +29,24 @@ endif()
 
 if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     set(TEST_SERDE_SIMDJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/simdjson.*\\.cpp$")
+    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/simdjson/.*\\.cpp$")
     list(TRANSFORM TEST_SERDE_SIMDJSON_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_SERDE_SIMDJSON_SOURCES}
     )
 else()
-    message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/simdjson_tests.cpp")
+    message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/simdjson/*")
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
     set(TEST_SERDE_FLATBUFFERS_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_FLATBUFFERS_SOURCES INCLUDE REGEX "^tests/serde/flatbuffers.*\\.cpp$")
+    list(FILTER TEST_SERDE_FLATBUFFERS_SOURCES INCLUDE REGEX "^tests/serde/flatbuffers/.*\\.cpp$")
     list(TRANSFORM TEST_SERDE_FLATBUFFERS_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_SERDE_FLATBUFFERS_SOURCES}
     )
 else()
-    message(STATUS "EVENTIDE_SERDE_ENABLE_FLATBUFFERS=OFF: skipping tests/serde/flatbuffers_tests.cpp")
+    message(STATUS "EVENTIDE_SERDE_ENABLE_FLATBUFFERS=OFF: skipping tests/serde/flatbuffers/*")
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)

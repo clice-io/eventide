@@ -311,11 +311,11 @@ public:
     using DeserializeStruct = DeserializeObject;
 
     explicit Deserializer(std::string_view json) : json_buffer(json) {
-        auto document_result = parser.iterate(json_buffer);
-        auto err = std::move(document_result).get(document);
-        if(err != simdjson::SUCCESS) {
-            mark_invalid(err);
-        }
+        initialize_document(static_cast<simdjson::padded_string_view>(json_buffer));
+    }
+
+    explicit Deserializer(simdjson::padded_string_view json) {
+        initialize_document(json);
     }
 
     bool valid() const {
@@ -396,7 +396,7 @@ public:
             number_type = *current_number_type;
         }
 
-        auto raw = consume_raw_json();
+        auto raw = consume_raw_json_view();
         if(!raw) {
             return std::unexpected(raw.error());
         }
@@ -821,7 +821,7 @@ private:
     }
 
     template <typename Alt, typename... Ts>
-    static error_type deserialize_variant_candidate(std::string_view raw,
+    static error_type deserialize_variant_candidate(simdjson::padded_string_view raw,
                                                     std::variant<Ts...>& value) {
         Alt candidate{};
         Deserializer probe(raw);
@@ -843,7 +843,7 @@ private:
         return simdjson::SUCCESS;
     }
 
-    result_t<std::string_view> consume_raw_json() {
+    result_t<simdjson::padded_string_view> consume_raw_json_view() {
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -868,7 +868,43 @@ private:
             mark_invalid(err);
             return std::unexpected(current_error());
         }
-        return raw;
+        return to_padded_subview(raw);
+    }
+
+    result_t<simdjson::padded_string_view> to_padded_subview(std::string_view raw) {
+        const char* base = input_view.data();
+        if(base == nullptr) {
+            mark_invalid();
+            return std::unexpected(current_error());
+        }
+
+        const auto raw_addr = reinterpret_cast<std::uintptr_t>(raw.data());
+        const auto base_addr = reinterpret_cast<std::uintptr_t>(base);
+        const std::size_t total_capacity = input_view.capacity();
+
+        if(raw_addr < base_addr) {
+            mark_invalid();
+            return std::unexpected(current_error());
+        }
+
+        const std::size_t offset = static_cast<std::size_t>(raw_addr - base_addr);
+        if(offset > total_capacity || raw.size() > (total_capacity - offset)) {
+            mark_invalid();
+            return std::unexpected(current_error());
+        }
+
+        const std::size_t remaining_capacity = total_capacity - offset;
+        return simdjson::padded_string_view(raw, remaining_capacity);
+    }
+
+    void initialize_document(simdjson::padded_string_view json) {
+        input_view = json;
+
+        auto document_result = parser.iterate(json);
+        auto err = std::move(document_result).get(document);
+        if(err != simdjson::SUCCESS) {
+            mark_invalid(err);
+        }
     }
 
     result_t<simdjson::ondemand::array> open_array() {
@@ -953,6 +989,7 @@ private:
 
     simdjson::ondemand::parser parser;
     simdjson::padded_string json_buffer;
+    simdjson::padded_string_view input_view{};
     simdjson::ondemand::document document;
 };
 
@@ -972,8 +1009,35 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, simdjson:
 }
 
 template <typename T>
+auto from_json(simdjson::padded_string_view json, T& value)
+    -> std::expected<void, simdjson::error_code> {
+    Deserializer deserializer(json);
+    if(!deserializer.valid()) {
+        return std::unexpected(deserializer.error());
+    }
+
+    auto result = serde::deserialize(deserializer, value);
+    if(!result) {
+        return std::unexpected(result.error());
+    }
+
+    return deserializer.finish();
+}
+
+template <typename T>
     requires std::default_initializable<T>
 auto from_json(std::string_view json) -> std::expected<T, simdjson::error_code> {
+    T value{};
+    auto status = from_json(json, value);
+    if(!status) {
+        return std::unexpected(status.error());
+    }
+    return value;
+}
+
+template <typename T>
+    requires std::default_initializable<T>
+auto from_json(simdjson::padded_string_view json) -> std::expected<T, simdjson::error_code> {
     T value{};
     auto status = from_json(json, value);
     if(!status) {
