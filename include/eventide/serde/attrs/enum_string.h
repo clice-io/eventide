@@ -11,6 +11,27 @@ struct enum_string {};
 
 }  // namespace attr
 
+namespace detail {
+
+template <typename Result>
+constexpr Result unexpected_invalid_enum() {
+    using error_t = typename Result::error_type;
+    // TODO(eventide/serde): Introduce a unified serde error taxonomy
+    // (e.g. invalid_enum_text / invalid_field_name / invalid_type), so attrs
+    // don't need backend-specific or heuristic error-code mapping here.
+
+    if constexpr(requires { error_t::invalid_type; }) {
+        return std::unexpected(error_t::invalid_type);
+    } else if constexpr(std::is_enum_v<error_t>) {
+        // Temporary fallback until standardized serde error codes are available.
+        return std::unexpected(static_cast<error_t>(1));
+    } else {
+        return std::unexpected(error_t{});
+    }
+}
+
+}  // namespace detail
+
 template <typename Policy>
 struct attr_hook<attr::enum_string<Policy>> {
     template <typename S, typename V, typename Next>
@@ -27,6 +48,8 @@ struct attr_hook<attr::enum_string<Policy>> {
         -> std::remove_cvref_t<
             decltype(std::declval<D&>().deserialize_value(std::declval<std::string&>()))> {
         using enum_t = std::remove_cvref_t<V>;
+        using result_t = std::remove_cvref_t<decltype(std::declval<D&>().deserialize_value(
+            std::declval<std::string&>()))>;
         static_assert(std::is_enum_v<enum_t>, "attr::enum_string requires an enum field type");
 
         std::string enum_text;
@@ -38,10 +61,10 @@ struct attr_hook<attr::enum_string<Policy>> {
         auto parsed = spelling::map_string_to_enum<enum_t, Policy>(enum_text);
         if(parsed.has_value()) {
             ctx.value = *parsed;
+            return result_t{};
         } else {
-            ctx.value = enum_t{};
+            return detail::unexpected_invalid_enum<result_t>();
         }
-        return {};
     }
 
     template <typename S, typename V, typename Next>
@@ -58,6 +81,8 @@ struct attr_hook<attr::enum_string<Policy>> {
         -> std::remove_cvref_t<
             decltype(std::declval<D&>().deserialize_str(std::declval<std::string&>()))> {
         using enum_t = std::remove_cvref_t<V>;
+        using result_t = std::remove_cvref_t<decltype(std::declval<D&>().deserialize_str(
+            std::declval<std::string&>()))>;
         static_assert(std::is_enum_v<enum_t>, "attr::enum_string requires an enum field type");
 
         std::string enum_text;
@@ -69,10 +94,10 @@ struct attr_hook<attr::enum_string<Policy>> {
         auto mapped = spelling::map_string_to_enum<enum_t, Policy>(enum_text);
         if(mapped.has_value()) {
             ctx.value = *mapped;
+            return result_t{};
         } else {
-            ctx.value = enum_t{};
+            return detail::unexpected_invalid_enum<result_t>();
         }
-        return {};
     }
 };
 

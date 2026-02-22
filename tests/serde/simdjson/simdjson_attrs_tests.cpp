@@ -94,6 +94,17 @@ TEST_CASE(deserialize_builtin_attrs) {
     EXPECT_EQ(parsed.note, std::optional<std::string>{"x"});
 }
 
+TEST_CASE(deserialize_builtin_attrs_unknown_enum_fails) {
+    builtin_attr_payload parsed{};
+    parsed.level = access_level::admin;
+
+    auto status =
+        from_json(R"({"id":9,"displayName":"bob","first":"Bob","age":21,"level":"super_admin"})",
+                  parsed);
+    EXPECT_FALSE(status.has_value());
+    EXPECT_EQ(parsed.level, access_level::admin);
+}
+
 TEST_CASE(custom_attr_hook_specialization) {
     custom_attr_payload input{};
     input.nickname = "neo";
@@ -118,6 +129,13 @@ TEST_CASE(top_level_annotated_value_enum_string) {
     auto status = from_json(R"("viewer")", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed, access_level::viewer);
+}
+
+TEST_CASE(top_level_annotated_value_enum_string_unknown_fails) {
+    enum_string<access_level> parsed = access_level::admin;
+    auto status = from_json(R"("unknown")", parsed);
+    EXPECT_FALSE(status.has_value());
+    EXPECT_EQ(parsed, access_level::admin);
 }
 
 };  // TEST_SUITE(serde_simdjson_attrs)

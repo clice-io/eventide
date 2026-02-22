@@ -4,6 +4,7 @@
 #include "attrs.h"
 #include "config.h"
 #include "traits.h"
+#include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
 
@@ -49,7 +50,9 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                                         Field field) -> std::expected<bool, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
     std::string scratch;
-    auto mapped_name = config::apply_field_rename(false, field.name(), scratch);
+    // We compare against incoming serialized keys, so we must map the reflected
+    // internal field name to its serialized form (same direction as serialize).
+    auto mapped_name = config::apply_field_rename(true, field.name(), scratch);
 
     if constexpr(!annotated_type<field_t>) {
         if(mapped_name != key_name) {
