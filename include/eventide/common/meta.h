@@ -23,6 +23,36 @@ constexpr inline bool is_specialization_of<HKT, HKT<Ts...>> = true;
 template <typename T>
 concept Formattable = std::formattable<T, char>;
 
+template <typename L, typename R>
+concept eq_comparable_with = requires(const L& lhs, const R& rhs) {
+    { lhs == rhs } -> std::convertible_to<bool>;
+};
+
+template <typename L, typename R>
+concept ne_comparable_with = requires(const L& lhs, const R& rhs) {
+    { lhs != rhs } -> std::convertible_to<bool>;
+};
+
+template <typename L, typename R>
+concept lt_comparable_with = requires(const L& lhs, const R& rhs) {
+    { lhs < rhs } -> std::convertible_to<bool>;
+};
+
+template <typename L, typename R>
+concept le_comparable_with = requires(const L& lhs, const R& rhs) {
+    { lhs <= rhs } -> std::convertible_to<bool>;
+};
+
+template <typename L, typename R>
+concept gt_comparable_with = requires(const L& lhs, const R& rhs) {
+    { lhs > rhs } -> std::convertible_to<bool>;
+};
+
+template <typename L, typename R>
+concept ge_comparable_with = requires(const L& lhs, const R& rhs) {
+    { lhs >= rhs } -> std::convertible_to<bool>;
+};
+
 template <typename T>
 struct is_optional : std::false_type {};
 

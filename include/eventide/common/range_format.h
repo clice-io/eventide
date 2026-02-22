@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <ranges>
 #include <tuple>
 #include <type_traits>
@@ -46,5 +47,46 @@ constexpr range_format format_kind<R> = [] {
         return range_format::sequence;
     }
 }();
+
+template <typename T, range_format Kind>
+concept range_of_kind = [] {
+    using U = std::remove_cvref_t<T>;
+    if constexpr(std::ranges::input_range<U>) {
+        return format_kind<U> == Kind;
+    } else {
+        return false;
+    }
+}();
+
+template <typename T>
+concept sequence_range = range_of_kind<T, range_format::sequence>;
+
+template <typename T>
+concept set_range = range_of_kind<T, range_format::set>;
+
+template <typename T>
+concept map_range = range_of_kind<T, range_format::map>;
+
+template <typename T>
+concept ordered_associative_range =
+    (set_range<T> || map_range<T>) && requires { typename T::key_compare; };
+
+template <typename T>
+concept unordered_associative_range = (set_range<T> || map_range<T>) && requires {
+    typename T::hasher;
+    typename T::key_equal;
+};
+
+template <typename T>
+concept ordered_set_range = set_range<T> && ordered_associative_range<T>;
+
+template <typename T>
+concept ordered_map_range = map_range<T> && ordered_associative_range<T>;
+
+template <typename T>
+concept unordered_set_range = set_range<T> && unordered_associative_range<T>;
+
+template <typename T>
+concept unordered_map_range = map_range<T> && unordered_associative_range<T>;
 
 }  // namespace eventide

@@ -12,7 +12,7 @@ file(GLOB_RECURSE TEST_SOURCES RELATIVE "${CMAKE_SOURCE_DIR}" CONFIGURE_DEPENDS
 )
 
 set(TEST_BASE_SOURCES ${TEST_SOURCES})
-list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/(main\\.cpp|reflection/.*\\.cpp)$")
+list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/(main\\.cpp|reflection/.*\\.cpp|zest/.*\\.cpp)$")
 list(TRANSFORM TEST_BASE_SOURCES PREPEND "${CMAKE_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
 
