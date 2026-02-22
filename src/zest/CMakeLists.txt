@@ -11,13 +11,13 @@ add_library(eventide_zest STATIC)
 add_library(eventide::zest ALIAS eventide_zest)
 
 target_sources(eventide_zest PRIVATE
-    "${CMAKE_SOURCE_DIR}/src/zest/trace.cpp"
-    "${CMAKE_SOURCE_DIR}/src/zest/runner.cpp"
-    "${CMAKE_SOURCE_DIR}/src/zest/expr.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
 )
 
 target_include_directories(eventide_zest PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
+    "${PROJECT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(eventide_zest PUBLIC

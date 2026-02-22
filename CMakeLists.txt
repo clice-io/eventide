@@ -57,7 +57,7 @@ add_subdirectory(src/reflection)
 add_subdirectory(src/serde)
 
 if(EVENTIDE_ENABLE_ASYNC)
-    add_subdirectory(src/eventide)
+    add_subdirectory(src/async)
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)

@@ -29,16 +29,24 @@ if(NOT MSVC AND TARGET uv_a)
     )
 endif()
 
-file(GLOB EVENTIDE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/src/eventide/*.cpp"
-    "${CMAKE_SOURCE_DIR}/src/eventide/**/*.cpp"
-)
-
-add_library(eventide_async STATIC ${EVENTIDE_SOURCES})
+add_library(eventide_async STATIC)
 add_library(eventide::async ALIAS eventide_async)
 
+target_sources(eventide_async PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/error.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/frame.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fs.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/loop.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/process.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/request.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ringbuffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stream.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/udp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/watcher.cpp"
+)
+
 target_include_directories(eventide_async PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
+    "${PROJECT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(eventide_async PUBLIC
