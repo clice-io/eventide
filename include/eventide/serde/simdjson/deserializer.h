@@ -778,7 +778,7 @@ private:
                                   std::optional<simdjson::ondemand::number_type> number_type) {
         using U = std::remove_cvref_t<T>;
 
-        if constexpr(detail::annotated_field_type<U>) {
+        if constexpr(serde::annotated_type<U>) {
             using annotated_t = typename U::annotated_type;
             return variant_candidate_matches<annotated_t>(json_type, number_type);
         } else if constexpr(is_specialization_of<std::optional, U>) {

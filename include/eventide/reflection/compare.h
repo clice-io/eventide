@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "struct.h"
-#include "eventide/common/range_format.h"
+#include "eventide/common/ranges.h"
 
 namespace eventide::refl::detail {
 

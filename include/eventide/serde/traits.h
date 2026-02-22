@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "eventide/common/meta.h"
-#include "eventide/common/range_format.h"
+#include "eventide/common/ranges.h"
 
 namespace eventide::serde {
 
