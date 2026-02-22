@@ -442,6 +442,10 @@ public:
             return {};
         }
 
+        // TODO(eventide/serde): Non-object variant dispatch only tries the first
+        // compatible alternative. This can fail for overlapping numeric types
+        // (e.g. variant<uint8_t, int64_t> with input 300). Consider adding
+        // backtracking here, similar to the object-path strategy above.
         bool considered = false;
         error_type candidate_error = simdjson::INCORRECT_TYPE;
         auto try_first_compatible = [&](auto type_tag) {
