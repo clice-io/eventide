@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <list>
+#include <initializer_list>
 #include <map>
 #include <set>
 #include <string>
@@ -50,28 +50,60 @@ struct c_point_equal {
     }
 };
 
+struct with_custom_ops_hash {
+    std::size_t operator()(const with_custom_ops& p) const {
+        return std::hash<int>{}(p.y);
+    }
+};
+
+struct with_custom_ops_equal {
+    bool operator()(const with_custom_ops& lhs, const with_custom_ops& rhs) const {
+        return lhs.y == rhs.y;
+    }
+};
+
+template <typename T>
+struct custom_sequence {
+    std::vector<T> data;
+
+    auto begin() {
+        return data.begin();
+    }
+
+    auto end() {
+        return data.end();
+    }
+
+    auto begin() const {
+        return data.begin();
+    }
+
+    auto end() const {
+        return data.end();
+    }
+
+    std::size_t size() const {
+        return data.size();
+    }
+};
+
+template <typename T>
+custom_sequence<T> make_custom_sequence(std::initializer_list<T> init) {
+    return custom_sequence<T>{std::vector<T>(init)};
+}
+
 TEST_SUITE(reflection) {
 
-TEST_CASE(compare_primitive_types) {
+TEST_CASE(primitive_types) {
     EXPECT_TRUE(eq(7, 7));
     EXPECT_TRUE(ne(7, 8));
     EXPECT_TRUE(lt(7, 8));
     EXPECT_TRUE(le(7, 7));
     EXPECT_TRUE(gt(9, 8));
     EXPECT_TRUE(ge(9, 9));
-
-    EXPECT_FALSE(lt(7, 7));
-    EXPECT_TRUE(le(7, 7));
-    EXPECT_FALSE(gt(7, 7));
-    EXPECT_TRUE(ge(7, 7));
-
-    EXPECT_FALSE(lt(9, 7));
-    EXPECT_FALSE(le(9, 7));
-    EXPECT_TRUE(gt(9, 7));
-    EXPECT_TRUE(ge(9, 7));
 }
 
-TEST_CASE(compare_string_like_prefers_native_operators) {
+TEST_CASE(string_native) {
     constexpr std::string_view view = "eventide";
     constexpr char literal[] = "eventide";
     const std::string str = "eventide";
@@ -83,236 +115,375 @@ TEST_CASE(compare_string_like_prefers_native_operators) {
     EXPECT_FALSE(ne(view, literal));
 }
 
-TEST_CASE(compare_reflectable_struct_eq_ne) {
-    c_point a{.x = 1, .y = 2};
-    c_point b{.x = 1, .y = 2};
-    c_point c{.x = 1, .y = 3};
-
-    EXPECT_TRUE(eq(a, b));
-    EXPECT_FALSE(ne(a, b));
-    EXPECT_FALSE(eq(a, c));
-    EXPECT_TRUE(ne(a, c));
-}
-
-TEST_CASE(compare_reflectable_struct_ordering) {
-    c_point a{.x = 1, .y = 5};
-    c_point b{.x = 2, .y = 0};
-    c_point c{.x = 1, .y = 6};
-    c_point same_as_a{.x = 1, .y = 5};
-
-    EXPECT_TRUE(lt(a, b));
-    EXPECT_TRUE(lt(a, c));
-    EXPECT_TRUE(le(a, c));
-    EXPECT_TRUE(gt(c, a));
-    EXPECT_TRUE(ge(c, a));
-    EXPECT_TRUE(ge(c, c));
-
-    EXPECT_FALSE(lt(a, same_as_a));
-    EXPECT_TRUE(le(a, same_as_a));
-    EXPECT_FALSE(le(b, a));
-    EXPECT_TRUE(gt(b, a));
-    EXPECT_TRUE(ge(b, a));
-}
-
-TEST_CASE(compare_reflectable_struct_recursive) {
+TEST_CASE(struct_recursive) {
     c_box a{
         .pos = {.x = 1, .y = 2},
-        .id = 10
+        .id = 10,
     };
     c_box b{
         .pos = {.x = 1, .y = 2},
-        .id = 10
+        .id = 10,
     };
     c_box c{
         .pos = {.x = 1, .y = 3},
-        .id = 1
+        .id = 1,
     };
     c_box d{
         .pos = {.x = 2, .y = 0},
-        .id = 0
+        .id = 0,
     };
 
     EXPECT_TRUE(eq(a, b));
+    EXPECT_FALSE(ne(a, b));
+    EXPECT_TRUE(le(a, b));
+    EXPECT_TRUE(ge(a, b));
     EXPECT_FALSE(eq(a, c));
+    EXPECT_TRUE(ne(a, c));
     EXPECT_TRUE(lt(a, c));
+    EXPECT_TRUE(le(a, c));
+    EXPECT_FALSE(gt(a, c));
+    EXPECT_FALSE(ge(a, c));
+    EXPECT_TRUE(gt(c, a));
+    EXPECT_TRUE(ge(c, a));
     EXPECT_TRUE(lt(c, d));
     EXPECT_TRUE(gt(d, c));
 }
 
-TEST_CASE(compare_sequence_ranges_of_reflectable_elements) {
+TEST_CASE(vector_nested) {
     std::vector<c_point> a{
         {.x = 1, .y = 2},
-        {.x = 2, .y = 3}
+        {.x = 2, .y = 3},
     };
     std::vector<c_point> b{
         {.x = 1, .y = 2},
-        {.x = 2, .y = 3}
+        {.x = 2, .y = 3},
     };
     std::vector<c_point> c{
         {.x = 1, .y = 2},
-        {.x = 2, .y = 4}
-    };
-    std::vector<c_point> d{
-        {.x = 1, .y = 2},
-        {.x = 2, .y = 3},
-        {.x = 0, .y = 0}
+        {.x = 2, .y = 4},
     };
 
     EXPECT_TRUE(eq(a, b));
+    EXPECT_FALSE(ne(a, b));
+    EXPECT_FALSE(lt(a, b));
+    EXPECT_FALSE(gt(a, b));
+    EXPECT_TRUE(le(a, b));
+    EXPECT_TRUE(ge(a, b));
+
     EXPECT_FALSE(eq(a, c));
     EXPECT_TRUE(ne(a, c));
     EXPECT_TRUE(lt(a, c));
-    EXPECT_TRUE(lt(a, d));
-    EXPECT_TRUE(gt(d, a));
+    EXPECT_TRUE(le(a, c));
+    EXPECT_FALSE(gt(a, c));
+    EXPECT_FALSE(ge(a, c));
 
-    EXPECT_FALSE(lt(a, b));
-    EXPECT_TRUE(le(a, b));
-    EXPECT_FALSE(le(c, a));
+    EXPECT_TRUE(gt(c, a));
     EXPECT_TRUE(ge(c, a));
+
+    std::vector<std::vector<c_point>> nested_a{a, {{.x = 3, .y = 1}}};
+    std::vector<std::vector<c_point>> nested_b{b, {{.x = 3, .y = 1}}};
+    std::vector<std::vector<c_point>> nested_c{b, {{.x = 3, .y = 2}}};
+
+    EXPECT_TRUE(eq(nested_a, nested_b));
+    EXPECT_FALSE(ne(nested_a, nested_b));
+    EXPECT_TRUE(le(nested_a, nested_b));
+    EXPECT_TRUE(ge(nested_a, nested_b));
+
+    EXPECT_FALSE(eq(nested_a, nested_c));
+    EXPECT_TRUE(ne(nested_a, nested_c));
+    EXPECT_TRUE(lt(nested_a, nested_c));
+    EXPECT_TRUE(le(nested_a, nested_c));
+    EXPECT_FALSE(gt(nested_a, nested_c));
+    EXPECT_FALSE(ge(nested_a, nested_c));
+
+    EXPECT_TRUE(gt(nested_c, nested_a));
+    EXPECT_TRUE(ge(nested_c, nested_a));
 }
 
-TEST_CASE(compare_list_of_reflectable_elements) {
-    std::list<c_point> a{
-        {.x = 1, .y = 2},
-        {.x = 2, .y = 3}
+TEST_CASE(vector_custom) {
+    std::vector<with_custom_ops> a{
+        {.x = 100, .y = 1},
+        {.x = 200, .y = 2}
     };
-    std::list<c_point> b{
-        {.x = 1, .y = 2},
-        {.x = 2, .y = 3}
+    std::vector<with_custom_ops> b{
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 2}
     };
-    std::list<c_point> c{
-        {.x = 1, .y = 2},
-        {.x = 3, .y = 0}
+    std::vector<with_custom_ops> c{
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 3}
     };
 
+    // If reflection fallback were used, `eq(a, b)` would be false because x differs.
     EXPECT_TRUE(eq(a, b));
+    EXPECT_FALSE(ne(a, b));
+    EXPECT_TRUE(le(a, b));
+    EXPECT_TRUE(ge(a, b));
+
+    EXPECT_FALSE(eq(a, c));
+    EXPECT_TRUE(ne(a, c));
     EXPECT_TRUE(lt(a, c));
     EXPECT_TRUE(le(a, c));
+    EXPECT_FALSE(gt(a, c));
+    EXPECT_FALSE(ge(a, c));
+
+    EXPECT_TRUE(gt(c, a));
     EXPECT_TRUE(ge(c, a));
 }
 
-TEST_CASE(compare_map_of_reflectable_values) {
-    std::map<int, c_point> a{
+TEST_CASE(set_mixed) {
+    std::set<c_point, lt_fn> no_ops_a{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3}
+    };
+    std::set<c_point, lt_fn> no_ops_b{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3}
+    };
+    std::set<c_point, lt_fn> no_ops_c{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 4}
+    };
+
+    EXPECT_TRUE(eq(no_ops_a, no_ops_b));
+    EXPECT_FALSE(ne(no_ops_a, no_ops_b));
+    EXPECT_TRUE(le(no_ops_a, no_ops_b));
+    EXPECT_TRUE(ge(no_ops_a, no_ops_b));
+
+    EXPECT_FALSE(eq(no_ops_a, no_ops_c));
+    EXPECT_TRUE(ne(no_ops_a, no_ops_c));
+    EXPECT_TRUE(lt(no_ops_a, no_ops_c));
+    EXPECT_TRUE(le(no_ops_a, no_ops_c));
+    EXPECT_FALSE(gt(no_ops_a, no_ops_c));
+    EXPECT_FALSE(ge(no_ops_a, no_ops_c));
+
+    EXPECT_TRUE(gt(no_ops_c, no_ops_a));
+    EXPECT_TRUE(ge(no_ops_c, no_ops_a));
+
+    std::set<with_custom_ops> ops_a{
+        {.x = 100, .y = 1},
+        {.x = 200, .y = 2}
+    };
+    std::set<with_custom_ops> ops_b{
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 2}
+    };
+    std::set<with_custom_ops> ops_c{
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 3}
+    };
+
+    EXPECT_TRUE(eq(ops_a, ops_b));
+    EXPECT_FALSE(ne(ops_a, ops_b));
+    EXPECT_TRUE(le(ops_a, ops_b));
+    EXPECT_TRUE(ge(ops_a, ops_b));
+
+    EXPECT_FALSE(eq(ops_a, ops_c));
+    EXPECT_TRUE(ne(ops_a, ops_c));
+    EXPECT_TRUE(lt(ops_a, ops_c));
+    EXPECT_TRUE(le(ops_a, ops_c));
+    EXPECT_FALSE(gt(ops_a, ops_c));
+    EXPECT_FALSE(ge(ops_a, ops_c));
+
+    EXPECT_TRUE(gt(ops_c, ops_a));
+    EXPECT_TRUE(ge(ops_c, ops_a));
+}
+
+TEST_CASE(uset_mixed) {
+    std::unordered_set<c_point, c_point_hash, c_point_equal> no_ops_a{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3},
+    };
+    std::unordered_set<c_point, c_point_hash, c_point_equal> no_ops_b{
+        {.x = 2, .y = 3},
+        {.x = 1, .y = 2},
+    };
+    std::unordered_set<c_point, c_point_hash, c_point_equal> no_ops_c{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 4},
+    };
+
+    EXPECT_TRUE(eq(no_ops_a, no_ops_b));
+    EXPECT_FALSE(ne(no_ops_a, no_ops_b));
+    EXPECT_FALSE(eq(no_ops_a, no_ops_c));
+    EXPECT_TRUE(ne(no_ops_a, no_ops_c));
+
+    std::unordered_set<with_custom_ops, with_custom_ops_hash, with_custom_ops_equal> ops_a{
+        {.x = 100, .y = 1},
+        {.x = 200, .y = 2},
+    };
+    std::unordered_set<with_custom_ops, with_custom_ops_hash, with_custom_ops_equal> ops_b{
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 2},
+    };
+    std::unordered_set<with_custom_ops, with_custom_ops_hash, with_custom_ops_equal> ops_c{
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 3},
+    };
+
+    EXPECT_TRUE(eq(ops_a, ops_b));
+    EXPECT_FALSE(ne(ops_a, ops_b));
+    EXPECT_FALSE(eq(ops_a, ops_c));
+    EXPECT_TRUE(ne(ops_a, ops_c));
+}
+
+TEST_CASE(map_mixed) {
+    std::map<int, c_point> no_ops_a{
         {1, {.x = 1, .y = 2}},
         {2, {.x = 2, .y = 3}}
     };
-    std::map<int, c_point> b{
+    std::map<int, c_point> no_ops_b{
         {1, {.x = 1, .y = 2}},
         {2, {.x = 2, .y = 3}}
     };
-    std::map<int, c_point> c{
+    std::map<int, c_point> no_ops_c{
         {1, {.x = 1, .y = 2}},
         {2, {.x = 2, .y = 4}}
     };
-    std::map<int, c_point> d{
-        {1, {.x = 1, .y = 2}},
-        {3, {.x = 0, .y = 0}}
+
+    EXPECT_TRUE(eq(no_ops_a, no_ops_b));
+    EXPECT_FALSE(ne(no_ops_a, no_ops_b));
+    EXPECT_TRUE(le(no_ops_a, no_ops_b));
+    EXPECT_TRUE(ge(no_ops_a, no_ops_b));
+
+    EXPECT_FALSE(eq(no_ops_a, no_ops_c));
+    EXPECT_TRUE(ne(no_ops_a, no_ops_c));
+    EXPECT_TRUE(lt(no_ops_a, no_ops_c));
+    EXPECT_TRUE(le(no_ops_a, no_ops_c));
+    EXPECT_FALSE(gt(no_ops_a, no_ops_c));
+    EXPECT_FALSE(ge(no_ops_a, no_ops_c));
+
+    EXPECT_TRUE(gt(no_ops_c, no_ops_a));
+    EXPECT_TRUE(ge(no_ops_c, no_ops_a));
+
+    std::map<int, with_custom_ops> ops_a{
+        {1, {.x = 100, .y = 1}},
+        {2, {.x = 200, .y = 2}}
+    };
+    std::map<int, with_custom_ops> ops_b{
+        {1, {.x = 0, .y = 1}  },
+        {2, {.x = 999, .y = 2}}
+    };
+    std::map<int, with_custom_ops> ops_c{
+        {1, {.x = 0, .y = 1}  },
+        {2, {.x = 999, .y = 3}}
     };
 
-    EXPECT_TRUE(eq(a, b));
-    EXPECT_FALSE(eq(a, c));
-    EXPECT_TRUE(ne(a, c));
-    EXPECT_TRUE(lt(a, c));
-    EXPECT_TRUE(lt(c, d));
-    EXPECT_TRUE(gt(d, c));
+    EXPECT_TRUE(eq(ops_a, ops_b));
+    EXPECT_FALSE(ne(ops_a, ops_b));
+    EXPECT_TRUE(le(ops_a, ops_b));
+    EXPECT_TRUE(ge(ops_a, ops_b));
 
-    EXPECT_FALSE(lt(a, b));
-    EXPECT_TRUE(le(a, b));
-    EXPECT_FALSE(le(d, c));
-    EXPECT_TRUE(ge(d, c));
+    EXPECT_FALSE(eq(ops_a, ops_c));
+    EXPECT_TRUE(ne(ops_a, ops_c));
+    EXPECT_TRUE(lt(ops_a, ops_c));
+    EXPECT_TRUE(le(ops_a, ops_c));
+    EXPECT_FALSE(gt(ops_a, ops_c));
+    EXPECT_FALSE(ge(ops_a, ops_c));
+
+    EXPECT_TRUE(gt(ops_c, ops_a));
+    EXPECT_TRUE(ge(ops_c, ops_a));
 }
 
-TEST_CASE(compare_set_of_reflectable_values) {
-    std::set<c_point, lt_fn> a{
-        {.x = 1, .y = 2},
-        {.x = 2, .y = 3}
-    };
-    std::set<c_point, lt_fn> b{
-        {.x = 1, .y = 2},
-        {.x = 2, .y = 3}
-    };
-    std::set<c_point, lt_fn> c{
-        {.x = 1, .y = 2},
-        {.x = 3, .y = 0}
-    };
-
-    EXPECT_TRUE(eq(a, b));
-    EXPECT_FALSE(eq(a, c));
-    EXPECT_TRUE(lt(a, c));
-    EXPECT_TRUE(le(a, c));
-    EXPECT_TRUE(ge(c, a));
-    EXPECT_FALSE(lt(a, b));
-    EXPECT_TRUE(le(a, b));
-    EXPECT_FALSE(le(c, a));
-    EXPECT_TRUE(gt(c, a));
-}
-
-TEST_CASE(compare_unordered_map_order_independent_eq) {
-    std::unordered_map<int, c_point> a;
-    a.emplace(1, c_point{.x = 1, .y = 2});
-    a.emplace(2, c_point{.x = 2, .y = 3});
-
-    std::unordered_map<int, c_point> b;
-    b.emplace(2, c_point{.x = 2, .y = 3});
-    b.emplace(1, c_point{.x = 1, .y = 2});
-
-    std::unordered_map<int, c_point> c;
-    c.emplace(2, c_point{.x = 2, .y = 4});
-    c.emplace(1, c_point{.x = 1, .y = 2});
-
-    EXPECT_TRUE(eq(a, b));
-    EXPECT_FALSE(ne(a, b));
-    EXPECT_FALSE(eq(a, c));
-    EXPECT_TRUE(ne(a, c));
-}
-
-TEST_CASE(compare_unordered_set_order_independent_eq) {
-    std::unordered_set<c_point, c_point_hash, c_point_equal> a{
-        c_point{.x = 1, .y = 2},
-        c_point{.x = 2, .y = 3},
-    };
-    std::unordered_set<c_point, c_point_hash, c_point_equal> b{
-        c_point{.x = 2, .y = 3},
-        c_point{.x = 1, .y = 2},
-    };
-    std::unordered_set<c_point, c_point_hash, c_point_equal> c{
-        c_point{.x = 1, .y = 2},
-        c_point{.x = 3, .y = 0},
-    };
-
-    EXPECT_TRUE(eq(a, b));
-    EXPECT_FALSE(ne(a, b));
-    EXPECT_FALSE(eq(a, c));
-    EXPECT_TRUE(ne(a, c));
-}
-
-TEST_CASE(compare_mixed_ordered_unordered_map_eq) {
-    std::map<int, c_point> ordered{
+TEST_CASE(umap_mixed) {
+    std::unordered_map<int, c_point> no_ops_a{
         {1, {.x = 1, .y = 2}},
         {2, {.x = 2, .y = 3}}
     };
-    std::unordered_map<int, c_point> unordered{
+    std::unordered_map<int, c_point> no_ops_b{
         {2, {.x = 2, .y = 3}},
         {1, {.x = 1, .y = 2}}
     };
+    std::unordered_map<int, c_point> no_ops_c{
+        {2, {.x = 2, .y = 4}},
+        {1, {.x = 1, .y = 2}}
+    };
 
-    EXPECT_TRUE(eq(ordered, unordered));
-    EXPECT_FALSE(ne(ordered, unordered));
+    EXPECT_TRUE(eq(no_ops_a, no_ops_b));
+    EXPECT_FALSE(ne(no_ops_a, no_ops_b));
+    EXPECT_FALSE(eq(no_ops_a, no_ops_c));
+    EXPECT_TRUE(ne(no_ops_a, no_ops_c));
+
+    std::unordered_map<int, with_custom_ops> ops_a{
+        {1, {.x = 100, .y = 1}},
+        {2, {.x = 200, .y = 2}}
+    };
+    std::unordered_map<int, with_custom_ops> ops_b{
+        {2, {.x = 999, .y = 2}},
+        {1, {.x = 0, .y = 1}  }
+    };
+    std::unordered_map<int, with_custom_ops> ops_c{
+        {2, {.x = 999, .y = 3}},
+        {1, {.x = 0, .y = 1}  }
+    };
+
+    EXPECT_TRUE(eq(ops_a, ops_b));
+    EXPECT_FALSE(ne(ops_a, ops_b));
+    EXPECT_FALSE(eq(ops_a, ops_c));
+    EXPECT_TRUE(ne(ops_a, ops_c));
 }
 
-TEST_CASE(compare_uses_custom_operators_when_available) {
-    with_custom_ops a{.x = 100, .y = 1};
-    with_custom_ops b{.x = 0, .y = 2};
-    with_custom_ops c{.x = 999, .y = 1};
+TEST_CASE(custom_plain) {
+    auto a = make_custom_sequence<c_point>({
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3}
+    });
+    auto b = make_custom_sequence<c_point>({
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3}
+    });
+    auto c = make_custom_sequence<c_point>({
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 4}
+    });
 
-    // If reflection fallback were used, x would dominate and these results would differ.
-    EXPECT_TRUE(lt(a, b));
+    EXPECT_TRUE(eq(a, b));
+    EXPECT_FALSE(ne(a, b));
+    EXPECT_TRUE(le(a, b));
+    EXPECT_TRUE(ge(a, b));
+
+    EXPECT_FALSE(eq(a, c));
+    EXPECT_TRUE(ne(a, c));
+    EXPECT_TRUE(lt(a, c));
     EXPECT_TRUE(le(a, c));
-    EXPECT_TRUE(eq(a, c));
-    EXPECT_FALSE(ne(a, c));
+    EXPECT_FALSE(gt(a, c));
+    EXPECT_FALSE(ge(a, c));
+
+    EXPECT_TRUE(gt(c, a));
+    EXPECT_TRUE(ge(c, a));
 }
 
-TEST_CASE(compare_functor_for_sorting) {
+TEST_CASE(custom_ops) {
+    auto a = make_custom_sequence<with_custom_ops>({
+        {.x = 100, .y = 1},
+        {.x = 200, .y = 2}
+    });
+    auto b = make_custom_sequence<with_custom_ops>({
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 2}
+    });
+    auto c = make_custom_sequence<with_custom_ops>({
+        {.x = 0,   .y = 1},
+        {.x = 999, .y = 3}
+    });
+
+    EXPECT_TRUE(eq(a, b));
+    EXPECT_FALSE(ne(a, b));
+    EXPECT_TRUE(le(a, b));
+    EXPECT_TRUE(ge(a, b));
+
+    EXPECT_FALSE(eq(a, c));
+    EXPECT_TRUE(ne(a, c));
+    EXPECT_TRUE(lt(a, c));
+    EXPECT_TRUE(le(a, c));
+    EXPECT_FALSE(gt(a, c));
+    EXPECT_FALSE(ge(a, c));
+
+    EXPECT_TRUE(gt(c, a));
+    EXPECT_TRUE(ge(c, a));
+}
+
+TEST_CASE(functor_sort) {
     std::vector<c_point> values{
         {.x = 2, .y = 1},
         {.x = 1, .y = 4},
@@ -320,7 +491,7 @@ TEST_CASE(compare_functor_for_sorting) {
         {.x = 1, .y = 3},
     };
 
-    std::sort(values.begin(), values.end(), lt);
+    std::ranges::sort(values, lt);
 
     ASSERT_EQ(values.size(), 4U);
     EXPECT_EQ(values[0].x, 1);

@@ -59,13 +59,15 @@ consteval bool range_value_op_comparable() {
         using RK = typename std::remove_cvref_t<R>::key_type;
         using LV = typename std::remove_cvref_t<L>::mapped_type;
         using RV = typename std::remove_cvref_t<R>::mapped_type;
-        return op_comparable_with<Op, LK, RK> && op_comparable_with<Op, LV, RV>;
+        return range_value_op_comparable<Op, LK, RK>() && range_value_op_comparable<Op, LV, RV>();
     } else if constexpr(set_range<L> && set_range<R>) {
         using LK = typename std::remove_cvref_t<L>::key_type;
         using RK = typename std::remove_cvref_t<R>::key_type;
-        return op_comparable_with<Op, LK, RK>;
+        return range_value_op_comparable<Op, LK, RK>();
+    } else if constexpr(sequence_range<L> && sequence_range<R>) {
+        return range_value_op_comparable<Op, range_ref_t<L>, range_ref_t<R>>();
     } else {
-        return op_comparable_with<Op, range_ref_t<L>, range_ref_t<R>>;
+        return op_comparable_with<Op, L, R>;
     }
 }
 
