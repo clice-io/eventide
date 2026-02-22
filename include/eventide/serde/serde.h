@@ -2,6 +2,7 @@
 
 #include "annotation.h"
 #include "attrs.h"
+#include "config.h"
 #include "traits.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
@@ -20,9 +21,11 @@ template <typename E, typename SerializeStruct, typename Field>
 constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
     -> std::expected<void, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+    std::string scratch;
+    auto mapped_name = config::apply_field_rename(true, field.name(), scratch);
 
     if constexpr(!annotated_type<field_t>) {
-        return s_struct.serialize_field(field.name(), field.value());
+        return s_struct.serialize_field(mapped_name, field.value());
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
         auto&& value = annotated_value(field.value());
@@ -33,7 +36,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
         };
         serialize_field_ctx<SerializeStruct, value_t> ctx{
             .s = s_struct,
-            .name = field.name(),
+            .name = mapped_name,
             .value = value,
         };
         return run_attrs_hook<attrs_t>(ctx, terminal);
@@ -45,9 +48,11 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                                         std::string_view key_name,
                                         Field field) -> std::expected<bool, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+    std::string scratch;
+    auto mapped_name = config::apply_field_rename(false, field.name(), scratch);
 
     if constexpr(!annotated_type<field_t>) {
-        if(field.name() != key_name) {
+        if(mapped_name != key_name) {
             return false;
         }
 
@@ -71,7 +76,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         deserialize_field_probe_ctx<DeserializeStruct, value_t> probe_ctx{
             .d = d_struct,
             .key_name = key_name,
-            .field_name = field.name(),
+            .field_name = mapped_name,
             .value = value,
         };
         auto probe_result = run_attrs_hook<attrs_t>(probe_ctx, probe_terminal);
@@ -91,7 +96,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         deserialize_field_consume_ctx<DeserializeStruct, value_t> consume_ctx{
             .d = d_struct,
             .key_name = key_name,
-            .field_name = field.name(),
+            .field_name = mapped_name,
             .value = value,
         };
         auto consume_result = run_attrs_hook<attrs_t>(consume_ctx, consume_terminal);
