@@ -2,6 +2,8 @@
 #include <list>
 #include <map>
 #include <set>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -67,6 +69,18 @@ TEST_CASE(compare_primitive_types) {
     EXPECT_FALSE(le(9, 7));
     EXPECT_TRUE(gt(9, 7));
     EXPECT_TRUE(ge(9, 7));
+}
+
+TEST_CASE(compare_string_like_prefers_native_operators) {
+    constexpr std::string_view view = "eventide";
+    constexpr char literal[] = "eventide";
+    const std::string str = "eventide";
+
+    EXPECT_TRUE(eq(view, literal));
+    EXPECT_TRUE(eq(literal, view));
+    EXPECT_TRUE(eq(str, literal));
+    EXPECT_TRUE(eq(literal, str));
+    EXPECT_FALSE(ne(view, literal));
 }
 
 TEST_CASE(compare_reflectable_struct_eq_ne) {
