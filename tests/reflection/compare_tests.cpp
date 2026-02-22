@@ -92,6 +92,90 @@ custom_sequence<T> make_custom_sequence(std::initializer_list<T> init) {
     return custom_sequence<T>{std::vector<T>(init)};
 }
 
+template <typename K,
+          typename V,
+          typename Hash = std::hash<K>,
+          typename KeyEqual = std::equal_to<K>>
+struct unsized_unordered_map {
+    using key_type = K;
+    using mapped_type = V;
+    using hasher = Hash;
+    using key_equal = KeyEqual;
+    using storage_type = std::unordered_map<key_type, mapped_type, hasher, key_equal>;
+
+    unsized_unordered_map() = default;
+
+    unsized_unordered_map(std::initializer_list<typename storage_type::value_type> init) :
+        data(init) {}
+
+    auto begin() {
+        return data.begin();
+    }
+
+    auto end() {
+        return data.end();
+    }
+
+    auto begin() const {
+        return data.begin();
+    }
+
+    auto end() const {
+        return data.end();
+    }
+
+    auto find(const key_type& key) {
+        return data.find(key);
+    }
+
+    auto find(const key_type& key) const {
+        return data.find(key);
+    }
+
+    storage_type data;
+};
+
+template <typename T, typename Hash = std::hash<T>, typename KeyEqual = std::equal_to<T>>
+struct unsized_unordered_set {
+    using key_type = T;
+    using hasher = Hash;
+    using key_equal = KeyEqual;
+    using storage_type = std::unordered_set<key_type, hasher, key_equal>;
+
+    unsized_unordered_set() = default;
+
+    unsized_unordered_set(std::initializer_list<key_type> init) : data(init) {}
+
+    auto begin() {
+        return data.begin();
+    }
+
+    auto end() {
+        return data.end();
+    }
+
+    auto begin() const {
+        return data.begin();
+    }
+
+    auto end() const {
+        return data.end();
+    }
+
+    auto find(const key_type& key) {
+        return data.find(key);
+    }
+
+    auto find(const key_type& key) const {
+        return data.find(key);
+    }
+
+    storage_type data;
+};
+
+static_assert(!std::ranges::sized_range<const unsized_unordered_map<int, int>>);
+static_assert(!std::ranges::sized_range<const unsized_unordered_set<int>>);
+
 TEST_SUITE(reflection) {
 
 TEST_CASE(primitive_types) {
@@ -232,15 +316,15 @@ TEST_CASE(vector_custom) {
 }
 
 TEST_CASE(set_mixed) {
-    std::set<c_point, lt_fn> no_ops_a{
+    std::set<c_point, lt_t> no_ops_a{
         {.x = 1, .y = 2},
         {.x = 2, .y = 3}
     };
-    std::set<c_point, lt_fn> no_ops_b{
+    std::set<c_point, lt_t> no_ops_b{
         {.x = 1, .y = 2},
         {.x = 2, .y = 3}
     };
-    std::set<c_point, lt_fn> no_ops_c{
+    std::set<c_point, lt_t> no_ops_c{
         {.x = 1, .y = 2},
         {.x = 2, .y = 4}
     };
@@ -325,6 +409,33 @@ TEST_CASE(uset_mixed) {
     EXPECT_FALSE(ne(ops_a, ops_b));
     EXPECT_FALSE(eq(ops_a, ops_c));
     EXPECT_TRUE(ne(ops_a, ops_c));
+}
+
+TEST_CASE(uset_unsized_range_regression) {
+    using uset_t = unsized_unordered_set<c_point, c_point_hash, c_point_equal>;
+    static_assert(set_range<uset_t>);
+    static_assert(unordered_associative_range<uset_t>);
+
+    uset_t unsized_small{
+        {.x = 1, .y = 2},
+    };
+    uset_t unsized_large{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3},
+    };
+    std::unordered_set<c_point, c_point_hash, c_point_equal> sized_small{
+        {.x = 1, .y = 2},
+    };
+    std::unordered_set<c_point, c_point_hash, c_point_equal> sized_large{
+        {.x = 1, .y = 2},
+        {.x = 2, .y = 3},
+    };
+
+    EXPECT_FALSE(eq(unsized_small, unsized_large));
+    EXPECT_FALSE(eq(unsized_small, sized_large));
+    EXPECT_FALSE(eq(sized_small, unsized_large));
+    EXPECT_TRUE(eq(unsized_large, sized_large));
+    EXPECT_TRUE(eq(sized_large, unsized_large));
 }
 
 TEST_CASE(map_mixed) {
@@ -421,6 +532,33 @@ TEST_CASE(umap_mixed) {
     EXPECT_FALSE(ne(ops_a, ops_b));
     EXPECT_FALSE(eq(ops_a, ops_c));
     EXPECT_TRUE(ne(ops_a, ops_c));
+}
+
+TEST_CASE(umap_unsized_range_regression) {
+    using umap_t = unsized_unordered_map<int, c_point>;
+    static_assert(map_range<umap_t>);
+    static_assert(unordered_associative_range<umap_t>);
+
+    umap_t unsized_small{
+        {1, {.x = 1, .y = 2}},
+    };
+    umap_t unsized_large{
+        {1, {.x = 1, .y = 2}},
+        {2, {.x = 2, .y = 3}},
+    };
+    std::unordered_map<int, c_point> sized_small{
+        {1, {.x = 1, .y = 2}},
+    };
+    std::unordered_map<int, c_point> sized_large{
+        {1, {.x = 1, .y = 2}},
+        {2, {.x = 2, .y = 3}},
+    };
+
+    EXPECT_FALSE(eq(unsized_small, unsized_large));
+    EXPECT_FALSE(eq(unsized_small, sized_large));
+    EXPECT_FALSE(eq(sized_small, unsized_large));
+    EXPECT_TRUE(eq(unsized_large, sized_large));
+    EXPECT_TRUE(eq(sized_large, unsized_large));
 }
 
 TEST_CASE(custom_plain) {

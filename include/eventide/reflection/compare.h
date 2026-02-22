@@ -156,15 +156,11 @@ concept findable_in = requires(const R& range, const L& value) {
 };
 
 template <typename L, typename R>
-constexpr bool compare_map_eq_unordered(const L& lhs, const R& rhs) {
-    if constexpr(std::ranges::sized_range<const L> && std::ranges::sized_range<const R>) {
-        if(std::ranges::size(lhs) != std::ranges::size(rhs)) {
-            return false;
-        }
-    }
-
+constexpr bool map_entries_contained_in(const L& lhs, const R& rhs) {
+    // Checks whether every (key, value) entry in lhs has an equal counterpart in rhs.
     for(const auto& [lhs_key, lhs_value]: lhs) {
         if constexpr(findable_in<decltype(lhs_key), R>) {
+            // Fast path: use associative lookup by key when available.
             auto it = rhs.find(lhs_key);
             if(it == rhs.end()) {
                 return false;
@@ -173,6 +169,7 @@ constexpr bool compare_map_eq_unordered(const L& lhs, const R& rhs) {
                 return false;
             }
         } else {
+            // Fallback for map-like ranges without find(): linear scan by key/value equality.
             auto it = std::ranges::find_if(rhs, [&](const auto& entry) {
                 const auto& [rhs_key, rhs_value] = entry;
                 return compare_eq(lhs_key, rhs_key) && compare_eq(lhs_value, rhs_value);
@@ -182,8 +179,21 @@ constexpr bool compare_map_eq_unordered(const L& lhs, const R& rhs) {
             }
         }
     }
-
     return true;
+}
+
+template <typename L, typename R>
+constexpr bool compare_map_eq_unordered(const L& lhs, const R& rhs) {
+    if constexpr(std::ranges::sized_range<const L> && std::ranges::sized_range<const R>) {
+        // If sizes are known and equal, one-way containment implies equality.
+        if(std::ranges::size(lhs) != std::ranges::size(rhs)) {
+            return false;
+        }
+        return map_entries_contained_in(lhs, rhs);
+    } else {
+        // Without reliable sizes, require containment in both directions.
+        return map_entries_contained_in(lhs, rhs) && map_entries_contained_in(rhs, lhs);
+    }
 }
 
 template <typename L, typename R>
@@ -236,27 +246,37 @@ constexpr bool compare_map_lt(const L& lhs, const R& rhs) {
 }
 
 template <typename L, typename R>
-constexpr bool compare_set_eq_unordered(const L& lhs, const R& rhs) {
-    if constexpr(std::ranges::sized_range<const L> && std::ranges::sized_range<const R>) {
-        if(std::ranges::size(lhs) != std::ranges::size(rhs)) {
-            return false;
-        }
-    }
-
+constexpr bool set_entries_contained_in(const L& lhs, const R& rhs) {
+    // Checks whether every element in lhs exists in rhs.
     for(const auto& l: lhs) {
         if constexpr(findable_in<decltype(l), R>) {
+            // Fast path: use associative lookup when available.
             if(rhs.find(l) == rhs.end()) {
                 return false;
             }
         } else {
+            // Fallback for set-like ranges without find(): linear scan by equality.
             auto it = std::ranges::find_if(rhs, [&](const auto& r) { return compare_eq(l, r); });
             if(it == std::ranges::end(rhs)) {
                 return false;
             }
         }
     }
-
     return true;
+}
+
+template <typename L, typename R>
+constexpr bool compare_set_eq_unordered(const L& lhs, const R& rhs) {
+    if constexpr(std::ranges::sized_range<const L> && std::ranges::sized_range<const R>) {
+        // If sizes are known and equal, one-way containment implies equality.
+        if(std::ranges::size(lhs) != std::ranges::size(rhs)) {
+            return false;
+        }
+        return set_entries_contained_in(lhs, rhs);
+    } else {
+        // Without reliable sizes, require containment in both directions.
+        return set_entries_contained_in(lhs, rhs) && set_entries_contained_in(rhs, lhs);
+    }
 }
 
 template <typename L, typename R>
@@ -422,7 +442,7 @@ constexpr bool compare_ge(const L& lhs, const R& rhs) {
 
 namespace eventide::refl {
 
-struct eq_fn {
+struct eq_t {
     using is_transparent = void;
 
     template <typename L, typename R>
@@ -431,7 +451,7 @@ struct eq_fn {
     }
 };
 
-struct ne_fn {
+struct ne_t {
     using is_transparent = void;
 
     template <typename L, typename R>
@@ -440,7 +460,7 @@ struct ne_fn {
     }
 };
 
-struct lt_fn {
+struct lt_t {
     using is_transparent = void;
 
     template <typename L, typename R>
@@ -449,7 +469,7 @@ struct lt_fn {
     }
 };
 
-struct le_fn {
+struct le_t {
     using is_transparent = void;
 
     template <typename L, typename R>
@@ -458,7 +478,7 @@ struct le_fn {
     }
 };
 
-struct gt_fn {
+struct gt_t {
     using is_transparent = void;
 
     template <typename L, typename R>
@@ -467,7 +487,7 @@ struct gt_fn {
     }
 };
 
-struct ge_fn {
+struct ge_t {
     using is_transparent = void;
 
     template <typename L, typename R>
@@ -476,11 +496,11 @@ struct ge_fn {
     }
 };
 
-constexpr inline eq_fn eq{};
-constexpr inline ne_fn ne{};
-constexpr inline lt_fn lt{};
-constexpr inline le_fn le{};
-constexpr inline gt_fn gt{};
-constexpr inline ge_fn ge{};
+constexpr inline eq_t eq;
+constexpr inline ne_t ne;
+constexpr inline lt_t lt;
+constexpr inline le_t le;
+constexpr inline gt_t gt;
+constexpr inline ge_t ge;
 
 }  // namespace eventide::refl
