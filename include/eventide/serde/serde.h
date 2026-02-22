@@ -1,5 +1,6 @@
 #pragma once
 
+#include "annotation.h"
 #include "attrs.h"
 #include "traits.h"
 #include "eventide/reflection/enum.h"
@@ -15,97 +16,12 @@ struct deserialize_traits;
 
 namespace detail {
 
-template <typename Container, typename Element>
-concept sequence_insertable = requires(Container& container, Element&& element) {
-    container.emplace_back(std::forward<Element>(element));
-} || requires(Container& container, Element&& element) {
-    container.push_back(std::forward<Element>(element));
-} || requires(Container& container, Element&& element) {
-    container.insert(container.end(), std::forward<Element>(element));
-} || requires(Container& container, Element&& element) {
-    container.insert(std::forward<Element>(element));
-};
-
-template <typename Container, typename Element>
-constexpr bool append_sequence_element(Container& container, Element&& element) {
-    if constexpr(requires { container.emplace_back(std::forward<Element>(element)); }) {
-        container.emplace_back(std::forward<Element>(element));
-        return true;
-    } else if constexpr(requires { container.push_back(std::forward<Element>(element)); }) {
-        container.push_back(std::forward<Element>(element));
-        return true;
-    } else if constexpr(requires {
-                            container.insert(container.end(), std::forward<Element>(element));
-                        }) {
-        container.insert(container.end(), std::forward<Element>(element));
-        return true;
-    } else if constexpr(requires { container.insert(std::forward<Element>(element)); }) {
-        container.insert(std::forward<Element>(element));
-        return true;
-    } else {
-        return false;
-    }
-}
-
-template <typename Map, typename Key, typename Mapped>
-concept map_insertable = requires(Map& map, Key&& key, Mapped&& value) {
-    map.insert_or_assign(std::forward<Key>(key), std::forward<Mapped>(value));
-} || requires(Map& map, Key&& key, Mapped&& value) {
-    map.emplace(std::forward<Key>(key), std::forward<Mapped>(value));
-} || requires(Map& map, Key&& key, Mapped&& value) {
-    map.insert(typename Map::value_type{std::forward<Key>(key), std::forward<Mapped>(value)});
-};
-
-template <typename Map, typename Key, typename Mapped>
-constexpr bool insert_map_entry(Map& map, Key&& key, Mapped&& value) {
-    if constexpr(requires {
-                     map.insert_or_assign(std::forward<Key>(key), std::forward<Mapped>(value));
-                 }) {
-        map.insert_or_assign(std::forward<Key>(key), std::forward<Mapped>(value));
-        return true;
-    } else if constexpr(requires {
-                            map.emplace(std::forward<Key>(key), std::forward<Mapped>(value));
-                        }) {
-        map.emplace(std::forward<Key>(key), std::forward<Mapped>(value));
-        return true;
-    } else if constexpr(requires {
-                            map.insert(typename Map::value_type{std::forward<Key>(key),
-                                                                std::forward<Mapped>(value)});
-                        }) {
-        map.insert(typename Map::value_type{std::forward<Key>(key), std::forward<Mapped>(value)});
-        return true;
-    } else {
-        return false;
-    }
-}
-
-template <typename T>
-concept annotated_field_type = requires {
-    typename std::remove_cvref_t<T>::annotated_type;
-    typename std::remove_cvref_t<T>::attrs;
-};
-
-template <annotated_field_type FieldType, typename Value>
-constexpr decltype(auto) annotated_value(Value&& value) {
-    using annotate_t = std::remove_cvref_t<FieldType>;
-    using underlying_t = typename annotate_t::annotated_type;
-    if constexpr(std::is_const_v<std::remove_reference_t<Value>>) {
-        return static_cast<const underlying_t&>(value);
-    } else {
-        return static_cast<underlying_t&>(value);
-    }
-}
-
-}  // namespace detail
-
-namespace detail {
-
 template <typename E, typename SerializeStruct, typename Field>
 constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
     -> std::expected<void, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
 
-    if constexpr(!annotated_field_type<field_t>) {
+    if constexpr(!annotated_type<field_t>) {
         return s_struct.serialize_field(field.name(), field.value());
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
@@ -130,7 +46,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                                         Field field) -> std::expected<bool, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
 
-    if constexpr(!annotated_field_type<field_t>) {
+    if constexpr(!annotated_type<field_t>) {
         if(field.name() != key_name) {
             return false;
         }
@@ -197,9 +113,9 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
     if constexpr(requires { Serde::serialize(s, v); }) {
         return Serde::serialize(s, v);
-    } else if constexpr(detail::annotated_field_type<V>) {
+    } else if constexpr(annotated_type<V>) {
         using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = detail::annotated_value<V>(v);
+        auto&& value = annotated_value<V>(v);
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<T, E> {
@@ -330,9 +246,9 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
 
     if constexpr(requires { Deserde::deserialize(d, v); }) {
         return Deserde::deserialize(d, v);
-    } else if constexpr(detail::annotated_field_type<V>) {
+    } else if constexpr(annotated_type<V>) {
         using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = detail::annotated_value<V>(v);
+        auto&& value = annotated_value<V>(v);
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<void, E> {
@@ -413,7 +329,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             static_assert(
                 std::default_initializable<element_t>,
                 "auto deserialization for ranges requires default-constructible elements");
-            static_assert(detail::sequence_insertable<V, element_t>,
+            static_assert(eventide::detail::sequence_insertable<V, element_t>,
                           "cannot auto deserialize range: container does not support insertion");
 
             while(true) {
@@ -431,7 +347,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     return std::unexpected(element_status.error());
                 }
 
-                detail::append_sequence_element(v, std::move(element));
+                eventide::detail::append_sequence_element(v, std::move(element));
             }
 
             return d_seq->end();
@@ -453,7 +369,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 "auto map deserialization requires key_type parseable from JSON object keys");
             static_assert(std::default_initializable<mapped_t>,
                           "auto map deserialization requires default-constructible mapped_type");
-            static_assert(detail::map_insertable<V, key_t, mapped_t>,
+            static_assert(eventide::detail::map_insertable<V, key_t, mapped_t>,
                           "cannot auto deserialize map: container does not support map insertion");
 
             while(true) {
@@ -488,7 +404,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                     return std::unexpected(mapped_status.error());
                 }
 
-                detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
+                eventide::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
             }
 
             return d_map->end();

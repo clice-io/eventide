@@ -92,9 +92,9 @@ TEST_CASE(deserialize_struct_with_unknown_fields) {
 TEST_CASE(serialize_annotated_fields) {
     annotated_person input{};
     input.id = 42;
-    static_cast<std::string&>(input.name) = "bob";
-    static_cast<int&>(input.internal_id) = 1024;
-    static_cast<std::optional<std::string>&>(input.note) = std::nullopt;
+    input.name = "bob";
+    input.internal_id = 1024;
+    input.note = std::nullopt;
 
     auto encoded = to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());

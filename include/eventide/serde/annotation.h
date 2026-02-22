@@ -1,0 +1,85 @@
+#pragma once
+
+#include <concepts>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
+namespace eventide::serde {
+
+// Wrap or inherit depending on whether T is an aggregate class.
+template <typename T>
+concept wrap_type = !std::is_class_v<T> || std::is_final_v<T>;
+
+// Aggregate class that can be inherited without losing aggregate-ness.
+template <typename T>
+concept inherit_type = std::is_aggregate_v<T> && !wrap_type<T>;
+
+// Non-aggregate class where inheriting and reusing constructors is desired.
+template <typename T>
+concept inherit_use_type = !std::is_aggregate_v<T> && !wrap_type<T>;
+
+template <typename T, typename... Attrs>
+struct annotation;
+
+template <wrap_type T, typename... Attrs>
+struct annotation<T, Attrs...> {
+    T value;
+
+    constexpr annotation() = default;
+
+    template <typename U>
+        requires (!std::same_as<std::remove_cvref_t<U>, annotation> &&
+                  std::constructible_from<T, U>)
+    constexpr annotation(U&& raw) : value(std::forward<U>(raw)) {}
+
+    operator T&() {
+        return value;
+    }
+
+    operator const T&() const {
+        return value;
+    }
+
+    template <typename U>
+        requires (!std::same_as<std::remove_cvref_t<U>, annotation> && std::assignable_from<T&, U>)
+    constexpr annotation& operator=(U&& raw) {
+        value = std::forward<U>(raw);
+        return *this;
+    }
+
+    using annotated_type = T;
+    using attrs = std::tuple<Attrs...>;
+};
+
+template <inherit_type T, typename... Attrs>
+struct annotation<T, Attrs...> : T {
+    using annotated_type = T;
+    using attrs = std::tuple<Attrs...>;
+};
+
+template <inherit_use_type T, typename... Attrs>
+struct annotation<T, Attrs...> : T {
+    using T::T;
+    using annotated_type = T;
+    using attrs = std::tuple<Attrs...>;
+};
+
+template <typename T>
+concept annotated_type = requires {
+    typename std::remove_cvref_t<T>::annotated_type;
+    typename std::remove_cvref_t<T>::attrs;
+};
+
+template <annotated_type FieldType, typename Value>
+constexpr decltype(auto) annotated_value(Value&& value) {
+    using annotation_t = std::remove_cvref_t<FieldType>;
+    using underlying_t = typename annotation_t::annotated_type;
+    if constexpr(std::is_const_v<std::remove_reference_t<Value>>) {
+        return static_cast<const underlying_t&>(value);
+    } else {
+        return static_cast<underlying_t&>(value);
+    }
+}
+
+}  // namespace eventide::serde

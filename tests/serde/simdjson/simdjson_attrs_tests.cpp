@@ -55,7 +55,7 @@ struct builtin_attr_payload {
 };
 
 struct custom_attr_payload {
-    annotate<std::string, ext_attr::json_name<"handle">> nickname;
+    annotation<std::string, ext_attr::json_name<"handle">> nickname;
 };
 
 TEST_SUITE(serde_simdjson_attrs) {
@@ -63,12 +63,12 @@ TEST_SUITE(serde_simdjson_attrs) {
 TEST_CASE(serialize_builtin_attrs) {
     builtin_attr_payload input{};
     input.id = 7;
-    static_cast<std::string&>(input.display_name) = "alice";
-    static_cast<int&>(input.internal_id) = 999;
-    static_cast<std::optional<std::string>&>(input.note) = std::nullopt;
+    input.display_name = "alice";
+    input.internal_id = 999;
+    input.note = std::nullopt;
     input.profile.first = "Alice";
     input.profile.age = 30;
-    static_cast<access_level&>(input.level) = access_level::admin;
+    input.level = access_level::admin;
 
     auto encoded = to_json(input);
     ASSERT_TRUE(encoded.has_value());
@@ -78,7 +78,7 @@ TEST_CASE(serialize_builtin_attrs) {
 
 TEST_CASE(deserialize_builtin_attrs) {
     builtin_attr_payload parsed{};
-    static_cast<int&>(parsed.internal_id) = 321;
+    parsed.internal_id = 321;
 
     auto status = from_json(
         R"({"id":9,"name":"bob","first":"Bob","age":21,"level":"viewer","internal_id":100,"note":"x"})",
@@ -86,18 +86,17 @@ TEST_CASE(deserialize_builtin_attrs) {
     ASSERT_TRUE(status.has_value());
 
     EXPECT_EQ(parsed.id, 9);
-    EXPECT_EQ(static_cast<const std::string&>(parsed.display_name), "bob");
+    EXPECT_EQ(parsed.display_name, "bob");
     EXPECT_EQ(parsed.profile.first, "Bob");
     EXPECT_EQ(parsed.profile.age, 21);
-    EXPECT_EQ(static_cast<access_level>(parsed.level), access_level::viewer);
-    EXPECT_EQ(static_cast<int>(parsed.internal_id), 321);
-    ASSERT_TRUE(static_cast<const std::optional<std::string>&>(parsed.note).has_value());
-    EXPECT_EQ(*static_cast<const std::optional<std::string>&>(parsed.note), "x");
+    EXPECT_EQ(parsed.level, access_level::viewer);
+    EXPECT_EQ(parsed.internal_id, 321);
+    EXPECT_EQ(parsed.note, std::optional<std::string>{"x"});
 }
 
 TEST_CASE(custom_attr_hook_specialization) {
     custom_attr_payload input{};
-    static_cast<std::string&>(input.nickname) = "neo";
+    input.nickname = "neo";
 
     auto encoded = to_json(input);
     ASSERT_TRUE(encoded.has_value());
@@ -106,7 +105,7 @@ TEST_CASE(custom_attr_hook_specialization) {
     custom_attr_payload parsed{};
     auto status = from_json(R"({"handle":"trinity"})", parsed);
     ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(static_cast<const std::string&>(parsed.nickname), "trinity");
+    EXPECT_EQ(parsed.nickname, "trinity");
 }
 
 TEST_CASE(top_level_annotated_value_enum_string) {
@@ -118,7 +117,7 @@ TEST_CASE(top_level_annotated_value_enum_string) {
     enum_string<access_level> parsed = access_level::admin;
     auto status = from_json(R"("viewer")", parsed);
     ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(static_cast<access_level>(parsed), access_level::viewer);
+    EXPECT_EQ(parsed, access_level::viewer);
 }
 
 };  // TEST_SUITE(serde_simdjson_attrs)
