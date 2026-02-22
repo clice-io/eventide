@@ -2,7 +2,7 @@ add_library(eventide_serde INTERFACE)
 add_library(eventide::serde ALIAS eventide_serde)
 
 target_include_directories(eventide_serde INTERFACE
-    ${CMAKE_SOURCE_DIR}/include
+    "${PROJECT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(eventide_serde INTERFACE
@@ -45,7 +45,7 @@ if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     add_library(eventide::serde::json ALIAS eventide_serde_json)
 
     target_include_directories(eventide_serde_json INTERFACE
-        ${CMAKE_SOURCE_DIR}/include
+        "${PROJECT_SOURCE_DIR}/include"
     )
 
     target_link_libraries(eventide_serde_json INTERFACE
@@ -79,12 +79,12 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
     add_library(eventide::serde::flatbuffers ALIAS eventide_serde_flatbuffers)
 
     target_sources(eventide_serde_flatbuffers PRIVATE
-        "${CMAKE_SOURCE_DIR}/src/serde/flatbuffers/flex/serializer.cpp"
-        "${CMAKE_SOURCE_DIR}/src/serde/flatbuffers/flex/deserializer.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/flatbuffers/flex/serializer.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/flatbuffers/flex/deserializer.cpp"
     )
 
     target_include_directories(eventide_serde_flatbuffers PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+        "${PROJECT_SOURCE_DIR}/include"
     )
 
     target_link_libraries(eventide_serde_flatbuffers PUBLIC

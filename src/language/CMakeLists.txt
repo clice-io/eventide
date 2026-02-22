@@ -7,7 +7,7 @@ target_sources(eventide_language PRIVATE
 )
 
 target_include_directories(eventide_language PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
+    "${PROJECT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(eventide_language PUBLIC
