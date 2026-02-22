@@ -1,16 +1,21 @@
 #pragma once
 
-#include <array>
 #include <concepts>
 #include <optional>
-#include <string>
-#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include "spelling.h"
 #include "eventide/common/fixed_string.h"
+#include "eventide/serde/attrs/alias.h"
+#include "eventide/serde/attrs/context.h"
+#include "eventide/serde/attrs/enum_string.h"
+#include "eventide/serde/attrs/flatten.h"
+#include "eventide/serde/attrs/literal.h"
+#include "eventide/serde/attrs/rename.h"
+#include "eventide/serde/attrs/skip.h"
+#include "eventide/serde/attrs/skip_if.h"
 
 namespace eventide::serde {
 
@@ -71,35 +76,6 @@ struct annotate<T, Attrs...> : T {
     using attrs = std::tuple<Attrs...>;
 };
 
-namespace attr {
-
-template <fixed_string... Names>
-struct alias {
-    constexpr inline static std::array names = {std::string_view(Names)...};
-};
-
-struct flatten {};
-
-template <fixed_string Name>
-struct literal {
-    constexpr inline static std::string_view name = Name;
-};
-
-template <fixed_string Name>
-struct rename {
-    constexpr inline static std::string_view name = Name;
-};
-
-template <typename Policy = rename_policy::lower_camel>
-struct enum_string {};
-
-struct skip {};
-
-template <typename Pred>
-struct skip_if {};
-
-}  // namespace attr
-
 namespace pred {
 
 struct optional_none {
@@ -135,20 +111,6 @@ struct default_value {
 };
 
 }  // namespace pred
-
-namespace detail {
-
-template <typename E, typename Policy = rename_policy::lower_camel>
-std::string map_enum_to_string(E value) {
-    return spelling::map_enum_to_string<E, Policy>(value);
-}
-
-template <typename E, typename Policy = rename_policy::lower_camel>
-constexpr std::optional<E> map_string_to_enum(std::string_view value) {
-    return spelling::map_string_to_enum<E, Policy>(value);
-}
-
-}  // namespace detail
 
 template <typename T>
 using skip = annotate<T, attr::skip>;
