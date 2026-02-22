@@ -53,4 +53,40 @@ struct attr_hook<attr::skip_if<Pred>> {
     }
 };
 
+namespace pred {
+
+struct optional_none {
+    template <typename T>
+    constexpr bool operator()(const std::optional<T>& value, bool is_serialize) const {
+        return is_serialize && !value.has_value();
+    }
+};
+
+struct empty {
+    template <typename T>
+    constexpr bool operator()(const T& value, bool is_serialize) const {
+        if constexpr(requires { value.empty(); }) {
+            return is_serialize && value.empty();
+        } else {
+            return false;
+        }
+    }
+};
+
+struct default_value {
+    template <typename T>
+    constexpr bool operator()(const T& value, bool is_serialize) const {
+        if constexpr(requires {
+                         T{};
+                         value == T{};
+                     }) {
+            return is_serialize && static_cast<bool>(value == T{});
+        } else {
+            return false;
+        }
+    }
+};
+
+}  // namespace pred
+
 }  // namespace eventide::serde
