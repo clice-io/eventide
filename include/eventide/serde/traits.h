@@ -85,6 +85,7 @@ concept serializer_like = requires(S& s,
                                    std::span<const std::byte> bytes,
                                    std::optional<std::size_t> len,
                                    std::size_t tuple_len,
+                                   const std::variant<int, std::string>& variant_value,
                                    const int& key,
                                    const int& value) {
     { s.serialize_none() } -> result_as<T, E>;
@@ -121,6 +122,8 @@ concept serializer_like = requires(S& s,
         { s.serialize_field(text, value) } -> result_as<void, E>;
         { s.end() } -> result_as<T, E>;
     };
+
+    { s.serialize_variant(variant_value) } -> result_as<T, E>;
 };
 
 template <typename D,
@@ -140,6 +143,7 @@ concept deserializer_like = requires(D& d,
                                      std::optional<std::size_t> len,
                                      std::size_t tuple_len,
                                      std::string_view name,
+                                     std::variant<int, std::string>& variant_value,
                                      int& value) {
     { d.deserialize_none() } -> result_as<bool, E>;
     { d.deserialize_some(value) } -> result_as<void, E>;
@@ -182,6 +186,8 @@ concept deserializer_like = requires(D& d,
         { s.skip_value() } -> result_as<void, E>;
         { s.end() } -> result_as<void, E>;
     };
+
+    { d.deserialize_variant(variant_value) } -> result_as<void, E>;
 };
 
 }  // namespace eventide::serde

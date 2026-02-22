@@ -141,6 +141,12 @@ public:
         return serde::deserialize(*this, value);
     }
 
+    template <typename... Ts>
+    status_t deserialize_variant(std::variant<Ts...>& value) {
+        /// FIXME: This is wrong implementation.
+        return std::visit([&](auto& item) { return serde::deserialize(*this, item); }, value);
+    }
+
     status_t deserialize_bool(bool& value);
 
     template <serde::int_like T>

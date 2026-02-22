@@ -377,6 +377,99 @@ public:
         return serde::deserialize(*this, value);
     }
 
+    template <typename... Ts>
+    status_t deserialize_variant(std::variant<Ts...>& value) {
+        static_assert((std::default_initializable<Ts> && ...),
+                      "variant deserialization requires default-constructible alternatives");
+
+        auto json_type = peek_json_type();
+        if(!json_type) {
+            return std::unexpected(json_type.error());
+        }
+
+        std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
+        if(*json_type == simdjson::ondemand::json_type::number) {
+            auto current_number_type = peek_number_type();
+            if(!current_number_type) {
+                return std::unexpected(current_number_type.error());
+            }
+            number_type = *current_number_type;
+        }
+
+        auto raw = consume_raw_json();
+        if(!raw) {
+            return std::unexpected(raw.error());
+        }
+
+        if(*json_type == simdjson::ondemand::json_type::object) {
+            /// TODO(eventide/serde): Optimize object-variant dispatch with a two-pass strategy.
+            /// Pass 1: walk fields once to collect a lightweight structural signature
+            /// (field names + coarse JSON value categories).
+            /// Use that signature to select a likely target alternative (especially among
+            /// many struct-like alternatives) without trying each candidate parser.
+            /// Pass 2: deserialize exactly once into the selected alternative.
+            /// Target complexity: at most two object traversals regardless of the number
+            /// of struct alternatives in std::variant.
+            bool matched = false;
+            bool considered = false;
+            error_type last_error = simdjson::INCORRECT_TYPE;
+
+            auto try_alternative = [&](auto type_tag) {
+                if(matched) {
+                    return;
+                }
+
+                using alt_t = typename decltype(type_tag)::type;
+                if(!variant_candidate_matches<alt_t>(*json_type, number_type)) {
+                    return;
+                }
+                considered = true;
+
+                auto candidate_error = deserialize_variant_candidate<alt_t>(*raw, value);
+                if(candidate_error == simdjson::SUCCESS) {
+                    matched = true;
+                } else {
+                    last_error = candidate_error;
+                }
+            };
+
+            (try_alternative(std::type_identity<Ts>{}), ...);
+
+            if(!matched) {
+                mark_invalid(considered ? last_error : simdjson::INCORRECT_TYPE);
+                return std::unexpected(current_error());
+            }
+            return {};
+        }
+
+        bool considered = false;
+        error_type candidate_error = simdjson::INCORRECT_TYPE;
+        auto try_first_compatible = [&](auto type_tag) {
+            if(considered) {
+                return;
+            }
+
+            using alt_t = typename decltype(type_tag)::type;
+            if(!variant_candidate_matches<alt_t>(*json_type, number_type)) {
+                return;
+            }
+            considered = true;
+            candidate_error = deserialize_variant_candidate<alt_t>(*raw, value);
+        };
+
+        (try_first_compatible(std::type_identity<Ts>{}), ...);
+
+        if(!considered) {
+            mark_invalid(simdjson::INCORRECT_TYPE);
+            return std::unexpected(current_error());
+        }
+        if(candidate_error != simdjson::SUCCESS) {
+            mark_invalid(candidate_error);
+            return std::unexpected(current_error());
+        }
+        return {};
+    }
+
     status_t deserialize_bool(bool& value) {
         return read_scalar(
             value,
@@ -625,6 +718,157 @@ private:
 
         ValueScope scope(*this, value);
         return serde::deserialize(*this, out);
+    }
+
+    result_t<simdjson::ondemand::json_type> peek_json_type() {
+        if(!is_valid) {
+            return std::unexpected(current_error());
+        }
+
+        simdjson::ondemand::json_type out = simdjson::ondemand::json_type::null;
+        error_type err = simdjson::SUCCESS;
+        if(current_value != nullptr) {
+            err = current_value->type().get(out);
+        } else {
+            if(root_consumed) {
+                mark_invalid();
+                return std::unexpected(current_error());
+            }
+            err = document.type().get(out);
+        }
+
+        if(err != simdjson::SUCCESS) {
+            mark_invalid(err);
+            return std::unexpected(current_error());
+        }
+        return out;
+    }
+
+    result_t<simdjson::ondemand::number_type> peek_number_type() {
+        if(!is_valid) {
+            return std::unexpected(current_error());
+        }
+
+        simdjson::ondemand::number_type out = simdjson::ondemand::number_type::signed_integer;
+        error_type err = simdjson::SUCCESS;
+        if(current_value != nullptr) {
+            err = current_value->get_number_type().get(out);
+        } else {
+            if(root_consumed) {
+                mark_invalid();
+                return std::unexpected(current_error());
+            }
+            err = document.get_number_type().get(out);
+        }
+
+        if(err != simdjson::SUCCESS) {
+            mark_invalid(err);
+            return std::unexpected(current_error());
+        }
+        return out;
+    }
+
+    template <typename T>
+    constexpr static bool
+        variant_candidate_matches(simdjson::ondemand::json_type json_type,
+                                  std::optional<simdjson::ondemand::number_type> number_type) {
+        using U = std::remove_cvref_t<T>;
+
+        if constexpr(detail::annotated_field_type<U>) {
+            using annotated_t = typename U::annotated_type;
+            return variant_candidate_matches<annotated_t>(json_type, number_type);
+        } else if constexpr(is_specialization_of<std::optional, U>) {
+            if(json_type == simdjson::ondemand::json_type::null) {
+                return true;
+            }
+            return variant_candidate_matches<typename U::value_type>(json_type, number_type);
+        } else if constexpr(std::same_as<U, std::nullptr_t>) {
+            return json_type == simdjson::ondemand::json_type::null;
+        } else if constexpr(serde::bool_like<U>) {
+            return json_type == simdjson::ondemand::json_type::boolean;
+        } else if constexpr(serde::int_like<U> || serde::uint_like<U>) {
+            if(json_type != simdjson::ondemand::json_type::number) {
+                return false;
+            }
+            if(!number_type.has_value()) {
+                return true;
+            }
+            return *number_type == simdjson::ondemand::number_type::signed_integer ||
+                   *number_type == simdjson::ondemand::number_type::unsigned_integer;
+        } else if constexpr(serde::floating_like<U>) {
+            return json_type == simdjson::ondemand::json_type::number;
+        } else if constexpr(serde::char_like<U> || std::same_as<U, std::string> ||
+                            std::derived_from<U, std::string>) {
+            return json_type == simdjson::ondemand::json_type::string;
+        } else if constexpr(std::same_as<U, std::vector<std::byte>>) {
+            return json_type == simdjson::ondemand::json_type::array;
+        } else if constexpr(is_pair_v<U> || is_tuple_v<U>) {
+            return json_type == simdjson::ondemand::json_type::array;
+        } else if constexpr(std::ranges::input_range<U>) {
+            constexpr auto kind = format_kind<U>;
+            if constexpr(kind == range_format::map) {
+                return json_type == simdjson::ondemand::json_type::object;
+            } else if constexpr(kind == range_format::sequence || kind == range_format::set) {
+                return json_type == simdjson::ondemand::json_type::array;
+            } else {
+                return true;
+            }
+        } else if constexpr(refl::reflectable_class<U>) {
+            return json_type == simdjson::ondemand::json_type::object;
+        } else {
+            return true;
+        }
+    }
+
+    template <typename Alt, typename... Ts>
+    static error_type deserialize_variant_candidate(std::string_view raw,
+                                                    std::variant<Ts...>& value) {
+        Alt candidate{};
+        Deserializer probe(raw);
+        if(!probe.valid()) {
+            return probe.error();
+        }
+
+        auto status = serde::deserialize(probe, candidate);
+        if(!status) {
+            return status.error();
+        }
+
+        auto finished = probe.finish();
+        if(!finished) {
+            return finished.error();
+        }
+
+        value = std::move(candidate);
+        return simdjson::SUCCESS;
+    }
+
+    result_t<std::string_view> consume_raw_json() {
+        if(!is_valid) {
+            return std::unexpected(current_error());
+        }
+
+        std::string_view raw{};
+        error_type err = simdjson::SUCCESS;
+        if(current_value != nullptr) {
+            err = current_value->raw_json().get(raw);
+        } else {
+            if(root_consumed) {
+                mark_invalid();
+                return std::unexpected(current_error());
+            }
+
+            err = document.raw_json().get(raw);
+            if(err == simdjson::SUCCESS) {
+                root_consumed = true;
+            }
+        }
+
+        if(err != simdjson::SUCCESS) {
+            mark_invalid(err);
+            return std::unexpected(current_error());
+        }
+        return raw;
     }
 
     result_t<simdjson::ondemand::array> open_array() {

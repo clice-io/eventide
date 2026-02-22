@@ -447,7 +447,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
             return s.serialize_none();
         }
     } else if constexpr(is_specialization_of<std::variant, V>) {
-        return std::visit([&](auto&& value) { return s.serialize_some(value); }, v);
+        return s.serialize_variant(v);
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
@@ -626,7 +626,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                           "cannot auto deserialize optional<T> without default-constructible T");
         }
     } else if constexpr(is_specialization_of<std::variant, V>) {
-        return std::visit([&](auto& value) { return d.deserialize_some(value); }, v);
+        return d.deserialize_variant(v);
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {

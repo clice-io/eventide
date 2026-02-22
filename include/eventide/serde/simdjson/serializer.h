@@ -144,6 +144,13 @@ public:
         return serde::serialize(*this, value);
     }
 
+    template <typename... Ts>
+    result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
+        return std::visit(
+            [&](const auto& item) -> result_t<value_type> { return serde::serialize(*this, item); },
+            value);
+    }
+
     result_t<value_type> serialize_bool(bool value) {
         if(!before_value()) {
             return status();
