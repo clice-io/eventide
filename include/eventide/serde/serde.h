@@ -25,7 +25,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
         return s_struct.serialize_field(field.name(), field.value());
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-        auto&& value = annotated_value<field_t>(field.value());
+        auto&& value = annotated_value(field.value());
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<void, E> {
@@ -36,7 +36,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
             .name = field.name(),
             .value = value,
         };
-        return run_attr_hook_chain<attrs_t>(ctx, terminal);
+        return run_attrs_hook<attrs_t>(ctx, terminal);
     }
 }
 
@@ -58,7 +58,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
         return true;
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-        auto&& value = annotated_value<field_t>(field.value());
+        auto&& value = annotated_value(field.value());
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         auto probe_terminal =
@@ -74,7 +74,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             .field_name = field.name(),
             .value = value,
         };
-        auto probe_result = run_attr_hook_chain<attrs_t>(probe_ctx, probe_terminal);
+        auto probe_result = run_attrs_hook<attrs_t>(probe_ctx, probe_terminal);
         if(!probe_result) {
             return std::unexpected(probe_result.error());
         }
@@ -94,7 +94,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             .field_name = field.name(),
             .value = value,
         };
-        auto consume_result = run_attr_hook_chain<attrs_t>(consume_ctx, consume_terminal);
+        auto consume_result = run_attrs_hook<attrs_t>(consume_ctx, consume_terminal);
         if(!consume_result) {
             return std::unexpected(consume_result.error());
         }
@@ -114,18 +114,10 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     if constexpr(requires { Serde::serialize(s, v); }) {
         return Serde::serialize(s, v);
     } else if constexpr(annotated_type<V>) {
-        using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = annotated_value<V>(v);
-        using value_t = std::remove_cvref_t<decltype(value)>;
-
-        auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<T, E> {
+        serialize_value_ctx<S, typename V::annotated_type> ctx{.s = s, .value = annotated_value(v)};
+        return run_attrs_hook<typename V::attrs>(ctx, [](auto ctx) {
             return serialize(ctx.s, ctx.value);
-        };
-        serialize_value_ctx<S, value_t> ctx{
-            .s = s,
-            .value = value,
-        };
-        return detail::run_attr_hook_chain<attrs_t>(ctx, terminal);
+        });
     } else if constexpr(bool_like<V>) {
         return s.serialize_bool(v);
     } else if constexpr(int_like<V>) {
@@ -248,7 +240,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return Deserde::deserialize(d, v);
     } else if constexpr(annotated_type<V>) {
         using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = annotated_value<V>(v);
+        auto&& value = annotated_value(v);
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         auto terminal = []<typename Ctx>(Ctx ctx) -> std::expected<void, E> {
@@ -258,7 +250,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             .d = d,
             .value = value,
         };
-        return detail::run_attr_hook_chain<attrs_t>(ctx, terminal);
+        return run_attrs_hook<attrs_t>(ctx, terminal);
     } else if constexpr(bool_like<V>) {
         return d.deserialize_bool(v);
     } else if constexpr(int_like<V>) {

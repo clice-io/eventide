@@ -4,6 +4,28 @@
 
 namespace eventide::serde {
 
+namespace detail {
+
+template <typename Pred, typename Value>
+constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
+    if constexpr(requires {
+                     { Pred{}(value, is_serialize) } -> std::convertible_to<bool>;
+                 }) {
+        return static_cast<bool>(Pred{}(value, is_serialize));
+    } else if constexpr(requires {
+                            { Pred{}(value) } -> std::convertible_to<bool>;
+                        }) {
+        return static_cast<bool>(Pred{}(value));
+    } else {
+        static_assert(
+            dependent_false<Pred>,
+            "attr::skip_if predicate must return bool and accept (const Value&, bool) or (const Value&)");
+        return false;
+    }
+}
+
+}  // namespace detail
+
 namespace attr {
 
 template <typename Pred>

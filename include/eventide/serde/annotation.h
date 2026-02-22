@@ -71,9 +71,9 @@ concept annotated_type = requires {
     typename std::remove_cvref_t<T>::attrs;
 };
 
-template <annotated_type FieldType, typename Value>
+template <annotated_type Value>
 constexpr decltype(auto) annotated_value(Value&& value) {
-    using annotation_t = std::remove_cvref_t<FieldType>;
+    using annotation_t = std::remove_cvref_t<Value>;
     using underlying_t = typename annotation_t::annotated_type;
     if constexpr(std::is_const_v<std::remove_reference_t<Value>>) {
         return static_cast<const underlying_t&>(value);

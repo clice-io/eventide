@@ -4,6 +4,19 @@
 
 namespace eventide::serde {
 
+namespace detail {
+
+template <typename E, typename SerializeStruct, typename Field>
+constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
+    -> std::expected<void, E>;
+
+template <typename E, typename DeserializeStruct, typename Field>
+constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
+                                        std::string_view key_name,
+                                        Field field) -> std::expected<bool, E>;
+
+}  // namespace detail
+
 namespace attr {
 
 struct flatten {};
