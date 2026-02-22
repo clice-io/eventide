@@ -63,7 +63,7 @@ end)
 
 target("eventide", function()
 	set_kind("$(kind)")
-	add_files("src/eventide/*.cpp")
+	add_files("src/async/*.cpp")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/async/*.h)")
 	add_packages("libuv")
