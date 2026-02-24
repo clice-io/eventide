@@ -13,7 +13,7 @@ jobs:
         target:
           - os: windows-2025
             toolchain: clang-cl
-            config_args: "--toolchain=clang-cl"
+            config_args: "--toolchain=clang"
           - os: ubuntu-24.04
             toolchain: default
             config_args: ""

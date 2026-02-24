@@ -291,44 +291,23 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
     } else if constexpr(std::same_as<ResTy, long double>) {
         return "unsupported floating-point type: long double";
     } else if constexpr(std::floating_point<ResTy>) {
-        if constexpr(requires(const char* begin, const char* end, ResTy& value) {
-                         {
-                             std::from_chars(begin, end, value, std::chars_format::general)
-                         } -> std::same_as<std::from_chars_result>;
-                     }) {
-            ResTy parsed{};
-            const auto* begin = text.data();
-            const auto* end = text.data() + text.size();
-            const auto [ptr, ec] = std::from_chars(begin, end, parsed, std::chars_format::general);
-            if(ec == std::errc::result_out_of_range) {
-                return "floating-point value out of range: " + std::string(text);
-            }
-            if(ec != std::errc() || ptr != end) {
-                return "invalid floating-point value: " + std::string(text);
-            }
-            out = parsed;
-            return std::nullopt;
+        std::string copy(text);
+        char* parse_end = nullptr;
+        errno = 0;
+        ResTy parsed{};
+        if constexpr(std::same_as<ResTy, float>) {
+            parsed = std::strtof(copy.c_str(), &parse_end);
         } else {
-            // Fallback for standard libraries without floating-point from_chars.
-            // Keep long double unsupported to match the API contract above.
-            std::string copy(text);
-            char* parse_end = nullptr;
-            errno = 0;
-            ResTy parsed{};
-            if constexpr(std::same_as<ResTy, float>) {
-                parsed = std::strtof(copy.c_str(), &parse_end);
-            } else {
-                parsed = std::strtod(copy.c_str(), &parse_end);
-            }
-            if(parse_end != copy.c_str() + copy.size()) {
-                return "invalid floating-point value: " + std::string(text);
-            }
-            if(errno == ERANGE) {
-                return "floating-point value out of range: " + std::string(text);
-            }
-            out = parsed;
-            return std::nullopt;
+            parsed = std::strtod(copy.c_str(), &parse_end);
         }
+        if(parse_end != copy.c_str() + copy.size()) {
+            return "invalid floating-point value: " + std::string(text);
+        }
+        if(errno == ERANGE) {
+            return "floating-point value out of range: " + std::string(text);
+        }
+        out = parsed;
+        return std::nullopt;
     } else if constexpr(trait::StringResultType<ResTy>) {
         out = ResTy(text);
         return std::nullopt;
