@@ -41,18 +41,6 @@ struct CustomScalarResult {
     }
 };
 
-struct CustomVectorResult {
-    constexpr CustomVectorResult() = default;
-    constexpr ~CustomVectorResult() = default;
-
-    std::vector<std::string> values;
-
-    std::optional<std::string_view> into(const std::vector<std::string_view>& input) {
-        values.assign(input.begin(), input.end());
-        return std::nullopt;
-    }
-};
-
 auto make_parsed_arg(std::string_view spelling, std::vector<std::string_view> values = {}) {
     return eventide::option::ParsedArgument{
         .option_id = eventide::option::OptSpecifier(1u),
@@ -223,6 +211,18 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(!custom_scalar_ok.has_value());
     EXPECT_TRUE(custom_scalar.value.has_value());
     EXPECT_TRUE(custom_scalar.value->value == "alice");
+
+    struct CustomVectorResult {
+        // constexpr CustomVectorResult() = default;
+        // constexpr ~CustomVectorResult() = default;
+
+        std::vector<std::string> values;
+
+        std::optional<std::string_view> into(const std::vector<std::string_view>& input) {
+            values.assign(input.begin(), input.end());
+            return std::nullopt;
+        }
+    };
 
     deco::decl::VectorOption<CustomVectorResult> custom_vector{};
     auto custom_vector_ok = custom_vector.into(make_parsed_arg("--tags", {"x", "y"}));
