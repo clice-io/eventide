@@ -90,6 +90,8 @@ struct DecoFields {
     bool required = true;
     // options in the same category (same Category object address) must be all set or all unset
     CategoryRef category = default_category;
+
+    constexpr DecoFields() = default;
 };
 
 struct CommonOptionFields : DecoFields {
@@ -142,6 +144,8 @@ struct ConfigFields {
         Next = 2,  // just make sense to next
     };
     Type type;
+
+    constexpr ConfigFields() = default;
 };
 
 struct NamedOptionFields : CommonOptionFields {
@@ -151,28 +155,34 @@ struct NamedOptionFields : CommonOptionFields {
 
 struct InputFields : CommonOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Input;
+    constexpr InputFields() = default;
 };
 
 struct PackFields : CommonOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::TrailingInput;
+    constexpr PackFields() = default;
 };
 
 struct FlagFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Flag;
+    constexpr FlagFields() = default;
 };
 
 struct KVFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::KV;
     KVStyle style = KVStyle::Separate;
+    constexpr KVFields() = default;
 };
 
 struct CommaJoinedFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::CommaJoined;
+    constexpr CommaJoinedFields() = default;
 };
 
 struct MultiFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Multi;
     unsigned arg_num = 1;
+    constexpr MultiFields() = default;
 };
 
 struct DecoOptionBase {
@@ -280,14 +290,14 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         return "unsupported floating-point type: long double";
     } else if constexpr(std::floating_point<ResTy>) {
         if constexpr(requires(const char* begin, const char* end, ResTy& value) {
-                         { std::from_chars(begin, end, value, std::chars_format::general) } ->
-                             std::same_as<std::from_chars_result>;
+                         {
+                             std::from_chars(begin, end, value, std::chars_format::general)
+                         } -> std::same_as<std::from_chars_result>;
                      }) {
             ResTy parsed{};
             const auto* begin = text.data();
             const auto* end = text.data() + text.size();
-            const auto [ptr, ec] =
-                std::from_chars(begin, end, parsed, std::chars_format::general);
+            const auto [ptr, ec] = std::from_chars(begin, end, parsed, std::chars_format::general);
             if(ec == std::errc::result_out_of_range) {
                 return "floating-point value out of range: " + std::string(text);
             }
