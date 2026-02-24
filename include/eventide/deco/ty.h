@@ -11,7 +11,8 @@ template <typename T>
 using base_ty = std::remove_cvref_t<T>;
 
 template <typename T>
-concept is_deco_field = std::is_base_of_v<decl::DecoFields, base_ty<T>>;
+concept is_deco_field = std::is_base_of_v<decl::DecoFields, base_ty<T>> ||
+                        std::is_base_of_v<decl::ConfigFields, base_ty<T>>;
 
 template <typename T>
 concept is_config_field = std::is_base_of_v<decl::ConfigFields, base_ty<T>>;

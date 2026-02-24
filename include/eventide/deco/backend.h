@@ -21,9 +21,9 @@
 namespace deco::detail {
 
 struct ParsedNamedOption {
-    std::span<const std::string_view> prefixes_ = backend::pfx_none;
-    std::string_view prefix_;
-    std::string_view name_;
+    std::span<const std::string_view> prefixes = backend::pfx_none;
+    std::string_view prefix;
+    std::string_view name;
 };
 
 constexpr auto parse_named_option(std::string_view full_name) {
@@ -51,13 +51,13 @@ constexpr auto parse_named_option(std::string_view full_name) {
 template <bool counting, std::size_t N = 0>
 class MemPool {
     using pool_type = std::conditional_t<counting, std::vector<char>, std::array<char, N>>;
-    pool_type pool_{};
-    std::size_t offset_ = 0;
+    pool_type pool{};
+    std::size_t offset = 0;
 
 public:
     constexpr explicit MemPool(std::size_t reserve_bytes = 0) {
         if constexpr(counting) {
-            pool_.reserve(reserve_bytes);
+            pool.reserve(reserve_bytes);
         } else {
             (void)reserve_bytes;
         }
@@ -65,51 +65,51 @@ public:
 
     constexpr std::string_view add(std::string_view str) {
         if constexpr(counting) {
-            offset_ += str.size() + 1;
+            offset += str.size() + 1;
             return str;
         } else {
-            if(offset_ + str.size() + 1 > N) {
+            if(offset + str.size() + 1 > N) {
                 throw "String pool overflow";
             }
-            std::copy(str.begin(), str.end(), pool_.begin() + offset_);
-            pool_[offset_ + str.size()] = '\0';
-            std::string_view result(pool_.data() + offset_, str.size());
-            offset_ += str.size() + 1;
+            std::copy(str.begin(), str.end(), pool.begin() + offset);
+            pool[offset + str.size()] = '\0';
+            std::string_view result(pool.data() + offset, str.size());
+            offset += str.size() + 1;
             return result;
         }
     }
 
     constexpr std::string_view add_replace(std::string_view str, char old_char, char new_char) {
         if constexpr(counting) {
-            offset_ += str.size() + 1;
+            offset += str.size() + 1;
             return str;
         } else {
-            if(offset_ + str.size() + 1 > N) {
+            if(offset + str.size() + 1 > N) {
                 throw "String pool overflow";
             }
             for(std::size_t i = 0; i < str.size(); ++i) {
-                pool_[offset_ + i] = (str[i] == old_char) ? new_char : str[i];
+                pool[offset + i] = (str[i] == old_char) ? new_char : str[i];
             }
-            pool_[offset_ + str.size()] = '\0';
-            std::string_view result(pool_.data() + offset_, str.size());
-            offset_ += str.size() + 1;
+            pool[offset + str.size()] = '\0';
+            std::string_view result(pool.data() + offset, str.size());
+            offset += str.size() + 1;
             return result;
         }
     }
 
     constexpr std::string_view add(std::string_view str1, std::string_view str2) {
         if constexpr(counting) {
-            offset_ += str1.size() + str2.size() + 1;
+            offset += str1.size() + str2.size() + 1;
             return str1;
         } else {
-            if(offset_ + str1.size() + str2.size() + 1 > N) {
+            if(offset + str1.size() + str2.size() + 1 > N) {
                 throw "String pool overflow";
             }
-            std::copy(str1.begin(), str1.end(), pool_.begin() + offset_);
-            std::copy(str2.begin(), str2.end(), pool_.begin() + offset_ + str1.size());
-            pool_[offset_ + str1.size() + str2.size()] = '\0';
-            std::string_view result(pool_.data() + offset_, str1.size() + str2.size());
-            offset_ += str1.size() + str2.size() + 1;
+            std::copy(str1.begin(), str1.end(), pool.begin() + offset);
+            std::copy(str2.begin(), str2.end(), pool.begin() + offset + str1.size());
+            pool[offset + str1.size() + str2.size()] = '\0';
+            std::string_view result(pool.data() + offset, str1.size() + str2.size());
+            offset += str1.size() + str2.size() + 1;
             return result;
         }
     }
@@ -124,14 +124,14 @@ public:
     }
 
     constexpr std::size_t size() const {
-        return offset_;
+        return offset;
     }
 };
 
 struct BuildStats {
-    std::size_t opt_count_ = 0;
-    std::size_t strpool_bytes_ = 0;
-    bool has_trailing_pack_ = false;
+    std::size_t optCount = 0;
+    std::size_t strPoolBytes = 0;
+    bool hasTrailingPack = false;
 };
 
 template <typename RootTy, bool counting, std::size_t OptN = 0, std::size_t StrN = 0>
@@ -150,23 +150,23 @@ private:
                                                  std::array<const decl::Category*, OptN + 1>>;
 
     struct config_state {
-        decl::ConfigFields cfg_{};
-        std::size_t level_ = 0;
+        decl::ConfigFields cfg{};
+        std::size_t level = 0;
     };
 
     // Keep a dummy at index 0 so item.id can be used as direct index.
-    pool_type pool_{};
-    MemPool<counting, StrN> str_pool_;
-    id_map_type id_map_{};
-    category_map_type category_map_{};
+    pool_type pool{};
+    MemPool<counting, StrN> strPool;
+    id_map_type idMap{};
+    category_map_type categoryMap{};
 
-    std::size_t offset_ = 0;
-    bool has_input_slot_ = false;
-    bool has_trailing_slot_ = false;
-    bool has_trailing_pack_ = false;
-    unsigned input_option_id_ = 0;
-    accessor_fn trailing_accessor_ = nullptr;
-    const decl::Category* trailing_category_ = nullptr;
+    std::size_t offset = 0;
+    bool hasInputSlot = false;
+    bool hasTrailingSlot = false;
+    bool hasTrailingPack = false;
+    unsigned inputOptionId = 0;
+    accessor_fn trailingAccessor = nullptr;
+    const decl::Category* trailingCategory = nullptr;
 
     constexpr static auto make_default_item(unsigned id) {
         return info_item::unaliased_one(backend::pfx_none,
@@ -179,7 +179,7 @@ private:
     }
 
     constexpr auto& item_by_id(unsigned id) {
-        return pool_[id];
+        return pool[id];
     }
 
     template <typename ObjTy, std::size_t I>
@@ -209,40 +209,40 @@ private:
 
     constexpr auto& new_item(accessor_fn mapped_accessor = nullptr) {
         if constexpr(counting) {
-            const auto item_id = static_cast<unsigned>(pool_.size());
-            pool_.push_back(make_default_item(item_id));
-            auto& item = pool_.back();
+            const auto item_id = static_cast<unsigned>(pool.size());
+            pool.push_back(make_default_item(item_id));
+            auto& item = pool.back();
             item.id = item_id;
-            id_map_.push_back(mapped_accessor);
-            category_map_.push_back(nullptr);
+            idMap.push_back(mapped_accessor);
+            categoryMap.push_back(nullptr);
             return item;
         } else {
-            if(offset_ + 1 >= pool_.size()) {
+            if(offset + 1 >= pool.size()) {
                 throw "Option pool overflow";
             }
-            ++offset_;
-            const auto item_id = static_cast<unsigned>(offset_);
-            pool_[item_id] = make_default_item(item_id);
-            pool_[item_id].id = item_id;
-            id_map_[item_id] = mapped_accessor;
-            category_map_[item_id] = nullptr;
-            return pool_[item_id];
+            ++offset;
+            const auto item_id = static_cast<unsigned>(offset);
+            pool[item_id] = make_default_item(item_id);
+            pool[item_id].id = item_id;
+            idMap[item_id] = mapped_accessor;
+            categoryMap[item_id] = nullptr;
+            return pool[item_id];
         }
     }
 
     constexpr void set_category_for_item(unsigned item_id, const decl::Category* category) {
-        category_map_[item_id] = category;
+        categoryMap[item_id] = category;
     }
 
     constexpr static void config_push(std::vector<config_state>& config_stack,
                                       const decl::ConfigFields& cfg,
                                       std::size_t level) {
-        config_stack.push_back(config_state{.cfg_ = cfg, .level_ = level});
+        config_stack.push_back(config_state{.cfg = cfg, .level = level});
     }
 
     constexpr static void config_pop_nearest_start(std::vector<config_state>& config_stack) {
         for(std::size_t i = config_stack.size(); i > 0; --i) {
-            if(config_stack[i - 1].cfg_.type == decl::ConfigFields::Type::Start) {
+            if(config_stack[i - 1].cfg.type == decl::ConfigFields::Type::Start) {
                 config_stack.resize(i - 1);
                 return;
             }
@@ -255,8 +255,8 @@ private:
         config_stack.erase(std::remove_if(config_stack.begin(),
                                           config_stack.end(),
                                           [level](const config_state& item) {
-                                              return item.level_ == level &&
-                                                     item.cfg_.type ==
+                                              return item.level == level &&
+                                                     item.cfg.type ==
                                                          decl::ConfigFields::Type::Next;
                                           }),
                            config_stack.end());
@@ -276,7 +276,7 @@ private:
     constexpr static void apply_current_config(OptTy& opt,
                                                const std::vector<config_state>& config_stack) {
         for(const auto& cfg_state: config_stack) {
-            const auto& cfg = cfg_state.cfg_;
+            const auto& cfg = cfg_state.cfg;
             if(cfg.required.is_overridden()) {
                 opt.required = cfg.required.get();
             }
@@ -339,10 +339,10 @@ private:
 
     constexpr auto& set_common_options(info_item& item, const decl::CommonOptionFields& fields) {
         if(!fields.help.empty()) {
-            item.help_text = str_pool_.add_c_str(fields.help);
+            item.help_text = strPool.add_c_str(fields.help);
         }
         if(!fields.meta_var.empty()) {
-            item.meta_var = str_pool_.add_c_str(fields.meta_var);
+            item.meta_var = strPool.add_c_str(fields.meta_var);
         }
         return item;
     }
@@ -356,18 +356,18 @@ private:
 
         auto set_prefixed_name = [this](info_item& target, std::string_view full_name) {
             auto parsed = parse_named_option(full_name);
-            target._prefixes = parsed.prefixes_;
-            target._prefixed_name = str_pool_.add(parsed.prefix_, parsed.name_);
+            target._prefixes = parsed.prefixes;
+            target._prefixed_name = strPool.add(parsed.prefix, parsed.name);
         };
 
         if(fields.names.empty()) {
-            auto normalized_name = str_pool_.add_replace(field_name, '_', '-');
+            auto normalized_name = strPool.add_replace(field_name, '_', '-');
             if(normalized_name.size() == 1) {
                 item._prefixes = backend::pfx_dash;
-                item._prefixed_name = str_pool_.add("-", normalized_name);
+                item._prefixed_name = strPool.add("-", normalized_name);
             } else {
                 item._prefixes = backend::pfx_double;
-                item._prefixed_name = str_pool_.add("--", normalized_name);
+                item._prefixed_name = strPool.add("--", normalized_name);
             }
             set_common_options(item, fields);
             set_category_for_item(item.id, category);
@@ -394,36 +394,36 @@ private:
 
     constexpr void add_input_option(const decl::CommonOptionFields& cfg,
                                     accessor_fn mapped_accessor) {
-        if(has_input_slot_) {
+        if(hasInputSlot) {
             throw "Only one DecoInput can be declared";
         }
-        has_input_slot_ = true;
-        if(input_option_id_ == 0) {
+        hasInputSlot = true;
+        if(inputOptionId == 0) {
             auto& item = new_item(mapped_accessor);
             item = info_item::input(item.id);
-            input_option_id_ = item.id;
+            inputOptionId = item.id;
         }
-        id_map_[input_option_id_] = mapped_accessor;
-        set_common_options(item_by_id(input_option_id_), cfg);
-        set_category_for_item(input_option_id_, cfg.category.ptr());
+        idMap[inputOptionId] = mapped_accessor;
+        set_common_options(item_by_id(inputOptionId), cfg);
+        set_category_for_item(inputOptionId, cfg.category.ptr());
     }
 
     constexpr void add_trailing_option(const decl::CommonOptionFields& cfg,
                                        accessor_fn mapped_accessor) {
-        if(has_trailing_slot_) {
+        if(hasTrailingSlot) {
             throw "Only one DecoPack can be declared";
         }
-        has_trailing_slot_ = true;
-        has_trailing_pack_ = true;
-        trailing_accessor_ = mapped_accessor;
-        trailing_category_ = cfg.category.ptr();
+        hasTrailingSlot = true;
+        hasTrailingPack = true;
+        trailingAccessor = mapped_accessor;
+        trailingCategory = cfg.category.ptr();
 
         // The backend only has one input id slot. If trailing appears first, reserve that slot
         // now so parse_args can still emit a valid input option id.
-        if(input_option_id_ == 0) {
+        if(inputOptionId == 0) {
             auto& item = new_item(mapped_accessor);
             item = info_item::input(item.id);
-            input_option_id_ = item.id;
+            inputOptionId = item.id;
             set_common_options(item, cfg);
             set_category_for_item(item.id, cfg.category.ptr());
         }
@@ -485,32 +485,32 @@ public:
     }
 
     constexpr bool has_input_option() const {
-        return has_input_slot_;
+        return hasInputSlot;
     }
 
     constexpr bool has_trailing_option() const {
-        return has_trailing_slot_;
+        return hasTrailingSlot;
     }
 
-    constexpr explicit OptBuilder(std::size_t reserve_bytes = 0) : str_pool_(reserve_bytes) {
+    constexpr explicit OptBuilder(std::size_t reserve_bytes = 0) : strPool(reserve_bytes) {
         if constexpr(counting) {
-            pool_.reserve(16);
-            id_map_.reserve(16);
-            category_map_.reserve(16);
+            pool.reserve(16);
+            idMap.reserve(16);
+            categoryMap.reserve(16);
         } else {
-            id_map_.fill(nullptr);
-            category_map_.fill(nullptr);
+            idMap.fill(nullptr);
+            categoryMap.fill(nullptr);
         }
 
         // Dummy item: keeps id and index aligned (id 0 => index 0).
         if constexpr(counting) {
-            pool_.push_back(make_default_item(0));
-            id_map_.push_back(nullptr);
-            category_map_.push_back(nullptr);
+            pool.push_back(make_default_item(0));
+            idMap.push_back(nullptr);
+            categoryMap.push_back(nullptr);
         } else {
-            pool_[0] = make_default_item(0);
-            id_map_[0] = nullptr;
-            category_map_[0] = nullptr;
+            pool[0] = make_default_item(0);
+            idMap[0] = nullptr;
+            categoryMap[0] = nullptr;
         }
 
         auto& unknown = new_item(nullptr);
@@ -559,38 +559,38 @@ public:
 
     constexpr std::size_t opt_size() const {
         if constexpr(counting) {
-            return pool_.size() - 1;
+            return pool.size() - 1;
         } else {
-            return offset_;
+            return offset;
         }
     }
 
     constexpr std::size_t strpool_size() const {
-        return str_pool_.size();
+        return strPool.size();
     }
 
     constexpr auto option_infos() const {
         if constexpr(counting) {
-            return std::span<const info_item>(pool_.data() + 1, pool_.size() - 1);
+            return std::span<const info_item>(pool.data() + 1, pool.size() - 1);
         } else {
-            return std::span<const info_item>(pool_.data() + 1, offset_);
+            return std::span<const info_item>(pool.data() + 1, offset);
         }
     }
 
     constexpr auto id_map() const {
         if constexpr(counting) {
-            return std::span<const accessor_fn>(id_map_.data(), id_map_.size());
+            return std::span<const accessor_fn>(idMap.data(), idMap.size());
         } else {
-            return std::span<const accessor_fn>(id_map_.data(), offset_ + 1);
+            return std::span<const accessor_fn>(idMap.data(), offset + 1);
         }
     }
 
     constexpr auto category_map() const {
         if constexpr(counting) {
-            return std::span<const decl::Category* const>(category_map_.data(),
-                                                          category_map_.size());
+            return std::span<const decl::Category* const>(categoryMap.data(),
+                                                          categoryMap.size());
         } else {
-            return std::span<const decl::Category* const>(category_map_.data(), offset_ + 1);
+            return std::span<const decl::Category* const>(categoryMap.data(), offset + 1);
         }
     }
 
@@ -602,7 +602,7 @@ public:
         if(id >= id_map().size()) {
             return nullptr;
         }
-        auto accessor = id_map_[id];
+        auto accessor = idMap[id];
         if(accessor == nullptr) {
             return nullptr;
         }
@@ -610,28 +610,28 @@ public:
     }
 
     constexpr bool is_input_argument(const backend::ParsedArgument& arg) const {
-        if(arg.option_id.id() != input_option_id_) {
+        if(arg.option_id.id() != inputOptionId) {
             return false;
         }
         return !is_trailing_argument(arg);
     }
 
     constexpr bool is_trailing_argument(const backend::ParsedArgument& arg) const {
-        if(arg.option_id.id() != input_option_id_) {
+        if(arg.option_id.id() != inputOptionId) {
             return false;
         }
         return arg.get_spelling_view() == "--";
     }
 
     constexpr void* trailing_ptr_of(RootTy& object) const {
-        if(trailing_accessor_ == nullptr) {
+        if(trailingAccessor == nullptr) {
             return nullptr;
         }
-        return trailing_accessor_(static_cast<void*>(&object));
+        return trailingAccessor(static_cast<void*>(&object));
     }
 
     constexpr const decl::Category* trailing_category() const {
-        return trailing_category_;
+        return trailingCategory;
     }
 
     constexpr const decl::Category* category_of(backend::OptSpecifier opt) const {
@@ -642,15 +642,15 @@ public:
         if(id >= category_map().size()) {
             return nullptr;
         }
-        return category_map_[id];
+        return categoryMap[id];
     }
 
     auto make_opt_table() const& {
         return backend::OptTable(option_infos(), false, {}, false)
             .set_tablegen_mode(false)
             .set_input_random_index(true)
-            .set_dash_dash_parsing(has_trailing_pack_)
-            .set_dash_dash_as_single_pack(has_trailing_pack_)
+            .set_dash_dash_parsing(hasTrailingPack)
+            .set_dash_dash_as_single_pack(hasTrailingPack)
             .build();
     }
 
@@ -659,9 +659,9 @@ public:
     constexpr BuildStats finish() const {
         static_assert(counting, "finish() is only for counting builders");
         return BuildStats{
-            .opt_count_ = pool_.size() - 1,
-            .strpool_bytes_ = str_pool_.size(),
-            .has_trailing_pack_ = has_trailing_pack_,
+            .optCount = pool.size() - 1,
+            .strPoolBytes = strPool.size(),
+            .hasTrailingPack = hasTrailingPack,
         };
     }
 };
@@ -676,8 +676,8 @@ consteval auto build_stats() {
 template <typename OptDeco>
 struct BuildStorage {
     inline static constexpr BuildStats stats = build_stats<OptDeco>();
-    using builder_t = OptBuilder<OptDeco, false, stats.opt_count_, stats.strpool_bytes_>;
-    inline static constexpr builder_t value{std::in_place, stats.strpool_bytes_};
+    using builder_t = OptBuilder<OptDeco, false, stats.optCount, stats.strPoolBytes>;
+    inline static constexpr builder_t value{std::in_place, stats.strPoolBytes};
 };
 
 template <typename OptDeco>

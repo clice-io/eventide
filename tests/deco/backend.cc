@@ -9,52 +9,52 @@
 
 namespace {
 
-constexpr deco::decl::Category k_shared_category = {
+constexpr deco::decl::Category sharedCategory = {
     .exclusive = false,
     .name = "shared",
     .description = "all nested output options must be set together",
 };
 
-constexpr deco::decl::Category k_version_category = {
+constexpr deco::decl::Category versionCategory = {
     .exclusive = true,
     .name = "version",
     .description = "version-only mode",
 };
 
-constexpr deco::decl::Category k_request_category = {
+constexpr deco::decl::Category requestCategory = {
     .exclusive = true,
     .name = "request",
     .description = "request-only mode",
 };
 
-constexpr deco::decl::Category k_top_category = {
+constexpr deco::decl::Category topCategory = {
     .exclusive = false,
     .name = "top",
     .description = "top config group",
 };
 
-constexpr deco::decl::Category k_inner_category = {
+constexpr deco::decl::Category innerCategory = {
     .exclusive = false,
     .name = "inner",
     .description = "nested config group",
 };
 
-constexpr deco::decl::Category k_input_category = {
+constexpr deco::decl::Category inputCategory = {
     .exclusive = false,
     .name = "input",
     .description = "single positional input",
 };
 
-constexpr deco::decl::Category k_trailing_category = {
+constexpr deco::decl::Category trailingCategory = {
     .exclusive = false,
     .name = "trailing",
     .description = "arguments after --",
 };
 
 struct NestedOpt {
-    DecoKV(help = "output"; required = false; category = k_shared_category;)<std::string> out_path;
+    DecoKV(help = "output"; required = false; category = sharedCategory;)<std::string> out_path;
     DecoComma(names = {"--T"}; required = false;
-              category = k_shared_category;)<std::vector<std::string>> tags;
+              category = sharedCategory;)<std::vector<std::string>> tags;
 };
 
 struct ParseAllOpt {
@@ -63,7 +63,7 @@ struct ParseAllOpt {
     DecoFlag(
         names = {"-V", "--version"};
         required = false;
-        category = k_version_category;
+        category = versionCategory;
     )
     verbose;
     DecoInput(
@@ -74,16 +74,16 @@ struct ParseAllOpt {
     DecoKVStyled(
         deco::decl::KVStyle::Joined,
         required = false;
-        category = k_shared_category;
+        category = sharedCategory;
     )<int> opt;
     DECO_CFG_END();
 
-    DECO_CFG(category = k_shared_category; required = false;);
+    DECO_CFG(category = sharedCategory; required = false;);
     NestedOpt nested;
     DecoMulti(2, {
         names = {"-P", "--pair"};
         required = false;
-        category = k_shared_category;
+        category = sharedCategory;
         })<std::vector<std::string>>
     pair;
 
@@ -96,13 +96,13 @@ struct ParsePackOpt {
 };
 
 struct InputThenPackOpt {
-    DecoInput(required = false; category = k_input_category;)<std::string> input;
-    DecoPack(required = false; category = k_trailing_category;)<std::vector<std::string>> pack;
+    DecoInput(required = false; category = inputCategory;)<std::string> input;
+    DecoPack(required = false; category = trailingCategory;)<std::vector<std::string>> pack;
 };
 
 struct PackThenInputOpt {
-    DecoPack(required = false; category = k_trailing_category;)<std::vector<std::string>> pack;
-    DecoInput(required = false; category = k_input_category;)<std::string> input;
+    DecoPack(required = false; category = trailingCategory;)<std::vector<std::string>> pack;
+    DecoInput(required = false; category = inputCategory;)<std::string> input;
 };
 
 struct RequiredOpt {
@@ -110,15 +110,15 @@ struct RequiredOpt {
 };
 
 struct DeepCfgInner {
-    DECO_CFG_START(required = false; category = k_inner_category;);
+    DECO_CFG_START(required = false; category = innerCategory;);
     DecoKV()<int> a;
     DECO_CFG_END();
 };
 
 struct DeepCfgOpt {
-    DECO_CFG_START(required = false; category = k_top_category;);
+    DECO_CFG_START(required = false; category = topCategory;);
     DecoKV()<int> top;
-    DECO_CFG_START(required = false; category = k_inner_category;);
+    DECO_CFG_START(required = false; category = innerCategory;);
     DeepCfgInner inner;
     DecoKV()<int> mid;
     DECO_CFG_END();
@@ -132,19 +132,19 @@ struct NextScopedNested {
 };
 
 struct NextOnNestedOpt {
-    DECO_CFG(required = false; category = k_shared_category;);
+    DECO_CFG(required = false; category = sharedCategory;);
     NextScopedNested nested;
     DecoKV(required = false;)<int> tail;
 };
 
 struct ExclusiveCategoryOpt {
-    DecoFlag(required = false; category = k_version_category;) version;
-    DecoFlag(required = false; category = k_shared_category;) shared;
+    DecoFlag(required = false; category = versionCategory;) version;
+    DecoFlag(required = false; category = sharedCategory;) shared;
 };
 
 struct MultiExclusiveCategoryOpt {
-    DecoFlag(required = false; category = k_version_category;) version;
-    DecoFlag(required = false; category = k_request_category;) request;
+    DecoFlag(required = false; category = versionCategory;) version;
+    DecoFlag(required = false; category = requestCategory;) request;
 };
 
 using Parsed = eventide::option::ParsedArgument;
@@ -275,7 +275,7 @@ TEST_CASE(parse_covers_flag_input_kv_comma_multi) {
     EXPECT_TRUE(args[2].values[0] == "a.out");
     EXPECT_TRUE(built.field_ptr_of(args[2].option_id, opt) ==
                 static_cast<void*>(&opt.nested.out_path));
-    EXPECT_TRUE(built.category_of(args[2].option_id) == &k_shared_category);
+    EXPECT_TRUE(built.category_of(args[2].option_id) == &sharedCategory);
 
     EXPECT_TRUE(args[3].get_spelling_view() == "--T");
     EXPECT_TRUE(args[3].values.size() == 2);
@@ -346,11 +346,11 @@ TEST_CASE(parse_input_and_pack_can_coexist) {
     EXPECT_TRUE(args.size() == 2);
     EXPECT_TRUE(!built.is_trailing_argument(args[0]));
     EXPECT_TRUE(built.field_ptr_of(args[0].option_id, opt) == static_cast<void*>(&opt.input));
-    EXPECT_TRUE(built.category_of(args[0].option_id) == &k_input_category);
+    EXPECT_TRUE(built.category_of(args[0].option_id) == &inputCategory);
 
     EXPECT_TRUE(built.is_trailing_argument(args[1]));
     EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
-    EXPECT_TRUE(built.trailing_category() == &k_trailing_category);
+    EXPECT_TRUE(built.trailing_category() == &trailingCategory);
 }
 
 TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
@@ -366,12 +366,12 @@ TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
     EXPECT_TRUE(args.size() == 2);
     EXPECT_TRUE(!built.is_trailing_argument(args[0]));
     EXPECT_TRUE(built.field_ptr_of(args[0].option_id, opt) == static_cast<void*>(&opt.input));
-    EXPECT_TRUE(built.category_of(args[0].option_id) == &k_input_category);
+    EXPECT_TRUE(built.category_of(args[0].option_id) == &inputCategory);
 
     EXPECT_TRUE(built.is_trailing_argument(args[1]));
     EXPECT_TRUE(built.field_ptr_of(args[1].option_id, opt) == static_cast<void*>(&opt.input));
     EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
-    EXPECT_TRUE(built.trailing_category() == &k_trailing_category);
+    EXPECT_TRUE(built.trailing_category() == &trailingCategory);
 }
 
 TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
@@ -401,13 +401,13 @@ TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
         EXPECT_TRUE(category != nullptr);
         const auto spelling = arg.get_spelling_view();
         if(spelling == "--version") {
-            EXPECT_TRUE(category == &k_version_category);
+            EXPECT_TRUE(category == &versionCategory);
             version_count += 1;
         } else if(spelling == "main.cc") {
             EXPECT_TRUE(category == &deco::decl::default_category);
             default_count += 1;
         } else {
-            EXPECT_TRUE(category == &k_shared_category);
+            EXPECT_TRUE(category == &sharedCategory);
             shared_count += 1;
         }
     }
@@ -430,8 +430,8 @@ TEST_CASE(category_map_keeps_alias_category_consistent) {
     if(short_args->size() != 1 || long_args->size() != 1) {
         return;
     }
-    EXPECT_TRUE(built.category_of((*short_args)[0].option_id) == &k_version_category);
-    EXPECT_TRUE(built.category_of((*long_args)[0].option_id) == &k_version_category);
+    EXPECT_TRUE(built.category_of((*short_args)[0].option_id) == &versionCategory);
+    EXPECT_TRUE(built.category_of((*long_args)[0].option_id) == &versionCategory);
 }
 
 TEST_CASE(category_map_supports_deep_nested_cfg_areas) {
@@ -450,10 +450,10 @@ TEST_CASE(category_map_supports_deep_nested_cfg_areas) {
         EXPECT_TRUE(category != nullptr);
         const auto spelling = arg.get_spelling_view();
         if(spelling == "--top" || spelling == "--tail") {
-            EXPECT_TRUE(category == &k_top_category);
+            EXPECT_TRUE(category == &topCategory);
             top_count += 1;
         } else if(spelling == "-a" || spelling == "--mid") {
-            EXPECT_TRUE(category == &k_inner_category);
+            EXPECT_TRUE(category == &innerCategory);
             inner_count += 1;
         }
     }
@@ -472,8 +472,8 @@ TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
     if(parsed_args->size() != 2) {
         return;
     }
-    EXPECT_TRUE(built.category_of((*parsed_args)[0].option_id) == &k_version_category);
-    EXPECT_TRUE(built.category_of((*parsed_args)[1].option_id) == &k_request_category);
+    EXPECT_TRUE(built.category_of((*parsed_args)[0].option_id) == &versionCategory);
+    EXPECT_TRUE(built.category_of((*parsed_args)[1].option_id) == &requestCategory);
 }
 
 TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
@@ -486,7 +486,7 @@ TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
     }
 
     EXPECT_TRUE(!partial_nested_args.value().empty());
-    EXPECT_TRUE(built.category_of(partial_nested_args.value()[0].option_id) == &k_shared_category);
+    EXPECT_TRUE(built.category_of(partial_nested_args.value()[0].option_id) == &sharedCategory);
 
     NextOnNestedOpt default_opt{};
     std::size_t nested_cfg_count = 0;
@@ -496,7 +496,7 @@ TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
                            [&](const auto&, const auto& cfg, std::string_view field_name, auto) {
                                if(field_name == "left" || field_name == "right") {
                                    EXPECT_TRUE(cfg.required == false);
-                                   EXPECT_TRUE(cfg.category.ptr() == &k_shared_category);
+                                   EXPECT_TRUE(cfg.category.ptr() == &sharedCategory);
                                    nested_cfg_count += 1;
                                }
                                if(field_name == "tail") {

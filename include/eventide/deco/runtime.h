@@ -106,6 +106,8 @@ std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
 
         opt_raw_ptr =
             opt_raw_ptr ? opt_raw_ptr : storage.field_ptr_of(raw_parg.option_id, res.options);
+        category = category ? category : storage.category_of(raw_parg.option_id);
+
         decl::DecoOptionBase* opt_accessor = static_cast<decl::DecoOptionBase*>(opt_raw_ptr);
         if(opt_accessor == nullptr) {
             err = {ParseError::Type::Internal,
@@ -118,7 +120,6 @@ std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
             return false;
         }
 
-        category = category ? category : storage.category_of(raw_parg.option_id);
         if(category == nullptr) {
             err = {ParseError::Type::Internal,
                    "no category found for option id " + std::to_string(raw_parg.option_id.id())};
@@ -180,35 +181,35 @@ class Dispatcher {
     using handler_fn_t = runtime_callable_t<void(T value)>;
     using error_fn_t = runtime_callable_t<void(ParseError)>;
 
-    handler_fn_t default_handler_ = [](auto) {
+    handler_fn_t defaultHandler = [](auto) {
         return "nothing we can do with this options";
     };
-    error_fn_t error_handler_ = [](auto err) {
+    error_fn_t errorHandler = [](auto err) {
         std::cerr << err.message << "\n";
     };
-    std::map<const deco::decl::Category*, handler_fn_t> handlers_;
-    std::string_view command_overview_;
+    std::map<const deco::decl::Category*, handler_fn_t> handlers;
+    std::string_view commandOverview;
 
 public:
-    Dispatcher(std::string_view command_overview) : command_overview_(command_overview) {}
+    Dispatcher(std::string_view command_overview) : commandOverview(command_overview) {}
 
     auto& dispatch(const decl::Category& category, handler_fn_t handler) {
-        handlers_[&category] = std::move(handler);
+        handlers[&category] = std::move(handler);
         return *this;
     }
 
     auto& dispatch(handler_fn_t handler) {
-        default_handler_ = std::move(handler);
+        defaultHandler = std::move(handler);
         return *this;
     }
 
     auto& when_err(error_fn_t error_handler) {
-        error_handler_ = std::move(error_handler);
+        errorHandler = std::move(error_handler);
         return *this;
     }
 
     auto& when_err(std::ostream& os) {
-        error_handler_ = [&os](const ParseError& err) {
+        errorHandler = [&os](const ParseError& err) {
             os << err.message << "\n";
         };
         return *this;
@@ -224,7 +225,7 @@ public:
             return true;
         };
         storage.visit_fields(T{}, on_option);
-        os << "usage: " << command_overview_ << "\n\n";
+        os << "usage: " << commandOverview << "\n\n";
         os << "Options:\n";
         if(category_usage_map.size() == 1 &&
            category_usage_map.begin()->first == &decl::default_category) {
@@ -251,15 +252,15 @@ public:
         if(res.has_value()) {
             const auto& matched_categories = res->matched_categories;
             for(auto category: matched_categories) {
-                auto it = handlers_.find(category);
-                if(it != handlers_.end()) {
+                auto it = handlers.find(category);
+                if(it != handlers.end()) {
                     it->second(std::move(res->options));
                     return;
                 }
             }
-            default_handler_(std::move(res->options));
+            defaultHandler(std::move(res->options));
         } else {
-            error_handler_(std::move(res.error()));
+            errorHandler(std::move(res.error()));
         }
     }
 
@@ -279,15 +280,15 @@ class SubCommander {
         handler_fn_t handler;
     };
 
-    error_fn_t error_handler_ = [](const SubCommandError& err) {
+    error_fn_t errorHandler = [](const SubCommandError& err) {
         std::cerr << err.message << "\n";
     };
-    std::optional<handler_fn_t> default_handler_;
-    std::vector<SubCommandHandler> handlers_;
-    std::map<std::string, std::size_t, std::less<>> command_to_handler_;
+    std::optional<handler_fn_t> defaultHandler;
+    std::vector<SubCommandHandler> handlers;
+    std::map<std::string, std::size_t, std::less<>> commandToHandler;
 
-    std::string command_overview_;
-    std::string overview_;
+    std::string commandOverview;
+    std::string overview;
 
     static auto command_of(const decl::SubCommand& subcommand) -> std::string {
         if(subcommand.command.has_value()) {
@@ -306,12 +307,12 @@ class SubCommander {
 
 public:
     SubCommander(std::string_view command_overview, std::string_view overview = {}) :
-        command_overview_(command_overview), overview_(overview) {}
+        commandOverview(command_overview), overview(overview) {}
 
     auto& add(const decl::SubCommand& subcommand, handler_fn_t handler) {
         std::string command = command_of(subcommand);
         if(command.empty()) {
-            error_handler_(
+            errorHandler(
                 {SubCommandError::Type::Internal, "subcommand name/command must not be empty"});
             return *this;
         }
@@ -319,8 +320,8 @@ public:
         std::string name = display_name_of(subcommand, command);
         std::string description(subcommand.description);
 
-        if(auto it = command_to_handler_.find(command); it != command_to_handler_.end()) {
-            auto& target = handlers_[it->second];
+        if(auto it = commandToHandler.find(command); it != commandToHandler.end()) {
+            auto& target = handlers[it->second];
             target.name = std::move(name);
             target.description = std::move(description);
             target.command = std::move(command);
@@ -328,8 +329,8 @@ public:
             return *this;
         }
 
-        command_to_handler_[command] = handlers_.size();
-        handlers_.push_back({
+        commandToHandler[command] = handlers.size();
+        handlers.push_back({
             .name = std::move(name),
             .description = std::move(description),
             .command = std::move(command),
@@ -352,17 +353,17 @@ public:
     }
 
     auto& add(handler_fn_t default_handler) {
-        default_handler_ = std::move(default_handler);
+        defaultHandler = std::move(default_handler);
         return *this;
     }
 
     auto& when_err(error_fn_t error_handler) {
-        error_handler_ = std::move(error_handler);
+        errorHandler = std::move(error_handler);
         return *this;
     }
 
     auto& when_err(std::ostream& os) {
-        error_handler_ = [&os](const SubCommandError& err) {
+        errorHandler = [&os](const SubCommandError& err) {
             os << err.message << "\n";
         };
         return *this;
@@ -370,30 +371,30 @@ public:
 
     template <typename Os>
     void usage(Os& os) const {
-        if(!overview_.empty()) {
-            os << overview_ << "\n\n";
+        if(!overview.empty()) {
+            os << overview << "\n\n";
         }
 
-        if(default_handler_.has_value()) {
-            os << "usage: " << command_overview_ << "\n";
-            if(!handlers_.empty()) {
+        if(defaultHandler.has_value()) {
+            os << "usage: " << commandOverview << "\n";
+            if(!handlers.empty()) {
                 os << "\n";
             }
         }
 
-        if(handlers_.empty()) {
+        if(handlers.empty()) {
             return;
         }
 
         std::size_t max_name_len = 0;
-        for(const auto& it: handlers_) {
+        for(const auto& it: handlers) {
             if(it.name.size() > max_name_len) {
                 max_name_len = it.name.size();
             }
         }
 
         os << "Subcommands:\n";
-        for(const auto& it: handlers_) {
+        for(const auto& it: handlers) {
             os << "  " << it.name;
             if(!it.description.empty()) {
                 os << std::string(max_name_len - it.name.size() + 2, ' ') << it.description;
@@ -407,23 +408,23 @@ public:
 
     void parse(std::span<std::string> argv) {
         if(!argv.empty()) {
-            if(auto it = command_to_handler_.find(argv.front()); it != command_to_handler_.end()) {
-                handlers_[it->second].handler(argv.subspan(1));
+            if(auto it = commandToHandler.find(argv.front()); it != commandToHandler.end()) {
+                handlers[it->second].handler(argv.subspan(1));
                 return;
             }
         }
 
-        if(default_handler_.has_value()) {
-            (*default_handler_)(argv);
+        if(defaultHandler.has_value()) {
+            (*defaultHandler)(argv);
             return;
         }
 
         if(argv.empty()) {
-            error_handler_({SubCommandError::Type::MissingSubCommand, "subcommand is required"});
+            errorHandler({SubCommandError::Type::MissingSubCommand, "subcommand is required"});
             return;
         }
 
-        error_handler_({SubCommandError::Type::UnknownSubCommand,
+        errorHandler({SubCommandError::Type::UnknownSubCommand,
                         std::format("unknown subcommand '{}'", argv.front())});
     }
 

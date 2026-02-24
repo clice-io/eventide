@@ -1,9 +1,6 @@
 #pragma once
-#include <cerrno>
 #include <charconv>
 #include <concepts>
-#include <cstdlib>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -102,36 +99,36 @@ struct CommonOptionFields : DecoFields {
 
 template <typename Ty>
 struct ConfigOverrideField {
-    Ty value_{};
-    bool overridden_ = false;
+    Ty value{};
+    bool overridden = false;
 
     constexpr ConfigOverrideField() = default;
 
-    constexpr ConfigOverrideField(const Ty& value) : value_(value) {}
+    constexpr ConfigOverrideField(const Ty& value) : value(value) {}
 
     template <typename U>
         requires std::constructible_from<Ty, U>
-    constexpr ConfigOverrideField(U&& value) : value_(Ty(std::forward<U>(value))) {}
+    constexpr ConfigOverrideField(U&& value) : value(Ty(std::forward<U>(value))) {}
 
     template <typename U>
         requires std::constructible_from<Ty, U>
     constexpr auto operator=(U&& value) -> ConfigOverrideField& {
-        value_ = Ty(std::forward<U>(value));
-        overridden_ = true;
+        this->value = Ty(std::forward<U>(value));
+        this->overridden = true;
         return *this;
     }
 
     constexpr auto is_overridden() const -> bool {
-        return overridden_;
+        return overridden;
     }
 
     constexpr auto get() const -> const Ty& {
-        return value_;
+        return value;
     }
 };
 
-// just to override the default value in this area
-struct ConfigFields : CommonOptionFields {
+// Config fields are override directives, not real option fields.
+struct ConfigFields {
     ConfigOverrideField<bool> required = true;
     ConfigOverrideField<CategoryRef> category = default_category;
     ConfigOverrideField<std::string_view> help = "no provided";
@@ -277,19 +274,20 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         }
         out = parsed;
         return std::nullopt;
+    } else if constexpr(std::same_as<ResTy, long double>) {
+        return "unsupported floating-point type: long double";
     } else if constexpr(std::floating_point<ResTy>) {
-        std::string copy(text);
-        char* parse_end = nullptr;
-        errno = 0;
-        const auto parsed = std::strtold(copy.c_str(), &parse_end);
-        if(parse_end != copy.c_str() + copy.size() || errno == ERANGE) {
-            return "invalid floating-point value: " + std::string(text);
-        }
-        if(parsed < static_cast<long double>(std::numeric_limits<ResTy>::lowest()) ||
-           parsed > static_cast<long double>(std::numeric_limits<ResTy>::max())) {
+        ResTy parsed{};
+        const auto* begin = text.data();
+        const auto* end = text.data() + text.size();
+        const auto [ptr, ec] = std::from_chars(begin, end, parsed, std::chars_format::general);
+        if(ec == std::errc::result_out_of_range) {
             return "floating-point value out of range: " + std::string(text);
         }
-        out = static_cast<ResTy>(parsed);
+        if(ec != std::errc() || ptr != end) {
+            return "invalid floating-point value: " + std::string(text);
+        }
+        out = parsed;
         return std::nullopt;
     } else if constexpr(trait::StringResultType<ResTy>) {
         out = ResTy(text);

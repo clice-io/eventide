@@ -17,13 +17,13 @@ static_assert(deco::trait::VectorResultType<std::vector<int>>);
 static_assert(deco::trait::VectorResultType<std::vector<std::string>>);
 static_assert(!deco::trait::VectorResultType<std::span<const std::string>>);
 
-constexpr deco::decl::Category k_verbose_category = {
+constexpr deco::decl::Category verboseCategory = {
     .exclusive = true,
     .name = "verbose",
     .description = "verbose-only mode",
 };
 
-constexpr deco::decl::Category k_pack_category = {
+constexpr deco::decl::Category packCategory = {
     .exclusive = false,
     .name = "pack",
     .description = "pack option group",
@@ -60,17 +60,17 @@ struct DeclOpt {
     DecoFlag({
         help = "flag";
         required = false;
-        category = k_verbose_category;
+        category = verboseCategory;
     }) verbose = true;
 
     DECO_CFG(required = true);
     DecoInput(help = "input")<int> input = 42;
 
-    DecoPack(help = "pack"; category = k_pack_category;)<std::vector<std::string>> pack =
-        std::vector<std::string> {
-            "a",
-            "b"
-        };
+    DecoPack(help = "pack";
+             category = packCategory;)<std::vector<std::string>> pack = std::vector<std::string> {
+        "a",
+        "b"
+    };
 
     DecoKVStyled(deco::decl::KVStyle::Joined, help = "joined-kv";)<int> joined = 7;
     DecoKV(help = "separate-kv";)<std::string> path = "entry.js";
@@ -98,7 +98,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     EXPECT_TRUE(verbose_cfg.names.empty());
     EXPECT_TRUE(verbose_cfg.required == false);
     EXPECT_TRUE(verbose_cfg.category->exclusive == true);
-    EXPECT_TRUE(verbose_cfg.category.ptr() == &k_verbose_category);
+    EXPECT_TRUE(verbose_cfg.category.ptr() == &verboseCategory);
     EXPECT_TRUE(opt.verbose.value.has_value());
     EXPECT_TRUE(opt.verbose.value.value() == true);
     opt.verbose = false;
@@ -116,7 +116,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     EXPECT_TRUE(opt.pack.value.value().size() == 2);
     EXPECT_TRUE(opt.pack.value.value()[0] == "a");
     EXPECT_TRUE(opt.pack.value.value()[1] == "b");
-    EXPECT_TRUE(pack_cfg.category.ptr() == &k_pack_category);
+    EXPECT_TRUE(pack_cfg.category.ptr() == &packCategory);
     opt.pack = std::vector<std::string>{"tail"};
     EXPECT_TRUE(opt.pack.value.value().size() == 1);
     EXPECT_TRUE(opt.pack.value.value()[0] == "tail");
@@ -188,6 +188,19 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(input.value.value() == 123);
     auto input_err = input.into(make_parsed_arg("bad-int"));
     EXPECT_TRUE(input_err.has_value());
+
+    deco::decl::ScalarOption<float> float_opt{};
+    auto float_ok = float_opt.into(make_parsed_arg("--ratio", {"3.14"}));
+    EXPECT_TRUE(!float_ok.has_value());
+    EXPECT_TRUE(float_opt.value.has_value());
+    EXPECT_TRUE(*float_opt.value > 3.13f && *float_opt.value < 3.15f);
+    auto float_err = float_opt.into(make_parsed_arg("--ratio", {"3.14x"}));
+    EXPECT_TRUE(float_err.has_value());
+
+    deco::decl::ScalarOption<double> double_opt{};
+    auto double_err = double_opt.into(make_parsed_arg("--precise", {"3.14"}));
+    EXPECT_FALSE(double_err.has_value());
+    EXPECT_TRUE(double_opt.value.value() == 3.14);
 
     deco::decl::VectorOption<std::vector<int>> vector_opt{};
     auto vector_ok = vector_opt.into(make_parsed_arg("-P", {"7", "8"}));

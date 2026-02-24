@@ -16,10 +16,10 @@
 namespace deco::desc {
 namespace detail {
 
-constexpr std::string_view k_default_help_text = "not provided";
+constexpr std::string_view defaultHelpText = "not provided";
 
 constexpr inline bool has_help_text(std::string_view help_text) {
-    return !help_text.empty() && help_text != k_default_help_text;
+    return !help_text.empty() && help_text != defaultHelpText;
 }
 
 inline std::string category_desc(const decl::Category& category) {

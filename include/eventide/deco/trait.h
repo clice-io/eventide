@@ -60,7 +60,9 @@ concept FlagResultType =
 template <typename Ty>
 concept PrimitiveScalarResultType =
     std::same_as<BaseResultTy<Ty>, bool> || std::integral<BaseResultTy<Ty>> ||
-    std::floating_point<BaseResultTy<Ty>> || StringResultType<Ty>;
+    (std::floating_point<BaseResultTy<Ty>> &&
+     !std::is_same_v<std::remove_cvref_t<Ty>, long double>) ||
+    StringResultType<Ty>;
 
 template <typename Ty>
 concept ScalarResultType = PrimitiveScalarResultType<Ty> || CustomStringResultTy<Ty>;
