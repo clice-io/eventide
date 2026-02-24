@@ -234,7 +234,7 @@ public:
             }
         } else {
             for(const auto& [category, usages]: category_usage_map) {
-                os << "Group" << desc::detail::category_desc(*category);
+                os << "Group " << desc::detail::category_desc(*category);
                 if(category->exclusive) {
                     os << ", exclusive with other groups";
                 }
