@@ -5,6 +5,13 @@ set_allowedplats("windows", "linux", "macosx")
 
 option("dev", { default = true })
 option("test", { default = true })
+option("async", { default = true })
+option("ztest", { default = true })
+option("serde", { default = true })
+option("option", { default = true })
+option("deco", { default = true })
+option("serde_simdjson", { default = false })
+option("serde_flatbuffers", { default = false })
 
 if has_config("dev") then
 	-- Don't fetch system package
@@ -47,38 +54,178 @@ end
 
 set_languages("c++23")
 
-add_requires("libuv v1.52.0", "cpptrace v1.0.4")
+if has_config("async") then
+	add_requires("libuv v1.52.0")
+end
+if has_config("ztest") then
+	add_requires("cpptrace v1.0.4")
+end
+if has_config("serde") and has_config("serde_simdjson") then
+	add_requires("simdjson v4.2.4")
+end
+if has_config("serde") and has_config("serde_flatbuffers") then
+	add_requires("flatbuffers v25.2.10")
+end
 if has_config("test") and is_plat("windows") then
 	add_requires("unistd_h")
 end
 
-target("ztest", function()
-	set_kind("$(kind)")
-	add_files("src/zest/*.cpp")
+target("common", function()
+	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/common/*.h)", "include/(eventide/zest/*.h)")
-	add_cxflags("cl::/Zc:preprocessor", { public = true })
-	add_packages("cpptrace", { public = true })
+	add_headerfiles("include/(eventide/common/*.h)")
 end)
 
-target("eventide", function()
-	set_kind("$(kind)")
-	add_files("src/async/*.cpp")
+target("reflection", function()
+	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/async/*.h)")
-	add_packages("libuv")
+	add_headerfiles("include/(eventide/reflection/*.h)")
+	add_deps("common")
 end)
 
-target("unit_tests", function()
-	set_default(false)
-	set_kind("binary")
-	add_files("tests/main.cpp", "tests/eventide/**.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
-	add_includedirs("include")
-	add_deps("ztest", "eventide")
+if has_config("serde") and has_config("serde_simdjson") then
+	target("serde_json", function()
+		set_kind("headeronly")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/serde/simdjson/*.h)")
+		add_deps("reflection")
+		add_packages("simdjson", { public = true })
+	end)
+end
 
-	if has_config("test") and is_plat("windows") then
-		add_packages("unistd_h")
-	end
+if has_config("serde") and has_config("serde_flatbuffers") then
+	target("serde_flatbuffers", function()
+		set_kind("$(kind)")
+		add_files("src/serde/flatbuffers/flex/*.cpp")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/serde/flatbuffers/*.h)",
+		                "include/(eventide/serde/flatbuffers/flex/*.h)",
+		                "include/(eventide/serde/flatbuffers/schema/*.h)")
+		add_deps("reflection")
+		add_packages("flatbuffers", { public = true })
+	end)
+end
 
-	add_tests("default")
-end)
+if has_config("serde") then
+	target("serde", function()
+		set_kind("headeronly")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/serde/*.h)", "include/(eventide/serde/attrs/*.h)")
+		add_deps("common", "reflection")
+		if has_config("serde_simdjson") then
+			add_deps("serde_json")
+		end
+		if has_config("serde_flatbuffers") then
+			add_deps("serde_flatbuffers")
+		end
+	end)
+end
+
+if has_config("ztest") then
+	target("ztest", function()
+		set_kind("$(kind)")
+		add_files("src/zest/*.cpp")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/zest/*.h)")
+		add_cxflags("cl::/Zc:preprocessor", { public = true })
+		add_deps("common")
+		add_packages("cpptrace", { public = true })
+	end)
+end
+
+if has_config("async") then
+	target("async", function()
+		set_kind("$(kind)")
+		add_files("src/async/*.cpp")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/async/*.h)")
+		add_deps("common")
+		add_packages("libuv")
+	end)
+end
+
+if has_config("option") then
+	target("option", function()
+		set_kind("$(kind)")
+		add_files("src/option/*.cc")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/option/*.h)")
+		add_deps("common")
+	end)
+end
+
+if has_config("deco") and has_config("option") then
+	target("deco", function()
+		set_kind("headeronly")
+		add_includedirs("include", { public = true })
+		add_cxflags("cl::/Zc:preprocessor", { public = true })
+		add_headerfiles("include/(eventide/deco/*.h)")
+		add_deps("option")
+	end)
+end
+
+if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+	target("language", function()
+		set_kind("$(kind)")
+		add_files("src/language/*.cpp")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/language/*.h)")
+		add_deps("async", "serde_json")
+	end)
+end
+
+if has_config("test") and has_config("ztest") then
+	target("unit_tests", function()
+		set_default(false)
+		set_kind("binary")
+		add_files("tests/main.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
+		if has_config("async") then
+			add_files("tests/eventide/**.cpp")
+		end
+		if has_config("option") then
+			add_files("tests/option/**.cpp")
+		end
+		if has_config("deco") and has_config("option") then
+			add_files("tests/deco/**.cc")
+		end
+		if has_config("serde") and has_config("serde_simdjson") then
+			add_files("tests/serde/simdjson/**.cpp")
+		end
+		if has_config("serde") and has_config("serde_flatbuffers") then
+			add_files("tests/serde/flatbuffers/**.cpp")
+		end
+		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+			add_files("tests/language/**.cpp")
+		end
+
+		add_includedirs("include")
+		add_deps("common", "reflection", "ztest")
+		if has_config("async") then
+			add_deps("async")
+		end
+		if has_config("option") then
+			add_deps("option")
+		end
+		if has_config("deco") and has_config("option") then
+			add_deps("deco")
+		end
+		if has_config("serde") then
+			add_deps("serde")
+			if has_config("serde_simdjson") then
+				add_deps("serde_json")
+			end
+			if has_config("serde_flatbuffers") then
+				add_deps("serde_flatbuffers")
+			end
+		end
+		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+			add_deps("language")
+		end
+
+		if has_config("test") and is_plat("windows") then
+			add_packages("unistd_h")
+		end
+
+		add_tests("default")
+	end)
+end

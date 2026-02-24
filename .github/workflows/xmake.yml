@@ -5,22 +5,26 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }} | mode=${{ matrix.mode }} | toolchain=${{ matrix.toolchain }}
+    name: ${{ matrix.target.os }} | mode=${{ matrix.mode }} | toolchain=${{ matrix.target.toolchain }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, ubuntu-24.04, macos-15]
         mode: [debug, release]
-        toolchain: [default]
-        include:
+        target:
           - os: windows-2025
-            mode: debug
-            toolchain: clang-cl
+            toolchain: default
+            config_args: ""
           - os: windows-2025
-            mode: release
             toolchain: clang-cl
+            config_args: "--toolchain=clang-cl"
+          - os: ubuntu-24.04
+            toolchain: default
+            config_args: ""
+          - os: macos-15
+            toolchain: default
+            config_args: "--toolchain=clang"
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.target.os }}
 
     steps:
       - name: Checkout repository
@@ -31,9 +35,9 @@ jobs:
         with:
           xmake-version: "3.0.5"
           actions-cache-folder: ".xmake-cache"
-          actions-cache-key: ${{ matrix.os }}-${{ matrix.mode }}-${{ matrix.toolchain }}
+          actions-cache-key: ${{ matrix.target.os }}-${{ matrix.mode }}-${{ matrix.target.toolchain }}
           package-cache: true
-          package-cache-key: ${{ matrix.os }}-${{ matrix.mode }}-${{ matrix.toolchain }}
+          package-cache-key: ${{ matrix.target.os }}-${{ matrix.mode }}-${{ matrix.target.toolchain }}
 
       - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.3
@@ -43,27 +47,13 @@ jobs:
           cache: true
 
       - name: Configure
-        if: runner.os != 'macOS' && matrix.toolchain == 'default'
         run: >
           xmake config --clean --yes
           --mode=${{ matrix.mode }}
+          ${{ matrix.target.config_args }}
           --dev=y
-
-      - name: Configure (windows clang-cl)
-        if: runner.os == 'Windows' && matrix.toolchain == 'clang-cl'
-        run: >
-          xmake config --clean --yes
-          --mode=${{ matrix.mode }}
-          --toolchain=clang-cl
-          --dev=y
-
-      - name: Configure (macOS)
-        if: runner.os == 'macOS' && matrix.toolchain == 'default'
-        run: >
-          xmake config --clean --yes
-          --mode=${{ matrix.mode }}
-          --toolchain=clang
-          --dev=y
+          --serde_simdjson=y
+          --serde_flatbuffers=y
 
       - name: Build
         run: xmake --all --verbose --diagnosis
