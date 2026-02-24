@@ -132,11 +132,10 @@ struct ParsedArgumentBase {
     std::vector<ValueTy> unaliased_values() const {
         std::vector<ValueTy> vals = this->values;
         if(this->unaliased_addition_values.has_value()) {
-            auto addition_vals = this->unaliased_addition_values.value();
+            const auto& addition_vals = *this->unaliased_addition_values;
             vals.insert(vals.end(), addition_vals.begin(), addition_vals.end());
-            return vals;
         }
-        return this->values;
+        return vals;
     }
 
     std::vector<std::string_view> unaliased_values_view() const {
@@ -145,11 +144,9 @@ struct ParsedArgumentBase {
             vals.emplace_back(std::string_view(v));
         }
         if(this->unaliased_addition_values.has_value()) {
-            auto addition_vals = this->unaliased_addition_values.value();
-            for(const auto& v: addition_vals) {
+            for(const auto& v: *this->unaliased_addition_values) {
                 vals.emplace_back(std::string_view(v));
             }
-            return vals;
         }
         return vals;
     }
