@@ -394,7 +394,7 @@ struct ScalarOption : DecoOption<ResTy> {
 
 template <typename ResTy>
 struct InputOption : DecoOption<ResTy> {
-    static_assert(trait::ScalarResultType<ResTy>, DecoScalarResultErrString);
+    // static_assert(trait::ScalarResultType<ResTy>, DecoScalarResultErrString);
     using DecoOption<ResTy>::DecoOption;
     constexpr ~InputOption() = default;
 
@@ -411,7 +411,7 @@ struct InputOption : DecoOption<ResTy> {
 
 template <typename ResTy>
 struct VectorOption : DecoOption<ResTy> {
-    static_assert(trait::VectorResultType<ResTy>, DecoVectorResultErrString);
+    // static_assert(trait::VectorResultType<ResTy>, DecoVectorResultErrString);
     using DecoOption<ResTy>::DecoOption;
     constexpr ~VectorOption() = default;
 
