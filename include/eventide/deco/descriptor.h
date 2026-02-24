@@ -16,7 +16,7 @@
 namespace deco::desc {
 namespace detail {
 
-constexpr std::string_view k_default_help_text = "no provided";
+constexpr std::string_view k_default_help_text = "not provided";
 
 constexpr inline bool has_help_text(std::string_view help_text) {
     return !help_text.empty() && help_text != k_default_help_text;
