@@ -176,7 +176,7 @@ struct MultiFields : NamedOptionFields {
 };
 
 struct DecoOptionBase {
-    virtual ~DecoOptionBase() = default;
+    constexpr virtual ~DecoOptionBase() = default;
     // return error message if parsing fails, otherwise return std::nullopt
     virtual std::optional<std::string> into(backend::ParsedArgument&& arg) = 0;
 };
