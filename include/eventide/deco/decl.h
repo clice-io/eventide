@@ -197,6 +197,8 @@ struct DecoOption : DecoOptionBase {
 
     std::optional<ResTy> value = std::nullopt;
 
+    constexpr ~DecoOption() = default;
+
     constexpr DecoOption(ResTy default_value) : value(std::move(default_value)) {}
 
     template <typename DefaultTy>
@@ -382,6 +384,7 @@ template <typename ResTy>
 struct FlagOption : DecoOption<ResTy> {
     static_assert(trait::FlagResultType<ResTy>, "Flag result type must be bool or uint32_t.");
     using DecoOption<ResTy>::DecoOption;
+    constexpr ~FlagOption() = default;
 
     std::optional<std::string> into(backend::ParsedArgument&& arg) override {
         if(!arg.values.empty()) {
@@ -400,6 +403,7 @@ template <typename ResTy>
 struct ScalarOption : DecoOption<ResTy> {
     static_assert(trait::ScalarResultType<ResTy>, DecoScalarResultErrString);
     using DecoOption<ResTy>::DecoOption;
+    constexpr ~ScalarOption() = default;
 
     std::optional<std::string> into(backend::ParsedArgument&& arg) override {
         if(arg.values.size() != 1) {
@@ -413,6 +417,7 @@ template <typename ResTy>
 struct InputOption : DecoOption<ResTy> {
     static_assert(trait::ScalarResultType<ResTy>, DecoScalarResultErrString);
     using DecoOption<ResTy>::DecoOption;
+    constexpr ~InputOption() = default;
 
     std::optional<std::string> into(backend::ParsedArgument&& arg) override {
         if(arg.values.empty()) {
@@ -429,6 +434,7 @@ template <typename ResTy>
 struct VectorOption : DecoOption<ResTy> {
     static_assert(trait::VectorResultType<ResTy>, DecoVectorResultErrString);
     using DecoOption<ResTy>::DecoOption;
+    constexpr ~VectorOption() = default;
 
     std::optional<std::string> into(backend::ParsedArgument&& arg) override {
         return detail::assign_vector(this->value, arg.values);

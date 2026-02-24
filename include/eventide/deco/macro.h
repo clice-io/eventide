@@ -66,6 +66,7 @@
         constexpr static auto deco_field_ty = __cfg_ty::deco_field_ty;                             \
         using _deco_base_t = option_base_ty;                                                       \
         using _deco_base_t::_deco_base_t;                                                          \
+        constexpr ~DECO_OPTION_STRUCT_NAME(id)() = default;                                        \
     };                                                                                             \
     DECO_OPTION_STRUCT_NAME(id)
 
@@ -94,6 +95,7 @@
         constexpr static auto deco_field_ty = __cfg_ty::deco_field_ty;                             \
         using _deco_base_t = option_base_tpl<ResTy>;                                               \
         using _deco_base_t::_deco_base_t;                                                          \
+        constexpr ~DECO_OPTION_STRUCT_NAME(id)() = default;                                        \
     };                                                                                             \
     template <typename DefaultTy>                                                                  \
     DECO_OPTION_STRUCT_NAME(id)(DefaultTy&&)                                                       \
