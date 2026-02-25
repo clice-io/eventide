@@ -15,39 +15,138 @@ namespace {
 // keep scanning forward without getting stuck.
 std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view text,
                                                              std::size_t index) {
+    assert(index < text.size() && "index out of range");
+
+    // First byte >= ascii_limit starts a multi-byte UTF-8 sequence.
+    constexpr unsigned char ascii_limit = 0x80u;
+
+    // Continuation byte shape is 10xxxxxx.
+    constexpr unsigned char continuation_mask = 0xC0u;
+    constexpr unsigned char continuation_value = 0x80u;
+
+    // Minimum valid 2-byte lead is C2 (C0/C1 are overlong).
+    constexpr unsigned char two_byte_min = 0xC2u;
+
+    // Lead-byte region boundaries.
+    constexpr unsigned char three_byte_min = 0xE0u;
+    constexpr unsigned char four_byte_min = 0xF0u;
+    constexpr unsigned char four_byte_exclusive_max = 0xF5u;
+
+    // E0 xx needs b2 >= A0 to avoid overlong 3-byte encoding.
+    constexpr unsigned char three_byte_overlong_lead = 0xE0u;
+    constexpr unsigned char three_byte_overlong_b2_min = 0xA0u;
+
+    // ED A0..BF would encode UTF-16 surrogate range.
+    constexpr unsigned char surrogate_lead = 0xEDu;
+    constexpr unsigned char surrogate_b2_min = 0xA0u;
+
+    // F0 xx needs b2 >= 90 to avoid overlong 4-byte encoding.
+    constexpr unsigned char four_byte_overlong_lead = 0xF0u;
+    constexpr unsigned char four_byte_overlong_b2_min = 0x90u;
+
+    // F4 b2 must stay below 90 to remain <= U+10FFFF.
+    constexpr unsigned char unicode_max_lead = 0xF4u;
+    constexpr unsigned char unicode_max_b2_exclusive = 0x90u;
+
     // Inspect the leading byte to determine UTF-8 sequence width.
     const auto lead = static_cast<unsigned char>(text[index]);
-    std::uint32_t utf8 = 1;
-    std::uint32_t utf16 = 1;
 
     // 0xxxxxxx: ASCII, one UTF-8 byte and one UTF-16 code unit.
-    if((lead & 0x80u) == 0u) {
-        return {utf8, utf16};
-    }
-
-    // 110xxxxx: 2-byte UTF-8 sequence -> one UTF-16 code unit.
-    if((lead & 0xE0u) == 0xC0u) {
-        utf8 = 2;
-        // 1110xxxx: 3-byte UTF-8 sequence -> one UTF-16 code unit.
-    } else if((lead & 0xF0u) == 0xE0u) {
-        utf8 = 3;
-        // 11110xxx: 4-byte UTF-8 sequence -> UTF-16 surrogate pair (2 units).
-    } else if((lead & 0xF8u) == 0xF0u) {
-        utf8 = 4;
-        utf16 = 2;
-    } else {
-        // Invalid leading byte pattern. Consume one byte conservatively.
+    if(lead < ascii_limit) [[likely]] {
+        // ASCII is already a complete code point.
         return {1, 1};
     }
 
-    // Guard against truncated multi-byte sequences at end of input.
-    // We still consume a single byte to guarantee forward progress.
-    if(index + utf8 > text.size()) {
+    // Invalid leading byte:
+    // - 10xxxxxx: continuation byte
+    // - 0xC0/0xC1: overlong 2-byte lead
+    if(lead < two_byte_min) [[unlikely]] {
+        // Invalid lead byte, consume one byte to keep forward progress.
         return {1, 1};
     }
 
-    // Valid leading-byte classification and enough bytes available.
-    return {utf8, utf16};
+    if(lead < three_byte_min) {
+        // 2-byte UTF-8 lead range: C2..DF
+        if(index + 2 > text.size()) [[unlikely]] {
+            // Truncated 2-byte sequence at input end.
+            return {1, 1};
+        }
+
+        // UTF-8 continuation byte must match 10xxxxxx.
+        const auto b2 = static_cast<unsigned char>(text[index + 1]);
+        if((b2 & continuation_mask) != continuation_value) [[unlikely]] {
+            // Second byte is not a valid continuation byte.
+            return {1, 1};
+        }
+
+        return {2, 1};
+    }
+
+    if(lead < four_byte_min) {
+        // 3-byte UTF-8 lead range: E0..EF
+        if(index + 3 > text.size()) [[unlikely]] {
+            // Truncated 3-byte sequence at input end.
+            return {1, 1};
+        }
+
+        const auto b2 = static_cast<unsigned char>(text[index + 1]);
+        const auto b3 = static_cast<unsigned char>(text[index + 2]);
+        if((b2 & continuation_mask) != continuation_value ||
+           (b3 & continuation_mask) != continuation_value) [[unlikely]] {
+            // One of the continuation bytes is malformed.
+            return {1, 1};
+        }
+
+        // E0 A0..BF ...: prevent overlong 3-byte sequences.
+        if(lead == three_byte_overlong_lead && b2 < three_byte_overlong_b2_min) [[unlikely]] {
+            // Overlong encoding for a code point that needs fewer bytes.
+            return {1, 1};
+        }
+
+        // ED 80..9F ...: exclude UTF-16 surrogate code points.
+        if(lead == surrogate_lead && b2 >= surrogate_b2_min) [[unlikely]] {
+            // UTF-16 surrogate range is invalid in UTF-8.
+            return {1, 1};
+        }
+
+        return {3, 1};
+    }
+
+    if(lead < four_byte_exclusive_max) {
+        // 4-byte UTF-8 lead range: F0..F4 (Unicode max U+10FFFF).
+        if(index + 4 > text.size()) [[unlikely]] {
+            // Truncated 4-byte sequence at input end.
+            return {1, 1};
+        }
+
+        const auto b2 = static_cast<unsigned char>(text[index + 1]);
+        const auto b3 = static_cast<unsigned char>(text[index + 2]);
+        const auto b4 = static_cast<unsigned char>(text[index + 3]);
+        if((b2 & continuation_mask) != continuation_value ||
+           (b3 & continuation_mask) != continuation_value ||
+           (b4 & continuation_mask) != continuation_value) [[unlikely]] {
+            // One of the continuation bytes is malformed.
+            return {1, 1};
+        }
+
+        // F0 90..BF ...: prevent overlong 4-byte sequences.
+        if(lead == four_byte_overlong_lead && b2 < four_byte_overlong_b2_min) [[unlikely]] {
+            // Overlong encoding for code points below U+10000.
+            return {1, 1};
+        }
+
+        // F4 80..8F ...: stay within U+10FFFF upper bound.
+        if(lead == unicode_max_lead && b2 >= unicode_max_b2_exclusive) [[unlikely]] {
+            // Would decode beyond maximum Unicode scalar value.
+            return {1, 1};
+        }
+
+        return {4, 2};
+    }
+
+    // F5..FF are invalid in UTF-8.
+    // Invalid lead byte range, consume one byte conservatively.
+    return {1, 1};
 }
 
 }  // namespace

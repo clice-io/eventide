@@ -7,7 +7,7 @@ namespace eventide::language {
 
 TEST_SUITE(language_position) {
 
-TEST_CASE(parse_position_encoding_values) {
+TEST_CASE(parse_encoding_values) {
     EXPECT_EQ(parse_position_encoding(protocol::PositionEncodingKind::utf8),
               PositionEncoding::UTF8);
     EXPECT_EQ(parse_position_encoding(protocol::PositionEncodingKind::utf16),
@@ -17,7 +17,7 @@ TEST_CASE(parse_position_encoding_values) {
     EXPECT_EQ(parse_position_encoding("unknown-encoding"), PositionEncoding::UTF16);
 }
 
-TEST_CASE(utf16_column) {
+TEST_CASE(utf16_column_counts) {
     std::string_view content = "a\xe4\xbd\xa0" "b\n";
     PositionMapper converter(content, PositionEncoding::UTF16);
 
@@ -26,7 +26,7 @@ TEST_CASE(utf16_column) {
     ASSERT_EQ(position.character, 2U);
 }
 
-TEST_CASE(round_trip_offset) {
+TEST_CASE(round_trip_offsets) {
     std::string_view content = "a\xe4\xbd\xa0" "b\nx\xf0\x9f\x99\x82" "y";
     constexpr std::uint32_t offsets[] = {0, 1, 4, 5, 6, 7, 11, 12};
 
@@ -39,7 +39,50 @@ TEST_CASE(round_trip_offset) {
     }
 }
 
-TEST_CASE(line_helpers_on_empty_and_nonempty_lines) {
+TEST_CASE(position_offset_values) {
+    std::string_view content = "a\xe4\xbd\xa0\xf0\x9f\x99\x82" "b\nx";
+
+    PositionMapper utf8_converter(content, PositionEncoding::UTF8);
+    PositionMapper utf16_converter(content, PositionEncoding::UTF16);
+    PositionMapper utf32_converter(content, PositionEncoding::UTF32);
+
+    struct Sample {
+        std::uint32_t offset;
+        std::uint32_t line;
+        std::uint32_t utf8_character;
+        std::uint32_t utf16_character;
+        std::uint32_t utf32_character;
+    };
+
+    constexpr Sample samples[] = {
+        {.offset = 0,  .line = 0, .utf8_character = 0, .utf16_character = 0, .utf32_character = 0},
+        {.offset = 1,  .line = 0, .utf8_character = 1, .utf16_character = 1, .utf32_character = 1},
+        {.offset = 4,  .line = 0, .utf8_character = 4, .utf16_character = 2, .utf32_character = 2},
+        {.offset = 8,  .line = 0, .utf8_character = 8, .utf16_character = 4, .utf32_character = 3},
+        {.offset = 9,  .line = 0, .utf8_character = 9, .utf16_character = 5, .utf32_character = 4},
+        {.offset = 10, .line = 1, .utf8_character = 0, .utf16_character = 0, .utf32_character = 0},
+        {.offset = 11, .line = 1, .utf8_character = 1, .utf16_character = 1, .utf32_character = 1},
+    };
+
+    for(const auto& sample: samples) {
+        auto p8 = utf8_converter.to_position(sample.offset);
+        EXPECT_EQ(p8.line, sample.line);
+        EXPECT_EQ(p8.character, sample.utf8_character);
+        EXPECT_EQ(utf8_converter.to_offset(p8), sample.offset);
+
+        auto p16 = utf16_converter.to_position(sample.offset);
+        EXPECT_EQ(p16.line, sample.line);
+        EXPECT_EQ(p16.character, sample.utf16_character);
+        EXPECT_EQ(utf16_converter.to_offset(p16), sample.offset);
+
+        auto p32 = utf32_converter.to_position(sample.offset);
+        EXPECT_EQ(p32.line, sample.line);
+        EXPECT_EQ(p32.character, sample.utf32_character);
+        EXPECT_EQ(utf32_converter.to_offset(p32), sample.offset);
+    }
+}
+
+TEST_CASE(line_helpers_lines) {
     std::string_view content = "ab\n\ncd";
     PositionMapper converter(content, PositionEncoding::UTF8);
 
@@ -57,7 +100,7 @@ TEST_CASE(line_helpers_on_empty_and_nonempty_lines) {
     EXPECT_EQ(converter.line_of(6), 2U);
 }
 
-TEST_CASE(measure_counts_units_per_encoding) {
+TEST_CASE(measure_units_encoding) {
     std::string_view content = "a\xe4\xbd\xa0\xf0\x9f\x99\x82z";
 
     PositionMapper utf8_converter(content, PositionEncoding::UTF8);
@@ -69,7 +112,7 @@ TEST_CASE(measure_counts_units_per_encoding) {
     EXPECT_EQ(utf32_converter.measure(content), 4U);
 }
 
-TEST_CASE(character_and_length_follow_encoding_units) {
+TEST_CASE(character_length_units) {
     std::string_view content = "a\xe4\xbd\xa0\xf0\x9f\x99\x82z\n";
 
     PositionMapper utf8_converter(content, PositionEncoding::UTF8);
@@ -89,7 +132,7 @@ TEST_CASE(character_and_length_follow_encoding_units) {
     EXPECT_EQ(utf32_converter.length(0, 8, 8), 0U);
 }
 
-TEST_CASE(round_trip_codepoint_boundaries_multiline) {
+TEST_CASE(roundtrip_multiline_boundaries) {
     std::string_view content = "a\xe4\xbd\xa0\n\xf0\x9f\x99\x82" "b";
     constexpr std::uint32_t boundaries[] = {0, 1, 4, 5, 9, 10};
 
@@ -102,17 +145,52 @@ TEST_CASE(round_trip_codepoint_boundaries_multiline) {
     }
 }
 
-TEST_CASE(measure_tolerates_invalid_utf8_sequences) {
-    const char raw[] = {'a', static_cast<char>(0xF0), static_cast<char>(0x9F), 'b'};
-    std::string_view content(raw, sizeof(raw));
+TEST_CASE(invalid_continuation_progress) {
+    auto expect_progress = [&](auto... bytes) {
+        const char raw[] = {static_cast<char>(bytes)...};
+        constexpr auto length = static_cast<std::uint32_t>(sizeof...(bytes));
+        auto content = std::string_view(raw, sizeof...(bytes));
 
-    PositionMapper utf8_converter(content, PositionEncoding::UTF8);
-    PositionMapper utf16_converter(content, PositionEncoding::UTF16);
-    PositionMapper utf32_converter(content, PositionEncoding::UTF32);
+        PositionMapper utf8_converter(content, PositionEncoding::UTF8);
+        PositionMapper utf16_converter(content, PositionEncoding::UTF16);
+        PositionMapper utf32_converter(content, PositionEncoding::UTF32);
 
-    EXPECT_EQ(utf8_converter.measure(content), 4U);
-    EXPECT_EQ(utf16_converter.measure(content), 4U);
-    EXPECT_EQ(utf32_converter.measure(content), 4U);
+        EXPECT_EQ(utf8_converter.measure(content), length);
+        EXPECT_EQ(utf16_converter.measure(content), length);
+        EXPECT_EQ(utf32_converter.measure(content), length);
+    };
+
+    // 3-byte lead with invalid second byte.
+    expect_progress('a', 0xE4u, 'X', 'b');
+    // 2-byte lead with invalid continuation byte.
+    expect_progress(0xC2u, 'A');
+    // 3-byte lead with invalid third byte.
+    expect_progress(0xE1u, 0x80u, 'B');
+    // 4-byte lead with invalid second byte.
+    expect_progress(0xF1u, 'C', 0x80u, 0x80u);
+    // 4-byte lead with invalid fourth byte.
+    expect_progress(0xF1u, 0x80u, 0x80u, 'D');
+}
+
+TEST_CASE(strict_utf8_validation) {
+    PositionMapper utf16_converter("", PositionEncoding::UTF16);
+    PositionMapper utf32_converter("", PositionEncoding::UTF32);
+
+    auto expect_invalid_sequence = [&](auto... bytes) {
+        const char raw[] = {static_cast<char>(bytes)...};
+        constexpr auto length = static_cast<std::uint32_t>(sizeof...(bytes));
+        auto content = std::string_view(raw, sizeof...(bytes));
+
+        EXPECT_EQ(utf16_converter.measure(content), length);
+        EXPECT_EQ(utf32_converter.measure(content), length);
+    };
+
+    expect_invalid_sequence(0xC0u, 0x80u);
+    expect_invalid_sequence(0xE0u, 0x80u, 0x80u);
+    expect_invalid_sequence(0xEDu, 0xA0u, 0x80u);
+    expect_invalid_sequence(0xF4u, 0x90u, 0x80u, 0x80u);
+    expect_invalid_sequence(0xF5u, 0x80u, 0x80u, 0x80u);
+    expect_invalid_sequence('a', 0xF0u, 0x9Fu, 'b');
 }
 
 };  // TEST_SUITE(language_position)
