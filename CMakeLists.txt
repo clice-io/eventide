@@ -8,6 +8,8 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(EVENTIDE_ENABLE_ASYNC "Enable async eventide target and libuv dependency" ON)
+option(EVENTIDE_ENABLE_OPTION "Enable option parser target" ON)
+option(EVENTIDE_ENABLE_DECO "Enable deco target" ON)
 option(EVENTIDE_ENABLE_TEST "Build unit tests" OFF)
 option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
 option(EVENTIDE_SERDE_ENABLE_SIMDJSON "Enable simdjson dependency for eventide::serde" OFF)
@@ -23,6 +25,16 @@ if(EVENTIDE_BUILD_ALL_TESTS)
     if(NOT EVENTIDE_ENABLE_ASYNC)
         message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_ENABLE_ASYNC")
         set(EVENTIDE_ENABLE_ASYNC ON CACHE BOOL "Enable async eventide target and libuv dependency" FORCE)
+    endif()
+
+    if(NOT EVENTIDE_ENABLE_OPTION)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_ENABLE_OPTION")
+        set(EVENTIDE_ENABLE_OPTION ON CACHE BOOL "Enable option parser target" FORCE)
+    endif()
+
+    if(NOT EVENTIDE_ENABLE_DECO)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_ENABLE_DECO")
+        set(EVENTIDE_ENABLE_DECO ON CACHE BOOL "Enable deco parser headers and tests" FORCE)
     endif()
 
     if(NOT EVENTIDE_SERDE_ENABLE_SIMDJSON)
@@ -55,6 +67,14 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 add_subdirectory(src/reflection)
 add_subdirectory(src/serde)
+
+if(EVENTIDE_ENABLE_OPTION)
+    add_subdirectory(src/option)
+endif()
+
+if(EVENTIDE_ENABLE_DECO AND EVENTIDE_ENABLE_OPTION)
+    add_subdirectory(src/deco)
+endif()
 
 if(EVENTIDE_ENABLE_ASYNC)
     add_subdirectory(src/async)

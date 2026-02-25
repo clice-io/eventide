@@ -9,12 +9,37 @@ set_target_properties(unit_tests PROPERTIES
 
 file(GLOB_RECURSE TEST_SOURCES RELATIVE "${PROJECT_SOURCE_DIR}" CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/tests/*.cpp"
+    "${PROJECT_SOURCE_DIR}/tests/*.cc"
 )
 
 set(TEST_BASE_SOURCES ${TEST_SOURCES})
 list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/(main\\.cpp|reflection/.*\\.cpp|zest/.*\\.cpp)$")
 list(TRANSFORM TEST_BASE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
+
+if(EVENTIDE_ENABLE_OPTION)
+    set(TEST_OPTION_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_OPTION_SOURCES INCLUDE REGEX "^tests/option/.*\\.cpp$")
+    list(TRANSFORM TEST_OPTION_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_OPTION_SOURCES}
+    )
+else()
+    message(STATUS "EVENTIDE_ENABLE_OPTION=OFF: skipping tests/option/*")
+endif()
+
+if(EVENTIDE_ENABLE_DECO AND EVENTIDE_ENABLE_OPTION)
+    set(TEST_DECO_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_DECO_SOURCES INCLUDE REGEX "^tests/deco/.*\\.(cpp|cc)$")
+    list(TRANSFORM TEST_DECO_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_DECO_SOURCES}
+    )
+elseif(EVENTIDE_ENABLE_DECO)
+    message(STATUS "EVENTIDE_ENABLE_OPTION=OFF: skipping tests/deco/*")
+else()
+    message(STATUS "EVENTIDE_ENABLE_DECO=OFF: skipping tests/deco/*")
+endif()
 
 if(EVENTIDE_ENABLE_ASYNC)
     set(TEST_EVENTIDE_SOURCES ${TEST_SOURCES})
@@ -72,6 +97,18 @@ target_link_libraries(unit_tests PRIVATE
     eventide::zest
     cpptrace::cpptrace
 )
+
+if(EVENTIDE_ENABLE_OPTION)
+    target_link_libraries(unit_tests PRIVATE
+        eventide::option
+    )
+endif()
+
+if(EVENTIDE_ENABLE_DECO AND EVENTIDE_ENABLE_OPTION)
+    target_link_libraries(unit_tests PRIVATE
+        eventide::deco
+    )
+endif()
 
 if(EVENTIDE_ENABLE_ASYNC)
     target_link_libraries(unit_tests PRIVATE

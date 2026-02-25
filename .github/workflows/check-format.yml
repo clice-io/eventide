@@ -34,10 +34,10 @@ jobs:
           args: --lint ./docs
         continue-on-error: true
 
-      - name: Suggest changes
-        if: ${{ inputs.is_pull_request }}
-        uses: reviewdog/action-suggester@v1.24.0
-        with:
-          tool_name: "fmt"
-          fail_level: any
-          filter_mode: nofilter
+    #   - name: Suggest changes
+    #     if: ${{ inputs.is_pull_request }}
+    #     uses: reviewdog/action-suggester@v1.24.0
+    #     with:
+    #       tool_name: "fmt"
+    #       fail_level: any
+    #       filter_mode: nofilter
