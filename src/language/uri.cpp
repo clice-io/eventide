@@ -429,6 +429,14 @@ std::expected<std::string, std::string> URI::file_path() const {
             return std::unexpected(decoded_authority.error());
         }
 
+        // A decoded authority must remain a single host token. If it contains
+        // '/' or '\\', UNC host/path boundaries become ambiguous.
+        if(std::ranges::any_of(*decoded_authority, [](char value) {
+               return value == '/' || value == '\\';
+           })) [[unlikely]] {
+            return std::unexpected("file uri authority contains path separator");
+        }
+
         // Build UNC-style "//authority/path" with a single allocation.
         std::string unc_path;
         unc_path.reserve(2 + decoded_authority->size() + decoded_path->size());

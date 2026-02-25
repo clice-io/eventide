@@ -139,6 +139,16 @@ TEST_CASE(authority_handling) {
     EXPECT_EQ(*remote_path, "//server/share/a.txt");
 }
 
+TEST_CASE(reject_bad_authority) {
+    auto slash_host = URI::parse("file://server%2Fteam/share/a.txt");
+    ASSERT_TRUE(slash_host.has_value());
+    EXPECT_FALSE(slash_host->file_path().has_value());
+
+    auto backslash_host = URI::parse("file://server%5Cteam/share/a.txt");
+    ASSERT_TRUE(backslash_host.has_value());
+    EXPECT_FALSE(backslash_host->file_path().has_value());
+}
+
 TEST_CASE(non_file_path_fails) {
     auto uri = URI::parse("https://example.com/a.txt");
     ASSERT_TRUE(uri.has_value());
