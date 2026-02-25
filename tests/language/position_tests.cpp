@@ -172,6 +172,29 @@ TEST_CASE(invalid_continuation_progress) {
     expect_progress(0xF1u, 0x80u, 0x80u, 'D');
 }
 
+TEST_CASE(invalid_position_stability) {
+    auto expect_stable = [&](std::string_view content) {
+        for(auto encoding:
+            {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+            PositionMapper converter(content, encoding);
+            for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+                auto position = converter.to_position(offset);
+                auto mapped_offset = converter.to_offset(position);
+                EXPECT_TRUE(mapped_offset <= content.size());
+            }
+        }
+    };
+
+    auto expect_stable_bytes = [&](auto... bytes) {
+        const char raw[] = {static_cast<char>(bytes)...};
+        expect_stable(std::string_view(raw, sizeof...(bytes)));
+    };
+
+    expect_stable_bytes('a', 0xE4u, 'X', 'b');
+    expect_stable_bytes('x', 0xF0u, 0x9Fu, '\n', 'y');
+    expect_stable_bytes(0xF5u, 0x80u, 0x80u, 0x80u, '\n', 'z');
+}
+
 TEST_CASE(strict_utf8_validation) {
     PositionMapper utf16_converter("", PositionEncoding::UTF16);
     PositionMapper utf32_converter("", PositionEncoding::UTF32);
