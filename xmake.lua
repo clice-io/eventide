@@ -73,13 +73,13 @@ end
 target("common", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/common/*.h)")
+	add_headerfiles("include/(eventide/common/*)")
 end)
 
 target("reflection", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(eventide/reflection/*.h)")
+	add_headerfiles("include/(eventide/reflection/*)")
 	add_deps("common")
 end)
 
@@ -87,7 +87,7 @@ if has_config("serde") and has_config("serde_simdjson") then
 	target("serde_json", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/simdjson/*.h)")
+		add_headerfiles("include/(eventide/serde/simdjson/*)")
 		add_deps("reflection")
 		add_packages("simdjson", { public = true })
 	end)
@@ -98,9 +98,9 @@ if has_config("serde") and has_config("serde_flatbuffers") then
 		set_kind("$(kind)")
 		add_files("src/serde/flatbuffers/flex/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/flatbuffers/*.h)",
-		                "include/(eventide/serde/flatbuffers/flex/*.h)",
-		                "include/(eventide/serde/flatbuffers/schema/*.h)")
+		add_headerfiles("include/(eventide/serde/flatbuffers/*)",
+		                "include/(eventide/serde/flatbuffers/flex/*)",
+		                "include/(eventide/serde/flatbuffers/schema/*)")
 		add_deps("reflection")
 		add_packages("flatbuffers", { public = true })
 	end)
@@ -110,7 +110,7 @@ if has_config("serde") then
 	target("serde", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/*.h)", "include/(eventide/serde/attrs/*.h)")
+		add_headerfiles("include/(eventide/serde/*)", "include/(eventide/serde/attrs/*)")
 		add_deps("common", "reflection")
 		if has_config("serde_simdjson") then
 			add_deps("serde_json")
@@ -126,7 +126,7 @@ if has_config("ztest") then
 		set_kind("$(kind)")
 		add_files("src/zest/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/zest/*.h)")
+		add_headerfiles("include/(eventide/zest/*)")
 		add_cxflags("cl::/Zc:preprocessor", { public = true })
 		add_deps("common")
 		add_packages("cpptrace", { public = true })
@@ -138,7 +138,7 @@ if has_config("async") then
 		set_kind("$(kind)")
 		add_files("src/async/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/async/*.h)")
+		add_headerfiles("include/(eventide/async/*)")
 		add_deps("common")
 		add_packages("libuv")
 	end)
@@ -149,7 +149,7 @@ if has_config("option") then
 		set_kind("$(kind)")
 		add_files("src/option/*.cc")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/option/*.h)")
+		add_headerfiles("include/(eventide/option/*)")
 		add_deps("common")
 	end)
 end
@@ -159,7 +159,7 @@ if has_config("deco") and has_config("option") then
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_cxflags("cl::/Zc:preprocessor", { public = true })
-		add_headerfiles("include/(eventide/deco/*.h)")
+		add_headerfiles("include/(eventide/deco/*)")
 		add_deps("option")
 	end)
 end
@@ -169,7 +169,7 @@ if has_config("async") and has_config("serde") and has_config("serde_simdjson") 
 		set_kind("$(kind)")
 		add_files("src/language/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/language/*.h)")
+		add_headerfiles("include/(eventide/language/*)")
 		add_deps("async", "serde_json")
 	end)
 end
