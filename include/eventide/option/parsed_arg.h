@@ -95,7 +95,7 @@ struct ParsedArgumentBase {
         return std::span(this->values);
     }
 
-    /// Convert to string for pass to a excutable
+    /// Convert to string for pass to an executable
     /// It does not ensure that it is equal to the original argv, but it has the same meaning
     /// according to the table
     void to_arg_str(std::ostream& o, OptionEnum::RenderStyleKind render_kind) {
