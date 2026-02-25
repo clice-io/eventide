@@ -1,12 +1,18 @@
 #include "eventide/language/server.h"
 
 #include <deque>
+#include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
+#include <vector>
+
+#include "eventide/async/sync.h"
 
 namespace eventide::language {
 
@@ -97,6 +103,16 @@ std::expected<protocol::IncomingMessage, std::string>
             message.params_json = std::string(raw_json);
             continue;
         }
+
+        if(key == "result") {
+            message.result_json = std::string(raw_json);
+            continue;
+        }
+
+        if(key == "error") {
+            message.error_json = std::string(raw_json);
+            continue;
+        }
     }
 
     if(!document.at_end()) {
@@ -106,30 +122,65 @@ std::expected<protocol::IncomingMessage, std::string>
     return message;
 }
 
-}  // namespace
-
-struct LanguageServer::Self {
-    event_loop loop;
-    std::unique_ptr<Transport> transport;
-    std::unordered_map<std::string, RequestHandler> request_handlers;
-    std::unordered_map<std::string, NotificationHandler> notification_handlers;
-    std::deque<std::string> outgoing_queue;
-    bool writer_running = false;
-    std::string startup_error;
-
-    static std::expected<std::string, std::string>
-        serialize_id_json(const protocol::RequestID& id) {
+struct request_id_hash {
+    std::size_t operator()(const protocol::RequestID& id) const noexcept {
         return std::visit(
-            [&](const auto& value) -> std::expected<std::string, std::string> {
+            [](const auto& value) -> std::size_t {
                 using value_t = std::remove_cvref_t<decltype(value)>;
+                auto hashed = std::hash<value_t>{}(value);
                 if constexpr(std::is_same_v<value_t, protocol::integer>) {
-                    return std::to_string(value);
+                    return hashed ^ 0x9e3779b97f4a7c15ULL;
                 } else {
-                    return LanguageServer::serialize_json(value);
+                    return hashed ^ 0x517cc1b727220a95ULL;
                 }
             },
             id);
     }
+};
+
+struct outgoing_request_message {
+    std::string jsonrpc = "2.0";
+    protocol::RequestID id;
+    std::string method;
+    protocol::LSPAny params;
+};
+
+struct outgoing_notification_message {
+    std::string jsonrpc = "2.0";
+    std::string method;
+    protocol::LSPAny params;
+};
+
+struct outgoing_success_response_message {
+    std::string jsonrpc = "2.0";
+    protocol::RequestID id;
+    protocol::LSPAny result;
+};
+
+struct outgoing_error_response_message {
+    std::string jsonrpc = "2.0";
+    protocol::RequestID id;
+    protocol::ResponseError error;
+};
+
+}  // namespace
+
+struct LanguageServer::Self {
+    struct PendingRequest {
+        event ready;
+        std::optional<std::expected<std::string, std::string>> response;
+    };
+
+    event_loop loop;
+    std::unique_ptr<Transport> transport;
+    std::unordered_map<std::string, RequestCallback> request_callbacks;
+    std::unordered_map<std::string, NotificationCallback> notification_callbacks;
+    std::unordered_map<protocol::RequestID, std::shared_ptr<PendingRequest>, request_id_hash>
+        pending_requests;
+    protocol::integer next_request_id = 1;
+    std::deque<std::string> outgoing_queue;
+    bool writer_running = false;
+    std::string startup_error;
 
     void enqueue_outgoing(std::string payload) {
         outgoing_queue.push_back(std::move(payload));
@@ -141,51 +192,65 @@ struct LanguageServer::Self {
 
     std::expected<std::string, std::string> build_success_response(const protocol::RequestID& id,
                                                                    std::string_view result_json) {
-        auto id_json = serialize_id_json(id);
-        if(!id_json) {
-            return std::unexpected(id_json.error());
+        auto result = parse_json_value<protocol::LSPAny>(result_json);
+        if(!result) {
+            return std::unexpected(result.error());
         }
 
-        std::string response;
-        response.reserve(48 + id_json->size() + result_json.size());
-        response.append("{\"jsonrpc\":\"2.0\",\"id\":");
-        response.append(*id_json);
-        response.append(",\"result\":");
-        response.append(result_json.data(), result_json.size());
-        response.push_back('}');
-        return response;
+        return detail::serialize_json(outgoing_success_response_message{
+            .id = id,
+            .result = std::move(*result),
+        });
     }
 
     std::expected<std::string, std::string> build_error_response(const protocol::RequestID& id,
                                                                  protocol::integer code,
                                                                  std::string message) {
-        auto id_json = serialize_id_json(id);
-        if(!id_json) {
-            return std::unexpected(id_json.error());
-        }
-
-        auto error_json = LanguageServer::serialize_json(protocol::ResponseError{
-            .code = code,
-            .message = std::move(message),
+        return detail::serialize_json(outgoing_error_response_message{
+            .id = id,
+            .error =
+                protocol::ResponseError{
+                                        .code = code,
+                                        .message = std::move(message),
+                                        },
         });
-        if(!error_json) {
-            return std::unexpected(error_json.error());
-        }
-
-        std::string response;
-        response.reserve(56 + id_json->size() + error_json->size());
-        response.append("{\"jsonrpc\":\"2.0\",\"id\":");
-        response.append(*id_json);
-        response.append(",\"error\":");
-        response.append(*error_json);
-        response.push_back('}');
-        return response;
     }
 
     void send_error(const protocol::RequestID& id, protocol::integer code, std::string message) {
         auto response = build_error_response(id, code, std::move(message));
         if(response) {
             enqueue_outgoing(std::move(*response));
+        }
+    }
+
+    void complete_pending_request(const protocol::RequestID& id,
+                                  std::expected<std::string, std::string> response) {
+        auto it = pending_requests.find(id);
+        if(it == pending_requests.end()) {
+            return;
+        }
+
+        auto pending = std::move(it->second);
+        pending_requests.erase(it);
+        pending->response = std::move(response);
+        pending->ready.set();
+    }
+
+    void fail_pending_requests(const std::string& message) {
+        if(pending_requests.empty()) {
+            return;
+        }
+
+        std::vector<std::shared_ptr<PendingRequest>> pending;
+        pending.reserve(pending_requests.size());
+        for(auto& [_, state]: pending_requests) {
+            pending.push_back(state);
+        }
+        pending_requests.clear();
+
+        for(auto& state: pending) {
+            state->response = std::unexpected(message);
+            state->ready.set();
         }
     }
 
@@ -201,6 +266,7 @@ struct LanguageServer::Self {
             auto written = co_await transport->write_message(payload);
             if(!written) {
                 outgoing_queue.clear();
+                fail_pending_requests("transport write failed");
                 break;
             }
         }
@@ -209,17 +275,17 @@ struct LanguageServer::Self {
     }
 
     void dispatch_notification(const std::string& method, std::string_view params_json) {
-        auto it = notification_handlers.find(method);
-        if(it == notification_handlers.end()) {
+        auto it = notification_callbacks.find(method);
+        if(it == notification_callbacks.end()) {
             return;
         }
 
-        // Notification handlers are synchronous.
+        // Notification callbacks are synchronous.
         it->second(params_json);
     }
 
-    task<> run_request(protocol::RequestID id, RequestHandler handler, std::string params_json) {
-        auto result_json = co_await handler(params_json);
+    task<> run_request(protocol::RequestID id, RequestCallback callback, std::string params_json) {
+        auto result_json = co_await callback(id, params_json);
         if(!result_json) {
             send_error(id,
                        static_cast<protocol::integer>(protocol::LSPErrorCodes::RequestFailed),
@@ -241,23 +307,46 @@ struct LanguageServer::Self {
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
                           std::string_view params_json) {
-        auto it = request_handlers.find(method);
-        if(it == request_handlers.end()) {
+        auto it = request_callbacks.find(method);
+        if(it == request_callbacks.end()) {
             send_error(id,
                        static_cast<protocol::integer>(protocol::ErrorCodes::MethodNotFound),
                        "method not found: " + method);
             return;
         }
 
-        auto handler = it->second;
+        auto callback = it->second;
         // Requests are processed asynchronously.
-        loop.schedule(run_request(id, std::move(handler), std::string(params_json)));
+        loop.schedule(run_request(id, std::move(callback), std::string(params_json)));
+    }
+
+    void dispatch_response(const protocol::RequestID& id,
+                           const protocol::optional<std::string>& result_json,
+                           const protocol::optional<std::string>& error_json) {
+        if(error_json.has_value()) {
+            auto parsed_error = parse_json_value<protocol::ResponseError>(*error_json);
+            if(!parsed_error) {
+                complete_pending_request(id, std::unexpected(parsed_error.error()));
+                return;
+            }
+
+            complete_pending_request(id, std::unexpected(parsed_error->message));
+            return;
+        }
+
+        if(!result_json.has_value()) {
+            complete_pending_request(id, std::unexpected("response is missing result"));
+            return;
+        }
+
+        complete_pending_request(id, std::string(*result_json));
     }
 
     task<> main_loop() {
         while(transport) {
             auto payload = co_await transport->read_message();
             if(!payload.has_value()) {
+                fail_pending_requests("transport closed");
                 co_return;
             }
 
@@ -265,19 +354,23 @@ struct LanguageServer::Self {
             if(!parsed) {
                 continue;
             }
-            if(!parsed->method.has_value()) {
+
+            if(parsed->method.has_value()) {
+                std::string_view params_json{};
+                if(parsed->params_json.has_value()) {
+                    params_json = *parsed->params_json;
+                }
+
+                if(parsed->id.has_value()) {
+                    dispatch_request(*parsed->method, *parsed->id, params_json);
+                } else {
+                    dispatch_notification(*parsed->method, params_json);
+                }
                 continue;
             }
 
-            std::string_view params_json{};
-            if(parsed->params_json.has_value()) {
-                params_json = *parsed->params_json;
-            }
-
             if(parsed->id.has_value()) {
-                dispatch_request(*parsed->method, *parsed->id, params_json);
-            } else {
-                dispatch_notification(*parsed->method, params_json);
+                dispatch_response(*parsed->id, parsed->result_json, parsed->error_json);
             }
         }
     }
@@ -302,13 +395,72 @@ LanguageServer::LanguageServer(std::unique_ptr<Transport> transport) :
 
 LanguageServer::~LanguageServer() = default;
 
-void LanguageServer::register_request_handler(std::string_view method, RequestHandler handler) {
-    self->request_handlers.insert_or_assign(std::string(method), std::move(handler));
+void LanguageServer::register_request_callback(std::string_view method, RequestCallback callback) {
+    self->request_callbacks.insert_or_assign(std::string(method), std::move(callback));
 }
 
-void LanguageServer::register_notification_handler(std::string_view method,
-                                                   NotificationHandler handler) {
-    self->notification_handlers.insert_or_assign(std::string(method), std::move(handler));
+void LanguageServer::register_notification_callback(std::string_view method,
+                                                    NotificationCallback callback) {
+    self->notification_callbacks.insert_or_assign(std::string(method), std::move(callback));
+}
+
+task<std::expected<std::string, std::string>>
+    LanguageServer::send_request_json(std::string_view method, std::string params_json) {
+    if(!self || !self->transport) {
+        co_return std::unexpected("transport is null");
+    }
+
+    auto params = parse_json_value<protocol::LSPAny>(params_json);
+    if(!params) {
+        co_return std::unexpected(params.error());
+    }
+
+    auto request_id = protocol::RequestID{self->next_request_id++};
+
+    auto pending = std::make_shared<Self::PendingRequest>();
+    self->pending_requests.insert_or_assign(request_id, pending);
+
+    auto request_json = detail::serialize_json(outgoing_request_message{
+        .id = request_id,
+        .method = std::string(method),
+        .params = std::move(*params),
+    });
+    if(!request_json) {
+        self->pending_requests.erase(request_id);
+        co_return std::unexpected(request_json.error());
+    }
+
+    self->enqueue_outgoing(std::move(*request_json));
+
+    co_await pending->ready.wait();
+    if(!pending->response.has_value()) {
+        co_return std::unexpected("request was not completed");
+    }
+
+    co_return std::move(*pending->response);
+}
+
+std::expected<void, std::string> LanguageServer::send_notification_json(std::string_view method,
+                                                                        std::string params_json) {
+    if(!self || !self->transport) {
+        return std::unexpected("transport is null");
+    }
+
+    auto params = parse_json_value<protocol::LSPAny>(params_json);
+    if(!params) {
+        return std::unexpected(params.error());
+    }
+
+    auto notification_json = detail::serialize_json(outgoing_notification_message{
+        .method = std::string(method),
+        .params = std::move(*params),
+    });
+    if(!notification_json) {
+        return std::unexpected(notification_json.error());
+    }
+
+    self->enqueue_outgoing(std::move(*notification_json));
+    return {};
 }
 
 int LanguageServer::start() {

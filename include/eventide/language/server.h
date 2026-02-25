@@ -3,31 +3,36 @@
 #include <expected>
 #include <functional>
 #include <memory>
-#include <optional>
-#include <span>
 #include <string>
 #include <string_view>
-#include <tuple>
-#include <type_traits>
-#include <unordered_map>
-#include <utility>
 
-#include "eventide/common/function_traits.h"
 #include "eventide/async/task.h"
-#include "eventide/serde/simdjson/deserializer.h"
-#include "eventide/serde/simdjson/serializer.h"
 #include "eventide/language/protocol.h"
 #include "eventide/language/transport.h"
 
 namespace eventide::language {
 
+class LanguageServer;
+
+template <typename Params, typename Result = typename protocol::RequestTraits<Params>::Result>
+using RequestResult = task<std::expected<Result, std::string>>;
+
 struct RequestContext {
     std::string_view method{};
-};
+    protocol::RequestID id;
+    LanguageServer& server;
 
-template <typename Params>
-using RequestResult =
-    task<std::expected<typename protocol::RequestTraits<Params>::Result, std::string>>;
+    RequestContext(LanguageServer& server, const protocol::RequestID& id) :
+        id(id), server(server) {}
+
+    LanguageServer* operator->() noexcept {
+        return &server;
+    }
+
+    const LanguageServer* operator->() const noexcept {
+        return &server;
+    }
+};
 
 class LanguageServer {
 public:
@@ -44,166 +49,53 @@ public:
 
     int start();
 
-    template <typename Callback>
-    void on_request(Callback&& callback) {
-        using F = std::remove_cvref_t<Callback>;
-        using Args = callable_args_t<F>;
-        static_assert(std::tuple_size_v<Args> == 2, "request callback should have two parameters");
+    template <typename Params>
+    RequestResult<Params> send_request(const Params& params);
 
-        using Context = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
-        using Params = std::remove_cvref_t<std::tuple_element_t<1, Args>>;
-        using Traits = protocol::RequestTraits<Params>;
-
-        static_assert(std::is_same_v<Context, RequestContext>,
-                      "request callback first parameter should be RequestContext");
-        static_assert(requires {
-            typename Traits::Result;
-            Traits::method;
-        });
-
-        using Ret = callable_return_t<F>;
-        static_assert(request_return_traits<Ret>::valid,
-                      "request callback return type should be task<expected<Result, std::string>>");
-        using Result = typename request_return_traits<Ret>::result_type;
-        static_assert(std::is_same_v<Result, typename Traits::Result>,
-                      "request callback result type should match RequestTraits<Params>::Result");
-
-        on_request(Traits::method, std::forward<Callback>(callback));
-    }
-
-    template <typename Callback>
-    void on_request(std::string_view method, Callback&& callback) {
-        using F = std::remove_cvref_t<Callback>;
-        using Args = callable_args_t<F>;
-        static_assert(std::tuple_size_v<Args> == 2, "request callback should have two parameters");
-
-        using Context = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
-        using Params = std::remove_cvref_t<std::tuple_element_t<1, Args>>;
-
-        static_assert(std::is_same_v<Context, RequestContext>,
-                      "request callback first parameter should be RequestContext");
-
-        using Ret = callable_return_t<F>;
-        static_assert(request_return_traits<Ret>::valid,
-                      "request callback return type should be task<expected<Result, std::string>>");
-
-        auto wrapped =
-            [cb = std::forward<Callback>(callback), method_name = std::string(method)](
-                std::string_view params_json) -> task<std::expected<std::string, std::string>> {
-            auto parsed_params = LanguageServer::template deserialize_json<Params>(
-                LanguageServer::template normalize_params_json<Params>(params_json));
-            if(!parsed_params) {
-                co_return std::unexpected(parsed_params.error());
-            }
-
-            RequestContext context{};
-            context.method = method_name;
-
-            auto result = co_await std::invoke(cb, context, *parsed_params);
-            if(!result) {
-                co_return std::unexpected(result.error());
-            }
-
-            auto serialized = LanguageServer::serialize_json(*result);
-            if(!serialized) {
-                co_return std::unexpected(serialized.error());
-            }
-
-            co_return std::move(*serialized);
-        };
-
-        register_request_handler(method, std::move(wrapped));
-    }
-
-    template <typename Callback>
-    void on_notification(Callback&& callback) {
-        using F = std::remove_cvref_t<Callback>;
-        using Args = callable_args_t<F>;
-        static_assert(std::tuple_size_v<Args> == 1,
-                      "notification callback should have one parameter");
-
-        using Params = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
-        using Traits = protocol::NotificationTraits<Params>;
-        static_assert(requires { Traits::method; });
-
-        using Ret = callable_return_t<F>;
-        static_assert(std::is_same_v<Ret, void>, "notification callback should return void");
-
-        on_notification(Traits::method, std::forward<Callback>(callback));
-    }
-
-    template <typename Callback>
-    void on_notification(std::string_view method, Callback&& callback) {
-        using F = std::remove_cvref_t<Callback>;
-        using Args = callable_args_t<F>;
-        static_assert(std::tuple_size_v<Args> == 1,
-                      "notification callback should have one parameter");
-
-        using Params = std::remove_cvref_t<std::tuple_element_t<0, Args>>;
-        using Ret = callable_return_t<F>;
-        static_assert(std::is_same_v<Ret, void>, "notification callback should return void");
-
-        auto wrapped = [cb = std::forward<Callback>(callback)](std::string_view params_json) {
-            auto parsed_params = LanguageServer::template deserialize_json<Params>(
-                LanguageServer::template normalize_params_json<Params>(params_json));
-            if(!parsed_params) {
-                return;
-            }
-            std::invoke(cb, *parsed_params);
-        };
-
-        register_notification_handler(method, std::move(wrapped));
-    }
-
-private:
-    using RequestHandler =
-        std::function<task<std::expected<std::string, std::string>>(std::string_view)>;
-    using NotificationHandler = std::function<void(std::string_view)>;
-
-    template <typename T>
-    struct request_return_traits {
-        constexpr static bool valid = false;
-    };
-
-    template <typename Result>
-    struct request_return_traits<task<std::expected<Result, std::string>>> {
-        constexpr static bool valid = true;
-        using result_type = Result;
-    };
+    template <typename Result, typename Params>
+    task<std::expected<Result, std::string>> send_request(std::string_view method,
+                                                          const Params& params);
 
     template <typename Params>
-    constexpr static std::string_view normalize_params_json(std::string_view params_json) {
-        if(!params_json.empty()) {
-            return params_json;
-        }
-        if constexpr(std::is_same_v<Params, protocol::null> ||
-                     std::is_same_v<Params, protocol::LSPAny>) {
-            return "null";
-        }
-        return "{}";
-    }
+    std::expected<void, std::string> send_notification(const Params& params);
 
-    template <typename T>
-    static std::expected<T, std::string> deserialize_json(std::string_view json) {
-        auto parsed = serde::json::simd::from_json<T>(json);
-        if(!parsed) {
-            return std::unexpected(std::string(simdjson::error_message(parsed.error())));
-        }
-        return std::move(*parsed);
-    }
+    template <typename Params>
+    std::expected<void, std::string> send_notification(std::string_view method,
+                                                       const Params& params);
 
-    template <typename T>
-    static std::expected<std::string, std::string> serialize_json(const T& value) {
-        auto serialized = serde::json::simd::to_json(value);
-        if(!serialized) {
-            return std::unexpected(std::string(simdjson::error_message(serialized.error())));
-        }
-        return std::move(*serialized);
-    }
+    template <typename Callback>
+    void on_request(Callback&& callback);
 
-    void register_request_handler(std::string_view method, RequestHandler handler);
+    template <typename Callback>
+    void on_request(std::string_view method, Callback&& callback);
 
-    void register_notification_handler(std::string_view method, NotificationHandler handler);
+    template <typename Callback>
+    void on_notification(Callback&& callback);
+
+    template <typename Callback>
+    void on_notification(std::string_view method, Callback&& callback);
+
+private:
+    template <typename Params, typename Callback>
+    void bind_request_callback(std::string_view method, Callback&& callback);
+
+    template <typename Params, typename Callback>
+    void bind_notification_callback(std::string_view method, Callback&& callback);
+
+    using RequestCallback =
+        std::function<task<std::expected<std::string, std::string>>(const protocol::RequestID&,
+                                                                    std::string_view)>;
+    using NotificationCallback = std::function<void(std::string_view)>;
+
+    void register_request_callback(std::string_view method, RequestCallback callback);
+
+    void register_notification_callback(std::string_view method, NotificationCallback callback);
+
+    task<std::expected<std::string, std::string>> send_request_json(std::string_view method,
+                                                                    std::string params_json);
+
+    std::expected<void, std::string> send_notification_json(std::string_view method,
+                                                            std::string params_json);
 
 private:
     struct Self;
@@ -211,3 +103,7 @@ private:
 };
 
 }  // namespace eventide::language
+
+#define EVENTIDE_LANGUAGE_SERVER_INL_FROM_HEADER
+#include "eventide/language/server.inl"
+#undef EVENTIDE_LANGUAGE_SERVER_INL_FROM_HEADER
