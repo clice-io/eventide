@@ -98,9 +98,11 @@ if has_config("serde") and has_config("serde_flatbuffers") then
 		set_kind("$(kind)")
 		add_files("src/serde/flatbuffers/flex/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/flatbuffers/*)",
-		                "include/(eventide/serde/flatbuffers/flex/*)",
-		                "include/(eventide/serde/flatbuffers/schema/*)")
+		add_headerfiles(
+			"include/(eventide/serde/flatbuffers/*)",
+			"include/(eventide/serde/flatbuffers/flex/*)",
+			"include/(eventide/serde/flatbuffers/schema/*)"
+		)
 		add_deps("reflection")
 		add_packages("flatbuffers", { public = true })
 	end)
