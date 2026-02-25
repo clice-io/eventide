@@ -26,7 +26,7 @@ constexpr char to_ascii_lower(unsigned char value) noexcept {
     return static_cast<char>(value);
 }
 
-bool is_ascii_iequal(std::string_view left, std::string_view right) noexcept {
+constexpr bool is_ascii_iequal(std::string_view left, std::string_view right) noexcept {
     if(left.size() != right.size()) [[unlikely]] {
         return false;
     }
