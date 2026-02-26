@@ -210,6 +210,15 @@ public:
         return status();
     }
 
+    result_t<value_type> serialize_raw_json(std::string_view raw_json) {
+        if(!before_value()) {
+            return status();
+        }
+
+        builder.append_raw(raw_json);
+        return status();
+    }
+
     result_t<value_type> serialize_bytes(std::string_view value) {
         auto seq = serialize_seq(value.size());
         if(!seq) {

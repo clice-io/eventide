@@ -9,6 +9,10 @@ target_link_libraries(eventide_serde INTERFACE
     eventide::reflection
 )
 
+if(EVENTIDE_SERDE_ENABLE_YYJSON AND NOT EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    message(FATAL_ERROR "EVENTIDE_SERDE_ENABLE_YYJSON requires EVENTIDE_SERDE_ENABLE_SIMDJSON.")
+endif()
+
 if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     # Keep simdjson in "library consumer" mode.
     set(SIMDJSON_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
@@ -52,6 +56,27 @@ if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
         eventide::reflection
         simdjson::simdjson
     )
+
+    if(EVENTIDE_SERDE_ENABLE_YYJSON)
+        # Keep yyjson as a lean dependency-only library.
+        set(YYJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_FUZZER OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_MISC OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
+        set(YYJSON_INSTALL OFF CACHE BOOL "" FORCE)
+
+        FetchContent_Declare(
+            yyjson
+            GIT_REPOSITORY https://github.com/ibireme/yyjson.git
+            GIT_TAG 0.12.0
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(yyjson)
+
+        target_link_libraries(eventide_serde_json INTERFACE
+            yyjson
+        )
+    endif()
 
     target_link_libraries(eventide_serde INTERFACE
         eventide::serde::json

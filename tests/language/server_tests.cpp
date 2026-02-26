@@ -10,7 +10,7 @@
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/sync.h"
-#include "eventide/serde/simdjson/deserializer.h"
+#include "eventide/serde/json/simd_deserializer.h"
 #include "eventide/language/server.h"
 
 namespace eventide::language {

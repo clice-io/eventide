@@ -665,6 +665,10 @@ public:
         return s;
     }
 
+    result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
+        return consume_raw_json_view();
+    }
+
 private:
     template <typename T, typename RootReader, typename ValueReader>
     status_t read_scalar(T& out, RootReader&& read_root, ValueReader&& read_value) {

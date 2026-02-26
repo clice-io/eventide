@@ -20,7 +20,7 @@ namespace {
 
 template <typename T>
 std::expected<T, std::string> parse_json_value(std::string_view json) {
-    auto parsed = serde::json::simd::from_json<T>(json);
+    auto parsed = serde::json::parse<T>(json);
     if(!parsed) {
         return std::unexpected(std::string(simdjson::error_message(parsed.error())));
     }

@@ -11,7 +11,12 @@ option("serde", { default = true })
 option("option", { default = true })
 option("deco", { default = true })
 option("serde_simdjson", { default = false })
+option("serde_yyjson", { default = false })
 option("serde_flatbuffers", { default = false })
+
+if has_config("serde_yyjson") and not has_config("serde_simdjson") then
+	raise("serde_yyjson requires serde_simdjson")
+end
 
 if has_config("dev") then
 	-- Don't fetch system package
@@ -63,6 +68,9 @@ end
 if has_config("serde") and has_config("serde_simdjson") then
 	add_requires("simdjson v4.2.4")
 end
+if has_config("serde") and has_config("serde_yyjson") then
+	add_requires("yyjson v0.12.0")
+end
 if has_config("serde") and has_config("serde_flatbuffers") then
 	add_requires("flatbuffers v25.2.10")
 end
@@ -87,9 +95,12 @@ if has_config("serde") and has_config("serde_simdjson") then
 	target("serde_json", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/simdjson/*)")
+		add_headerfiles("include/(eventide/serde/json/*)")
 		add_deps("reflection")
 		add_packages("simdjson", { public = true })
+		if has_config("serde_yyjson") then
+			add_packages("yyjson", { public = true })
+		end
 	end)
 end
 
@@ -191,7 +202,10 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/deco/**.cc")
 		end
 		if has_config("serde") and has_config("serde_simdjson") then
-			add_files("tests/serde/simdjson/**.cpp")
+			add_files("tests/serde/json/simdjson_*.cpp")
+		end
+		if has_config("serde") and has_config("serde_yyjson") then
+			add_files("tests/serde/json/dom_tests.cpp", "tests/serde/json/yyjson_*.cpp")
 		end
 		if has_config("serde") and has_config("serde_flatbuffers") then
 			add_files("tests/serde/flatbuffers/**.cpp")
