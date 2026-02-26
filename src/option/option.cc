@@ -1,6 +1,5 @@
-#include "eventide/option/opt_table.h"
 #include "eventide/option/option.h"
-#include "eventide/option/parsed_arg.h"
+
 #include <cassert>
 #include <cstring>
 #include <ostream>
@@ -8,11 +7,16 @@
 #include <string_view>
 #include <utility>
 
+#include "eventide/option/opt_table.h"
+#include "eventide/option/parsed_arg.h"
+
 namespace eventide::option {
 namespace {
+
 constexpr const char* k_no_match = "internal error: option does not match argument";
 constexpr const char* k_missing_value = "missing argument value";
 constexpr const char* k_missing_values = "missing one or more argument values";
+
 }  // namespace
 
 Option::Option(const OptTable::Info* info, const OptTable* owner) : info(info), owner(owner) {
@@ -313,4 +317,5 @@ PArgResult Option::accept(const ArgList& args,
     }
     return a;
 }
+
 }  // namespace eventide::option

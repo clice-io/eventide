@@ -1,11 +1,12 @@
 #pragma once
-#include "parsed_arg.h"
-#include "opt_specifier.h"
-#include "opt_table.h"
 #include <cassert>
 #include <expected>
 #include <string_view>
 #include <utility>
+
+#include "opt_specifier.h"
+#include "opt_table.h"
+#include "parsed_arg.h"
 
 namespace eventide::option {
 
@@ -211,4 +212,5 @@ private:
 public:
     void print(std::ostream& o, bool add_new_line) const;
 };
+
 }  // namespace eventide::option

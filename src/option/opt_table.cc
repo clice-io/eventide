@@ -1,7 +1,5 @@
-#include "eventide/option/opt_specifier.h"
 #include "eventide/option/opt_table.h"
-#include "eventide/option/option.h"
-#include "eventide/option/parsed_arg.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -13,6 +11,10 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "eventide/option/opt_specifier.h"
+#include "eventide/option/option.h"
+#include "eventide/option/parsed_arg.h"
 
 using namespace eventide::option;
 
@@ -82,11 +84,11 @@ int str_cmp_opt_name(std::string_view a, std::string_view b, bool fallback_case_
 }
 
 struct OptNameLess {
-
-    inline bool operator() (const OptTable::Info& i, std::string_view name) const {
+    inline bool operator()(const OptTable::Info& i, std::string_view name) const {
         return str_cmp_opt_name(i.name(), name, false) < 0;
     }
 };
+
 }  // namespace
 
 OptTable::OptTable(std::span<const OptTable::Info> option_infos,

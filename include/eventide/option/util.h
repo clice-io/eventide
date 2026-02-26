@@ -4,6 +4,7 @@
 #include <string_view>
 
 namespace eventide::option {
+
 constexpr inline std::string_view _pfx_dash[] = {"-"};
 constexpr inline std::string_view _pfx_dash_double[] = {"-", "--"};
 constexpr inline std::string_view _pfx_double[] = {"--"};
@@ -16,4 +17,5 @@ constexpr inline auto pfx_dash_double = std::span<const std::string_view>(_pfx_d
 constexpr inline auto pfx_double = std::span<const std::string_view>(_pfx_double);
 constexpr inline auto pfx_all = std::span<const std::string_view>(_pfx_all);
 constexpr inline auto pfx_slash_dash = std::span<const std::string_view>(_pfx_slash_dash);
+
 }  // namespace eventide::option

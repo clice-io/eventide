@@ -20,11 +20,11 @@ public:
         return this->_id;
     }
 
-    bool operator== (OptSpecifier opt) const {
+    bool operator==(OptSpecifier opt) const {
         return this->_id == opt.id();
     }
 
-    bool operator!= (OptSpecifier opt) const {
+    bool operator!=(OptSpecifier opt) const {
         return !(*this == opt);
     }
 };

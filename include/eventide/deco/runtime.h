@@ -425,7 +425,7 @@ public:
         }
 
         errorHandler({SubCommandError::Type::UnknownSubCommand,
-                        std::format("unknown subcommand '{}'", argv.front())});
+                      std::format("unknown subcommand '{}'", argv.front())});
     }
 
     void operator()(std::span<std::string> argv) {

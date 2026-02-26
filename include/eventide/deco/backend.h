@@ -587,8 +587,7 @@ public:
 
     constexpr auto category_map() const {
         if constexpr(counting) {
-            return std::span<const decl::Category* const>(categoryMap.data(),
-                                                          categoryMap.size());
+            return std::span<const decl::Category* const>(categoryMap.data(), categoryMap.size());
         } else {
             return std::span<const decl::Category* const>(categoryMap.data(), offset + 1);
         }
@@ -675,9 +674,9 @@ consteval auto build_stats() {
 
 template <typename OptDeco>
 struct BuildStorage {
-    inline static constexpr BuildStats stats = build_stats<OptDeco>();
+    constexpr inline static BuildStats stats = build_stats<OptDeco>();
     using builder_t = OptBuilder<OptDeco, false, stats.optCount, stats.strPoolBytes>;
-    inline static constexpr builder_t value{std::in_place, stats.strPoolBytes};
+    constexpr inline static builder_t value{std::in_place, stats.strPoolBytes};
 };
 
 template <typename OptDeco>

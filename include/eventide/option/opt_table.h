@@ -1,8 +1,5 @@
 #pragma once
 
-#include "util.h"
-#include "parsed_arg.h"
-#include "opt_specifier.h"
 #include <array>
 #include <cassert>
 #include <expected>
@@ -15,6 +12,10 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "opt_specifier.h"
+#include "parsed_arg.h"
+#include "util.h"
 
 namespace eventide::option {
 
@@ -476,7 +477,6 @@ public:
                              ArgCallback&& arg_callback,
                              ExcludeOption&& exclude_option,
                              const char** missing_arg_reason = nullptr) const {
-
         // FIXME: Handle '@' args (or at least error on them).
 
         missing_arg_index = missing_arg_count = 0;
@@ -549,4 +549,5 @@ public:
         }
     }
 };
+
 }  // namespace eventide::option
