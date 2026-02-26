@@ -114,16 +114,13 @@ struct udp_recv_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<udp_recv_await*>(op);
-        if(aw->self) {
-            if(aw->self->receiving) {
-                uv_udp_recv_stop(&aw->self->handle);
-                aw->self->receiving = false;
+        detail::cancel_and_complete<udp_recv_await>(op, [](auto& aw) {
+            if(aw.self && aw.self->receiving) {
+                uv_udp_recv_stop(&aw.self->handle);
+                aw.self->receiving = false;
             }
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+            detail::clear_waiter_active(aw.self, &udp::Self::waiter, &udp::Self::active);
+        });
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -153,7 +150,8 @@ struct udp_recv_await : system_op {
         };
 
         if(nread < 0) {
-            deliver(std::unexpected(error(static_cast<int>(nread))));
+            detail::mark_cancelled_if(u->waiter, nread);
+            deliver(std::unexpected(detail::status_to_error(nread)));
             return;
         }
 
@@ -226,9 +224,11 @@ struct udp_send_await : system_op {
 
     static void on_cancel(system_op* op) {
         auto* aw = static_cast<udp_send_await*>(op);
-        if(aw->self) {
-            uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
+        if(!aw->self) {
+            return;
         }
+        // uv_udp_send_t is not cancellable via uv_cancel().
+        // Keep the request in-flight and wait for on_send() to retire it.
     }
 
     static void on_send(uv_udp_send_t* req, int status) {
@@ -240,7 +240,9 @@ struct udp_send_await : system_op {
 
         u->send_inflight = false;
 
-        auto ec = status < 0 ? error(status) : error{};
+        detail::mark_cancelled_if(u->send_waiter, status);
+
+        auto ec = detail::status_to_error(status);
 
         detail::deliver_or_store(u->send_waiter, u->send_active, u->send_pending, std::move(ec));
     }

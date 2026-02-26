@@ -79,12 +79,11 @@ struct fs_event_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<fs_event_await*>(op);
-        if(aw->self) {
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+        detail::cancel_and_complete<fs_event_await>(op, [](auto& aw) {
+            detail::clear_waiter_active(aw.self,
+                                        &fs_event::Self::waiter,
+                                        &fs_event::Self::active);
+        });
     }
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
@@ -112,7 +111,7 @@ struct fs_event_await : system_op {
         };
 
         if(status < 0) {
-            deliver(std::unexpected(error(status)));
+            deliver(std::unexpected(detail::status_to_error(status)));
             return;
         }
 
@@ -251,7 +250,7 @@ struct fs_op : system_op {
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<fs_op*>(op);
-        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+        detail::cancel_uv_request(&self->req);
     }
 
     bool await_ready() const noexcept {
@@ -327,8 +326,10 @@ static task<result<Result>> run_fs(Submit submit,
             return;
         }
 
+        detail::mark_cancelled_if(h, req->result);
+
         if(req->result < 0) {
-            h->out = std::unexpected(error(static_cast<int>(req->result)));
+            h->out = std::unexpected(detail::status_to_error(req->result));
         } else {
             h->out = h->populate(*req);
         }

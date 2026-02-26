@@ -252,10 +252,9 @@ task<std::expected<T, cancellation>> with_token_impl(cancellation_token token,
     child->policy = async_node::InterceptCancel;
     auto registration = token.register_task(child.operator->());
     auto result = co_await std::move(child);
-    const bool cancelled_by_token = registration.cancelled();
     registration.unregister();
 
-    if(cancelled_by_token || !result.has_value()) {
+    if(!result.has_value()) {
         co_await cancel();
         std::abort();
     }
@@ -270,7 +269,7 @@ task<std::expected<T, cancellation>> with_token_impl(cancellation_token token,
 }  // namespace detail
 
 template <typename T>
-    requires (!is_cancellation_t<T>)
+    requires(!is_cancellation_t<T>)
 task<std::expected<T, cancellation>> with_token(cancellation_token token, task<T>&& task) {
     auto child = std::move(task).catch_cancel();
     auto wrapped = detail::with_token_impl<T>(std::move(token), std::move(child));

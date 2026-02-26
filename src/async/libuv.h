@@ -115,6 +115,72 @@ inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
     return std::unexpected(error::invalid_argument);
 }
 
+template <typename StatusT>
+inline bool is_cancelled_status(StatusT status) noexcept {
+    return static_cast<long long>(status) == static_cast<long long>(UV_ECANCELED);
+}
+
+template <typename StatusT>
+inline bool mark_cancelled_if(system_op* op, StatusT status) noexcept {
+    if(op == nullptr || !is_cancelled_status(status)) {
+        return false;
+    }
+
+    op->state = async_node::Cancelled;
+    return true;
+}
+
+template <typename StatusT>
+inline error status_to_error(StatusT status) noexcept {
+    if(static_cast<long long>(status) < 0) {
+        return error(static_cast<int>(status));
+    }
+    return {};
+}
+
+template <typename ReqT>
+inline void cancel_uv_request(ReqT* req) noexcept {
+    if(req == nullptr) {
+        return;
+    }
+    uv_cancel(reinterpret_cast<uv_req_t*>(req));
+}
+
+template <typename SelfT>
+inline void clear_waiter(SelfT* self, system_op* SelfT::*waiter) noexcept {
+    if(self == nullptr) {
+        return;
+    }
+    self->*waiter = nullptr;
+}
+
+template <typename SelfT, typename ActiveT>
+inline void clear_waiter_active(SelfT* self,
+                                system_op* SelfT::*waiter,
+                                ActiveT* SelfT::*active) noexcept {
+    if(self == nullptr) {
+        return;
+    }
+    self->*waiter = nullptr;
+    self->*active = nullptr;
+}
+
+template <typename AwaitT, typename CleanupFn>
+inline void cancel_and_complete(system_op* op, CleanupFn&& cleanup) noexcept {
+    auto* aw = static_cast<AwaitT*>(op);
+    if(aw == nullptr) {
+        return;
+    }
+
+    cleanup(*aw);
+    aw->complete();
+}
+
+template <typename AwaitT>
+inline void cancel_and_complete(system_op* op) noexcept {
+    cancel_and_complete<AwaitT>(op, [](AwaitT&) noexcept {});
+}
+
 template <typename ResultT>
 inline void deliver_or_queue(system_op*& waiter,
                              ResultT*& active,

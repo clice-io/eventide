@@ -22,7 +22,7 @@ struct work_op : system_op {
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<work_op*>(op);
-        uv_cancel(reinterpret_cast<uv_req_t*>(&self->req));
+        detail::cancel_uv_request(&self->req);
     }
 
     bool await_ready() const noexcept {
@@ -59,7 +59,8 @@ task<error> queue(work_fn fn, event_loop& loop) {
             return;
         }
 
-        holder->result = status < 0 ? error(status) : error();
+        detail::mark_cancelled_if(holder, status);
+        holder->result = detail::status_to_error(status);
         holder->complete();
     };
 

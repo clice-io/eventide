@@ -53,12 +53,9 @@ struct process_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<process_await*>(op);
-        if(aw->self) {
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+        detail::cancel_and_complete<process_await>(op, [](auto& aw) {
+            detail::clear_waiter_active(aw.self, &process::Self::waiter, &process::Self::active);
+        });
     }
 
     static void notify(process::Self& self, process::exit_status status) {

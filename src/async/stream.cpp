@@ -107,15 +107,12 @@ struct stream_read_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<stream_read_await*>(op);
-        if(aw->self) {
-            auto* handle = aw->self->as<uv_stream_t>();
-            if(handle) {
-                uv_read_stop(handle);
+        detail::cancel_and_complete<stream_read_await>(op, [](auto& aw) {
+            if(aw.self) {
+                uv_read_stop(aw.self->template as<uv_stream_t>());
+                detail::clear_waiter(aw.self, &stream::Self::reader);
             }
-            aw->self->reader = nullptr;
-        }
-        aw->complete();
+        });
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -144,7 +141,8 @@ struct stream_read_await : system_op {
                 if(s->reader) {
                     auto reader = s->reader;
                     s->reader = nullptr;
-                    s->error_code = error(nread);
+                    detail::mark_cancelled_if(reader, nread);
+                    s->error_code = detail::status_to_error(nread);
                     reader->complete();
                 }
             }
@@ -199,15 +197,12 @@ struct stream_read_some_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<stream_read_some_await*>(op);
-        if(aw->self) {
-            auto* handle = aw->self->as<uv_stream_t>();
-            if(handle) {
-                uv_read_stop(handle);
+        detail::cancel_and_complete<stream_read_some_await>(op, [](auto& aw) {
+            if(aw.self) {
+                uv_read_stop(aw.self->template as<uv_stream_t>());
+                detail::clear_waiter(aw.self, &stream::Self::reader);
             }
-            aw->self->reader = nullptr;
-        }
-        aw->complete();
+        });
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
@@ -243,6 +238,7 @@ struct stream_read_some_await : system_op {
 
         if(nread < 0) {
             aw->bytes = 0;
+            detail::mark_cancelled_if(aw, nread);
         } else if(nread > 0) {
             aw->bytes = static_cast<std::size_t>(nread);
         } else {
@@ -301,9 +297,11 @@ struct stream_write_await : system_op {
 
     static void on_cancel(system_op* op) {
         auto* aw = static_cast<stream_write_await*>(op);
-        if(aw->self) {
-            uv_cancel(reinterpret_cast<uv_req_t*>(&aw->req));
+        if(!aw->self) {
+            return;
         }
+        // uv_write_t is not cancellable via uv_cancel().
+        // Keep the request in-flight and wait for on_write() to retire it.
     }
 
     static void on_write(uv_write_t* req, int status) {
@@ -312,8 +310,10 @@ struct stream_write_await : system_op {
             return;
         }
 
+        detail::mark_cancelled_if(aw, status);
+
         if(status < 0) {
-            aw->error_code = error(status);
+            aw->error_code = detail::status_to_error(status);
         }
 
         if(aw->self->writer) {
@@ -367,12 +367,11 @@ struct pipe_accept_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<pipe_accept_await*>(op);
-        if(aw->self) {
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+        detail::cancel_and_complete<pipe_accept_await>(op, [](auto& aw) {
+            detail::clear_waiter_active(aw.self,
+                                        &acceptor<pipe>::Self::waiter,
+                                        &acceptor<pipe>::Self::active);
+        });
     }
 
     static void on_connection_cb(uv_stream_t* server, int status) {
@@ -393,7 +392,7 @@ struct pipe_accept_await : system_op {
         };
 
         if(status < 0) {
-            deliver(std::unexpected(error(status)));
+            deliver(std::unexpected(detail::status_to_error(status)));
             return;
         }
 
@@ -448,12 +447,11 @@ struct tcp_accept_await : system_op {
     }
 
     static void on_cancel(system_op* op) {
-        auto* aw = static_cast<tcp_accept_await*>(op);
-        if(aw->self) {
-            aw->self->waiter = nullptr;
-            aw->self->active = nullptr;
-        }
-        aw->complete();
+        detail::cancel_and_complete<tcp_accept_await>(op, [](auto& aw) {
+            detail::clear_waiter_active(aw.self,
+                                        &acceptor<tcp_socket>::Self::waiter,
+                                        &acceptor<tcp_socket>::Self::active);
+        });
     }
 
     static void on_connection_cb(uv_stream_t* server, int status) {
@@ -476,7 +474,7 @@ struct tcp_accept_await : system_op {
         };
 
         if(status < 0) {
-            deliver(std::unexpected(error(status)));
+            deliver(std::unexpected(detail::status_to_error(status)));
             return;
         }
 
@@ -558,8 +556,10 @@ struct tcp_connect_await : system_op {
             return;
         }
 
+        detail::mark_cancelled_if(aw, status);
+
         if(status < 0) {
-            aw->outcome = std::unexpected(error(status));
+            aw->outcome = std::unexpected(detail::status_to_error(status));
         } else if(aw->state) {
             aw->outcome = tcp_socket(aw->state.release());
         } else {
@@ -642,8 +642,10 @@ struct pipe_connect_await : system_op {
             return;
         }
 
+        detail::mark_cancelled_if(aw, status);
+
         if(status < 0) {
-            aw->outcome = std::unexpected(error(status));
+            aw->outcome = std::unexpected(detail::status_to_error(status));
         } else if(aw->state) {
             aw->outcome = pipe(aw->state.release());
         } else {
