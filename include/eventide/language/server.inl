@@ -84,7 +84,7 @@ template <typename T>
 std::expected<T, std::string> deserialize_json(std::string_view json) {
     auto parsed = serde::json::parse<T>(json);
     if(!parsed) {
-        return std::unexpected(std::string(simdjson::error_message(parsed.error())));
+        return std::unexpected(std::string(serde::json::error_message(parsed.error())));
     }
     return std::move(*parsed);
 }
@@ -93,7 +93,7 @@ template <typename T>
 std::expected<std::string, std::string> serialize_json(const T& value) {
     auto serialized = serde::json::to_string(value);
     if(!serialized) {
-        return std::unexpected(std::string(simdjson::error_message(serialized.error())));
+        return std::unexpected(std::string(serde::json::error_message(serialized.error())));
     }
     return std::move(*serialized);
 }

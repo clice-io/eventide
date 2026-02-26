@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "eventide/serde/json/dom.h"
+#include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde::json::yy {
@@ -22,14 +23,7 @@ namespace eventide::serde::json::yy {
 class Serializer {
 public:
     using value_type = void;
-
-    enum class error_code : std::uint8_t {
-        invalid_state,
-        allocation_failed,
-        write_failed,
-    };
-
-    using error_type = error_code;
+    using error_type = json::error_kind;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -92,31 +86,43 @@ public:
     using SerializeMap = SerializeObject;
     using SerializeStruct = SerializeObject;
 
-    Serializer() : doc_(yyjson_mut_doc_new(nullptr), yyjson_mut_doc_free) {
-        if(doc_ == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+    Serializer() : doc(yyjson_mut_doc_new(nullptr), yyjson_mut_doc_free) {
+        if(doc == nullptr) {
+            mark_invalid(error_type::allocation_failed);
         }
     }
 
     [[nodiscard]] bool valid() const noexcept {
-        return is_valid_;
+        return isValid;
     }
 
     [[nodiscard]] error_type error() const noexcept {
-        return last_error_;
+        return lastError;
+    }
+
+    result_t<json::Value> dom_value() const {
+        if(!isValid || !rootWritten || !stack.empty()) {
+            return std::unexpected(current_error());
+        }
+
+        auto value = json::Value::from_mutable_doc(doc);
+        if(!value) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        return std::move(*value);
     }
 
     result_t<std::string> str() const {
-        if(!is_valid_ || !root_written_ || !stack_.empty()) {
+        if(!isValid || !rootWritten || !stack.empty()) {
             return std::unexpected(current_error());
         }
 
         yyjson_write_err err{};
         size_t len = 0;
-        auto* root = yyjson_mut_doc_get_root(doc_.get());
+        auto* root = yyjson_mut_doc_get_root(doc.get());
         char* out = yyjson_mut_val_write_opts(root, YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
         if(out == nullptr) {
-            return std::unexpected(error_code::write_failed);
+            return std::unexpected(error_type::write_failed);
         }
 
         std::string json(out, len);
@@ -125,7 +131,7 @@ public:
     }
 
     result_t<value_type> serialize_none() {
-        return append_created(yyjson_mut_null(doc_.get()));
+        return append_created(yyjson_mut_null(doc.get()));
     }
 
     template <typename T>
@@ -141,31 +147,31 @@ public:
     }
 
     result_t<value_type> serialize_bool(bool value) {
-        return append_created(yyjson_mut_bool(doc_.get(), value));
+        return append_created(yyjson_mut_bool(doc.get(), value));
     }
 
     result_t<value_type> serialize_int(std::int64_t value) {
-        return append_created(yyjson_mut_sint(doc_.get(), value));
+        return append_created(yyjson_mut_sint(doc.get(), value));
     }
 
     result_t<value_type> serialize_uint(std::uint64_t value) {
-        return append_created(yyjson_mut_uint(doc_.get(), value));
+        return append_created(yyjson_mut_uint(doc.get(), value));
     }
 
     result_t<value_type> serialize_float(double value) {
         if(std::isfinite(value)) {
-            return append_created(yyjson_mut_real(doc_.get(), value));
+            return append_created(yyjson_mut_real(doc.get(), value));
         }
         return serialize_none();
     }
 
     result_t<value_type> serialize_char(char value) {
         const char chars[1] = {value};
-        return append_created(yyjson_mut_strncpy(doc_.get(), chars, 1));
+        return append_created(yyjson_mut_strncpy(doc.get(), chars, 1));
     }
 
     result_t<value_type> serialize_str(std::string_view value) {
-        return append_created(yyjson_mut_strncpy(doc_.get(), value.data(), value.size()));
+        return append_created(yyjson_mut_strncpy(doc.get(), value.data(), value.size()));
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
@@ -232,20 +238,20 @@ public:
     }
 
     result_t<value_type> append_json_value(const json::Value& value) {
-        if(!is_valid_) {
+        if(!isValid) {
             return std::unexpected(current_error());
         }
 
         yyjson_mut_val* copied = nullptr;
         if(value.is_mutable()) {
-            copied = yyjson_mut_val_mut_copy(doc_.get(),
+            copied = yyjson_mut_val_mut_copy(doc.get(),
                                              const_cast<yyjson_mut_val*>(value.mutable_value()));
         } else {
             copied =
-                yyjson_val_mut_copy(doc_.get(), const_cast<yyjson_val*>(value.immutable_value()));
+                yyjson_val_mut_copy(doc.get(), const_cast<yyjson_val*>(value.immutable_value()));
         }
         if(copied == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
@@ -267,9 +273,9 @@ private:
     };
 
     status_t begin_object() {
-        auto* obj = yyjson_mut_obj(doc_.get());
+        auto* obj = yyjson_mut_obj(doc.get());
         if(obj == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
@@ -278,7 +284,7 @@ private:
             return std::unexpected(appended.error());
         }
 
-        stack_.push_back(container_frame{
+        stack.push_back(container_frame{
             .kind = container_kind::object,
             .value = obj,
             .expect_key = true,
@@ -287,25 +293,25 @@ private:
     }
 
     result_t<value_type> end_object() {
-        if(!is_valid_ || stack_.empty()) {
+        if(!isValid || stack.empty()) {
             mark_invalid();
             return std::unexpected(current_error());
         }
 
-        const auto& frame = stack_.back();
+        const auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
             return std::unexpected(current_error());
         }
 
-        stack_.pop_back();
+        stack.pop_back();
         return {};
     }
 
     status_t begin_array() {
-        auto* arr = yyjson_mut_arr(doc_.get());
+        auto* arr = yyjson_mut_arr(doc.get());
         if(arr == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
@@ -314,7 +320,7 @@ private:
             return std::unexpected(appended.error());
         }
 
-        stack_.push_back(container_frame{
+        stack.push_back(container_frame{
             .kind = container_kind::array,
             .value = arr,
             .expect_key = false,
@@ -323,25 +329,25 @@ private:
     }
 
     result_t<value_type> end_array() {
-        if(!is_valid_ || stack_.empty()) {
+        if(!isValid || stack.empty()) {
             mark_invalid();
             return std::unexpected(current_error());
         }
-        if(stack_.back().kind != container_kind::array) {
+        if(stack.back().kind != container_kind::array) {
             mark_invalid();
             return std::unexpected(current_error());
         }
-        stack_.pop_back();
+        stack.pop_back();
         return {};
     }
 
     status_t key(std::string_view key_name) {
-        if(!is_valid_ || stack_.empty()) {
+        if(!isValid || stack.empty()) {
             mark_invalid();
             return std::unexpected(current_error());
         }
 
-        auto& frame = stack_.back();
+        auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
             return std::unexpected(current_error());
@@ -354,7 +360,7 @@ private:
 
     result_t<value_type> append_created(yyjson_mut_val* value) {
         if(value == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
@@ -366,28 +372,28 @@ private:
     }
 
     status_t append_value(yyjson_mut_val* value) {
-        if(!is_valid_) {
+        if(!isValid) {
             return std::unexpected(current_error());
         }
         if(value == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
-        if(stack_.empty()) {
-            if(root_written_) {
+        if(stack.empty()) {
+            if(rootWritten) {
                 mark_invalid();
                 return std::unexpected(current_error());
             }
-            yyjson_mut_doc_set_root(doc_.get(), value);
-            root_written_ = true;
+            yyjson_mut_doc_set_root(doc.get(), value);
+            rootWritten = true;
             return {};
         }
 
-        auto& frame = stack_.back();
+        auto& frame = stack.back();
         if(frame.kind == container_kind::array) {
             if(!yyjson_mut_arr_add_val(frame.value, value)) {
-                mark_invalid(error_code::allocation_failed);
+                mark_invalid(error_type::allocation_failed);
                 return std::unexpected(current_error());
             }
             return {};
@@ -399,14 +405,14 @@ private:
         }
 
         yyjson_mut_val* key_value =
-            yyjson_mut_strncpy(doc_.get(), frame.pending_key.data(), frame.pending_key.size());
+            yyjson_mut_strncpy(doc.get(), frame.pending_key.data(), frame.pending_key.size());
         if(key_value == nullptr) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
         if(!yyjson_mut_obj_put(frame.value, key_value, value)) {
-            mark_invalid(error_code::allocation_failed);
+            mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
         }
 
@@ -415,27 +421,27 @@ private:
         return {};
     }
 
-    void mark_invalid(error_type error = error_code::invalid_state) {
-        is_valid_ = false;
-        if(last_error_ == error_code::invalid_state || error != error_code::invalid_state) {
-            last_error_ = error;
+    void mark_invalid(error_type error = error_type::invalid_state) {
+        isValid = false;
+        if(lastError == error_type::invalid_state || error != error_type::invalid_state) {
+            lastError = error;
         }
     }
 
     [[nodiscard]] error_type current_error() const noexcept {
-        return last_error_;
+        return lastError;
     }
 
 private:
-    bool is_valid_ = true;
-    bool root_written_ = false;
-    error_type last_error_ = error_code::invalid_state;
-    std::vector<container_frame> stack_;
-    std::shared_ptr<yyjson_mut_doc> doc_;
+    bool isValid = true;
+    bool rootWritten = false;
+    error_type lastError = error_type::invalid_state;
+    std::vector<container_frame> stack;
+    std::shared_ptr<yyjson_mut_doc> doc;
 };
 
 template <typename T>
-auto to_json(const T& value) -> std::expected<std::string, Serializer::error_type> {
+auto to_dom(const T& value) -> std::expected<json::Value, Serializer::error_type> {
     Serializer serializer;
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
@@ -445,7 +451,21 @@ auto to_json(const T& value) -> std::expected<std::string, Serializer::error_typ
     if(!result) {
         return std::unexpected(result.error());
     }
-    return serializer.str();
+    return serializer.dom_value();
+}
+
+template <typename T>
+auto to_json(const T& value) -> std::expected<std::string, Serializer::error_type> {
+    auto dom = to_dom(value);
+    if(!dom) {
+        return std::unexpected(dom.error());
+    }
+
+    auto json = dom->to_json_string();
+    if(!json) {
+        return std::unexpected(Serializer::error_type::write_failed);
+    }
+    return std::move(*json);
 }
 
 static_assert(serde::serializer_like<Serializer>);

@@ -209,28 +209,39 @@ public:
     constexpr RefBase() noexcept = default;
 
     [[nodiscard]] constexpr bool valid() const noexcept {
-        return detail::valid(handle_);
+        return detail::valid(handle);
     }
 
     [[nodiscard]] const yyjson_val* raw() const noexcept {
-        return detail::as_immutable(handle_);
+        return detail::as_immutable(handle);
+    }
+
+    [[nodiscard]] yyjson_mut_val* raw_mutable() const noexcept {
+        if(!handle.is_mutable) {
+            return nullptr;
+        }
+        return detail::as_mutable(handle);
+    }
+
+    [[nodiscard]] bool mutable_ref() const noexcept {
+        return handle.is_mutable;
     }
 
 protected:
     explicit constexpr RefBase(const yyjson_val* value) noexcept :
-        handle_(detail::make_handle(value)) {}
+        handle(detail::make_handle(value)) {}
 
     explicit constexpr RefBase(const yyjson_mut_val* value) noexcept :
-        handle_(detail::make_handle(value)) {}
+        handle(detail::make_handle(value)) {}
 
-    explicit constexpr RefBase(detail::value_handle handle) noexcept : handle_(handle) {}
+    explicit constexpr RefBase(detail::value_handle handle) noexcept : handle(handle) {}
 
-    [[nodiscard]] constexpr auto handle() const noexcept -> detail::value_handle {
-        return handle_;
+    [[nodiscard]] constexpr auto handle_value() const noexcept -> detail::value_handle {
+        return handle;
     }
 
 protected:
-    detail::value_handle handle_{};
+    detail::value_handle handle{};
 };
 
 class ValueRef : public RefBase {
@@ -242,66 +253,66 @@ public:
     explicit constexpr ValueRef(const yyjson_mut_val* value) noexcept : RefBase(value) {}
 
     [[nodiscard]] bool is_null() const noexcept {
-        return valid() && detail::is_null(handle_);
+        return valid() && detail::is_null(handle);
     }
 
     [[nodiscard]] bool is_bool() const noexcept {
-        return valid() && detail::is_bool(handle_);
+        return valid() && detail::is_bool(handle);
     }
 
     [[nodiscard]] bool is_int() const noexcept {
-        return valid() && detail::is_int(handle_);
+        return valid() && detail::is_int(handle);
     }
 
     [[nodiscard]] bool is_number() const noexcept {
-        return valid() && detail::is_num(handle_);
+        return valid() && detail::is_num(handle);
     }
 
     [[nodiscard]] bool is_string() const noexcept {
-        return valid() && detail::is_str(handle_);
+        return valid() && detail::is_str(handle);
     }
 
     [[nodiscard]] bool is_array() const noexcept {
-        return valid() && detail::is_arr(handle_);
+        return valid() && detail::is_arr(handle);
     }
 
     [[nodiscard]] bool is_object() const noexcept {
-        return valid() && detail::is_obj(handle_);
+        return valid() && detail::is_obj(handle);
     }
 
     [[nodiscard]] std::optional<bool> as_bool() const noexcept {
         if(!valid()) {
             return std::nullopt;
         }
-        return detail::as_bool(handle_);
+        return detail::as_bool(handle);
     }
 
     [[nodiscard]] std::optional<std::int64_t> as_int() const noexcept {
         if(!valid()) {
             return std::nullopt;
         }
-        return detail::as_sint(handle_);
+        return detail::as_sint(handle);
     }
 
     [[nodiscard]] std::optional<std::uint64_t> as_uint() const noexcept {
         if(!valid()) {
             return std::nullopt;
         }
-        return detail::as_uint(handle_);
+        return detail::as_uint(handle);
     }
 
     [[nodiscard]] std::optional<double> as_double() const noexcept {
         if(!valid()) {
             return std::nullopt;
         }
-        return detail::as_num(handle_);
+        return detail::as_num(handle);
     }
 
     [[nodiscard]] std::optional<std::string_view> as_string() const noexcept {
         if(!valid()) {
             return std::nullopt;
         }
-        return detail::as_str(handle_);
+        return detail::as_str(handle);
     }
 
     [[nodiscard]] std::optional<ArrayRef> as_array() const noexcept;
@@ -325,21 +336,21 @@ public:
     explicit constexpr ArrayRef(const yyjson_mut_val* value) noexcept : RefBase(value) {}
 
     [[nodiscard]] bool valid() const noexcept {
-        return RefBase::valid() && detail::is_arr(handle_);
+        return RefBase::valid() && detail::is_arr(handle);
     }
 
     [[nodiscard]] std::size_t size() const noexcept {
         if(!valid()) {
             return 0;
         }
-        return detail::arr_size(handle_);
+        return detail::arr_size(handle);
     }
 
     [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept {
         if(!valid()) {
             return {};
         }
-        return ValueRef(detail::arr_get(handle_, index));
+        return ValueRef(detail::arr_get(handle, index));
     }
 
 private:
@@ -357,15 +368,30 @@ public:
 
     explicit constexpr ObjectRef(const yyjson_mut_val* value) noexcept : RefBase(value) {}
 
+    ObjectRef(const ObjectRef& other) noexcept : RefBase(other.handle), objectIndex(nullptr) {}
+
+    auto operator=(const ObjectRef& other) noexcept -> ObjectRef& {
+        if(this == &other) {
+            return *this;
+        }
+        handle = other.handle;
+        objectIndex.reset();
+        return *this;
+    }
+
+    ObjectRef(ObjectRef&&) noexcept = default;
+
+    auto operator=(ObjectRef&&) noexcept -> ObjectRef& = default;
+
     [[nodiscard]] bool valid() const noexcept {
-        return RefBase::valid() && detail::is_obj(handle_);
+        return RefBase::valid() && detail::is_obj(handle);
     }
 
     [[nodiscard]] std::size_t size() const noexcept {
         if(!valid()) {
             return 0;
         }
-        return detail::obj_size(handle_);
+        return detail::obj_size(handle);
     }
 
     [[nodiscard]] ValueRef operator[](std::string_view key) const {
@@ -373,35 +399,35 @@ public:
             return {};
         }
 
-        const auto object_size = detail::obj_size(handle_);
+        const auto object_size = detail::obj_size(handle);
         if(object_size < kObjectIndexThreshold) {
-            return ValueRef(detail::obj_getn(handle_, key));
+            return ValueRef(detail::obj_getn(handle, key));
         }
 
         ensure_object_index();
-        auto iter = object_index_->find(key);
-        if(iter == object_index_->end()) {
+        auto iter = objectIndex->find(key);
+        if(iter == objectIndex->end()) {
             return {};
         }
 
         return ValueRef(detail::value_handle{
             .value = iter->second,
-            .is_mutable = handle_.is_mutable,
+            .is_mutable = handle.is_mutable,
         });
     }
 
 private:
     void ensure_object_index() const {
-        if(object_index_) {
+        if(objectIndex) {
             return;
         }
 
         auto index = std::make_unique<std::unordered_map<std::string_view, yyjson_val*>>();
-        index->reserve(detail::obj_size(handle_));
+        index->reserve(detail::obj_size(handle));
 
-        if(handle_.is_mutable) {
+        if(handle.is_mutable) {
             yyjson_mut_val* key = nullptr;
-            yyjson_mut_obj_iter iter = yyjson_mut_obj_iter_with(detail::as_mutable(handle_));
+            yyjson_mut_obj_iter iter = yyjson_mut_obj_iter_with(detail::as_mutable(handle));
             while((key = yyjson_mut_obj_iter_next(&iter)) != nullptr) {
                 yyjson_mut_val* value = yyjson_mut_obj_iter_get_val(key);
                 const char* key_text = yyjson_mut_get_str(key);
@@ -413,7 +439,7 @@ private:
             }
         } else {
             yyjson_val* key = nullptr;
-            yyjson_obj_iter iter = yyjson_obj_iter_with(handle_.value);
+            yyjson_obj_iter iter = yyjson_obj_iter_with(handle.value);
             while((key = yyjson_obj_iter_next(&iter)) != nullptr) {
                 yyjson_val* value = yyjson_obj_iter_get_val(key);
                 const char* key_text = yyjson_get_str(key);
@@ -424,7 +450,7 @@ private:
             }
         }
 
-        object_index_ = std::move(index);
+        objectIndex = std::move(index);
     }
 
 private:
@@ -435,21 +461,21 @@ private:
 private:
     friend class ValueRef;
 
-    mutable std::unique_ptr<std::unordered_map<std::string_view, yyjson_val*>> object_index_;
+    mutable std::unique_ptr<std::unordered_map<std::string_view, yyjson_val*>> objectIndex;
 };
 
 inline auto ValueRef::as_array() const noexcept -> std::optional<ArrayRef> {
     if(!is_array()) {
         return std::nullopt;
     }
-    return ArrayRef(handle_);
+    return ArrayRef(handle);
 }
 
 inline auto ValueRef::as_object() const noexcept -> std::optional<ObjectRef> {
     if(!is_object()) {
         return std::nullopt;
     }
-    return ObjectRef(handle_);
+    return ObjectRef(handle);
 }
 
 class Value {
@@ -491,12 +517,35 @@ public:
         return Value(std::move(doc), yyjson_doc_get_root(raw_doc));
     }
 
+    static auto from_mutable_doc(yyjson_mut_doc* raw_doc) -> std::optional<Value> {
+        if(raw_doc == nullptr) {
+            return std::nullopt;
+        }
+        auto doc = mutable_doc_ptr(raw_doc, yyjson_mut_doc_free);
+        auto* root = yyjson_mut_doc_get_root(raw_doc);
+        if(root == nullptr) {
+            return std::nullopt;
+        }
+        return Value(std::move(doc), reinterpret_cast<const yyjson_val*>(root));
+    }
+
+    static auto from_mutable_doc(mutable_doc_ptr doc) -> std::optional<Value> {
+        if(doc == nullptr) {
+            return std::nullopt;
+        }
+        auto* root = yyjson_mut_doc_get_root(doc.get());
+        if(root == nullptr) {
+            return std::nullopt;
+        }
+        return Value(doc_owner(std::move(doc)), reinterpret_cast<const yyjson_val*>(root));
+    }
+
     [[nodiscard]] bool valid() const noexcept {
-        return value_ != nullptr;
+        return valuePtr != nullptr;
     }
 
     [[nodiscard]] bool is_mutable() const noexcept {
-        return std::holds_alternative<mutable_doc_ptr>(doc_);
+        return std::holds_alternative<mutable_doc_ptr>(doc);
     }
 
     [[nodiscard]] ValueRef as_ref() const noexcept {
@@ -534,7 +583,7 @@ public:
         yyjson_write_err err{};
         size_t len = 0;
         char* out = nullptr;
-        if(std::holds_alternative<immutable_doc_ptr>(doc_)) {
+        if(std::holds_alternative<immutable_doc_ptr>(doc)) {
             out = yyjson_val_write_opts(readable_value(), YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
         } else {
             out = yyjson_mut_val_write_opts(mutable_value(),
@@ -708,28 +757,28 @@ public:
         if(!is_mutable()) {
             return nullptr;
         }
-        return static_cast<const yyjson_mut_val*>(value_);
+        return static_cast<const yyjson_mut_val*>(valuePtr);
     }
 
 protected:
     Value(doc_owner doc, const yyjson_val* value) :
-        doc_(std::move(doc)), value_(const_cast<void*>(static_cast<const void*>(value))) {}
+        doc(std::move(doc)), valuePtr(const_cast<void*>(static_cast<const void*>(value))) {}
 
     [[nodiscard]] const yyjson_val* readable_value() const noexcept {
-        if(value_ == nullptr) {
+        if(valuePtr == nullptr) {
             return nullptr;
         }
-        if(std::holds_alternative<immutable_doc_ptr>(doc_)) {
-            return static_cast<const yyjson_val*>(value_);
+        if(std::holds_alternative<immutable_doc_ptr>(doc)) {
+            return static_cast<const yyjson_val*>(valuePtr);
         }
-        return reinterpret_cast<const yyjson_val*>(static_cast<const yyjson_mut_val*>(value_));
+        return reinterpret_cast<const yyjson_val*>(static_cast<const yyjson_mut_val*>(valuePtr));
     }
 
     [[nodiscard]] yyjson_mut_doc* mutable_doc() noexcept {
-        if(!std::holds_alternative<mutable_doc_ptr>(doc_)) {
+        if(!std::holds_alternative<mutable_doc_ptr>(doc)) {
             return nullptr;
         }
-        return std::get<mutable_doc_ptr>(doc_).get();
+        return std::get<mutable_doc_ptr>(doc).get();
     }
 
     status_t ensure_writable() {
@@ -737,17 +786,17 @@ protected:
             return std::unexpected(error_code::invalid_state);
         }
 
-        if(std::holds_alternative<immutable_doc_ptr>(doc_)) {
-            auto* copied = yyjson_doc_mut_copy(std::get<immutable_doc_ptr>(doc_).get(), nullptr);
+        if(std::holds_alternative<immutable_doc_ptr>(doc)) {
+            auto* copied = yyjson_doc_mut_copy(std::get<immutable_doc_ptr>(doc).get(), nullptr);
             if(copied == nullptr) {
                 return std::unexpected(error_code::allocation_failed);
             }
-            doc_ = mutable_doc_ptr(copied, yyjson_mut_doc_free);
-            value_ = yyjson_mut_doc_get_root(copied);
+            doc = mutable_doc_ptr(copied, yyjson_mut_doc_free);
+            valuePtr = yyjson_mut_doc_get_root(copied);
             return {};
         }
 
-        auto& current = std::get<mutable_doc_ptr>(doc_);
+        auto& current = std::get<mutable_doc_ptr>(doc);
         if(current.use_count() <= 1) {
             return {};
         }
@@ -756,8 +805,8 @@ protected:
         if(copied == nullptr) {
             return std::unexpected(error_code::allocation_failed);
         }
-        doc_ = mutable_doc_ptr(copied, yyjson_mut_doc_free);
-        value_ = yyjson_mut_doc_get_root(copied);
+        doc = mutable_doc_ptr(copied, yyjson_mut_doc_free);
+        valuePtr = yyjson_mut_doc_get_root(copied);
         return {};
     }
 
@@ -767,7 +816,7 @@ protected:
             return std::unexpected(writable.error());
         }
 
-        auto* root = static_cast<yyjson_mut_val*>(value_);
+        auto* root = static_cast<yyjson_mut_val*>(valuePtr);
         if(root == nullptr) {
             return std::unexpected(error_code::invalid_state);
         }
@@ -796,8 +845,8 @@ protected:
     }
 
 protected:
-    doc_owner doc_{};
-    void* value_ = nullptr;
+    doc_owner doc{};
+    void* valuePtr = nullptr;
 };
 
 class Array : public Value {
@@ -904,14 +953,14 @@ inline auto Value::as_array() const -> std::optional<Array> {
     if(!is_array()) {
         return std::nullopt;
     }
-    return Array(doc_, readable_value());
+    return Array(doc, readable_value());
 }
 
 inline auto Value::as_object() const -> std::optional<Object> {
     if(!is_object()) {
         return std::nullopt;
     }
-    return Object(doc_, readable_value());
+    return Object(doc, readable_value());
 }
 
 }  // namespace eventide::serde::json

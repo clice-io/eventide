@@ -22,7 +22,7 @@ template <typename T>
 std::expected<T, std::string> parse_json_value(std::string_view json) {
     auto parsed = serde::json::parse<T>(json);
     if(!parsed) {
-        return std::unexpected(std::string(simdjson::error_message(parsed.error())));
+        return std::unexpected(std::string(serde::json::error_message(parsed.error())));
     }
     return std::move(*parsed);
 }
