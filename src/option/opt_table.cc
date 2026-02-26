@@ -1,8 +1,4 @@
 #include "eventide/option/opt_table.h"
-#include "eventide/option/opt_specifier.h"
-#include "eventide/option/option.h"
-#include "eventide/option/parsed_arg.h"
-
 
 #include <algorithm>
 #include <cassert>
@@ -16,6 +12,9 @@
 #include <string_view>
 #include <vector>
 
+#include "eventide/option/opt_specifier.h"
+#include "eventide/option/option.h"
+#include "eventide/option/parsed_arg.h"
 
 using namespace eventide::option;
 
