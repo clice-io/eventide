@@ -26,7 +26,7 @@ void each(uv_idle_t* idle) {
     auto loop = &self->loop;
     if(self->idle_running && self->tasks.empty()) {
         self->idle_running = false;
-        uv_idle_stop(idle);
+        uv::idle_stop(*idle);
     }
 
     /// Resume may create new tasks, we want to run them in the next iteration.
@@ -51,38 +51,39 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
     auto& self = *this;
     if(!self->idle_running && self->tasks.empty()) {
         self->idle_running = true;
-        uv_idle_start(&self->idle, each);
+        uv::idle_start(self->idle, each);
     }
     self->tasks.push_back(&frame);
 }
 
 event_loop::event_loop() : self(new struct self()) {
     auto loop = &self->loop;
-    int err = uv_loop_init(loop);
-    if(err != 0) {
+    auto err = uv::loop_init(*loop);
+    if(err.has_error()) {
         abort();
     }
 
     auto idle = &self->idle;
-    uv_idle_init(loop, idle);
-    uv_idle_start(idle, each);
+    uv::idle_init(*loop, *idle);
+    uv::idle_start(*idle, each);
     idle->data = self.get();
 }
 
 event_loop::~event_loop() {
     constexpr static auto cleanup = +[](uv_handle_t* h, void*) {
-        if(!uv_is_closing(h)) {
-            uv_close(h, nullptr);
+        if(!uv::is_closing(*h)) {
+            uv::close(*h, nullptr);
         }
     };
 
     auto loop = &self->loop;
-    if(uv_loop_close(loop) == UV_EBUSY) {
-        uv_walk(loop, cleanup, nullptr);
+    auto close_err = uv::loop_close(*loop);
+    if(close_err.value() == UV_EBUSY) {
+        uv::walk(*loop, cleanup, nullptr);
 
         /// Run event loop to tiger all cleanup callbacks.
-        while(uv_loop_close(loop) == UV_EBUSY) {
-            uv_run(loop, UV_RUN_ONCE);
+        while((close_err = uv::loop_close(*loop)).value() == UV_EBUSY) {
+            uv::run(*loop, UV_RUN_ONCE);
         }
     }
 
@@ -102,13 +103,13 @@ void* event_loop::handle() {
 int event_loop::run() {
     auto previous = current_loop;
     current_loop = this;
-    auto result = uv_run(&self->loop, UV_RUN_DEFAULT);
+    auto result = uv::run(self->loop, UV_RUN_DEFAULT);
     current_loop = previous;
     return result;
 }
 
 void event_loop::stop() {
-    uv_stop(&self->loop);
+    uv::stop(self->loop);
 }
 
 }  // namespace eventide

@@ -269,7 +269,7 @@ task<std::expected<T, cancellation>> with_token_impl(cancellation_token token,
 }  // namespace detail
 
 template <typename T>
-    requires(!is_cancellation_t<T>)
+    requires (!is_cancellation_t<T>)
 task<std::expected<T, cancellation>> with_token(cancellation_token token, task<T>&& task) {
     auto child = std::move(task).catch_cancel();
     auto wrapped = detail::with_token_impl<T>(std::move(token), std::move(child));

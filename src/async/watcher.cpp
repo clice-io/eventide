@@ -189,30 +189,31 @@ struct signal_await : system_op {
 
 }  // namespace
 
-timer::timer() noexcept : self(nullptr, nullptr) {}
+#define EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                       \
+    WatcherType::WatcherType() noexcept : self(nullptr, nullptr) {}                                \
+    WatcherType::WatcherType(Self* state) noexcept : self(state, Self::destroy) {}                 \
+    WatcherType::~WatcherType() = default;                                                         \
+    WatcherType::WatcherType(WatcherType&& other) noexcept = default;                              \
+    WatcherType& WatcherType::operator=(WatcherType&& other) noexcept = default;                   \
+    WatcherType::Self* WatcherType::operator->() noexcept {                                        \
+        return self.get();                                                                         \
+    }                                                                                              \
+    const WatcherType::Self* WatcherType::operator->() const noexcept {                            \
+        return self.get();                                                                         \
+    }
 
-timer::timer(Self* state) noexcept : self(state, Self::destroy) {}
+EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(timer)
+EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(signal)
+EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(idle)
+EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(prepare)
+EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 
-timer::~timer() = default;
-
-timer::timer(timer&& other) noexcept = default;
-
-timer& timer::operator=(timer&& other) noexcept = default;
-
-timer::Self* timer::operator->() noexcept {
-    return self.get();
-}
-
-const timer::Self* timer::operator->() const noexcept {
-    return self.get();
-}
+#undef EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS
 
 timer timer::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = &state->handle;
-    [[maybe_unused]] int err = uv_timer_init(static_cast<uv_loop_t*>(loop.handle()), handle);
-    // libuv returns 0 for valid loop/handle; uv_timer_init has no runtime failure path here.
-    assert(err == 0 && "uv_timer_init failed: invalid loop/handle");
+    uv::timer_init(*static_cast<uv_loop_t*>(loop.handle()), *handle);
 
     state->mark_initialized();
     handle->data = state.get();
@@ -228,13 +229,11 @@ void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds r
     handle->data = self.get();
     assert(timeout.count() >= 0 && "timer::start timeout must be non-negative");
     assert(repeat.count() >= 0 && "timer::start repeat must be non-negative");
-    [[maybe_unused]] int err = uv_timer_start(
-        handle,
+    uv::timer_start(
+        *handle,
         [](uv_timer_t* h) { timer_await::on_fire(h); },
         static_cast<std::uint64_t>(timeout.count()),
         static_cast<std::uint64_t>(repeat.count()));
-    // uv_timer_start only errors if handle is closing or callback is null; we guarantee both.
-    assert(err == 0 && "uv_timer_start failed: handle closing or callback null");
 }
 
 void timer::stop() {
@@ -242,10 +241,7 @@ void timer::stop() {
         return;
     }
 
-    auto handle = &self->handle;
-    [[maybe_unused]] int err = uv_timer_stop(handle);
-    // uv_timer_stop is defined to be a no-op for inactive handles and returns 0.
-    assert(err == 0 && "uv_timer_stop failed: unexpected libuv error");
+    uv::timer_stop(self->handle);
 }
 
 task<> timer::wait() {
@@ -266,164 +262,12 @@ task<> timer::wait() {
     co_await timer_await{self.get()};
 }
 
-#define EVENTIDE_DEFINE_TICK_WATCHER_METHODS(WatcherType, HandleType, AwaiterType, INIT_FN, START_FN, STOP_FN, NameLiteral) \
-    WatcherType WatcherType::create(event_loop& loop) {                                                             \
-        std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);                                   \
-        auto* handle = &state->handle;                                                                              \
-        [[maybe_unused]] int err = INIT_FN(static_cast<uv_loop_t*>(loop.handle()), handle);                        \
-        assert(err == 0 && NameLiteral "::create failed: invalid loop/handle");                                    \
-                                                                                                                     \
-        state->mark_initialized();                                                                                   \
-        handle->data = state.get();                                                                                  \
-        return WatcherType(state.release());                                                                         \
-    }                                                                                                                \
-                                                                                                                     \
-    void WatcherType::start() {                                                                                      \
-        if(!self) {                                                                                                  \
-            return;                                                                                                  \
-        }                                                                                                            \
-                                                                                                                     \
-        auto* handle = &self->handle;                                                                                \
-        handle->data = self.get();                                                                                   \
-        [[maybe_unused]] int err = START_FN(handle, [](HandleType* h) { AwaiterType::on_fire(h); });              \
-        assert(err == 0 && NameLiteral "::start failed: callback null");                                            \
-    }                                                                                                                \
-                                                                                                                     \
-    void WatcherType::stop() {                                                                                       \
-        if(!self) {                                                                                                  \
-            return;                                                                                                  \
-        }                                                                                                            \
-                                                                                                                     \
-        auto* handle = &self->handle;                                                                                \
-        [[maybe_unused]] int err = STOP_FN(handle);                                                                  \
-        assert(err == 0 && NameLiteral "::stop failed: unexpected libuv error");                                    \
-    }                                                                                                                \
-                                                                                                                     \
-    task<> WatcherType::wait() {                                                                                     \
-        if(!self) {                                                                                                  \
-            co_return;                                                                                               \
-        }                                                                                                            \
-                                                                                                                     \
-        if(self->pending > 0) {                                                                                      \
-            self->pending -= 1;                                                                                      \
-            co_return;                                                                                               \
-        }                                                                                                            \
-                                                                                                                     \
-        if(self->waiter != nullptr) {                                                                                \
-            assert(false && NameLiteral "::wait supports a single waiter at a time");                              \
-            co_return;                                                                                               \
-        }                                                                                                            \
-                                                                                                                     \
-        co_await AwaiterType{self.get()};                                                                            \
-    }
-
-idle::idle() noexcept : self(nullptr, nullptr) {}
-
-idle::idle(Self* state) noexcept : self(state, Self::destroy) {}
-
-idle::~idle() = default;
-
-idle::idle(idle&& other) noexcept = default;
-
-idle& idle::operator=(idle&& other) noexcept = default;
-
-idle::Self* idle::operator->() noexcept {
-    return self.get();
-}
-
-const idle::Self* idle::operator->() const noexcept {
-    return self.get();
-}
-
-EVENTIDE_DEFINE_TICK_WATCHER_METHODS(
-    idle,
-    uv_idle_t,
-    idle_await,
-    uv_idle_init,
-    uv_idle_start,
-    uv_idle_stop,
-    "idle")
-
-prepare::prepare() noexcept : self(nullptr, nullptr) {}
-
-prepare::prepare(Self* state) noexcept : self(state, Self::destroy) {}
-
-prepare::~prepare() = default;
-
-prepare::prepare(prepare&& other) noexcept = default;
-
-prepare& prepare::operator=(prepare&& other) noexcept = default;
-
-prepare::Self* prepare::operator->() noexcept {
-    return self.get();
-}
-
-const prepare::Self* prepare::operator->() const noexcept {
-    return self.get();
-}
-
-EVENTIDE_DEFINE_TICK_WATCHER_METHODS(
-    prepare,
-    uv_prepare_t,
-    prepare_await,
-    uv_prepare_init,
-    uv_prepare_start,
-    uv_prepare_stop,
-    "prepare")
-
-check::check() noexcept : self(nullptr, nullptr) {}
-
-check::check(Self* state) noexcept : self(state, Self::destroy) {}
-
-check::~check() = default;
-
-check::check(check&& other) noexcept = default;
-
-check& check::operator=(check&& other) noexcept = default;
-
-check::Self* check::operator->() noexcept {
-    return self.get();
-}
-
-const check::Self* check::operator->() const noexcept {
-    return self.get();
-}
-
-EVENTIDE_DEFINE_TICK_WATCHER_METHODS(
-    check,
-    uv_check_t,
-    check_await,
-    uv_check_init,
-    uv_check_start,
-    uv_check_stop,
-    "check")
-
-#undef EVENTIDE_DEFINE_TICK_WATCHER_METHODS
-
-signal::signal() noexcept : self(nullptr, nullptr) {}
-
-signal::signal(Self* state) noexcept : self(state, Self::destroy) {}
-
-signal::~signal() = default;
-
-signal::signal(signal&& other) noexcept = default;
-
-signal& signal::operator=(signal&& other) noexcept = default;
-
-signal::Self* signal::operator->() noexcept {
-    return self.get();
-}
-
-const signal::Self* signal::operator->() const noexcept {
-    return self.get();
-}
-
 result<signal> signal::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = &state->handle;
-    int err = uv_signal_init(static_cast<uv_loop_t*>(loop.handle()), handle);
-    if(err != 0) {
-        return std::unexpected(error(err));
+    auto err = uv::signal_init(*static_cast<uv_loop_t*>(loop.handle()), *handle);
+    if(err.has_error()) {
+        return std::unexpected(err);
     }
 
     state->mark_initialized();
@@ -438,10 +282,10 @@ error signal::start(int signum) {
 
     auto handle = &self->handle;
     handle->data = self.get();
-    int err =
-        uv_signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
-    if(err != 0) {
-        return error(err);
+    auto err =
+        uv::signal_start(*handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
+    if(err.has_error()) {
+        return err;
     }
 
     return {};
@@ -452,10 +296,9 @@ error signal::stop() {
         return error::invalid_argument;
     }
 
-    auto handle = &self->handle;
-    int err = uv_signal_stop(handle);
-    if(err != 0) {
-        return error(err);
+    auto err = uv::signal_stop(self->handle);
+    if(err.has_error()) {
+        return err;
     }
 
     return {};
@@ -477,6 +320,85 @@ task<error> signal::wait() {
 
     co_return co_await signal_await{self.get()};
 }
+
+#define EVENTIDE_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                          \
+                                             HandleType,                                           \
+                                             AwaiterType,                                          \
+                                             INIT_FN,                                              \
+                                             START_FN,                                             \
+                                             STOP_FN,                                              \
+                                             NameLiteral)                                          \
+    WatcherType WatcherType::create(event_loop& loop) {                                            \
+        std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);                   \
+        auto* handle = &state->handle;                                                             \
+        INIT_FN(*static_cast<uv_loop_t*>(loop.handle()), *handle);                                 \
+                                                                                                   \
+        state->mark_initialized();                                                                 \
+        handle->data = state.get();                                                                \
+        return WatcherType(state.release());                                                       \
+    }                                                                                              \
+                                                                                                   \
+    void WatcherType::start() {                                                                    \
+        if(!self) {                                                                                \
+            return;                                                                                \
+        }                                                                                          \
+                                                                                                   \
+        auto* handle = &self->handle;                                                              \
+        handle->data = self.get();                                                                 \
+        START_FN(*handle, [](HandleType* h) { AwaiterType::on_fire(h); });                         \
+    }                                                                                              \
+                                                                                                   \
+    void WatcherType::stop() {                                                                     \
+        if(!self) {                                                                                \
+            return;                                                                                \
+        }                                                                                          \
+                                                                                                   \
+        STOP_FN(self->handle);                                                                     \
+    }                                                                                              \
+                                                                                                   \
+    task<> WatcherType::wait() {                                                                   \
+        if(!self) {                                                                                \
+            co_return;                                                                             \
+        }                                                                                          \
+                                                                                                   \
+        if(self->pending > 0) {                                                                    \
+            self->pending -= 1;                                                                    \
+            co_return;                                                                             \
+        }                                                                                          \
+                                                                                                   \
+        if(self->waiter != nullptr) {                                                              \
+            assert(false && NameLiteral "::wait supports a single waiter at a time");              \
+            co_return;                                                                             \
+        }                                                                                          \
+                                                                                                   \
+        co_await AwaiterType{self.get()};                                                          \
+    }
+
+EVENTIDE_DEFINE_TICK_WATCHER_METHODS(idle,
+                                     uv_idle_t,
+                                     idle_await,
+                                     uv::idle_init,
+                                     uv::idle_start,
+                                     uv::idle_stop,
+                                     "idle")
+
+EVENTIDE_DEFINE_TICK_WATCHER_METHODS(prepare,
+                                     uv_prepare_t,
+                                     prepare_await,
+                                     uv::prepare_init,
+                                     uv::prepare_start,
+                                     uv::prepare_stop,
+                                     "prepare")
+
+EVENTIDE_DEFINE_TICK_WATCHER_METHODS(check,
+                                     uv_check_t,
+                                     check_await,
+                                     uv::check_init,
+                                     uv::check_start,
+                                     uv::check_stop,
+                                     "check")
+
+#undef EVENTIDE_DEFINE_TICK_WATCHER_METHODS
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop) {
     auto t = timer::create(loop);

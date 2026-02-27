@@ -41,6 +41,36 @@ private:
     std::unique_ptr<Self, void (*)(void*)> self;
 };
 
+class signal {
+public:
+    signal() noexcept;
+
+    signal(const signal&) = delete;
+    signal& operator=(const signal&) = delete;
+
+    signal(signal&& other) noexcept;
+    signal& operator=(signal&& other) noexcept;
+
+    ~signal();
+
+    struct Self;
+    Self* operator->() noexcept;
+    const Self* operator->() const noexcept;
+
+    static result<signal> create(event_loop& loop = event_loop::current());
+
+    error start(int signum);
+
+    error stop();
+
+    task<error> wait();
+
+private:
+    explicit signal(Self* state) noexcept;
+
+    std::unique_ptr<Self, void (*)(void*)> self;
+};
+
 class idle {
 public:
     idle() noexcept;
@@ -127,36 +157,6 @@ public:
 
 private:
     explicit check(Self* state) noexcept;
-
-    std::unique_ptr<Self, void (*)(void*)> self;
-};
-
-class signal {
-public:
-    signal() noexcept;
-
-    signal(const signal&) = delete;
-    signal& operator=(const signal&) = delete;
-
-    signal(signal&& other) noexcept;
-    signal& operator=(signal&& other) noexcept;
-
-    ~signal();
-
-    struct Self;
-    Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
-
-    static result<signal> create(event_loop& loop = event_loop::current());
-
-    error start(int signum);
-
-    error stop();
-
-    task<error> wait();
-
-private:
-    explicit signal(Self* state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };
