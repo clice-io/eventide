@@ -29,11 +29,11 @@ enum class DecoType {
     Multi,
 };
 
-enum class KVStyle : char {
+enum KVStyle : char {
     // -KEYValue
-    Joined = 0,
+    Joined = 1 << 0,
     // -o 1
-    Separate = 1
+    Separate = 1 << 1
 };
 
 struct Category {
@@ -47,7 +47,7 @@ struct Category {
 
 constexpr inline Category default_category = {
     .exclusive = false,
-    .required = true,
+    .required = false,
     .name = "default",
     .description = "the default category for options",
 };
@@ -170,7 +170,7 @@ struct FlagFields : NamedOptionFields {
 
 struct KVFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::KV;
-    KVStyle style = KVStyle::Separate;
+    char style = KVStyle::Separate;
     constexpr KVFields() = default;
 };
 

@@ -214,7 +214,7 @@ inline std::string help_text(const CfgTy& cfg, std::string_view fallback_name) {
 
 }  // namespace detail
 
-template <ty::is_option_field T>
+template <ty::is_deco_field_or_option T>
 inline std::string from_deco_option(const T& field,
                                     bool include_help = false,
                                     std::string_view fallback_name = {}) {

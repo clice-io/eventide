@@ -143,6 +143,17 @@ IncludeCategories:
 
 ForEachMacros: ["REFLECTABLE_RECORD"]
 NamespaceMacros: [TEST_SUITE]
+StatementMacros:
+  - DECO_CFG_START
+  - DECO_CFG
+  - DECO_CFG_END
+  - DecoKV
+  - DecoFlag
+  - DecoComma
+  - DecoInput
+  - DecoPack
+  - DecoKVStyled
+  - DecoMulti
 
 KeepEmptyLines:
   AtEndOfFile: false

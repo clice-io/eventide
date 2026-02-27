@@ -52,30 +52,20 @@ constexpr deco::decl::Category trailingCategory = {
 };
 
 struct NestedOpt {
-    DecoKV(help = "output"; required = false; category = sharedCategory;)<std::string> out_path;
-    DecoComma(names = {"--T"}; required = false;
-              category = sharedCategory;)<std::vector<std::string>> tags;
+    DecoKV(help = "output"; required = false; category = sharedCategory;)
+    <std::string> out_path;
+    DecoComma(names = {"--T"}; required = false; category = sharedCategory;)
+    <std::vector<std::string>> tags;
 };
 
 struct ParseAllOpt {
-    // clang-format off
     DECO_CFG_START(required = false);
-    DecoFlag(
-        names = {"-V", "--version"};
-        required = false;
-        category = versionCategory;
-    )
+    DecoFlag(names = {"-V", "--version"}; required = false; category = versionCategory;)
     verbose;
-    DecoInput(
-        help = "input";
-        required = false;
-    )<std::string>
-    input;
-    DecoKVStyled(
-        deco::decl::KVStyle::Joined,
-        required = false;
-        category = sharedCategory;
-    )<int> opt;
+    DecoInput(help = "input"; required = false;)
+    <std::string> input;
+    DecoKVStyled(deco::decl::KVStyle::Joined, required = false; category = sharedCategory;)
+    <int> opt;
     DECO_CFG_END();
 
     DECO_CFG(category = sharedCategory; required = false;);
@@ -84,67 +74,96 @@ struct ParseAllOpt {
         names = {"-P", "--pair"};
         required = false;
         category = sharedCategory;
-        })<std::vector<std::string>>
-    pair;
-
-    // clang-format on
+    })
+    <std::vector<std::string>> pair;
 };
 
 struct ParsePackOpt {
-    DecoFlag() d;
-    DecoPack(help = "pack"; required = false;)<std::vector<std::string>> pack = {};
+    DecoFlag()
+    d;
+    DecoPack(help = "pack"; required = false;)
+    <std::vector<std::string>> pack = {};
 };
 
 struct InputThenPackOpt {
-    DecoInput(required = false; category = inputCategory;)<std::string> input;
-    DecoPack(required = false; category = trailingCategory;)<std::vector<std::string>> pack;
+    DecoInput(required = false; category = inputCategory;)
+    <std::string> input;
+    DecoPack(required = false; category = trailingCategory;)
+    <std::vector<std::string>> pack;
 };
 
 struct PackThenInputOpt {
-    DecoPack(required = false; category = trailingCategory;)<std::vector<std::string>> pack;
-    DecoInput(required = false; category = inputCategory;)<std::string> input;
+    DecoPack(required = false; category = trailingCategory;)
+    <std::vector<std::string>> pack;
+    DecoInput(required = false; category = inputCategory;)
+    <std::string> input;
 };
 
 struct RequiredOpt {
-    DecoKV(required = true; help = "required integer option";)<int> must;
+    DecoKV(required = true; help = "required integer option";)
+    <int> must;
+};
+
+struct KVSplitStyleByNameOpt {
+    DecoKVStyled(static_cast<char>(deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate),
+                 names = {"--test=", "--a"};
+                 required = false;)
+    <int> level;
+};
+
+struct KVDefaultNameSplitStyleOpt {
+    DecoKVStyled(static_cast<char>(deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate),
+                 required = false;)
+    <int> level;
 };
 
 struct DeepCfgInner {
     DECO_CFG_START(required = false; category = innerCategory;);
-    DecoKV()<int> a;
+    DecoKV()
+    <int> a;
     DECO_CFG_END();
 };
 
 struct DeepCfgOpt {
     DECO_CFG_START(required = false; category = topCategory;);
-    DecoKV()<int> top;
+    DecoKV()
+    <int> top;
     DECO_CFG_START(required = false; category = innerCategory;);
     DeepCfgInner inner;
-    DecoKV()<int> mid;
+    DecoKV()
+    <int> mid;
     DECO_CFG_END();
-    DecoKV()<int> tail;
+    DecoKV()
+    <int> tail;
     DECO_CFG_END();
 };
 
 struct NextScopedNested {
-    DecoKV()<int> left;
-    DecoKV()<int> right;
+    DecoKV()
+    <int> left;
+    DecoKV()
+    <int> right;
 };
 
 struct NextOnNestedOpt {
     DECO_CFG(required = false; category = sharedCategory;);
     NextScopedNested nested;
-    DecoKV(required = false;)<int> tail;
+    DecoKV(required = false;)
+    <int> tail;
 };
 
 struct ExclusiveCategoryOpt {
-    DecoFlag(required = false; category = versionCategory;) version;
-    DecoFlag(required = false; category = sharedCategory;) shared;
+    DecoFlag(required = false; category = versionCategory;)
+    version;
+    DecoFlag(required = false; category = sharedCategory;)
+    shared;
 };
 
 struct MultiExclusiveCategoryOpt {
-    DecoFlag(required = false; category = versionCategory;) version;
-    DecoFlag(required = false; category = requestCategory;) request;
+    DecoFlag(required = false; category = versionCategory;)
+    version;
+    DecoFlag(required = false; category = requestCategory;)
+    request;
 };
 
 using Parsed = eventide::option::ParsedArgument;
@@ -371,6 +390,72 @@ TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
     EXPECT_TRUE(built.field_ptr_of(args[1].option_id, opt) == static_cast<void*>(&opt.input));
     EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
     EXPECT_TRUE(built.trailing_category() == &trailingCategory);
+}
+
+TEST_CASE(parse_kv_supports_joined_and_separate_styles) {
+    const auto& built = deco::detail::build_storage<KVSplitStyleByNameOpt>();
+    EXPECT_TRUE(built.option_infos().size() == 3);
+    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::JoinedClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::SeparateClass);
+
+    auto joined_args = parse_with(built, {"--test=42"});
+    EXPECT_TRUE(joined_args.has_value());
+    if(!joined_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(joined_args->size() == 1);
+    if(joined_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--test=");
+    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
+    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
+
+    auto separate_args = parse_with(built, {"--a", "7"});
+    EXPECT_TRUE(separate_args.has_value());
+    if(!separate_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(separate_args->size() == 1);
+    if(separate_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*separate_args)[0].get_spelling_view() == "--a");
+    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
+    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+}
+
+TEST_CASE(parse_kv_default_name_adds_joined_equals_alias_when_style_includes_joined) {
+    const auto& built = deco::detail::build_storage<KVDefaultNameSplitStyleOpt>();
+    EXPECT_TRUE(built.option_infos().size() == 3);
+    EXPECT_TRUE(built.option_infos()[1].kind == eventide::option::Option::SeparateClass);
+    EXPECT_TRUE(built.option_infos()[2].kind == eventide::option::Option::JoinedClass);
+
+    auto separate_args = parse_with(built, {"--level", "7"});
+    EXPECT_TRUE(separate_args.has_value());
+    if(!separate_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(separate_args->size() == 1);
+    if(separate_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*separate_args)[0].get_spelling_view() == "--level");
+    EXPECT_TRUE((*separate_args)[0].values.size() == 1);
+    EXPECT_TRUE((*separate_args)[0].values[0] == "7");
+
+    auto joined_args = parse_with(built, {"--level=42"});
+    EXPECT_TRUE(joined_args.has_value());
+    if(!joined_args.has_value()) {
+        return;
+    }
+    EXPECT_TRUE(joined_args->size() == 1);
+    if(joined_args->size() != 1) {
+        return;
+    }
+    EXPECT_TRUE((*joined_args)[0].get_spelling_view() == "--level=");
+    EXPECT_TRUE((*joined_args)[0].values.size() == 1);
+    EXPECT_TRUE((*joined_args)[0].values[0] == "42");
 }
 
 TEST_CASE(category_map_assigns_expected_categories_for_parsed_args) {
