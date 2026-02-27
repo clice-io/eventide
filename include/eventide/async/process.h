@@ -30,7 +30,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     struct exit_status {
         /// Exit code reported by the child.

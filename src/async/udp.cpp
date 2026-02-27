@@ -316,10 +316,6 @@ udp::Self* udp::operator->() noexcept {
     return self.get();
 }
 
-const udp::Self* udp::operator->() const noexcept {
-    return self.get();
-}
-
 static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
     if(addr == nullptr) {
         return std::unexpected(error::invalid_argument);
@@ -354,7 +350,7 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
 result<udp> udp::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     state->buffer.resize(64 * 1024);
-    auto err = uv::udp_init(*static_cast<uv_loop_t*>(loop.handle()), state->handle);
+    auto err = uv::udp_init(loop.handle(), state->handle);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -372,8 +368,7 @@ result<udp> udp::create(create_options options, event_loop& loop) {
         return std::unexpected(uv_flags.error());
     }
 
-    auto err =
-        uv::udp_init_ex(*static_cast<uv_loop_t*>(loop.handle()), state->handle, uv_flags.value());
+    auto err = uv::udp_init_ex(loop.handle(), state->handle, uv_flags.value());
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -386,7 +381,7 @@ result<udp> udp::create(create_options options, event_loop& loop) {
 result<udp> udp::open(int fd, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     state->buffer.resize(64 * 1024);
-    auto err = uv::udp_init(*static_cast<uv_loop_t*>(loop.handle()), state->handle);
+    auto err = uv::udp_init(loop.handle(), state->handle);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -583,9 +578,11 @@ error udp::set_membership(std::string_view multicast_addr,
         return error::invalid_argument;
     }
 
+    std::string multicast_storage(multicast_addr);
+    std::string interface_storage(interface_addr);
     auto err = uv::udp_set_membership(self->handle,
-                                      std::string(multicast_addr).c_str(),
-                                      std::string(interface_addr).c_str(),
+                                      multicast_storage.c_str(),
+                                      interface_storage.c_str(),
                                       m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP);
     if(err.has_error()) {
         return err;
@@ -602,11 +599,14 @@ error udp::set_source_membership(std::string_view multicast_addr,
         return error::invalid_argument;
     }
 
+    std::string multicast_storage(multicast_addr);
+    std::string interface_storage(interface_addr);
+    std::string source_storage(source_addr);
     auto err =
         uv::udp_set_source_membership(self->handle,
-                                      std::string(multicast_addr).c_str(),
-                                      std::string(interface_addr).c_str(),
-                                      std::string(source_addr).c_str(),
+                                      multicast_storage.c_str(),
+                                      interface_storage.c_str(),
+                                      source_storage.c_str(),
                                       m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP);
     if(err.has_error()) {
         return err;
@@ -646,7 +646,8 @@ error udp::set_multicast_interface(std::string_view interface_addr) {
         return error::invalid_argument;
     }
 
-    auto err = uv::udp_set_multicast_interface(self->handle, std::string(interface_addr).c_str());
+    std::string interface_storage(interface_addr);
+    auto err = uv::udp_set_multicast_interface(self->handle, interface_storage.c_str());
     if(err.has_error()) {
         return err;
     }

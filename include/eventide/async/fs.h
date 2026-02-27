@@ -157,7 +157,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     struct watch_options {
         /// Report creation/removal events (if supported by backend).

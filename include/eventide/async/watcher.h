@@ -25,7 +25,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static timer create(event_loop& loop = event_loop::current());
 
@@ -55,7 +54,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static result<signal> create(event_loop& loop = event_loop::current());
 
@@ -85,7 +83,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static idle create(event_loop& loop = event_loop::current());
 
@@ -115,7 +112,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static prepare create(event_loop& loop = event_loop::current());
 
@@ -145,7 +141,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     static check create(event_loop& loop = event_loop::current());
 

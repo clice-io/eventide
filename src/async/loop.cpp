@@ -43,8 +43,6 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
         frame.state = async_node::Running;
     } else if(frame.state == async_node::Finished || frame.state == async_node::Running) {
         std::abort();
-    } else if(frame.state == async_node::Cancelled) {
-        /// meaningless? think cancel shared task.
     }
 
     frame.location = location;
@@ -81,23 +79,15 @@ event_loop::~event_loop() {
     if(close_err.value() == UV_EBUSY) {
         uv::walk(*loop, cleanup, nullptr);
 
-        /// Run event loop to tiger all cleanup callbacks.
+        // Run event loop to trigger all close callbacks.
         while((close_err = uv::loop_close(*loop)).value() == UV_EBUSY) {
             uv::run(*loop, UV_RUN_ONCE);
         }
     }
-
-    for(auto task: self->tasks) {
-        /// if(task->is_cancelled()) {
-        ///     task->resume();
-        /// } else {
-        ///     task->destroy();
-        /// }
-    }
 }
 
-void* event_loop::handle() {
-    return &self->loop;
+uv_loop_t& event_loop::handle() noexcept {
+    return self->loop;
 }
 
 int event_loop::run() {

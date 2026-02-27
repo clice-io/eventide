@@ -112,10 +112,6 @@ process::Self* process::operator->() noexcept {
     return self.get();
 }
 
-const process::Self* process::operator->() const noexcept {
-    return self.get();
-}
-
 process::stdio process::stdio::inherit() {
     return stdio{};
 }
@@ -239,7 +235,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     }
 
     auto proc_handle = &self->handle;
-    auto err = uv::spawn(*static_cast<uv_loop_t*>(loop.handle()), *proc_handle, uv_opts);
+    auto err = uv::spawn(loop.handle(), *proc_handle, uv_opts);
     if(err.has_error()) {
         self->mark_initialized();
         return std::unexpected(err);

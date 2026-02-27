@@ -40,7 +40,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     /// Raw libuv handle pointer, or nullptr if invalid.
     void* handle() noexcept;
@@ -99,8 +98,6 @@ public:
     struct Self;
     /// Internal access; null when invalid.
     Self* operator->() noexcept;
-    /// Internal access; null when invalid.
-    const Self* operator->() const noexcept;
 
     /// Accept one connection; only one pending accept is allowed at a time.
     task<result<Stream>> accept();

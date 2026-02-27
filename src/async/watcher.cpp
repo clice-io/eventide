@@ -197,9 +197,6 @@ struct signal_await : system_op {
     WatcherType& WatcherType::operator=(WatcherType&& other) noexcept = default;                   \
     WatcherType::Self* WatcherType::operator->() noexcept {                                        \
         return self.get();                                                                         \
-    }                                                                                              \
-    const WatcherType::Self* WatcherType::operator->() const noexcept {                            \
-        return self.get();                                                                         \
     }
 
 EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(timer)
@@ -213,7 +210,7 @@ EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 timer timer::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = &state->handle;
-    uv::timer_init(*static_cast<uv_loop_t*>(loop.handle()), *handle);
+    uv::timer_init(loop.handle(), *handle);
 
     state->mark_initialized();
     handle->data = state.get();
@@ -265,7 +262,7 @@ task<> timer::wait() {
 result<signal> signal::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto handle = &state->handle;
-    auto err = uv::signal_init(*static_cast<uv_loop_t*>(loop.handle()), *handle);
+    auto err = uv::signal_init(loop.handle(), *handle);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -331,7 +328,7 @@ task<error> signal::wait() {
     WatcherType WatcherType::create(event_loop& loop) {                                            \
         std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);                   \
         auto* handle = &state->handle;                                                             \
-        INIT_FN(*static_cast<uv_loop_t*>(loop.handle()), *handle);                                 \
+        INIT_FN(loop.handle(), *handle);                                                           \
                                                                                                    \
         state->mark_initialized();                                                                 \
         handle->data = state.get();                                                                \

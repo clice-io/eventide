@@ -30,7 +30,6 @@ public:
 
     struct Self;
     Self* operator->() noexcept;
-    const Self* operator->() const noexcept;
 
     struct recv_flags {
         /// Packet is partial (truncated).
