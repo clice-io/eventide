@@ -234,15 +234,15 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         return std::unexpected(error::invalid_argument);
     }
 
-    auto proc_handle = &self->handle;
-    auto err = uv::spawn(loop.handle(), *proc_handle, uv_opts);
+    auto& proc_handle = self->handle;
+    auto err = uv::spawn(loop.handle(), proc_handle, uv_opts);
     if(err.has_error()) {
         self->mark_initialized();
         return std::unexpected(err);
     }
 
     self->mark_initialized();
-    proc_handle->data = self;
+    proc_handle.data = self;
 
     out.stdin_pipe = std::move(created_pipes[0]);
     out.stdout_pipe = std::move(created_pipes[1]);

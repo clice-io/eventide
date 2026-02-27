@@ -164,15 +164,15 @@ fs_event::Self* fs_event::operator->() noexcept {
 
 result<fs_event> fs_event::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = &state->handle;
+    auto& handle = state->handle;
 
-    auto err = uv::fs_event_init(loop.handle(), *handle);
+    auto err = uv::fs_event_init(loop.handle(), handle);
     if(err.has_error()) {
         return std::unexpected(err);
     }
 
     state->mark_initialized();
-    handle->data = state.get();
+    handle.data = state.get();
     return fs_event(state.release());
 }
 
@@ -186,9 +186,9 @@ error fs_event::start(const char* path, watch_options options) {
         return uv_flags.error();
     }
 
-    auto handle = &self->handle;
-    handle->data = self.get();
-    auto err = uv::fs_event_start(*handle, fs_event_await::on_change, path, uv_flags.value());
+    auto& handle = self->handle;
+    handle.data = self.get();
+    auto err = uv::fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value());
     if(err.has_error()) {
         return err;
     }
@@ -201,8 +201,8 @@ error fs_event::stop() {
         return error::invalid_argument;
     }
 
-    auto handle = &self->handle;
-    auto err = uv::fs_event_stop(*handle);
+    auto& handle = self->handle;
+    auto err = uv::fs_event_stop(handle);
     if(err.has_error()) {
         return err;
     }

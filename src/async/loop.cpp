@@ -23,7 +23,6 @@ event_loop& event_loop::current() {
 
 void each(uv_idle_t* idle) {
     auto self = static_cast<struct event_loop::self*>(idle->data);
-    auto loop = &self->loop;
     if(self->idle_running && self->tasks.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
@@ -55,16 +54,16 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
 }
 
 event_loop::event_loop() : self(new struct self()) {
-    auto loop = &self->loop;
-    auto err = uv::loop_init(*loop);
+    auto& loop = self->loop;
+    auto err = uv::loop_init(loop);
     if(err.has_error()) {
         abort();
     }
 
-    auto idle = &self->idle;
-    uv::idle_init(*loop, *idle);
-    uv::idle_start(*idle, each);
-    idle->data = self.get();
+    auto& idle = self->idle;
+    uv::idle_init(loop, idle);
+    uv::idle_start(idle, each);
+    idle.data = self.get();
 }
 
 event_loop::~event_loop() {
@@ -74,14 +73,14 @@ event_loop::~event_loop() {
         }
     };
 
-    auto loop = &self->loop;
-    auto close_err = uv::loop_close(*loop);
+    auto& loop = self->loop;
+    auto close_err = uv::loop_close(loop);
     if(close_err.value() == UV_EBUSY) {
-        uv::walk(*loop, cleanup, nullptr);
+        uv::walk(loop, cleanup, nullptr);
 
         // Run event loop to trigger all close callbacks.
-        while((close_err = uv::loop_close(*loop)).value() == UV_EBUSY) {
-            uv::run(*loop, UV_RUN_ONCE);
+        while((close_err = uv::loop_close(loop)).value() == UV_EBUSY) {
+            uv::run(loop, UV_RUN_ONCE);
         }
     }
 }

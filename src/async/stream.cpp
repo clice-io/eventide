@@ -54,13 +54,8 @@ struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
     error error_code{};
 
     template <typename T>
-    T* as() noexcept {
-        return reinterpret_cast<T*>(&handle);
-    }
-
-    template <typename T>
-    const T* as() const noexcept {
-        return reinterpret_cast<const T*>(&handle);
+    T& as() noexcept {
+        return reinterpret_cast<T&>(handle);
     }
 
     void init_handle() noexcept {
@@ -79,13 +74,13 @@ struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, stream_handle_
     int pipe_ipc = 0;
 
     template <typename T>
-    T* as() noexcept {
-        return reinterpret_cast<T*>(&handle);
+    T& as() noexcept {
+        return reinterpret_cast<T&>(handle);
     }
 
     template <typename T>
-    const T* as() const noexcept {
-        return reinterpret_cast<const T*>(&handle);
+    const T& as() const noexcept {
+        return reinterpret_cast<const T&>(handle);
     }
 
     void init_handle() noexcept {
@@ -109,7 +104,7 @@ struct stream_read_await : system_op {
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<stream_read_await>(op, [](auto& aw) {
             if(aw.self) {
-                uv::read_stop(*aw.self->template as<uv_stream_t>());
+                uv::read_stop(aw.self->template as<uv_stream_t>());
                 detail::clear_waiter(aw.self, &stream::Self::reader);
             }
         });
@@ -171,7 +166,7 @@ struct stream_read_await : system_op {
             return waiting;
         }
 
-        auto err = uv::read_start(*self->as<uv_stream_t>(), on_alloc, on_read);
+        auto err = uv::read_start(self->as<uv_stream_t>(), on_alloc, on_read);
         if(err.has_error()) {
             self->error_code = err;
             return waiting;
@@ -199,7 +194,7 @@ struct stream_read_some_await : system_op {
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<stream_read_some_await>(op, [](auto& aw) {
             if(aw.self) {
-                uv::read_stop(*aw.self->template as<uv_stream_t>());
+                uv::read_stop(aw.self->template as<uv_stream_t>());
                 detail::clear_waiter(aw.self, &stream::Self::reader);
             }
         });
@@ -265,7 +260,7 @@ struct stream_read_some_await : system_op {
         }
 
         self->reader = this;
-        auto err = uv::read_start(*self->as<uv_stream_t>(), on_alloc, on_read);
+        auto err = uv::read_start(self->as<uv_stream_t>(), on_alloc, on_read);
         if(err.has_error()) {
             self->reader = nullptr;
             return waiting;
@@ -340,7 +335,7 @@ struct stream_write_await : system_op {
         uv_buf_t buf = uv::buf_init(storage.empty() ? nullptr : storage.data(),
                                     static_cast<unsigned>(storage.size()));
         auto err =
-            uv::write(req, *self->as<uv_stream_t>(), std::span<const uv_buf_t>{&buf, 1}, on_write);
+            uv::write(req, self->as<uv_stream_t>(), std::span<const uv_buf_t>{&buf, 1}, on_write);
         if(err.has_error()) {
             error_code = err;
             self->writer = nullptr;
@@ -400,11 +395,11 @@ struct pipe_accept_await : system_op {
 
         std::unique_ptr<stream::Self, void (*)(void*)> state(new stream::Self(),
                                                              stream::Self::destroy);
-        auto* handle = state->as<uv_pipe_t>();
-        auto err = uv::pipe_init(*server->loop, *handle, listener.pipe_ipc);
+        auto& handle = state->as<uv_pipe_t>();
+        auto err = uv::pipe_init(*server->loop, handle, listener.pipe_ipc);
         if(!err.has_error()) {
             state->init_handle();
-            err = uv::accept(*server, *reinterpret_cast<uv_stream_t*>(handle));
+            err = uv::accept(*server, handle);
         }
 
         if(err.has_error()) {
@@ -482,11 +477,11 @@ struct tcp_accept_await : system_op {
 
         std::unique_ptr<stream::Self, void (*)(void*)> state(new stream::Self(),
                                                              stream::Self::destroy);
-        auto* handle = state->as<uv_tcp_t>();
-        auto err = uv::tcp_init(*server->loop, *handle);
+        auto& handle = state->as<uv_tcp_t>();
+        auto err = uv::tcp_init(*server->loop, handle);
         if(!err.has_error()) {
             state->init_handle();
-            err = uv::accept(*server, *reinterpret_cast<uv_stream_t*>(handle));
+            err = uv::accept(*server, handle);
         }
 
         if(err.has_error()) {
@@ -585,7 +580,7 @@ struct tcp_connect_await : system_op {
         req.data = this;
 
         auto err = uv::tcp_connect(req,
-                                   *state->as<uv_tcp_t>(),
+                                   state->as<uv_tcp_t>(),
                                    reinterpret_cast<const sockaddr*>(&addr),
                                    on_connect);
         if(err.has_error()) {
@@ -671,7 +666,7 @@ struct pipe_connect_await : system_op {
         req.data = this;
 
         auto err = uv::pipe_connect2(req,
-                                     *state->as<uv_pipe_t>(),
+                                     state->as<uv_pipe_t>(),
                                      name.c_str(),
                                      name.size(),
                                      flags,
@@ -720,8 +715,8 @@ task<result<std::string>> stream::read() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    auto stream_handle = self->as<uv_stream_t>();
-    stream_handle->data = self.get();
+    auto& stream_handle = self->as<uv_stream_t>();
+    stream_handle.data = self.get();
 
     if(self->buffer.readable_bytes() == 0) {
         auto err = co_await stream_read_await{self.get()};
@@ -748,8 +743,8 @@ task<std::size_t> stream::read_some(std::span<char> dst) {
         co_return to_read;
     }
 
-    auto stream_handle = self->as<uv_stream_t>();
-    stream_handle->data = self.get();
+    auto& stream_handle = self->as<uv_stream_t>();
+    stream_handle.data = self.get();
 
     co_return co_await stream_read_some_await{self.get(), dst};
 }
@@ -760,8 +755,8 @@ task<result<stream::chunk>> stream::read_chunk() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    auto stream_handle = self->as<uv_stream_t>();
-    stream_handle->data = self.get();
+    auto& stream_handle = self->as<uv_stream_t>();
+    stream_handle.data = self.get();
 
     if(self->buffer.readable_bytes() == 0) {
         auto err = co_await stream_read_await{self.get()};
@@ -810,7 +805,7 @@ result<std::size_t> stream::try_write(std::span<const char> data) {
     }
 
     uv_buf_t buf = uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned>(data.size()));
-    auto res = uv::try_write(*self->as<uv_stream_t>(), std::span<const uv_buf_t>{&buf, 1});
+    auto res = uv::try_write(self->as<uv_stream_t>(), std::span<const uv_buf_t>{&buf, 1});
     if(!res.has_value()) {
         return std::unexpected(res.error());
     }
@@ -823,7 +818,7 @@ bool stream::readable() const noexcept {
         return false;
     }
 
-    return uv::is_readable(*self->as<uv_stream_t>());
+    return uv::is_readable(self->as<uv_stream_t>());
 }
 
 bool stream::writable() const noexcept {
@@ -831,7 +826,7 @@ bool stream::writable() const noexcept {
         return false;
     }
 
-    return uv::is_writable(*self->as<uv_stream_t>());
+    return uv::is_writable(self->as<uv_stream_t>());
 }
 
 error stream::set_blocking(bool enabled) {
@@ -839,7 +834,7 @@ error stream::set_blocking(bool enabled) {
         return error::invalid_argument;
     }
 
-    auto err = uv::stream_set_blocking(*self->as<uv_stream_t>(), enabled);
+    auto err = uv::stream_set_blocking(self->as<uv_stream_t>(), enabled);
     if(err.has_error()) {
         return err;
     }
@@ -927,8 +922,8 @@ result<pipe> pipe::open(int fd, pipe::options opts, event_loop& loop) {
         return std::unexpected(pipe_res.error());
     }
 
-    auto handle = static_cast<uv_pipe_t*>(pipe_res->handle());
-    auto err = uv::pipe_open(*handle, fd);
+    auto& handle = *static_cast<uv_pipe_t*>(pipe_res->handle());
+    auto err = uv::pipe_open(handle, fd);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -945,9 +940,9 @@ static error start_pipe_listen(pipe::acceptor& acc,
         return error::invalid_argument;
     }
 
-    auto handle = self->template as<uv_pipe_t>();
+    auto& handle = self->template as<uv_pipe_t>();
 
-    auto err = uv::pipe_init(loop.handle(), *handle, opts.ipc ? 1 : 0);
+    auto err = uv::pipe_init(loop.handle(), handle, opts.ipc ? 1 : 0);
     if(err.has_error()) {
         return err;
     }
@@ -964,14 +959,12 @@ static error start_pipe_listen(pipe::acceptor& acc,
         return error::invalid_argument;
     }
 
-    err = uv::pipe_bind2(*handle, name.data(), name.size(), uv_flags.value());
+    err = uv::pipe_bind2(handle, name.data(), name.size(), uv_flags.value());
     if(err.has_error()) {
         return err;
     }
 
-    return uv::listen(*reinterpret_cast<uv_stream_t*>(handle),
-                      opts.backlog,
-                      pipe_accept_await::on_connection_cb);
+    return uv::listen(handle, opts.backlog, pipe_accept_await::on_connection_cb);
 }
 
 result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, event_loop& loop) {
@@ -988,8 +981,8 @@ pipe::pipe(Self* state) noexcept : stream(state) {}
 
 result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto* handle = state->as<uv_pipe_t>();
-    auto err = uv::pipe_init(loop.handle(), *handle, opts.ipc ? 1 : 0);
+    auto& handle = state->as<uv_pipe_t>();
+    auto err = uv::pipe_init(loop.handle(), handle, opts.ipc ? 1 : 0);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -1000,9 +993,9 @@ result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
 
 task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto* handle = state->as<uv_pipe_t>();
+    auto& handle = state->as<uv_pipe_t>();
 
-    auto err = uv::pipe_init(loop.handle(), *handle, opts.ipc ? 1 : 0);
+    auto err = uv::pipe_init(loop.handle(), handle, opts.ipc ? 1 : 0);
     if(err.has_error()) {
         co_return std::unexpected(err);
     }
@@ -1016,16 +1009,16 @@ tcp_socket::tcp_socket(Self* state) noexcept : stream(state) {}
 
 result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = state->as<uv_tcp_t>();
+    auto& handle = state->as<uv_tcp_t>();
 
-    auto err = uv::tcp_init(loop.handle(), *handle);
+    auto err = uv::tcp_init(loop.handle(), handle);
     if(err.has_error()) {
         return std::unexpected(err);
     }
 
     state->init_handle();
 
-    err = uv::tcp_open(*handle, fd);
+    err = uv::tcp_open(handle, fd);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -1035,9 +1028,9 @@ result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
 
 task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = state->as<uv_tcp_t>();
+    auto& handle = state->as<uv_tcp_t>();
 
-    auto err = uv::tcp_init(loop.handle(), *handle);
+    auto err = uv::tcp_init(loop.handle(), handle);
     if(err.has_error()) {
         co_return std::unexpected(err);
     }
@@ -1080,9 +1073,9 @@ static error start_tcp_listen(tcp_socket::acceptor& acc,
         return error::invalid_argument;
     }
 
-    auto handle = self->template as<uv_tcp_t>();
+    auto& handle = self->template as<uv_tcp_t>();
 
-    auto err = uv::tcp_init(loop.handle(), *handle);
+    auto err = uv::tcp_init(loop.handle(), handle);
     if(err.has_error()) {
         return err;
     }
@@ -1101,14 +1094,12 @@ static error start_tcp_listen(tcp_socket::acceptor& acc,
         return uv_flags.error();
     }
 
-    err = uv::tcp_bind(*handle, addr_ptr, uv_flags.value());
+    err = uv::tcp_bind(handle, addr_ptr, uv_flags.value());
     if(err.has_error()) {
         return err;
     }
 
-    return uv::listen(*reinterpret_cast<uv_stream_t*>(handle),
-                      opts.backlog,
-                      tcp_accept_await::on_connection_cb);
+    return uv::listen(handle, opts.backlog, tcp_accept_await::on_connection_cb);
 }
 
 result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
@@ -1126,9 +1117,9 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
 
 result<console> console::open(int fd, console::options opts, event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = state->as<uv_tty_t>();
+    auto& handle = state->as<uv_tty_t>();
 
-    auto err = uv::tty_init(loop.handle(), *handle, fd, opts.readable);
+    auto err = uv::tty_init(loop.handle(), handle, fd, opts.readable);
     if(err.has_error()) {
         return std::unexpected(err);
     }
@@ -1150,7 +1141,7 @@ error console::set_mode(mode value) {
         case mode::raw_vt: uv_mode = UV_TTY_MODE_RAW_VT; break;
     }
 
-    auto err = uv::tty_set_mode(*self->as<uv_tty_t>(), uv_mode);
+    auto err = uv::tty_set_mode(self->as<uv_tty_t>(), uv_mode);
     if(err.has_error()) {
         return err;
     }
@@ -1171,7 +1162,7 @@ result<console::winsize> console::get_winsize() const {
         return std::unexpected(error::invalid_argument);
     }
 
-    auto out = uv::tty_get_winsize(*self->as<uv_tty_t>());
+    auto out = uv::tty_get_winsize(self->as<uv_tty_t>());
     if(!out.has_value()) {
         return std::unexpected(out.error());
     }

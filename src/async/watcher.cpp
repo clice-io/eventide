@@ -209,11 +209,11 @@ EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 
 timer timer::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = &state->handle;
-    uv::timer_init(loop.handle(), *handle);
+    auto& handle = state->handle;
+    uv::timer_init(loop.handle(), handle);
 
     state->mark_initialized();
-    handle->data = state.get();
+    handle.data = state.get();
     return timer(state.release());
 }
 
@@ -222,12 +222,12 @@ void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds r
         return;
     }
 
-    auto handle = &self->handle;
-    handle->data = self.get();
+    auto& handle = self->handle;
+    handle.data = self.get();
     assert(timeout.count() >= 0 && "timer::start timeout must be non-negative");
     assert(repeat.count() >= 0 && "timer::start repeat must be non-negative");
     uv::timer_start(
-        *handle,
+        handle,
         [](uv_timer_t* h) { timer_await::on_fire(h); },
         static_cast<std::uint64_t>(timeout.count()),
         static_cast<std::uint64_t>(repeat.count()));
@@ -261,14 +261,14 @@ task<> timer::wait() {
 
 result<signal> signal::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
-    auto handle = &state->handle;
-    auto err = uv::signal_init(loop.handle(), *handle);
+    auto& handle = state->handle;
+    auto err = uv::signal_init(loop.handle(), handle);
     if(err.has_error()) {
         return std::unexpected(err);
     }
 
     state->mark_initialized();
-    handle->data = state.get();
+    handle.data = state.get();
     return signal(state.release());
 }
 
@@ -277,10 +277,10 @@ error signal::start(int signum) {
         return error::invalid_argument;
     }
 
-    auto handle = &self->handle;
-    handle->data = self.get();
+    auto& handle = self->handle;
+    handle.data = self.get();
     auto err =
-        uv::signal_start(*handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
+        uv::signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
     if(err.has_error()) {
         return err;
     }
@@ -327,11 +327,11 @@ task<error> signal::wait() {
                                              NameLiteral)                                          \
     WatcherType WatcherType::create(event_loop& loop) {                                            \
         std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);                   \
-        auto* handle = &state->handle;                                                             \
-        INIT_FN(loop.handle(), *handle);                                                           \
+        auto& handle = state->handle;                                                              \
+        INIT_FN(loop.handle(), handle);                                                            \
                                                                                                    \
         state->mark_initialized();                                                                 \
-        handle->data = state.get();                                                                \
+        handle.data = state.get();                                                                 \
         return WatcherType(state.release());                                                       \
     }                                                                                              \
                                                                                                    \
@@ -340,9 +340,9 @@ task<error> signal::wait() {
             return;                                                                                \
         }                                                                                          \
                                                                                                    \
-        auto* handle = &self->handle;                                                              \
-        handle->data = self.get();                                                                 \
-        START_FN(*handle, [](HandleType* h) { AwaiterType::on_fire(h); });                         \
+        auto& handle = self->handle;                                                               \
+        handle.data = self.get();                                                                  \
+        START_FN(handle, [](HandleType* h) { AwaiterType::on_fire(h); });                          \
     }                                                                                              \
                                                                                                    \
     void WatcherType::stop() {                                                                     \
