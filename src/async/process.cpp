@@ -235,8 +235,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     }
 
     auto& proc_handle = self->handle;
-    auto err = uv::spawn(loop.handle(), proc_handle, uv_opts);
-    if(err.has_error()) {
+    if(auto err = uv::spawn(loop.handle(), proc_handle, uv_opts)) {
         self->mark_initialized();
         return std::unexpected(err);
     }
@@ -280,8 +279,7 @@ error process::kill(int signum) {
         return error::invalid_argument;
     }
 
-    auto err = uv::process_kill(self->handle, signum);
-    if(err.has_error()) {
+    if(auto err = uv::process_kill(self->handle, signum)) {
         return err;
     }
 

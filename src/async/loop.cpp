@@ -55,8 +55,7 @@ void event_loop::schedule(async_node& frame, std::source_location location) {
 
 event_loop::event_loop() : self(new struct self()) {
     auto& loop = self->loop;
-    auto err = uv::loop_init(loop);
-    if(err.has_error()) {
+    if(auto err = uv::loop_init(loop)) {
         abort();
     }
 
@@ -92,7 +91,7 @@ uv_loop_t& event_loop::handle() noexcept {
 int event_loop::run() {
     auto previous = current_loop;
     current_loop = this;
-    auto result = uv::run(self->loop, UV_RUN_DEFAULT);
+    const int result = uv::run(self->loop, UV_RUN_DEFAULT);
     current_loop = previous;
     return result;
 }

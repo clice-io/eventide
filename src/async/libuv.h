@@ -856,14 +856,14 @@ inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
 
     auto& out6 = *reinterpret_cast<sockaddr_in6*>(&out.storage);
     auto err6 = uv::ip6_addr(host_storage.c_str(), port, out6);
-    if(!err6.has_error()) {
+    if(!err6) {
         out.family = AF_INET6;
         return out;
     }
 
     auto& out4 = *reinterpret_cast<sockaddr_in*>(&out.storage);
     auto err4 = uv::ip4_addr(host_storage.c_str(), port, out4);
-    if(!err4.has_error()) {
+    if(!err4) {
         out.family = AF_INET;
         return out;
     }

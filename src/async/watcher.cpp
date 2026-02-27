@@ -262,8 +262,7 @@ task<> timer::wait() {
 result<signal> signal::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto& handle = state->handle;
-    auto err = uv::signal_init(loop.handle(), handle);
-    if(err.has_error()) {
+    if(auto err = uv::signal_init(loop.handle(), handle)) {
         return std::unexpected(err);
     }
 
@@ -279,9 +278,9 @@ error signal::start(int signum) {
 
     auto& handle = self->handle;
     handle.data = self.get();
-    auto err =
-        uv::signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
-    if(err.has_error()) {
+    if(auto err =
+           uv::signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
+       err) {
         return err;
     }
 
@@ -293,8 +292,7 @@ error signal::stop() {
         return error::invalid_argument;
     }
 
-    auto err = uv::signal_stop(self->handle);
-    if(err.has_error()) {
+    if(auto err = uv::signal_stop(self->handle)) {
         return err;
     }
 

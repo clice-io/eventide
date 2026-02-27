@@ -166,8 +166,7 @@ result<fs_event> fs_event::create(event_loop& loop) {
     std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
     auto& handle = state->handle;
 
-    auto err = uv::fs_event_init(loop.handle(), handle);
-    if(err.has_error()) {
+    if(auto err = uv::fs_event_init(loop.handle(), handle)) {
         return std::unexpected(err);
     }
 
@@ -188,8 +187,7 @@ error fs_event::start(const char* path, watch_options options) {
 
     auto& handle = self->handle;
     handle.data = self.get();
-    auto err = uv::fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value());
-    if(err.has_error()) {
+    if(auto err = uv::fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value())) {
         return err;
     }
 
@@ -202,8 +200,7 @@ error fs_event::stop() {
     }
 
     auto& handle = self->handle;
-    auto err = uv::fs_event_stop(handle);
-    if(err.has_error()) {
+    if(auto err = uv::fs_event_stop(handle)) {
         return err;
     }
 
@@ -335,8 +332,7 @@ static task<result<Result>> run_fs(Submit submit,
 
     op.req.data = &op;
 
-    auto err = submit(op.req, after_cb);
-    if(err.has_error()) {
+    if(auto err = submit(op.req, after_cb)) {
         co_return std::unexpected(err);
     }
 
