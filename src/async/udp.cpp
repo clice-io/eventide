@@ -35,8 +35,8 @@ namespace {
 
 constexpr std::size_t udp_recv_buffer_size = 64 * 1024;
 
-static std::unique_ptr<udp::Self, void (*)(void*)> make_udp_state() {
-    std::unique_ptr<udp::Self, void (*)(void*)> state(new udp::Self(), udp::Self::destroy);
+static udp::Self::pointer make_udp_state() {
+    auto state = udp::Self::make();
     state->buffer.resize(udp_recv_buffer_size);
     return state;
 }
@@ -114,8 +114,10 @@ static udp::recv_flags to_udp_recv_flags(unsigned flags) {
 struct udp_recv_await : system_op {
     using promise_t = task<result<udp::recv_result>>::promise_type;
 
+    // UDP socket state used to register waiter and manage recv lifecycle.
     udp::Self* self;
-    result<udp::recv_result> outcome = std::unexpected(error{});
+    // Result slot written by on_read() and returned from await_resume().
+    result<udp::recv_result> outcome = std::unexpected(error());
 
     explicit udp_recv_await(udp::Self* socket) : self(socket) {
         action = &on_cancel;
@@ -169,7 +171,7 @@ struct udp_recv_await : system_op {
 
         if(addr != nullptr) {
             auto ep = endpoint_from_sockaddr(addr);
-            if(ep.has_value()) {
+            if(ep) {
                 out.addr = std::move(ep->addr);
                 out.port = ep->port;
             }
@@ -219,11 +221,16 @@ struct udp_recv_await : system_op {
 struct udp_send_await : system_op {
     using promise_t = task<error>::promise_type;
 
+    // UDP socket state that owns send waiter and inflight flags.
     udp::Self* self;
+    // Owns outbound bytes until on_send() runs.
     std::vector<char> storage;
+    // libuv send request; req.handle gives us the socket on completion.
     uv_udp_send_t req{};
+    // Optional destination for unconnected sockets.
     std::optional<sockaddr_storage> dest;
-    error result{};
+    // Completion status returned from await_resume().
+    error result;
 
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
         self(u), storage(data.begin(), data.end()), dest(std::move(d)) {
@@ -355,7 +362,7 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
 
 result<udp> udp::create(event_loop& loop) {
     auto state = make_udp_state();
-    if(auto err = uv::udp_init(loop.handle(), state->handle)) {
+    if(auto err = uv::udp_init(loop, state->handle)) {
         return std::unexpected(err);
     }
 
@@ -366,11 +373,11 @@ result<udp> udp::create(event_loop& loop) {
 result<udp> udp::create(create_options options, event_loop& loop) {
     auto state = make_udp_state();
     auto uv_flags = to_uv_udp_init_flags(options);
-    if(!uv_flags.has_value()) {
+    if(!uv_flags) {
         return std::unexpected(uv_flags.error());
     }
 
-    if(auto err = uv::udp_init_ex(loop.handle(), state->handle, uv_flags.value())) {
+    if(auto err = uv::udp_init_ex(loop, state->handle, uv_flags.value())) {
         return std::unexpected(err);
     }
 
@@ -380,7 +387,7 @@ result<udp> udp::create(create_options options, event_loop& loop) {
 
 result<udp> udp::open(int fd, event_loop& loop) {
     auto state = make_udp_state();
-    if(auto err = uv::udp_init(loop.handle(), state->handle)) {
+    if(auto err = uv::udp_init(loop, state->handle)) {
         return std::unexpected(err);
     }
 
@@ -399,12 +406,12 @@ error udp::bind(std::string_view host, int port, bind_options options) {
     }
 
     auto uv_flags = to_uv_udp_bind_flags(options);
-    if(!uv_flags.has_value()) {
+    if(!uv_flags) {
         return uv_flags.error();
     }
 
     auto resolved = detail::resolve_addr(host, port);
-    if(!resolved.has_value()) {
+    if(!resolved) {
         return resolved.error();
     }
 
@@ -422,7 +429,7 @@ error udp::connect(std::string_view host, int port) {
     }
 
     auto resolved = detail::resolve_addr(host, port);
-    if(!resolved.has_value()) {
+    if(!resolved) {
         return resolved.error();
     }
 
@@ -452,7 +459,7 @@ task<error> udp::send(std::span<const char> data, std::string_view host, int por
     }
 
     auto resolved = detail::resolve_addr(host, port);
-    if(!resolved.has_value()) {
+    if(!resolved) {
         co_return resolved.error();
     }
 
@@ -475,7 +482,7 @@ error udp::try_send(std::span<const char> data, std::string_view host, int port)
     }
 
     auto resolved = detail::resolve_addr(host, port);
-    if(!resolved.has_value()) {
+    if(!resolved) {
         return resolved.error();
     }
 
@@ -484,7 +491,7 @@ error udp::try_send(std::span<const char> data, std::string_view host, int port)
     auto sent = uv::udp_try_send(self->handle,
                                  std::span<const uv_buf_t>{&buf, 1},
                                  reinterpret_cast<const sockaddr*>(&resolved->storage));
-    if(!sent.has_value()) {
+    if(!sent) {
         return sent.error();
     }
 
@@ -499,7 +506,7 @@ error udp::try_send(std::span<const char> data) {
     uv_buf_t buf =
         uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(data.size()));
     auto sent = uv::udp_try_send(self->handle, std::span<const uv_buf_t>{&buf, 1}, nullptr);
-    if(!sent.has_value()) {
+    if(!sent) {
         return sent.error();
     }
 

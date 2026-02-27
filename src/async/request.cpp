@@ -12,9 +12,12 @@ namespace {
 struct work_op : system_op {
     using promise_t = task<error>::promise_type;
 
+    // libuv request object; req.data points back to this awaiter.
     uv_work_t req{};
+    // User-supplied function executed on libuv's worker thread.
     work_fn fn;
-    error result{};
+    // Completion status consumed by await_resume().
+    error result;
 
     work_op() : system_op(async_node::NodeKind::SystemIO) {
         action = &on_cancel;
@@ -67,7 +70,7 @@ task<error> queue(work_fn fn, event_loop& loop) {
     op.result.clear();
     op.req.data = &op;
 
-    auto err = uv::queue_work(loop.handle(), op.req, work_cb, after_cb);
+    auto err = uv::queue_work(loop, op.req, work_cb, after_cb);
     if(err) {
         co_return err;
     }

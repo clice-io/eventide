@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -775,6 +776,8 @@ EVENTIDE_UV_ALWAYS_INLINE error fs_link(uv_loop_t& loop,
 template <typename Derived, typename Handle>
 class uv_handle {
 public:
+    using pointer = std::unique_ptr<Derived, void (*)(void*)>;
+
     Handle* handle_ptr() noexcept {
         return &static_cast<Derived*>(this)->handle;
     }
@@ -834,6 +837,37 @@ public:
         }
 
         uv::close(h, &on_close);
+    }
+
+    static pointer make() {
+        return pointer(new Derived(), &destroy);
+    }
+
+    template <typename InitFn>
+    static result<pointer> make_initialized(InitFn&& init) {
+        auto state = make();
+        if(auto err = std::forward<InitFn>(init)(*state); err) {
+            return std::unexpected(err);
+        }
+
+        state->init_handle();
+        return state;
+    }
+
+    template <typename InitFn, typename PostInitFn>
+    static result<pointer> make_initialized(InitFn&& init, PostInitFn&& post_init) {
+        auto state = make();
+        if(auto err = std::forward<InitFn>(init)(*state); err) {
+            return std::unexpected(err);
+        }
+
+        state->init_handle();
+
+        if(auto err = std::forward<PostInitFn>(post_init)(*state); err) {
+            return std::unexpected(err);
+        }
+
+        return state;
     }
 
 protected:

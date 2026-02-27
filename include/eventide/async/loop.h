@@ -34,7 +34,9 @@ public:
     friend class async_node;
 
 public:
-    uv_loop_t& handle() noexcept;
+    operator uv_loop_t&() noexcept;
+
+    operator const uv_loop_t&() const noexcept;
 
     int run();
 

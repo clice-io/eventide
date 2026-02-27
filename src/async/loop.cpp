@@ -84,7 +84,11 @@ event_loop::~event_loop() {
     }
 }
 
-uv_loop_t& event_loop::handle() noexcept {
+event_loop::operator uv_loop_t&() noexcept {
+    return self->loop;
+}
+
+event_loop::operator const uv_loop_t&() const noexcept {
     return self->loop;
 }
 

@@ -45,7 +45,9 @@ namespace {
 struct process_await : system_op {
     using promise_t = task<process::wait_result>::promise_type;
 
+    // Process state used to install/remove waiter and active result pointers.
     process::Self* self;
+    // Exit status slot filled by process exit callback.
     process::exit_status result{};
 
     explicit process_await(process::Self* self) : self(self) {
@@ -183,7 +185,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
                 break;
             case stdio::kind::pipe: {
                 auto pipe = pipe::create(pipe::options{}, loop);
-                if(!pipe.has_value()) {
+                if(!pipe) {
                     return std::unexpected(pipe.error());
                 }
 
@@ -235,7 +237,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     }
 
     auto& proc_handle = self->handle;
-    if(auto err = uv::spawn(loop.handle(), proc_handle, uv_opts)) {
+    if(auto err = uv::spawn(loop, proc_handle, uv_opts)) {
         self->init_handle();
         return std::unexpected(err);
     }

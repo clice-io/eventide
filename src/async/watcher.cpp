@@ -67,6 +67,7 @@ template <typename SelfT, typename HandleT>
 struct basic_tick_await : system_op {
     using promise_t = task<>::promise_type;
 
+    // Watcher state that owns waiter/pending counters.
     SelfT* self;
 
     explicit basic_tick_await(SelfT* watcher) : self(watcher) {
@@ -127,7 +128,9 @@ using check_await = basic_tick_await<check::Self, uv_check_t>;
 struct signal_await : system_op {
     using promise_t = task<error>::promise_type;
 
+    // Signal watcher state that owns waiter/active pointers.
     signal::Self* self;
+    // Result slot returned by await_resume().
     error result{};
 
     explicit signal_await(signal::Self* watcher) : self(watcher) {
@@ -208,9 +211,9 @@ EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 #undef EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS
 
 timer timer::create(event_loop& loop) {
-    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
+    auto state = Self::make();
     auto& handle = state->handle;
-    uv::timer_init(loop.handle(), handle);
+    uv::timer_init(loop, handle);
 
     state->init_handle();
     return timer(state.release());
@@ -259,9 +262,9 @@ task<> timer::wait() {
 }
 
 result<signal> signal::create(event_loop& loop) {
-    std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);
+    auto state = Self::make();
     auto& handle = state->handle;
-    if(auto err = uv::signal_init(loop.handle(), handle)) {
+    if(auto err = uv::signal_init(loop, handle)) {
         return std::unexpected(err);
     }
 
@@ -324,9 +327,9 @@ task<error> signal::wait() {
                                              STOP_FN,                                              \
                                              NameLiteral)                                          \
     WatcherType WatcherType::create(event_loop& loop) {                                            \
-        std::unique_ptr<Self, void (*)(void*)> state(new Self(), Self::destroy);                   \
+        auto state = Self::make();                                                                 \
         auto& handle = state->handle;                                                              \
-        INIT_FN(loop.handle(), handle);                                                            \
+        INIT_FN(loop, handle);                                                                     \
                                                                                                    \
         state->init_handle();                                                                      \
         return WatcherType(state.release());                                                       \
