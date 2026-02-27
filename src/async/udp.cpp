@@ -41,11 +41,6 @@ static std::unique_ptr<udp::Self, void (*)(void*)> make_udp_state() {
     return state;
 }
 
-inline void mark_udp_initialized(udp::Self& state) noexcept {
-    state.mark_initialized();
-    state.handle.data = &state;
-}
-
 static result<unsigned int> to_uv_udp_init_flags(const udp::create_options& options) {
     unsigned int out = 0;
 #ifdef UV_UDP_IPV6ONLY
@@ -364,7 +359,7 @@ result<udp> udp::create(event_loop& loop) {
         return std::unexpected(err);
     }
 
-    mark_udp_initialized(*state);
+    state->init_handle();
     return udp(state.release());
 }
 
@@ -379,7 +374,7 @@ result<udp> udp::create(create_options options, event_loop& loop) {
         return std::unexpected(err);
     }
 
-    mark_udp_initialized(*state);
+    state->init_handle();
     return udp(state.release());
 }
 
@@ -389,7 +384,7 @@ result<udp> udp::open(int fd, event_loop& loop) {
         return std::unexpected(err);
     }
 
-    mark_udp_initialized(*state);
+    state->init_handle();
 
     if(auto err = uv::udp_open(state->handle, fd)) {
         return std::unexpected(err);
@@ -597,12 +592,12 @@ error udp::set_source_membership(std::string_view multicast_addr,
     std::string multicast_storage(multicast_addr);
     std::string interface_storage(interface_addr);
     std::string source_storage(source_addr);
-    if(auto err = uv::udp_set_source_membership(self->handle,
-                                                multicast_storage.c_str(),
-                                                interface_storage.c_str(),
-                                                source_storage.c_str(),
-                                                m == membership::join ? UV_JOIN_GROUP
-                                                                      : UV_LEAVE_GROUP)) {
+    if(auto err =
+           uv::udp_set_source_membership(self->handle,
+                                         multicast_storage.c_str(),
+                                         interface_storage.c_str(),
+                                         source_storage.c_str(),
+                                         m == membership::join ? UV_JOIN_GROUP : UV_LEAVE_GROUP)) {
         return err;
     }
 

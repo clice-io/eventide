@@ -212,8 +212,7 @@ timer timer::create(event_loop& loop) {
     auto& handle = state->handle;
     uv::timer_init(loop.handle(), handle);
 
-    state->mark_initialized();
-    handle.data = state.get();
+    state->init_handle();
     return timer(state.release());
 }
 
@@ -266,8 +265,7 @@ result<signal> signal::create(event_loop& loop) {
         return std::unexpected(err);
     }
 
-    state->mark_initialized();
-    handle.data = state.get();
+    state->init_handle();
     return signal(state.release());
 }
 
@@ -278,8 +276,10 @@ error signal::start(int signum) {
 
     auto& handle = self->handle;
     handle.data = self.get();
-    if(auto err =
-           uv::signal_start(handle, [](uv_signal_t* h, int) { signal_await::on_fire(h); }, signum);
+    if(auto err = uv::signal_start(
+           handle,
+           [](uv_signal_t* h, int) { signal_await::on_fire(h); },
+           signum);
        err) {
         return err;
     }
@@ -328,8 +328,7 @@ task<error> signal::wait() {
         auto& handle = state->handle;                                                              \
         INIT_FN(loop.handle(), handle);                                                            \
                                                                                                    \
-        state->mark_initialized();                                                                 \
-        handle.data = state.get();                                                                 \
+        state->init_handle();                                                                      \
         return WatcherType(state.release());                                                       \
     }                                                                                              \
                                                                                                    \

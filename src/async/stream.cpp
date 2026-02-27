@@ -58,10 +58,9 @@ struct stream::Self : uv_handle<stream::Self, stream_handle_storage> {
         return reinterpret_cast<T&>(handle);
     }
 
-    void init_handle() noexcept {
-        this->mark_initialized();
-        auto* h = reinterpret_cast<uv_handle_t*>(&handle);
-        h->data = this;
+    // Keep libuv callbacks anchored to this state object before starting read operations.
+    void bind_stream_userdata() noexcept {
+        as<uv_stream_t>().data = this;
     }
 };
 
@@ -77,26 +76,11 @@ struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, stream_handle_
     T& as() noexcept {
         return reinterpret_cast<T&>(handle);
     }
-
-    template <typename T>
-    const T& as() const noexcept {
-        return reinterpret_cast<const T&>(handle);
-    }
-
-    void init_handle() noexcept {
-        this->mark_initialized();
-        auto* h = reinterpret_cast<uv_handle_t*>(&handle);
-        h->data = this;
-    }
 };
 
 static result<unsigned int> to_uv_pipe_flags(const pipe::options& opts);
 
 namespace {
-
-inline void bind_stream_userdata(stream::Self& self) noexcept {
-    self.as<uv_stream_t>().data = &self;
-}
 
 struct stream_read_await : system_op {
     stream::Self* self;
@@ -716,7 +700,7 @@ task<result<std::string>> stream::read() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    bind_stream_userdata(*self);
+    self->bind_stream_userdata();
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
@@ -742,7 +726,7 @@ task<std::size_t> stream::read_some(std::span<char> dst) {
         co_return to_read;
     }
 
-    bind_stream_userdata(*self);
+    self->bind_stream_userdata();
 
     co_return co_await stream_read_some_await{self.get(), dst};
 }
@@ -753,7 +737,7 @@ task<result<stream::chunk>> stream::read_chunk() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    bind_stream_userdata(*self);
+    self->bind_stream_userdata();
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {

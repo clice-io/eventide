@@ -170,8 +170,7 @@ result<fs_event> fs_event::create(event_loop& loop) {
         return std::unexpected(err);
     }
 
-    state->mark_initialized();
-    handle.data = state.get();
+    state->init_handle();
     return fs_event(state.release());
 }
 

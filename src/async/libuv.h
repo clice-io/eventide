@@ -791,6 +791,12 @@ public:
         initialized_ = true;
     }
 
+    void init_handle() noexcept {
+        mark_initialized();
+        auto* h = reinterpret_cast<uv_handle_t*>(handle_ptr());
+        h->data = static_cast<Derived*>(this);
+    }
+
     bool is_active() const noexcept {
         if(!initialized_) {
             return false;
