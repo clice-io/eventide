@@ -352,14 +352,13 @@ result<pipe> pipe::open(int fd, pipe::options opts, event_loop& loop) {
 }
 
 result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, event_loop& loop) {
-    auto state = pipe::acceptor::Self::make_initialized([&](pipe::acceptor::Self& self) {
-        return uv::pipe_init(loop, self.pipe, opts.ipc ? 1 : 0);
-    });
-    if(!state) {
-        return std::unexpected(state.error());
+    auto state = pipe::acceptor::Self::make();
+    if(auto err = uv::pipe_init(loop, state->pipe, opts.ipc ? 1 : 0)) {
+        return std::unexpected(err);
     }
+    state->init_handle();
 
-    auto& acc = *state->get();
+    auto& acc = *state;
     acc.pipe_ipc = opts.ipc ? 1 : 0;
     auto& handle = acc.pipe;
 
@@ -380,63 +379,68 @@ result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, e
         return std::unexpected(err);
     }
 
-    return pipe::acceptor(state->release());
+    return pipe::acceptor(state.release());
 }
 
 pipe::pipe(Self* state) noexcept : stream(state) {}
 
 result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
-    auto state = Self::make_initialized(
-        [&](Self& self) { return uv::pipe_init(loop, self.pipe, opts.ipc ? 1 : 0); });
-    if(!state) {
-        return std::unexpected(state.error());
+    auto state = Self::make();
+    if(auto err = uv::pipe_init(loop, state->pipe, opts.ipc ? 1 : 0)) {
+        return std::unexpected(err);
     }
+    state->init_handle();
 
-    return pipe(state->release());
+    return pipe(state.release());
 }
 
 task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
-    auto state = Self::make_initialized(
-        [&](Self& self) { return uv::pipe_init(loop, self.pipe, opts.ipc ? 1 : 0); });
-    if(!state) {
-        co_return std::unexpected(state.error());
+    auto state = Self::make();
+    if(auto err = uv::pipe_init(loop, state->pipe, opts.ipc ? 1 : 0)) {
+        co_return std::unexpected(err);
     }
+    state->init_handle();
 
-    co_return co_await connect_await<pipe>{std::move(*state), name, opts};
+    co_return co_await connect_await<pipe>{std::move(state), name, opts};
 }
 
 tcp_socket::tcp_socket(Self* state) noexcept : stream(state) {}
 
 result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
-    auto state = Self::make_initialized([&](Self& self) { return uv::tcp_init(loop, self.tcp); },
-                                        [&](Self& self) { return uv::tcp_open(self.tcp, fd); });
-    if(!state) {
-        return std::unexpected(state.error());
+    auto state = Self::make();
+    if(auto err = uv::tcp_init(loop, state->tcp)) {
+        return std::unexpected(err);
+    }
+    state->init_handle();
+
+    if(auto err = uv::tcp_open(state->tcp, fd)) {
+        return std::unexpected(err);
     }
 
-    return tcp_socket(state->release());
+    return tcp_socket(state.release());
 }
 
 task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, event_loop& loop) {
-    auto state = Self::make_initialized([&](Self& self) { return uv::tcp_init(loop, self.tcp); });
-    if(!state) {
-        co_return std::unexpected(state.error());
+    auto state = Self::make();
+    if(auto err = uv::tcp_init(loop, state->tcp)) {
+        co_return std::unexpected(err);
     }
+    state->init_handle();
 
-    co_return co_await connect_await<tcp_socket>{std::move(*state), host, port};
+    co_return co_await connect_await<tcp_socket>{std::move(state), host, port};
 }
 
 result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 int port,
                                                 tcp_socket::options opts,
                                                 event_loop& loop) {
-    auto state = tcp_socket::acceptor::Self::make_initialized(
-        [&](tcp_socket::acceptor::Self& self) { return uv::tcp_init(loop, self.tcp); });
-    if(!state) {
-        return std::unexpected(state.error());
+    auto state = tcp_socket::acceptor::Self::make();
+    if(auto err = uv::tcp_init(loop, state->tcp)) {
+        return std::unexpected(err);
     }
+    state->init_handle();
 
-    auto& acc = *state->get();
+    auto& acc = *state;
     auto& handle = acc.tcp;
 
     auto resolved = detail::resolve_addr(host, port);
@@ -459,7 +463,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
         return std::unexpected(err);
     }
 
-    return tcp_socket::acceptor(state->release());
+    return tcp_socket::acceptor(state.release());
 }
 
 }  // namespace eventide

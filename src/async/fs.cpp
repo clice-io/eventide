@@ -165,13 +165,13 @@ fs_event::Self* fs_event::operator->() noexcept {
 }
 
 result<fs_event> fs_event::create(event_loop& loop) {
-    auto state =
-        Self::make_initialized([&](Self& self) { return uv::fs_event_init(loop, self.handle); });
-    if(!state) {
-        return std::unexpected(state.error());
+    auto state = Self::make();
+    if(auto err = uv::fs_event_init(loop, state->handle)) {
+        return std::unexpected(err);
     }
+    state->init_handle();
 
-    return fs_event(state->release());
+    return fs_event(state.release());
 }
 
 error fs_event::start(const char* path, watch_options options) {

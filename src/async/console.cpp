@@ -6,13 +6,13 @@
 namespace eventide {
 
 result<console> console::open(int fd, console::options opts, event_loop& loop) {
-    auto state = Self::make_initialized(
-        [&](Self& self) { return uv::tty_init(loop, self.tty, fd, opts.readable); });
-    if(!state) {
-        return std::unexpected(state.error());
+    auto state = Self::make();
+    if(auto err = uv::tty_init(loop, state->tty, fd, opts.readable)) {
+        return std::unexpected(err);
     }
+    state->init_handle();
 
-    return console(state->release());
+    return console(state.release());
 }
 
 error console::set_mode(mode value) {
