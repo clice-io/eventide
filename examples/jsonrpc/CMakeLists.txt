@@ -22,14 +22,14 @@ target_link_libraries(eventide_example_jsonrpc_scripted_roundtrip PRIVATE
     eventide::jsonrpc
 )
 
-add_executable(eventide_example_jsonrpc_spawn_worker
+add_executable(spawn_worker
     "${CMAKE_CURRENT_SOURCE_DIR}/spawn_worker.cpp"
 )
 
-target_include_directories(eventide_example_jsonrpc_spawn_worker PRIVATE
+target_include_directories(spawn_worker PRIVATE
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(eventide_example_jsonrpc_spawn_worker PRIVATE
+target_link_libraries(spawn_worker PRIVATE
     eventide::jsonrpc
 )

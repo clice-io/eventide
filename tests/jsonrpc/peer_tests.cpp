@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -7,11 +8,23 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/async/loop.h"
+#include "eventide/async/stream.h"
 #include "eventide/jsonrpc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/sync.h"
+#include "eventide/async/watcher.h"
 #include "eventide/serde/simdjson/deserializer.h"
+
+#ifdef _WIN32
+#include <BaseTsd.h>
+#include <fcntl.h>
+#include <io.h>
+using ssize_t = SSIZE_T;
+#else
+#include <unistd.h>
+#endif
 
 namespace eventide::jsonrpc {
 
@@ -138,6 +151,81 @@ private:
     bool closed = false;
 };
 
+struct PendingAddResult {
+    std::expected<AddResult, std::string> value = std::unexpected("request not completed");
+};
+
+namespace {
+
+#ifdef _WIN32
+int create_pipe_fds(int fds[2]) {
+    return _pipe(fds, 4096, _O_BINARY);
+}
+
+int close_fd(int fd) {
+    return _close(fd);
+}
+
+ssize_t write_fd(int fd, const char* data, size_t len) {
+    return _write(fd, data, static_cast<unsigned int>(len));
+}
+#else
+int create_pipe_fds(int fds[2]) {
+    return ::pipe(fds);
+}
+
+int close_fd(int fd) {
+    return ::close(fd);
+}
+
+ssize_t write_fd(int fd, const char* data, size_t len) {
+    return ::write(fd, data, len);
+}
+#endif
+
+std::string frame(std::string_view payload) {
+    std::string out;
+    out.reserve(payload.size() + 32);
+    out.append("Content-Length: ");
+    out.append(std::to_string(payload.size()));
+    out.append("\r\n\r\n");
+    out.append(payload);
+    return out;
+}
+
+task<> complete_request(Peer& peer, PendingAddResult& out) {
+    out.value = co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 2, .b = 3});
+    if(!peer.close_output() && out.value.has_value()) {
+        out.value = std::unexpected("failed to close peer output");
+    }
+    co_return;
+}
+
+task<> write_notification_then_response(int fd, event_loop& loop) {
+    co_await sleep(std::chrono::milliseconds{1}, loop);
+
+    const auto note = frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})");
+    auto note_written = write_fd(fd, note.data(), note.size());
+    if(note_written != static_cast<ssize_t>(note.size())) {
+        close_fd(fd);
+        co_return;
+    }
+
+    co_await sleep(std::chrono::milliseconds{1}, loop);
+
+    const auto response = frame(R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})");
+    auto response_written = write_fd(fd, response.data(), response.size());
+    if(response_written != static_cast<ssize_t>(response.size())) {
+        close_fd(fd);
+        co_return;
+    }
+
+    close_fd(fd);
+    co_return;
+}
+
+}  // namespace
+
 }  // namespace eventide::jsonrpc
 
 namespace eventide::jsonrpc::protocol {
@@ -208,6 +296,47 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     EXPECT_EQ(std::get<protocol::integer>(response->id), 1);
     ASSERT_TRUE(response->result.has_value());
     EXPECT_EQ(response->result->sum, 5);
+}
+
+TEST_CASE(stream_transport_notification_then_response) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    event_loop loop;
+
+    int incoming_fds[2] = {-1, -1};
+    int outgoing_fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe_fds(incoming_fds), 0);
+    ASSERT_EQ(create_pipe_fds(outgoing_fds), 0);
+
+    auto input = pipe::open(incoming_fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+    auto output = pipe::open(outgoing_fds[1], pipe::options{}, loop);
+    ASSERT_TRUE(output.has_value());
+
+    auto transport =
+        std::make_unique<StreamTransport>(stream(std::move(*input)), stream(std::move(*output)));
+    Peer peer(loop, std::move(transport));
+
+    std::vector<std::string> seen_notes;
+    peer.on_notification("test/note", [&](const NoteParams& params) { seen_notes.push_back(params.text); });
+
+    PendingAddResult request_result;
+    auto request = complete_request(peer, request_result);
+    auto remote = write_notification_then_response(incoming_fds[1], loop);
+
+    loop.schedule(request);
+    loop.schedule(remote);
+
+    EXPECT_EQ(peer.start(), 0);
+
+    ASSERT_TRUE(request_result.value.has_value());
+    EXPECT_EQ(request_result.value->sum, 9);
+    ASSERT_EQ(seen_notes.size(), 1U);
+    EXPECT_EQ(seen_notes.front(), "first");
+
+    ASSERT_EQ(close_fd(outgoing_fds[0]), 0);
 }
 
 TEST_CASE(explicit_method_registration) {

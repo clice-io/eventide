@@ -224,10 +224,13 @@ struct stream_handle {
 };
 
 struct stream::Self : uv_handle<stream::Self, uv_stream_t>, stream_handle {
+    enum class read_mode { none, buffered, direct };
+
     uv::single_waiter reader;
     uv::single_waiter writer;
     ring_buffer buffer{};
     error error_code{};
+    read_mode active_read_mode = read_mode::none;
 };
 
 template <typename Stream>
