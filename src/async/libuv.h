@@ -768,22 +768,27 @@ ALWAYS_INLINE error fs_link(uv_loop_t& loop,
 
 template <typename Derived, typename Handle>
 class uv_handle {
+protected:
+    uv_handle() = default;
+    ~uv_handle() = default;
+
 public:
     using pointer = unique_handle<Derived>;
 
     bool initialized() const noexcept {
-        return initialized_;
-    }
-
-    void mark_initialized() noexcept {
-        initialized_ = true;
+        auto* self = static_cast<const Derived*>(this);
+        auto* h = reinterpret_cast<const uv_handle_t*>(&self->handle);
+        return h->loop != nullptr && h->type != UV_UNKNOWN_HANDLE;
     }
 
     void init_handle() noexcept {
-        mark_initialized();
         auto self = static_cast<Derived*>(this);
         auto* h = reinterpret_cast<uv_handle_t*>(&self->handle);
-        h->data = static_cast<Derived*>(this);
+        h->data = self;
+    }
+
+    static pointer make() {
+        return pointer(new Derived());
     }
 
     static void destroy(Derived* self) noexcept {
@@ -791,12 +796,13 @@ public:
             return;
         }
 
-        if(!self->initialized_) {
+        if(!self->initialized()) {
             delete self;
             return;
         }
 
         auto& h = *reinterpret_cast<uv_handle_t*>(&self->handle);
+        h.data = self;
         if(uv::is_closing(h)) {
             return;
         }
@@ -806,17 +812,6 @@ public:
             delete self;
         });
     }
-
-    static pointer make() {
-        return pointer(new Derived());
-    }
-
-protected:
-    uv_handle() = default;
-    ~uv_handle() = default;
-
-private:
-    bool initialized_ = false;
 };
 
 namespace detail {
