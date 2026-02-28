@@ -11,6 +11,7 @@ option(EVENTIDE_ENABLE_ASYNC "Enable async eventide target and libuv dependency"
 option(EVENTIDE_ENABLE_OPTION "Enable option parser target" ON)
 option(EVENTIDE_ENABLE_DECO "Enable deco target" ON)
 option(EVENTIDE_ENABLE_TEST "Build unit tests" OFF)
+option(EVENTIDE_ENABLE_EXAMPLES "Build examples" OFF)
 option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
 option(EVENTIDE_SERDE_ENABLE_SIMDJSON "Enable simdjson dependency for eventide::serde" OFF)
 option(EVENTIDE_SERDE_ENABLE_FLATBUFFERS "Enable flatbuffers dependency for eventide::serde" OFF)
@@ -81,6 +82,7 @@ if(EVENTIDE_ENABLE_ASYNC)
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    add_subdirectory(src/jsonrpc)
     add_subdirectory(src/language)
 endif()
 
@@ -90,4 +92,8 @@ endif()
 
 if(EVENTIDE_ENABLE_TEST)
     add_subdirectory(tests)
+endif()
+
+if(EVENTIDE_ENABLE_EXAMPLES)
+    add_subdirectory(examples)
 endif()

@@ -10,6 +10,32 @@ namespace eventide {
 
 namespace {
 
+error ensure_reading(stream::Self* self,
+                     stream::Self::read_mode mode,
+                     uv_alloc_cb alloc_cb,
+                     uv_read_cb read_cb) {
+    if(self == nullptr) {
+        return error::invalid_argument;
+    }
+
+    if(self->active_read_mode == mode) {
+        return {};
+    }
+
+    if(self->active_read_mode != stream::Self::read_mode::none) {
+        uv::read_stop(self->stream);
+        self->active_read_mode = stream::Self::read_mode::none;
+    }
+
+    auto err = uv::read_start(self->stream, alloc_cb, read_cb);
+    if(err) {
+        return err;
+    }
+
+    self->active_read_mode = mode;
+    return {};
+}
+
 struct stream_read_await : uv::await_op<stream_read_await> {
     using await_base = uv::await_op<stream_read_await>;
     // Stream self used to register reader waiter and store error status.
@@ -20,7 +46,10 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     static void on_cancel(system_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
-                uv::read_stop(aw.self->stream);
+                if(aw.self->active_read_mode != stream::Self::read_mode::none) {
+                    uv::read_stop(aw.self->stream);
+                    aw.self->active_read_mode = stream::Self::read_mode::none;
+                }
                 aw.self->reader.disarm();
             }
         });
@@ -36,6 +65,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
         if(writable == 0) {
             uv::read_stop(*reinterpret_cast<uv_stream_t*>(handle));
+            s->active_read_mode = stream::Self::read_mode::none;
         }
     }
 
@@ -46,6 +76,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
         auto err = uv::status_to_error(nread);
         if(err) {
             uv::read_stop(*stream);
+            s->active_read_mode = stream::Self::read_mode::none;
             if(s->reader.has_waiter()) {
                 auto* reader = s->reader.waiter;
                 s->reader.mark_cancelled_if(nread);
@@ -78,7 +109,12 @@ struct stream_read_await : uv::await_op<stream_read_await> {
             return waiting;
         }
 
-        if(auto err = uv::read_start(self->stream, on_alloc, on_read)) {
+        // Buffered reads intentionally leave libuv reading across await boundaries so later
+        // read_chunk()/read() calls can wait for more bytes without tearing the watcher down.
+        // If we are already in buffered mode, there is nothing to restart. If another read style
+        // was active, switch callbacks by stopping that watcher first.
+        auto err = ensure_reading(self, stream::Self::read_mode::buffered, on_alloc, on_read);
+        if(err) {
             self->error_code = err;
             return waiting;
         }
@@ -107,7 +143,10 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     static void on_cancel(system_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
-                uv::read_stop(aw.self->stream);
+                if(aw.self->active_read_mode != stream::Self::read_mode::none) {
+                    uv::read_stop(aw.self->stream);
+                    aw.self->active_read_mode = stream::Self::read_mode::none;
+                }
                 aw.self->reader.disarm();
             }
         });
@@ -151,6 +190,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         }
 
         uv::read_stop(*stream);
+        s->active_read_mode = stream::Self::read_mode::none;
         s->reader.disarm();
         aw->complete();
     }
@@ -168,7 +208,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         }
 
         self->reader.arm(*this);
-        if(auto err = uv::read_start(self->stream, on_alloc, on_read)) {
+        if(auto err = ensure_reading(self, stream::Self::read_mode::direct, on_alloc, on_read)) {
             out = std::unexpected(err);
             self->reader.disarm();
             return waiting;

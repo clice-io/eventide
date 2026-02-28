@@ -4,10 +4,10 @@
 #include <expected>
 #include <format>
 #include <functional>
-#include <iostream>
 #include <map>
 #include <optional>
 #include <ostream>
+#include <print>
 #include <set>
 #include <string>
 #include <string_view>
@@ -185,7 +185,7 @@ class Dispatcher {
         return "nothing we can do with this options";
     };
     error_fn_t errorHandler = [](auto err) {
-        std::cerr << err.message << "\n";
+        std::println(stderr, "{}", err.message);
     };
     std::map<const deco::decl::Category*, handler_fn_t> handlers;
     std::string_view commandOverview;
@@ -281,7 +281,7 @@ class SubCommander {
     };
 
     error_fn_t errorHandler = [](const SubCommandError& err) {
-        std::cerr << err.message << "\n";
+        std::println(stderr, "{}", err.message);
     };
     std::optional<handler_fn_t> defaultHandler;
     std::vector<SubCommandHandler> handlers;

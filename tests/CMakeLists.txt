@@ -75,6 +75,16 @@ else()
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
+    set(TEST_JSONRPC_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_JSONRPC_SOURCES INCLUDE REGEX "^tests/jsonrpc/.*\\.cpp$")
+    list(TRANSFORM TEST_JSONRPC_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_JSONRPC_SOURCES}
+    )
+    target_link_libraries(unit_tests PRIVATE
+        eventide::jsonrpc
+    )
+
     set(TEST_LANGUAGE_SOURCES ${TEST_SOURCES})
     list(FILTER TEST_LANGUAGE_SOURCES INCLUDE REGEX "^tests/language/.*\\.cpp$")
     list(TRANSFORM TEST_LANGUAGE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
