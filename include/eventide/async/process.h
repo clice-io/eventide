@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "stream.h"
 #include "task.h"
 
@@ -131,9 +132,9 @@ public:
     error kill(int signum);
 
 private:
-    explicit process(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit process(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 struct process::spawn_result {

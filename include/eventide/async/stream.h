@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -77,9 +78,9 @@ public:
     error set_blocking(bool enabled);
 
 protected:
-    explicit stream(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit stream(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 template <typename Stream>
@@ -110,9 +111,9 @@ private:
     friend class pipe;
     friend class tcp_socket;
 
-    explicit acceptor(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit acceptor(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 /// Pipe/socket wrapper (named pipe on Windows, Unix domain socket on Unix).
@@ -151,7 +152,7 @@ public:
                                    options opts = options(),
                                    event_loop& loop = event_loop::current());
 
-    explicit pipe(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit pipe(unique_handle<Self> state) noexcept;
 
 private:
     friend class process;
@@ -164,7 +165,7 @@ class tcp_socket : public stream {
 public:
     tcp_socket() noexcept = default;
 
-    explicit tcp_socket(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit tcp_socket(unique_handle<Self> state) noexcept;
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
@@ -242,7 +243,7 @@ public:
     static result<vterm_state> get_vterm_state();
 
 private:
-    explicit console(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit console(unique_handle<Self> state) noexcept;
 };
 
 }  // namespace eventide

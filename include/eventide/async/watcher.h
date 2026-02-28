@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -35,9 +36,9 @@ public:
     task<> wait();
 
 private:
-    explicit timer(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit timer(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 class signal {
@@ -64,9 +65,9 @@ public:
     task<error> wait();
 
 private:
-    explicit signal(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit signal(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 class idle {
@@ -93,9 +94,9 @@ public:
     task<> wait();
 
 private:
-    explicit idle(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit idle(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 class prepare {
@@ -122,9 +123,9 @@ public:
     task<> wait();
 
 private:
-    explicit prepare(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit prepare(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 class check {
@@ -151,9 +152,9 @@ public:
     task<> wait();
 
 private:
-    explicit check(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit check(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 task<> sleep(std::chrono::milliseconds timeout, event_loop& loop = event_loop::current());

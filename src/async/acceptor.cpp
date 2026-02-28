@@ -284,7 +284,7 @@ struct connect_await : system_op {
 }  // namespace
 
 template <typename Stream>
-acceptor<Stream>::acceptor() noexcept : self(nullptr, nullptr) {}
+acceptor<Stream>::acceptor() noexcept : self(nullptr) {}
 
 template <typename Stream>
 acceptor<Stream>::acceptor(acceptor&& other) noexcept = default;
@@ -332,7 +332,7 @@ error acceptor<Stream>::stop() {
 }
 
 template <typename Stream>
-acceptor<Stream>::acceptor(std::unique_ptr<Self, void (*)(void*)> state) noexcept :
+acceptor<Stream>::acceptor(unique_handle<Self> state) noexcept :
     self(std::move(state)) {}
 
 template class acceptor<pipe>;
@@ -383,7 +383,7 @@ result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, e
     return pipe::acceptor(std::move(state));
 }
 
-pipe::pipe(std::unique_ptr<Self, void (*)(void*)> state) noexcept : stream(std::move(state)) {}
+pipe::pipe(unique_handle<Self> state) noexcept : stream(std::move(state)) {}
 
 result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
     auto state = Self::make();
@@ -405,7 +405,7 @@ task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, even
     co_return co_await connect_await<pipe>{std::move(state), name, opts};
 }
 
-tcp_socket::tcp_socket(std::unique_ptr<Self, void (*)(void*)> state) noexcept :
+tcp_socket::tcp_socket(unique_handle<Self> state) noexcept :
     stream(std::move(state)) {}
 
 result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {

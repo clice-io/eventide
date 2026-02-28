@@ -100,9 +100,9 @@ struct process_await : system_op {
 
 }  // namespace
 
-process::process() noexcept : self(nullptr, nullptr) {}
+process::process() noexcept : self(nullptr) {}
 
-process::process(std::unique_ptr<Self, void (*)(void*)> self) noexcept : self(std::move(self)) {}
+process::process(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 process::~process() = default;
 

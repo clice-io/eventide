@@ -16,6 +16,7 @@
 #include "uv.h"
 #include "eventide/async/error.h"
 #include "eventide/async/frame.h"
+#include "eventide/async/owned.h"
 
 #ifdef min
 #undef min
@@ -768,7 +769,7 @@ ALWAYS_INLINE error fs_link(uv_loop_t& loop,
 template <typename Derived, typename Handle>
 class uv_handle {
 public:
-    using pointer = std::unique_ptr<Derived, void (*)(void*)>;
+    using pointer = unique_handle<Derived>;
 
     bool initialized() const noexcept {
         return initialized_;
@@ -785,8 +786,7 @@ public:
         h->data = static_cast<Derived*>(this);
     }
 
-    static void destroy(void* data) noexcept {
-        auto self = static_cast<Derived*>(data);
+    static void destroy(Derived* self) noexcept {
         if(!self) {
             return;
         }
@@ -808,7 +808,7 @@ public:
     }
 
     static pointer make() {
-        return pointer(new Derived(), &destroy);
+        return pointer(new Derived());
     }
 
 protected:

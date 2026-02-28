@@ -317,9 +317,9 @@ struct udp_send_await : system_op {
 
 }  // namespace
 
-udp::udp() noexcept : self(nullptr, nullptr) {}
+udp::udp() noexcept : self(nullptr) {}
 
-udp::udp(std::unique_ptr<Self, void (*)(void*)> state) noexcept : self(std::move(state)) {}
+udp::udp(unique_handle<Self> state) noexcept : self(std::move(state)) {}
 
 udp::~udp() = default;
 

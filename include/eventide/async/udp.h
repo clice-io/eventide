@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "error.h"
+#include "owned.h"
 #include "task.h"
 
 namespace eventide {
@@ -142,9 +143,9 @@ public:
     task<result<recv_result>> recv();
 
 private:
-    explicit udp(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
+    explicit udp(unique_handle<Self> state) noexcept;
 
-    std::unique_ptr<Self, void (*)(void*)> self;
+    unique_handle<Self> self;
 };
 
 }  // namespace eventide

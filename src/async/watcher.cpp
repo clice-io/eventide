@@ -193,8 +193,8 @@ struct signal_await : system_op {
 }  // namespace
 
 #define EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                       \
-    WatcherType::WatcherType() noexcept : self(nullptr, nullptr) {}                                \
-    WatcherType::WatcherType(std::unique_ptr<Self, void (*)(void*)> state) noexcept :              \
+    WatcherType::WatcherType() noexcept : self(nullptr) {}                                         \
+    WatcherType::WatcherType(unique_handle<Self> state) noexcept :                                   \
         self(std::move(state)) {}                                                                  \
     WatcherType::~WatcherType() = default;                                                         \
     WatcherType::WatcherType(WatcherType&& other) noexcept = default;                              \

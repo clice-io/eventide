@@ -275,7 +275,7 @@ struct stream_write_await : system_op {
 
 }  // namespace
 
-stream::stream() noexcept : self(nullptr, nullptr) {}
+stream::stream() noexcept : self(nullptr) {}
 
 stream::stream(stream&& other) noexcept = default;
 
@@ -419,6 +419,6 @@ error stream::set_blocking(bool enabled) {
     return {};
 }
 
-stream::stream(std::unique_ptr<Self, void (*)(void*)> state) noexcept : self(std::move(state)) {}
+stream::stream(unique_handle<Self> state) noexcept : self(std::move(state)) {}
 
 }  // namespace eventide

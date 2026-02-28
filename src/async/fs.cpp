@@ -150,9 +150,9 @@ struct fs_event_await : system_op {
 
 }  // namespace
 
-fs_event::fs_event() noexcept : self(nullptr, nullptr) {}
+fs_event::fs_event() noexcept : self(nullptr) {}
 
-fs_event::fs_event(std::unique_ptr<Self, void (*)(void*)> state) noexcept :
+fs_event::fs_event(unique_handle<Self> state) noexcept :
     self(std::move(state)) {}
 
 fs_event::~fs_event() = default;
