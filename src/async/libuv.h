@@ -768,6 +768,32 @@ ALWAYS_INLINE error fs_link(uv_loop_t& loop,
 
 #undef ALWAYS_INLINE
 
+struct resolved_addr {
+    sockaddr_storage storage{};
+    int family = AF_UNSPEC;
+};
+
+inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
+    std::string host_storage(host);
+    resolved_addr out{};
+
+    auto& out6 = *reinterpret_cast<sockaddr_in6*>(&out.storage);
+    auto err6 = uv::ip6_addr(host_storage.c_str(), port, out6);
+    if(!err6) {
+        out.family = AF_INET6;
+        return out;
+    }
+
+    auto& out4 = *reinterpret_cast<sockaddr_in*>(&out.storage);
+    auto err4 = uv::ip4_addr(host_storage.c_str(), port, out4);
+    if(!err4) {
+        out.family = AF_INET;
+        return out;
+    }
+
+    return std::unexpected(error::invalid_argument);
+}
+
 }  // namespace uv
 
 template <typename Derived, typename Handle>
@@ -815,43 +841,5 @@ public:
         });
     }
 };
-
-namespace uv {
-
-struct resolved_addr {
-    sockaddr_storage storage{};
-    int family = AF_UNSPEC;
-};
-
-inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
-    std::string host_storage(host);
-    resolved_addr out{};
-
-    auto& out6 = *reinterpret_cast<sockaddr_in6*>(&out.storage);
-    auto err6 = uv::ip6_addr(host_storage.c_str(), port, out6);
-    if(!err6) {
-        out.family = AF_INET6;
-        return out;
-    }
-
-    auto& out4 = *reinterpret_cast<sockaddr_in*>(&out.storage);
-    auto err4 = uv::ip4_addr(host_storage.c_str(), port, out4);
-    if(!err4) {
-        out.family = AF_INET;
-        return out;
-    }
-
-    return std::unexpected(error::invalid_argument);
-}
-
-template <typename ReqT>
-inline void cancel_uv_request(ReqT* req) noexcept {
-    if(req == nullptr) {
-        return;
-    }
-    uv::cancel(*reinterpret_cast<uv_req_t*>(req));
-}
-
-}  // namespace uv
 
 }  // namespace eventide

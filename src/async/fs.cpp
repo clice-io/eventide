@@ -213,7 +213,7 @@ struct fs_op : uv::await_op<fs_op<Result>> {
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<fs_op*>(op);
-        uv::cancel_uv_request(&self->req);
+        uv::cancel(self->req);
     }
 
     bool await_ready() const noexcept {

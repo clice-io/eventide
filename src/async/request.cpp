@@ -25,7 +25,7 @@ struct work_op : uv::await_op<work_op> {
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<work_op*>(op);
-        uv::cancel_uv_request(&self->req);
+        uv::cancel(self->req);
     }
 
     bool await_ready() const noexcept {
