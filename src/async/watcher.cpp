@@ -14,40 +14,24 @@ struct timer::Self : uv_handle<timer::Self, uv_timer_t> {
     uv_timer_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 struct idle::Self : uv_handle<idle::Self, uv_idle_t> {
     uv_idle_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 struct prepare::Self : uv_handle<prepare::Self, uv_prepare_t> {
     uv_prepare_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 struct check::Self : uv_handle<check::Self, uv_check_t> {
     uv_check_t handle{};
     system_op* waiter = nullptr;
     int pending = 0;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 struct signal::Self : uv_handle<signal::Self, uv_signal_t> {
@@ -55,10 +39,6 @@ struct signal::Self : uv_handle<signal::Self, uv_signal_t> {
     system_op* waiter = nullptr;
     error* active = nullptr;
     int pending = 0;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 namespace {
@@ -215,7 +195,6 @@ timer timer::create(event_loop& loop) {
     auto& handle = self->handle;
     uv::timer_init(loop, handle);
 
-    self->init_handle();
     return timer(std::move(self));
 }
 
@@ -225,7 +204,6 @@ void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds r
     }
 
     auto& handle = self->handle;
-    handle.data = self.get();
     assert(timeout.count() >= 0 && "timer::start timeout must be non-negative");
     assert(repeat.count() >= 0 && "timer::start repeat must be non-negative");
     uv::timer_start(
@@ -268,7 +246,6 @@ result<signal> signal::create(event_loop& loop) {
         return std::unexpected(err);
     }
 
-    self->init_handle();
     return signal(std::move(self));
 }
 
@@ -278,7 +255,6 @@ error signal::start(int signum) {
     }
 
     auto& handle = self->handle;
-    handle.data = self.get();
     if(auto err = uv::signal_start(
            handle,
            [](uv_signal_t* h, int) { signal_await::on_fire(h); },
@@ -331,7 +307,6 @@ task<error> signal::wait() {
         auto& handle = self->handle;                                                               \
         INIT_FN(loop, handle);                                                                     \
                                                                                                    \
-        self->init_handle();                                                                       \
         return WatcherType(std::move(self));                                                       \
     }                                                                                              \
                                                                                                    \
@@ -341,7 +316,6 @@ task<error> signal::wait() {
         }                                                                                          \
                                                                                                    \
         auto& handle = self->handle;                                                               \
-        handle.data = self.get();                                                                  \
         START_FN(handle, [](HandleType* h) { AwaiterType::on_fire(h); });                          \
     }                                                                                              \
                                                                                                    \

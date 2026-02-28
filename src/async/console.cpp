@@ -10,7 +10,6 @@ result<console> console::open(int fd, console::options opts, event_loop& loop) {
     if(auto err = uv::tty_init(loop, self->tty, fd, opts.readable)) {
         return std::unexpected(err);
     }
-    self->init_handle();
 
     return console(std::move(self));
 }

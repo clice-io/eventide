@@ -124,7 +124,6 @@ void on_connection(uv_stream_t* server, int status) {
         auto& handle = self->pipe;
         auto err = uv::pipe_init(*server->loop, handle, listener->pipe_ipc);
         if(!err) {
-            self->init_handle();
             err = uv::accept(*server, handle);
         }
 
@@ -137,7 +136,6 @@ void on_connection(uv_stream_t* server, int status) {
         auto& handle = self->tcp;
         auto err = uv::tcp_init(*server->loop, handle);
         if(!err) {
-            self->init_handle();
             err = uv::accept(*server, handle);
         }
 
@@ -356,7 +354,6 @@ result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, e
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
         return std::unexpected(err);
     }
-    self->init_handle();
 
     auto& acc = *self;
     acc.pipe_ipc = opts.ipc ? 1 : 0;
@@ -389,7 +386,6 @@ result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
         return std::unexpected(err);
     }
-    self->init_handle();
 
     return pipe(std::move(self));
 }
@@ -399,7 +395,6 @@ task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, even
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
         co_return std::unexpected(err);
     }
-    self->init_handle();
 
     co_return co_await connect_await<pipe>{std::move(self), name, opts};
 }
@@ -411,7 +406,6 @@ result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
     if(auto err = uv::tcp_init(loop, self->tcp)) {
         return std::unexpected(err);
     }
-    self->init_handle();
 
     if(auto err = uv::tcp_open(self->tcp, fd)) {
         return std::unexpected(err);
@@ -425,7 +419,6 @@ task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, ev
     if(auto err = uv::tcp_init(loop, self->tcp)) {
         co_return std::unexpected(err);
     }
-    self->init_handle();
 
     co_return co_await connect_await<tcp_socket>{std::move(self), host, port};
 }
@@ -438,7 +431,6 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
     if(auto err = uv::tcp_init(loop, self->tcp)) {
         return std::unexpected(err);
     }
-    self->init_handle();
 
     auto& acc = *self;
     auto& handle = acc.tcp;

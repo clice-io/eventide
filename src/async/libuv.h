@@ -781,14 +781,12 @@ public:
         return h->loop != nullptr && h->type != UV_UNKNOWN_HANDLE;
     }
 
-    void init_handle() noexcept {
-        auto self = static_cast<Derived*>(this);
-        auto* h = reinterpret_cast<uv_handle_t*>(&self->handle);
-        h->data = self;
-    }
-
     static pointer make() {
-        return pointer(new Derived());
+        auto self = pointer(new Derived());
+        auto* h = reinterpret_cast<uv_handle_t*>(&self->handle);
+        *h = {};
+        h->data = self.get();
+        return self;
     }
 
     static void destroy(Derived* self) noexcept {

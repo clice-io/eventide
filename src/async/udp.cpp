@@ -25,10 +25,6 @@ struct udp::Self : uv_handle<udp::Self, uv_udp_t> {
     error* send_active = nullptr;
     std::optional<error> send_pending;
     bool send_inflight = false;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 namespace {
@@ -366,7 +362,6 @@ result<udp> udp::create(event_loop& loop) {
         return std::unexpected(err);
     }
 
-    self->init_handle();
     return udp(std::move(self));
 }
 
@@ -381,7 +376,6 @@ result<udp> udp::create(create_options options, event_loop& loop) {
         return std::unexpected(err);
     }
 
-    self->init_handle();
     return udp(std::move(self));
 }
 
@@ -390,8 +384,6 @@ result<udp> udp::open(int fd, event_loop& loop) {
     if(auto err = uv::udp_init(loop, self->handle)) {
         return std::unexpected(err);
     }
-
-    self->init_handle();
 
     if(auto err = uv::udp_open(self->handle, fd)) {
         return std::unexpected(err);

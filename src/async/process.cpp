@@ -34,10 +34,6 @@ struct process::Self : uv_handle<process::Self, uv_process_t> {
     system_op* waiter = nullptr;
     process::exit_status* active = nullptr;
     std::optional<process::exit_status> completed;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 namespace {
@@ -238,11 +234,8 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
     auto& proc_handle = self->handle;
     if(auto err = uv::spawn(loop, proc_handle, uv_opts)) {
-        self->init_handle();
         return std::unexpected(err);
     }
-
-    self->init_handle();
 
     out.stdin_pipe = std::move(created_pipes[0]);
     out.stdout_pipe = std::move(created_pipes[1]);

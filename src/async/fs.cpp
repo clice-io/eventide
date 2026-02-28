@@ -13,10 +13,6 @@ struct fs_event::Self : uv_handle<fs_event::Self, uv_fs_event_t> {
     system_op* waiter = nullptr;
     result<fs_event::change>* active = nullptr;
     std::optional<fs_event::change> pending;
-
-    Self() {
-        handle.data = this;
-    }
 };
 
 namespace {
@@ -169,7 +165,6 @@ result<fs_event> fs_event::create(event_loop& loop) {
     if(auto err = uv::fs_event_init(loop, self->handle)) {
         return std::unexpected(err);
     }
-    self->init_handle();
 
     return fs_event(std::move(self));
 }
@@ -185,7 +180,6 @@ error fs_event::start(const char* path, watch_options options) {
     }
 
     auto& handle = self->handle;
-    handle.data = self.get();
     if(auto err = uv::fs_event_start(handle, fs_event_await::on_change, path, uv_flags.value())) {
         return err;
     }
