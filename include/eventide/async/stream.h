@@ -78,7 +78,7 @@ public:
     error set_blocking(bool enabled);
 
 protected:
-    explicit stream(unique_handle<Self> state) noexcept;
+    explicit stream(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };
@@ -111,7 +111,7 @@ private:
     friend class pipe;
     friend class tcp_socket;
 
-    explicit acceptor(unique_handle<Self> state) noexcept;
+    explicit acceptor(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };
@@ -152,7 +152,7 @@ public:
                                    options opts = options(),
                                    event_loop& loop = event_loop::current());
 
-    explicit pipe(unique_handle<Self> state) noexcept;
+    explicit pipe(unique_handle<Self> self) noexcept;
 
 private:
     friend class process;
@@ -165,7 +165,7 @@ class tcp_socket : public stream {
 public:
     tcp_socket() noexcept = default;
 
-    explicit tcp_socket(unique_handle<Self> state) noexcept;
+    explicit tcp_socket(unique_handle<Self> self) noexcept;
 
     using acceptor = eventide::acceptor<tcp_socket>;
 
@@ -243,7 +243,7 @@ public:
     static result<vterm_state> get_vterm_state();
 
 private:
-    explicit console(unique_handle<Self> state) noexcept;
+    explicit console(unique_handle<Self> self) noexcept;
 };
 
 }  // namespace eventide

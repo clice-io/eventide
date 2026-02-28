@@ -11,10 +11,10 @@ namespace eventide {
 namespace {
 
 struct stream_read_await : system_op {
-    // Stream state used to register reader waiter and store error status.
+    // Stream self used to register reader waiter and store error status.
     stream::Self* self;
 
-    explicit stream_read_await(stream::Self* state) : self(state) {
+    explicit stream_read_await(stream::Self* self) : self(self) {
         action = &on_cancel;
     }
 
@@ -99,14 +99,14 @@ struct stream_read_await : system_op {
 struct stream_read_some_await : system_op {
     using promise_t = task<std::size_t>::promise_type;
 
-    // Stream state that owns the active read waiter.
+    // Stream self that owns the active read waiter.
     stream::Self* self;
     // Destination buffer provided by the caller.
     std::span<char> dst;
     // Number of bytes read by the completion callback.
     std::size_t bytes = 0;
 
-    stream_read_some_await(stream::Self* state, std::span<char> buffer) : self(state), dst(buffer) {
+    stream_read_some_await(stream::Self* self, std::span<char> buffer) : self(self), dst(buffer) {
         action = &on_cancel;
     }
 
@@ -198,7 +198,7 @@ struct stream_read_some_await : system_op {
 struct stream_write_await : system_op {
     using promise_t = task<error>::promise_type;
 
-    // Stream state that owns the active write waiter.
+    // Stream self that owns the active write waiter.
     stream::Self* self;
     // Owns outbound bytes until libuv invokes on_write().
     std::vector<char> storage;
@@ -207,8 +207,8 @@ struct stream_write_await : system_op {
     // Completion status returned from await_resume().
     error error_code;
 
-    stream_write_await(stream::Self* state, std::span<const char> data) :
-        self(state), storage(data.begin(), data.end()) {
+    stream_write_await(stream::Self* self, std::span<const char> data) :
+        self(self), storage(data.begin(), data.end()) {
         action = &on_cancel;
     }
 
@@ -275,7 +275,7 @@ struct stream_write_await : system_op {
 
 }  // namespace
 
-stream::stream() noexcept : self(nullptr) {}
+stream::stream() noexcept = default;
 
 stream::stream(stream&& other) noexcept = default;
 
@@ -419,6 +419,6 @@ error stream::set_blocking(bool enabled) {
     return {};
 }
 
-stream::stream(unique_handle<Self> state) noexcept : self(std::move(state)) {}
+stream::stream(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 }  // namespace eventide

@@ -45,7 +45,7 @@ namespace {
 struct process_await : system_op {
     using promise_t = task<process::wait_result>::promise_type;
 
-    // Process state used to install/remove waiter and active result pointers.
+    // Process self used to install/remove waiter and active result pointers.
     process::Self* self;
     // Exit status slot filled by process exit callback.
     process::exit_status result{};
@@ -100,7 +100,7 @@ struct process_await : system_op {
 
 }  // namespace
 
-process::process() noexcept : self(nullptr) {}
+process::process() noexcept = default;
 
 process::process(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 

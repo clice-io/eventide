@@ -143,7 +143,7 @@ public:
     task<result<recv_result>> recv();
 
 private:
-    explicit udp(unique_handle<Self> state) noexcept;
+    explicit udp(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };

@@ -132,7 +132,7 @@ public:
     error kill(int signum);
 
 private:
-    explicit process(unique_handle<Self> state) noexcept;
+    explicit process(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };

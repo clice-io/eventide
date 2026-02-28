@@ -6,13 +6,13 @@
 namespace eventide {
 
 result<console> console::open(int fd, console::options opts, event_loop& loop) {
-    auto state = Self::make();
-    if(auto err = uv::tty_init(loop, state->tty, fd, opts.readable)) {
+    auto self = Self::make();
+    if(auto err = uv::tty_init(loop, self->tty, fd, opts.readable)) {
         return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    return console(std::move(state));
+    return console(std::move(self));
 }
 
 error console::set_mode(mode value) {
@@ -69,7 +69,7 @@ result<console::vterm_state> console::get_vterm_state() {
     return *out == UV_TTY_SUPPORTED ? vterm_state::supported : vterm_state::unsupported;
 }
 
-console::console(unique_handle<Self> state) noexcept :
-    stream(std::move(state)) {}
+console::console(unique_handle<Self> self) noexcept :
+    stream(std::move(self)) {}
 
 }  // namespace eventide

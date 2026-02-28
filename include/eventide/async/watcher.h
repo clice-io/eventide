@@ -36,7 +36,7 @@ public:
     task<> wait();
 
 private:
-    explicit timer(unique_handle<Self> state) noexcept;
+    explicit timer(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };
@@ -65,7 +65,7 @@ public:
     task<error> wait();
 
 private:
-    explicit signal(unique_handle<Self> state) noexcept;
+    explicit signal(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };
@@ -94,7 +94,7 @@ public:
     task<> wait();
 
 private:
-    explicit idle(unique_handle<Self> state) noexcept;
+    explicit idle(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };
@@ -123,7 +123,7 @@ public:
     task<> wait();
 
 private:
-    explicit prepare(unique_handle<Self> state) noexcept;
+    explicit prepare(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };
@@ -152,7 +152,7 @@ public:
     task<> wait();
 
 private:
-    explicit check(unique_handle<Self> state) noexcept;
+    explicit check(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };

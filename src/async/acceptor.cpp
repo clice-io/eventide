@@ -58,7 +58,7 @@ struct accept_await : system_op {
     using promise_t = task<result<Stream>>::promise_type;
     using self_t = typename acceptor<Stream>::Self;
 
-    // Acceptor state used for waiter registration and pending queueing.
+    // Acceptor self used for waiter registration and pending queueing.
     self_t* self;
     // Result slot populated by connection callbacks.
     result<Stream> outcome = std::unexpected(error());
@@ -118,33 +118,33 @@ void on_connection(uv_stream_t* server, int status) {
         return;
     }
 
-    auto state = stream::Self::make();
+    auto self = stream::Self::make();
 
     if constexpr(std::is_same_v<Stream, pipe>) {
-        auto& handle = state->pipe;
+        auto& handle = self->pipe;
         auto err = uv::pipe_init(*server->loop, handle, listener->pipe_ipc);
         if(!err) {
-            state->init_handle();
+            self->init_handle();
             err = uv::accept(*server, handle);
         }
 
         if(err) {
             deliver(std::unexpected(err));
         } else {
-            deliver(pipe(std::move(state)));
+            deliver(pipe(std::move(self)));
         }
     } else if constexpr(std::is_same_v<Stream, tcp_socket>) {
-        auto& handle = state->tcp;
+        auto& handle = self->tcp;
         auto err = uv::tcp_init(*server->loop, handle);
         if(!err) {
-            state->init_handle();
+            self->init_handle();
             err = uv::accept(*server, handle);
         }
 
         if(err) {
             deliver(std::unexpected(err));
         } else {
-            deliver(tcp_socket(std::move(state)));
+            deliver(tcp_socket(std::move(self)));
         }
     } else {
         static_assert(always_false_v<Stream>, "unsupported accept stream type");
@@ -154,10 +154,10 @@ void on_connection(uv_stream_t* server, int status) {
 template <typename Stream>
 struct connect_await : system_op {
     using promise_t = task<result<Stream>>::promise_type;
-    using state_ptr = stream::Self::pointer;
+    using self_ptr = stream::Self::pointer;
 
-    // Candidate stream state; reset on cancel to close the handle.
-    state_ptr state;
+    // Candidate stream self; reset on cancel to close the handle.
+    self_ptr self;
     // libuv connect request; req.data points back to this awaiter.
     uv_connect_t req{};
     // Pipe name kept alive for uv_pipe_connect2().
@@ -171,8 +171,8 @@ struct connect_await : system_op {
     // Constructor-level validation flag.
     bool ready = true;
 
-    connect_await(state_ptr state, std::string_view name, pipe::options opts) :
-        state(std::move(state)), name(name) {
+    connect_await(self_ptr self, std::string_view name, pipe::options opts) :
+        self(std::move(self)), name(name) {
         action = &on_cancel;
 
         if constexpr(std::is_same_v<Stream, pipe>) {
@@ -194,7 +194,7 @@ struct connect_await : system_op {
         }
     }
 
-    connect_await(state_ptr state, std::string_view host, int port) : state(std::move(state)) {
+    connect_await(self_ptr self, std::string_view host, int port) : self(std::move(self)) {
         action = &on_cancel;
 
         if constexpr(std::is_same_v<Stream, tcp_socket>) {
@@ -212,9 +212,9 @@ struct connect_await : system_op {
 
     static void on_cancel(system_op* op) {
         auto* aw = static_cast<connect_await*>(op);
-        if(aw->state) {
+        if(aw->self) {
             // uv_connect_t can't be cancelled; close handle to trigger UV_ECANCELED callback.
-            aw->state.reset();
+            aw->self.reset();
         }
     }
 
@@ -228,11 +228,11 @@ struct connect_await : system_op {
 
         if(status < 0) {
             aw->outcome = std::unexpected(detail::status_to_error(status));
-        } else if(aw->state) {
+        } else if(aw->self) {
             if constexpr(std::is_same_v<Stream, pipe>) {
-                aw->outcome = pipe(std::move(aw->state));
+                aw->outcome = pipe(std::move(aw->self));
             } else if constexpr(std::is_same_v<Stream, tcp_socket>) {
-                aw->outcome = tcp_socket(std::move(aw->state));
+                aw->outcome = tcp_socket(std::move(aw->self));
             } else {
                 static_assert(always_false_v<Stream>, "unsupported connect stream type");
             }
@@ -250,7 +250,7 @@ struct connect_await : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        if(!state || !ready) {
+        if(!self || !ready) {
             return waiting;
         }
 
@@ -258,10 +258,10 @@ struct connect_await : system_op {
 
         error err{};
         if constexpr(std::is_same_v<Stream, pipe>) {
-            err = uv::pipe_connect2(req, state->pipe, name.c_str(), name.size(), flags, on_connect);
+            err = uv::pipe_connect2(req, self->pipe, name.c_str(), name.size(), flags, on_connect);
         } else if constexpr(std::is_same_v<Stream, tcp_socket>) {
             err = uv::tcp_connect(req,
-                                  state->tcp,
+                                  self->tcp,
                                   reinterpret_cast<const sockaddr*>(&addr),
                                   on_connect);
         } else {
@@ -284,7 +284,7 @@ struct connect_await : system_op {
 }  // namespace
 
 template <typename Stream>
-acceptor<Stream>::acceptor() noexcept : self(nullptr) {}
+acceptor<Stream>::acceptor() noexcept = default;
 
 template <typename Stream>
 acceptor<Stream>::acceptor(acceptor&& other) noexcept = default;
@@ -332,8 +332,8 @@ error acceptor<Stream>::stop() {
 }
 
 template <typename Stream>
-acceptor<Stream>::acceptor(unique_handle<Self> state) noexcept :
-    self(std::move(state)) {}
+acceptor<Stream>::acceptor(unique_handle<Self> self) noexcept :
+    self(std::move(self)) {}
 
 template class acceptor<pipe>;
 template class acceptor<tcp_socket>;
@@ -353,13 +353,13 @@ result<pipe> pipe::open(int fd, pipe::options opts, event_loop& loop) {
 }
 
 result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, event_loop& loop) {
-    auto state = pipe::acceptor::Self::make();
-    if(auto err = uv::pipe_init(loop, state->pipe, opts.ipc ? 1 : 0)) {
+    auto self = pipe::acceptor::Self::make();
+    if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
         return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    auto& acc = *state;
+    auto& acc = *self;
     acc.pipe_ipc = opts.ipc ? 1 : 0;
     auto& handle = acc.pipe;
 
@@ -380,69 +380,69 @@ result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, e
         return std::unexpected(err);
     }
 
-    return pipe::acceptor(std::move(state));
+    return pipe::acceptor(std::move(self));
 }
 
-pipe::pipe(unique_handle<Self> state) noexcept : stream(std::move(state)) {}
+pipe::pipe(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
-    auto state = Self::make();
-    if(auto err = uv::pipe_init(loop, state->pipe, opts.ipc ? 1 : 0)) {
+    auto self = Self::make();
+    if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
         return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    return pipe(std::move(state));
+    return pipe(std::move(self));
 }
 
 task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
-    auto state = Self::make();
-    if(auto err = uv::pipe_init(loop, state->pipe, opts.ipc ? 1 : 0)) {
+    auto self = Self::make();
+    if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
         co_return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    co_return co_await connect_await<pipe>{std::move(state), name, opts};
+    co_return co_await connect_await<pipe>{std::move(self), name, opts};
 }
 
-tcp_socket::tcp_socket(unique_handle<Self> state) noexcept :
-    stream(std::move(state)) {}
+tcp_socket::tcp_socket(unique_handle<Self> self) noexcept :
+    stream(std::move(self)) {}
 
 result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
-    auto state = Self::make();
-    if(auto err = uv::tcp_init(loop, state->tcp)) {
+    auto self = Self::make();
+    if(auto err = uv::tcp_init(loop, self->tcp)) {
         return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    if(auto err = uv::tcp_open(state->tcp, fd)) {
+    if(auto err = uv::tcp_open(self->tcp, fd)) {
         return std::unexpected(err);
     }
 
-    return tcp_socket(std::move(state));
+    return tcp_socket(std::move(self));
 }
 
 task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, event_loop& loop) {
-    auto state = Self::make();
-    if(auto err = uv::tcp_init(loop, state->tcp)) {
+    auto self = Self::make();
+    if(auto err = uv::tcp_init(loop, self->tcp)) {
         co_return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    co_return co_await connect_await<tcp_socket>{std::move(state), host, port};
+    co_return co_await connect_await<tcp_socket>{std::move(self), host, port};
 }
 
 result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 int port,
                                                 tcp_socket::options opts,
                                                 event_loop& loop) {
-    auto state = tcp_socket::acceptor::Self::make();
-    if(auto err = uv::tcp_init(loop, state->tcp)) {
+    auto self = tcp_socket::acceptor::Self::make();
+    if(auto err = uv::tcp_init(loop, self->tcp)) {
         return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    auto& acc = *state;
+    auto& acc = *self;
     auto& handle = acc.tcp;
 
     auto resolved = detail::resolve_addr(host, port);
@@ -465,7 +465,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
         return std::unexpected(err);
     }
 
-    return tcp_socket::acceptor(std::move(state));
+    return tcp_socket::acceptor(std::move(self));
 }
 
 }  // namespace eventide

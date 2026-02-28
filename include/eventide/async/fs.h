@@ -202,7 +202,7 @@ public:
     task<result<change>> wait();
 
 private:
-    explicit fs_event(unique_handle<Self> state) noexcept;
+    explicit fs_event(unique_handle<Self> self) noexcept;
 
     unique_handle<Self> self;
 };

@@ -71,7 +71,7 @@ static fs_event::change_flags to_fs_change_flags(int events) {
 struct fs_event_await : system_op {
     using promise_t = task<result<fs_event::change>>::promise_type;
 
-    // Watched fs_event state used to register and clear waiter pointers.
+    // Watched fs_event self used to register and clear waiter pointers.
     fs_event::Self* self;
     // Result slot written by on_change() and returned from await_resume().
     result<fs_event::change> outcome = std::unexpected(error());
@@ -150,10 +150,10 @@ struct fs_event_await : system_op {
 
 }  // namespace
 
-fs_event::fs_event() noexcept : self(nullptr) {}
+fs_event::fs_event() noexcept = default;
 
-fs_event::fs_event(unique_handle<Self> state) noexcept :
-    self(std::move(state)) {}
+fs_event::fs_event(unique_handle<Self> self) noexcept :
+    self(std::move(self)) {}
 
 fs_event::~fs_event() = default;
 
@@ -166,13 +166,13 @@ fs_event::Self* fs_event::operator->() noexcept {
 }
 
 result<fs_event> fs_event::create(event_loop& loop) {
-    auto state = Self::make();
-    if(auto err = uv::fs_event_init(loop, state->handle)) {
+    auto self = Self::make();
+    if(auto err = uv::fs_event_init(loop, self->handle)) {
         return std::unexpected(err);
     }
-    state->init_handle();
+    self->init_handle();
 
-    return fs_event(std::move(state));
+    return fs_event(std::move(self));
 }
 
 error fs_event::start(const char* path, watch_options options) {

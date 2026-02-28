@@ -67,7 +67,7 @@ template <typename SelfT, typename HandleT>
 struct basic_tick_await : system_op {
     using promise_t = task<>::promise_type;
 
-    // Watcher state that owns waiter/pending counters.
+    // Watcher self that owns waiter/pending counters.
     SelfT* self;
 
     explicit basic_tick_await(SelfT* watcher) : self(watcher) {
@@ -128,7 +128,7 @@ using check_await = basic_tick_await<check::Self, uv_check_t>;
 struct signal_await : system_op {
     using promise_t = task<error>::promise_type;
 
-    // Signal watcher state that owns waiter/active pointers.
+    // Signal watcher self that owns waiter/active pointers.
     signal::Self* self;
     // Result slot returned by await_resume().
     error result{};
@@ -193,9 +193,9 @@ struct signal_await : system_op {
 }  // namespace
 
 #define EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                       \
-    WatcherType::WatcherType() noexcept : self(nullptr) {}                                         \
-    WatcherType::WatcherType(unique_handle<Self> state) noexcept :                                   \
-        self(std::move(state)) {}                                                                  \
+    WatcherType::WatcherType() noexcept = default;                                                 \
+    WatcherType::WatcherType(unique_handle<Self> self) noexcept :                                    \
+        self(std::move(self)) {}                                                                   \
     WatcherType::~WatcherType() = default;                                                         \
     WatcherType::WatcherType(WatcherType&& other) noexcept = default;                              \
     WatcherType& WatcherType::operator=(WatcherType&& other) noexcept = default;                   \
@@ -212,12 +212,12 @@ EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(check)
 #undef EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS
 
 timer timer::create(event_loop& loop) {
-    auto state = Self::make();
-    auto& handle = state->handle;
+    auto self = Self::make();
+    auto& handle = self->handle;
     uv::timer_init(loop, handle);
 
-    state->init_handle();
-    return timer(std::move(state));
+    self->init_handle();
+    return timer(std::move(self));
 }
 
 void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat) {
@@ -263,14 +263,14 @@ task<> timer::wait() {
 }
 
 result<signal> signal::create(event_loop& loop) {
-    auto state = Self::make();
-    auto& handle = state->handle;
+    auto self = Self::make();
+    auto& handle = self->handle;
     if(auto err = uv::signal_init(loop, handle)) {
         return std::unexpected(err);
     }
 
-    state->init_handle();
-    return signal(std::move(state));
+    self->init_handle();
+    return signal(std::move(self));
 }
 
 error signal::start(int signum) {
@@ -328,12 +328,12 @@ task<error> signal::wait() {
                                              STOP_FN,                                              \
                                              NameLiteral)                                          \
     WatcherType WatcherType::create(event_loop& loop) {                                            \
-        auto state = Self::make();                                                                 \
-        auto& handle = state->handle;                                                              \
+        auto self = Self::make();                                                                  \
+        auto& handle = self->handle;                                                               \
         INIT_FN(loop, handle);                                                                     \
                                                                                                    \
-        state->init_handle();                                                                      \
-        return WatcherType(std::move(state));                                                      \
+        self->init_handle();                                                                       \
+        return WatcherType(std::move(self));                                                       \
     }                                                                                              \
                                                                                                    \
     void WatcherType::start() {                                                                    \

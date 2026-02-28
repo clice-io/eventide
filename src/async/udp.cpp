@@ -35,10 +35,10 @@ namespace {
 
 constexpr std::size_t udp_recv_buffer_size = 64 * 1024;
 
-static udp::Self::pointer make_udp_state() {
-    auto state = udp::Self::make();
-    state->buffer.resize(udp_recv_buffer_size);
-    return state;
+static udp::Self::pointer make_udp_self() {
+    auto self = udp::Self::make();
+    self->buffer.resize(udp_recv_buffer_size);
+    return self;
 }
 
 static result<unsigned int> to_uv_udp_init_flags(const udp::create_options& options) {
@@ -114,7 +114,7 @@ static udp::recv_flags to_udp_recv_flags(unsigned flags) {
 struct udp_recv_await : system_op {
     using promise_t = task<result<udp::recv_result>>::promise_type;
 
-    // UDP socket state used to register waiter and manage recv lifecycle.
+    // UDP socket self used to register waiter and manage recv lifecycle.
     udp::Self* self;
     // Result slot written by on_read() and returned from await_resume().
     result<udp::recv_result> outcome = std::unexpected(error());
@@ -221,7 +221,7 @@ struct udp_recv_await : system_op {
 struct udp_send_await : system_op {
     using promise_t = task<error>::promise_type;
 
-    // UDP socket state that owns send waiter and inflight flags.
+    // UDP socket self that owns send waiter and inflight flags.
     udp::Self* self;
     // Owns outbound bytes until on_send() runs.
     std::vector<char> storage;
@@ -317,9 +317,9 @@ struct udp_send_await : system_op {
 
 }  // namespace
 
-udp::udp() noexcept : self(nullptr) {}
+udp::udp() noexcept = default;
 
-udp::udp(unique_handle<Self> state) noexcept : self(std::move(state)) {}
+udp::udp(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 udp::~udp() = default;
 
@@ -361,43 +361,43 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr) {
 }
 
 result<udp> udp::create(event_loop& loop) {
-    auto state = make_udp_state();
-    if(auto err = uv::udp_init(loop, state->handle)) {
+    auto self = make_udp_self();
+    if(auto err = uv::udp_init(loop, self->handle)) {
         return std::unexpected(err);
     }
 
-    state->init_handle();
-    return udp(std::move(state));
+    self->init_handle();
+    return udp(std::move(self));
 }
 
 result<udp> udp::create(create_options options, event_loop& loop) {
-    auto state = make_udp_state();
+    auto self = make_udp_self();
     auto uv_flags = to_uv_udp_init_flags(options);
     if(!uv_flags) {
         return std::unexpected(uv_flags.error());
     }
 
-    if(auto err = uv::udp_init_ex(loop, state->handle, uv_flags.value())) {
+    if(auto err = uv::udp_init_ex(loop, self->handle, uv_flags.value())) {
         return std::unexpected(err);
     }
 
-    state->init_handle();
-    return udp(std::move(state));
+    self->init_handle();
+    return udp(std::move(self));
 }
 
 result<udp> udp::open(int fd, event_loop& loop) {
-    auto state = make_udp_state();
-    if(auto err = uv::udp_init(loop, state->handle)) {
+    auto self = make_udp_self();
+    if(auto err = uv::udp_init(loop, self->handle)) {
         return std::unexpected(err);
     }
 
-    state->init_handle();
+    self->init_handle();
 
-    if(auto err = uv::udp_open(state->handle, fd)) {
+    if(auto err = uv::udp_open(self->handle, fd)) {
         return std::unexpected(err);
     }
 
-    return udp(std::move(state));
+    return udp(std::move(self));
 }
 
 error udp::bind(std::string_view host, int port, bind_options options) {
