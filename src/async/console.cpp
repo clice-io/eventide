@@ -69,7 +69,6 @@ result<console::vterm_state> console::get_vterm_state() {
     return *out == UV_TTY_SUPPORTED ? vterm_state::supported : vterm_state::unsupported;
 }
 
-console::console(unique_handle<Self> self) noexcept :
-    stream(std::move(self)) {}
+console::console(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 }  // namespace eventide

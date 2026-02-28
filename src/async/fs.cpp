@@ -152,8 +152,7 @@ struct fs_event_await : system_op {
 
 fs_event::fs_event() noexcept = default;
 
-fs_event::fs_event(unique_handle<Self> self) noexcept :
-    self(std::move(self)) {}
+fs_event::fs_event(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 fs_event::~fs_event() = default;
 

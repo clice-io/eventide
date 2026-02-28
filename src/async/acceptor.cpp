@@ -332,8 +332,7 @@ error acceptor<Stream>::stop() {
 }
 
 template <typename Stream>
-acceptor<Stream>::acceptor(unique_handle<Self> self) noexcept :
-    self(std::move(self)) {}
+acceptor<Stream>::acceptor(unique_handle<Self> self) noexcept : self(std::move(self)) {}
 
 template class acceptor<pipe>;
 template class acceptor<tcp_socket>;
@@ -405,8 +404,7 @@ task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, even
     co_return co_await connect_await<pipe>{std::move(self), name, opts};
 }
 
-tcp_socket::tcp_socket(unique_handle<Self> self) noexcept :
-    stream(std::move(self)) {}
+tcp_socket::tcp_socket(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
 result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
     auto self = Self::make();
