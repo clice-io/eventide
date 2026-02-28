@@ -7,7 +7,7 @@ namespace eventide {
 
 result<console> console::open(int fd, console::options opts, event_loop& loop) {
     auto state = Self::make_initialized(
-        [&](Self& self) { return uv::tty_init(loop, self.as<uv_tty_t>(), fd, opts.readable); });
+        [&](Self& self) { return uv::tty_init(loop, self.tty, fd, opts.readable); });
     if(!state) {
         return std::unexpected(state.error());
     }
@@ -28,7 +28,7 @@ error console::set_mode(mode value) {
         case mode::raw_vt: uv_mode = UV_TTY_MODE_RAW_VT; break;
     }
 
-    if(auto err = uv::tty_set_mode(self->as<uv_tty_t>(), uv_mode)) {
+    if(auto err = uv::tty_set_mode(self->tty, uv_mode)) {
         return err;
     }
 
@@ -47,7 +47,7 @@ result<console::winsize> console::get_winsize() const {
         return std::unexpected(error::invalid_argument);
     }
 
-    auto out = uv::tty_get_winsize(self->as<uv_tty_t>());
+    auto out = uv::tty_get_winsize(self->tty);
     if(!out) {
         return std::unexpected(out.error());
     }

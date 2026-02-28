@@ -21,7 +21,7 @@ struct stream_read_await : system_op {
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<stream_read_await>(op, [](auto& aw) {
             if(aw.self) {
-                uv::read_stop(aw.self->template as<uv_stream_t>());
+                uv::read_stop(aw.self->stream);
                 detail::clear_waiter(aw.self, &stream::Self::reader);
             }
         });
@@ -83,7 +83,7 @@ struct stream_read_await : system_op {
             return waiting;
         }
 
-        if(auto err = uv::read_start(self->as<uv_stream_t>(), on_alloc, on_read)) {
+        if(auto err = uv::read_start(self->stream, on_alloc, on_read)) {
             self->error_code = err;
             return waiting;
         }
@@ -113,7 +113,7 @@ struct stream_read_some_await : system_op {
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<stream_read_some_await>(op, [](auto& aw) {
             if(aw.self) {
-                uv::read_stop(aw.self->template as<uv_stream_t>());
+                uv::read_stop(aw.self->stream);
                 detail::clear_waiter(aw.self, &stream::Self::reader);
             }
         });
@@ -179,7 +179,7 @@ struct stream_read_some_await : system_op {
         }
 
         self->reader = this;
-        if(auto err = uv::read_start(self->as<uv_stream_t>(), on_alloc, on_read)) {
+        if(auto err = uv::read_start(self->stream, on_alloc, on_read)) {
             self->reader = nullptr;
             return waiting;
         }
@@ -256,10 +256,7 @@ struct stream_write_await : system_op {
 
         uv_buf_t buf = uv::buf_init(storage.empty() ? nullptr : storage.data(),
                                     static_cast<unsigned>(storage.size()));
-        if(auto err = uv::write(req,
-                                self->as<uv_stream_t>(),
-                                std::span<const uv_buf_t>{&buf, 1},
-                                on_write)) {
+        if(auto err = uv::write(req, self->stream, std::span<const uv_buf_t>{&buf, 1}, on_write)) {
             error_code = err;
             self->writer = nullptr;
             return waiting;
@@ -291,11 +288,11 @@ stream::Self* stream::operator->() noexcept {
 }
 
 void* stream::handle() noexcept {
-    return self ? &self->handle : nullptr;
+    return self ? &self->stream : nullptr;
 }
 
 const void* stream::handle() const noexcept {
-    return self ? &self->handle : nullptr;
+    return self ? &self->stream : nullptr;
 }
 
 handle_type guess_handle(int fd) {
@@ -306,8 +303,6 @@ task<result<std::string>> stream::read() {
     if(!self) {
         co_return std::unexpected(error::invalid_argument);
     }
-
-    self->bind_stream_userdata();
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
@@ -333,8 +328,6 @@ task<std::size_t> stream::read_some(std::span<char> dst) {
         co_return to_read;
     }
 
-    self->bind_stream_userdata();
-
     co_return co_await stream_read_some_await{self.get(), dst};
 }
 
@@ -343,8 +336,6 @@ task<result<stream::chunk>> stream::read_chunk() {
     if(!self) {
         co_return std::unexpected(error::invalid_argument);
     }
-
-    self->bind_stream_userdata();
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
@@ -392,7 +383,7 @@ result<std::size_t> stream::try_write(std::span<const char> data) {
     }
 
     uv_buf_t buf = uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned>(data.size()));
-    auto res = uv::try_write(self->as<uv_stream_t>(), std::span<const uv_buf_t>{&buf, 1});
+    auto res = uv::try_write(self->stream, std::span<const uv_buf_t>{&buf, 1});
     if(!res) {
         return std::unexpected(res.error());
     }
@@ -405,7 +396,7 @@ bool stream::readable() const noexcept {
         return false;
     }
 
-    return uv::is_readable(self->as<uv_stream_t>());
+    return uv::is_readable(self->stream);
 }
 
 bool stream::writable() const noexcept {
@@ -413,7 +404,7 @@ bool stream::writable() const noexcept {
         return false;
     }
 
-    return uv::is_writable(self->as<uv_stream_t>());
+    return uv::is_writable(self->stream);
 }
 
 error stream::set_blocking(bool enabled) {
@@ -421,7 +412,7 @@ error stream::set_blocking(bool enabled) {
         return error::invalid_argument;
     }
 
-    if(auto err = uv::stream_set_blocking(self->as<uv_stream_t>(), enabled)) {
+    if(auto err = uv::stream_set_blocking(self->stream, enabled)) {
         return err;
     }
 
