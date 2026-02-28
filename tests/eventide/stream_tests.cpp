@@ -304,7 +304,7 @@ TEST_CASE(read_from_fd) {
     }
 }
 
-TEST_CASE(read_some_from_fd) {
+TEST_CASE(read_some_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 
@@ -329,7 +329,7 @@ TEST_CASE(read_some_from_fd) {
     }
 }
 
-TEST_CASE(read_chunk_from_fd) {
+TEST_CASE(read_chunk_fd) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);
 

@@ -100,7 +100,7 @@ TEST_CASE(spawn_pipe_stdout) {
     loop.run();
 }
 
-TEST_CASE(spawn_pipe_stdin_stdout) {
+TEST_CASE(spawn_pipe_stdio) {
     event_loop loop;
 
     process::options opts;

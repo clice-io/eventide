@@ -30,7 +30,7 @@ int uv_thread_pool_size_for_test() {
 
 TEST_SUITE(cancellation) {
 
-TEST_CASE(with_token_pass_through_value) {
+TEST_CASE(pass_through_value) {
     cancellation_source source;
 
     auto worker = []() -> task<int> {
@@ -42,7 +42,7 @@ TEST_CASE(with_token_pass_through_value) {
     EXPECT_EQ(*result, 42);
 }
 
-TEST_CASE(with_token_pre_cancel_does_not_start_child) {
+TEST_CASE(pre_cancel_skip) {
     cancellation_source source;
     source.cancel();
 
@@ -57,7 +57,7 @@ TEST_CASE(with_token_pre_cancel_does_not_start_child) {
     EXPECT_EQ(started, 0);
 }
 
-TEST_CASE(with_token_cancel_in_flight) {
+TEST_CASE(cancel_in_flight) {
     event_loop loop;
     cancellation_source source;
     event gate;
@@ -96,7 +96,7 @@ TEST_CASE(with_token_cancel_in_flight) {
     EXPECT_EQ(finished, 0);
 }
 
-TEST_CASE(source_destructor_cancels_tokens) {
+TEST_CASE(destructor_cancels_tokens) {
     cancellation_token token;
     {
         cancellation_source source;
@@ -107,7 +107,7 @@ TEST_CASE(source_destructor_cancels_tokens) {
     EXPECT_TRUE(token.cancelled());
 }
 
-TEST_CASE(token_copies_share_state) {
+TEST_CASE(token_share_state) {
     cancellation_source source;
     auto token_a = source.token();
     auto token_b = token_a;
@@ -120,7 +120,7 @@ TEST_CASE(token_copies_share_state) {
     EXPECT_TRUE(token_b.cancelled());
 }
 
-TEST_CASE(source_move_assignment_cancels_replaced_state) {
+TEST_CASE(move_assign_cancel) {
     cancellation_source lhs;
     auto lhs_token = lhs.token();
 
@@ -136,7 +136,7 @@ TEST_CASE(source_move_assignment_cancels_replaced_state) {
     EXPECT_TRUE(rhs_token.cancelled());
 }
 
-TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
+TEST_CASE(queue_cancel_resume) {
     event_loop loop;
     cancellation_source source;
     event start_target;
@@ -221,7 +221,7 @@ TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
     EXPECT_FALSE(target_started.load(std::memory_order_acquire));
 }
 
-TEST_CASE(with_token_fs_cancel_resumes_after_cancel_call_returns) {
+TEST_CASE(fs_cancel_resume) {
     event_loop loop;
     cancellation_source source;
     event start_target;
