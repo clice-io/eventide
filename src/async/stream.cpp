@@ -216,8 +216,9 @@ struct stream_write_await : system_op {
 
         detail::mark_cancelled_if(aw, status);
 
-        if(status < 0) {
-            aw->error_code = detail::status_to_error(status);
+        auto err = detail::status_to_error(status);
+        if(err) {
+            aw->error_code = err;
         }
 
         if(aw->self->writer) {

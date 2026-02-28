@@ -1,7 +1,5 @@
 #pragma once
 
-#include <deque>
-
 #include "libuv.h"
 #include "ringbuffer.h"
 #include "eventide/async/stream.h"
@@ -41,10 +39,10 @@ struct stream::Self : uv_handle<stream::Self, uv_stream_t>, stream_handle {
 };
 
 template <typename Stream>
-struct acceptor<Stream>::Self : uv_handle<acceptor<Stream>::Self, uv_stream_t>, stream_handle {
-    system_op* waiter = nullptr;
-    result<Stream>* active = nullptr;
-    std::deque<result<Stream>> pending;
+struct acceptor<Stream>::Self :
+    uv_handle<acceptor<Stream>::Self, uv_stream_t>,
+    stream_handle,
+    detail::queued_delivery<result<Stream>> {
     int pipe_ipc = 0;
 };
 

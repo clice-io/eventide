@@ -9,11 +9,10 @@
 
 namespace eventide {
 
-struct fs_event::Self : uv_handle<fs_event::Self, uv_fs_event_t> {
+struct fs_event::Self :
+    uv_handle<fs_event::Self, uv_fs_event_t>,
+    detail::latest_value_delivery<fs_event::change> {
     uv_fs_event_t handle{};
-    system_op* waiter = nullptr;
-    result<fs_event::change>* active = nullptr;
-    std::optional<fs_event::change> pending;
 };
 
 namespace {
@@ -79,7 +78,9 @@ struct fs_event_await : system_op {
 
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<fs_event_await>(op, [](auto& aw) {
-            detail::clear_waiter_active(aw.self, &fs_event::Self::waiter, &fs_event::Self::active);
+            if(aw.self) {
+                aw.self->disarm();
+            }
         });
     }
 
@@ -87,26 +88,9 @@ struct fs_event_await : system_op {
         auto* watcher = static_cast<fs_event::Self*>(handle->data);
         assert(watcher != nullptr && "on_change requires watcher state in handle->data");
 
-        auto deliver = [&](result<fs_event::change>&& value) {
-            if(watcher->waiter && watcher->active) {
-                *watcher->active = std::move(value);
-
-                auto w = watcher->waiter;
-                watcher->waiter = nullptr;
-                watcher->active = nullptr;
-
-                w->complete();
-            } else {
-                if(value) {
-                    watcher->pending = std::move(value.value());
-                } else {
-                    watcher->pending.reset();
-                }
-            }
-        };
-
-        if(status < 0) {
-            deliver(std::unexpected(detail::status_to_error(status)));
+        auto err = detail::status_to_error(status);
+        if(err) {
+            watcher->deliver(err);
             return;
         }
 
@@ -116,7 +100,7 @@ struct fs_event_await : system_op {
         }
         c.flags = to_fs_change_flags(events);
 
-        deliver(std::move(c));
+        watcher->deliver(std::move(c));
     }
 
     bool await_ready() const noexcept {
@@ -129,15 +113,13 @@ struct fs_event_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = this;
-        self->active = &outcome;
+        self->arm(*this, outcome);
         return link_continuation(&waiting.promise(), location);
     }
 
     result<fs_event::change> await_resume() noexcept {
         if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
+            self->disarm();
         }
         return std::move(outcome);
     }
@@ -204,13 +186,11 @@ task<result<fs_event::change>> fs_event::wait() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    if(self->pending.has_value()) {
-        auto out = std::move(*self->pending);
-        self->pending.reset();
-        co_return out;
+    if(self->has_pending()) {
+        co_return self->take_pending();
     }
 
-    if(self->waiter != nullptr) {
+    if(self->has_waiter()) {
         co_return std::unexpected(error::connection_already_in_progress);
     }
 

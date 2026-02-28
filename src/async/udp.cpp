@@ -16,15 +16,11 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr);
 
 struct udp::Self : uv_handle<udp::Self, uv_udp_t> {
     uv_udp_t handle{};
-    system_op* waiter = nullptr;
-    result<udp::recv_result>* active = nullptr;
-    std::deque<result<udp::recv_result>> pending;
+    detail::queued_delivery<result<udp::recv_result>> recv;
     std::vector<char> buffer;
     bool receiving = false;
 
-    system_op* send_waiter = nullptr;
-    error* send_active = nullptr;
-    std::optional<error> send_pending;
+    detail::stored_delivery<error> send;
     bool send_inflight = false;
 };
 
@@ -126,7 +122,9 @@ struct udp_recv_await : system_op {
                 uv::udp_recv_stop(aw.self->handle);
                 aw.self->receiving = false;
             }
-            detail::clear_waiter_active(aw.self, &udp::Self::waiter, &udp::Self::active);
+            if(aw.self) {
+                aw.self->recv.disarm();
+            }
         });
     }
 
@@ -146,13 +144,10 @@ struct udp_recv_await : system_op {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_read requires udp state in handle->data");
 
-        auto deliver = [&](result<udp::recv_result>&& value) {
-            detail::deliver_or_queue(u->waiter, u->active, u->pending, std::move(value));
-        };
-
-        if(nread < 0) {
-            detail::mark_cancelled_if(u->waiter, nread);
-            deliver(std::unexpected(detail::status_to_error(nread)));
+        auto err = detail::status_to_error(nread);
+        if(err) {
+            detail::mark_cancelled_if(u->recv.waiter, nread);
+            u->recv.deliver(err);
             return;
         }
 
@@ -168,7 +163,7 @@ struct udp_recv_await : system_op {
             }
         }
 
-        deliver(std::move(out));
+        u->recv.deliver(std::move(out));
     }
 
     bool await_ready() const noexcept {
@@ -182,8 +177,7 @@ struct udp_recv_await : system_op {
             return waiting;
         }
 
-        self->waiter = this;
-        self->active = &outcome;
+        self->recv.arm(*this, outcome);
 
         if(!self->receiving) {
             auto err = uv::udp_recv_start(self->handle, on_alloc, on_read);
@@ -191,8 +185,7 @@ struct udp_recv_await : system_op {
                 self->receiving = true;
             } else {
                 outcome = std::unexpected(err);
-                self->waiter = nullptr;
-                self->active = nullptr;
+                self->recv.disarm();
                 return waiting;
             }
         }
@@ -202,8 +195,7 @@ struct udp_recv_await : system_op {
 
     result<udp::recv_result> await_resume() noexcept {
         if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
+            self->recv.disarm();
         }
         return std::move(outcome);
     }
@@ -245,17 +237,16 @@ struct udp_send_await : system_op {
 
         u->send_inflight = false;
 
-        detail::mark_cancelled_if(u->send_waiter, status);
+        detail::mark_cancelled_if(u->send.waiter, status);
 
         auto ec = detail::status_to_error(status);
 
-        detail::deliver_or_store(u->send_waiter, u->send_active, u->send_pending, std::move(ec));
+        u->send.deliver(std::move(ec));
     }
 
     bool await_ready() noexcept {
-        if(self && self->send_pending.has_value()) {
-            result = *self->send_pending;
-            self->send_pending.reset();
+        if(self && self->send.has_pending()) {
+            result = self->send.take_pending();
             return true;
         }
         return false;
@@ -269,13 +260,12 @@ struct udp_send_await : system_op {
             return waiting;
         }
 
-        if(self->send_waiter != nullptr || self->send_inflight) {
+        if(self->send.has_waiter() || self->send_inflight) {
             result = error::connection_already_in_progress;
             return waiting;
         }
 
-        self->send_waiter = this;
-        self->send_active = &result;
+        self->send.arm(*this, result);
 
         uv_buf_t buf = uv::buf_init(storage.empty() ? nullptr : storage.data(),
                                     static_cast<unsigned>(storage.size()));
@@ -287,8 +277,7 @@ struct udp_send_await : system_op {
             uv::udp_send(req, self->handle, std::span<const uv_buf_t>{&buf, 1}, addr, on_send);
         if(err) {
             result = err;
-            self->send_waiter = nullptr;
-            self->send_active = nullptr;
+            self->send.disarm();
             return waiting;
         }
 
@@ -298,8 +287,7 @@ struct udp_send_await : system_op {
 
     error await_resume() noexcept {
         if(self) {
-            self->send_waiter = nullptr;
-            self->send_active = nullptr;
+            self->send.disarm();
         }
         return result;
     }
@@ -514,13 +502,11 @@ task<result<udp::recv_result>> udp::recv() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    if(!self->pending.empty()) {
-        auto out = std::move(self->pending.front());
-        self->pending.pop_front();
-        co_return out;
+    if(self->recv.has_pending()) {
+        co_return self->recv.take_pending();
     }
 
-    if(self->waiter != nullptr) {
+    if(self->recv.has_waiter()) {
         co_return std::unexpected(error::connection_already_in_progress);
     }
 

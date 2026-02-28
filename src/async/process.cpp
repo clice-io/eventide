@@ -31,11 +31,10 @@ static unsigned int to_uv_process_flags(const process::creation_options& options
     return out;
 }
 
-struct process::Self : uv_handle<process::Self, uv_process_t> {
+struct process::Self :
+    uv_handle<process::Self, uv_process_t>,
+    detail::latched_delivery<process::exit_status> {
     uv_process_t handle{};
-    system_op* waiter = nullptr;
-    process::exit_status* active = nullptr;
-    std::optional<process::exit_status> completed;
 };
 
 namespace {
@@ -54,22 +53,14 @@ struct process_await : system_op {
 
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<process_await>(op, [](auto& aw) {
-            detail::clear_waiter_active(aw.self, &process::Self::waiter, &process::Self::active);
+            if(aw.self) {
+                aw.self->disarm();
+            }
         });
     }
 
     static void notify(process::Self& self, process::exit_status status) {
-        self.completed = status;
-
-        if(self.waiter && self.active) {
-            *self.active = status;
-
-            auto w = self.waiter;
-            self.waiter = nullptr;
-            self.active = nullptr;
-
-            w->complete();
-        }
+        self.deliver(status);
     }
 
     bool await_ready() const noexcept {
@@ -82,15 +73,13 @@ struct process_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = this;
-        self->active = &result;
+        self->arm(*this, result);
         return link_continuation(&waiting.promise(), location);
     }
 
     process::wait_result await_resume() noexcept {
         if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
+            self->disarm();
         }
         return result;
     }
@@ -249,11 +238,11 @@ task<process::wait_result> process::wait() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    if(self->completed.has_value()) {
-        co_return *self->completed;
+    if(self->has_pending()) {
+        co_return self->peek_pending();
     }
 
-    if(self->waiter != nullptr) {
+    if(self->has_waiter()) {
         co_return std::unexpected(error::socket_is_already_connected);
     }
 

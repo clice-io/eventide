@@ -70,7 +70,9 @@ struct accept_await : system_op {
 
     static void on_cancel(system_op* op) {
         detail::cancel_and_complete<accept_await<Stream>>(op, [](auto& aw) {
-            detail::clear_waiter_active(aw.self, &self_t::waiter, &self_t::active);
+            if(aw.self) {
+                aw.self->disarm();
+            }
         });
     }
 
@@ -84,15 +86,13 @@ struct accept_await : system_op {
         if(!self) {
             return waiting;
         }
-        self->waiter = this;
-        self->active = &outcome;
+        self->arm(*this, outcome);
         return link_continuation(&waiting.promise(), location);
     }
 
     result<Stream> await_resume() noexcept {
         if(self) {
-            self->waiter = nullptr;
-            self->active = nullptr;
+            self->disarm();
         }
         return std::move(outcome);
     }
@@ -106,46 +106,29 @@ void on_connection(uv_stream_t* server, int status) {
     auto* listener = static_cast<self_t*>(server->data);
     assert(listener != nullptr && "on_connection requires listener state in server->data");
 
-    auto deliver = [&](result<Stream>&& value) {
-        detail::deliver_or_queue(listener->waiter,
-                                 listener->active,
-                                 listener->pending,
-                                 std::move(value));
-    };
-
-    if(status < 0) {
-        deliver(std::unexpected(detail::status_to_error(status)));
+    auto err = detail::status_to_error(status);
+    if(err) {
+        listener->deliver(err);
         return;
     }
 
     auto self = stream::Self::make();
-
     if constexpr(std::is_same_v<Stream, pipe>) {
-        auto& handle = self->pipe;
-        auto err = uv::pipe_init(*server->loop, handle, listener->pipe_ipc);
-        if(!err) {
-            err = uv::accept(*server, handle);
-        }
-
-        if(err) {
-            deliver(std::unexpected(err));
-        } else {
-            deliver(pipe(std::move(self)));
-        }
+        err = uv::pipe_init(*server->loop, self->pipe, listener->pipe_ipc);
     } else if constexpr(std::is_same_v<Stream, tcp_socket>) {
-        auto& handle = self->tcp;
-        auto err = uv::tcp_init(*server->loop, handle);
-        if(!err) {
-            err = uv::accept(*server, handle);
-        }
-
-        if(err) {
-            deliver(std::unexpected(err));
-        } else {
-            deliver(tcp_socket(std::move(self)));
-        }
+        err = uv::tcp_init(*server->loop, self->tcp);
     } else {
         static_assert(always_false_v<Stream>, "unsupported accept stream type");
+    }
+
+    if(!err) {
+        err = uv::accept(*server, self->stream);
+    }
+
+    if(err) {
+        listener->deliver(err);
+    } else {
+        listener->deliver(Stream(std::move(self)));
     }
 }
 
@@ -222,8 +205,9 @@ struct connect_await : system_op {
 
         detail::mark_cancelled_if(aw, status);
 
-        if(status < 0) {
-            aw->outcome = std::unexpected(detail::status_to_error(status));
+        auto err = detail::status_to_error(status);
+        if(err) {
+            aw->outcome = std::unexpected(err);
         } else if(aw->self) {
             if constexpr(std::is_same_v<Stream, pipe>) {
                 aw->outcome = pipe(std::move(aw->self));
@@ -302,13 +286,11 @@ task<result<Stream>> acceptor<Stream>::accept() {
         co_return std::unexpected(error::invalid_argument);
     }
 
-    if(!self->pending.empty()) {
-        auto out = std::move(self->pending.front());
-        self->pending.pop_front();
-        co_return out;
+    if(self->has_pending()) {
+        co_return self->take_pending();
     }
 
-    if(self->waiter != nullptr) {
+    if(self->has_waiter()) {
         co_return std::unexpected(error::connection_already_in_progress);
     }
 
@@ -321,8 +303,7 @@ error acceptor<Stream>::stop() {
         return error::invalid_argument;
     }
 
-    result<Stream> error_result = std::unexpected(error::operation_aborted);
-    detail::deliver_or_queue(self->waiter, self->active, self->pending, std::move(error_result));
+    self->deliver(error::operation_aborted);
 
     return {};
 }

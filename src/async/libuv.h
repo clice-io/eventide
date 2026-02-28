@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "awaiter.h"
 #include "uv.h"
 #include "eventide/async/error.h"
 #include "eventide/async/frame.h"
@@ -869,75 +870,6 @@ inline void cancel_uv_request(ReqT* req) noexcept {
         return;
     }
     uv::cancel(*reinterpret_cast<uv_req_t*>(req));
-}
-
-template <typename SelfT>
-inline void clear_waiter(SelfT* self, system_op* SelfT::* waiter) noexcept {
-    if(self == nullptr) {
-        return;
-    }
-    self->*waiter = nullptr;
-}
-
-template <typename SelfT, typename ActiveT>
-inline void clear_waiter_active(SelfT* self,
-                                system_op* SelfT::* waiter,
-                                ActiveT* SelfT::* active) noexcept {
-    if(self == nullptr) {
-        return;
-    }
-    self->*waiter = nullptr;
-    self->*active = nullptr;
-}
-
-template <typename AwaitT, typename CleanupFn>
-inline void cancel_and_complete(system_op* op, CleanupFn&& cleanup) noexcept {
-    auto* aw = static_cast<AwaitT*>(op);
-    if(aw == nullptr) {
-        return;
-    }
-
-    cleanup(*aw);
-    aw->complete();
-}
-
-template <typename AwaitT>
-inline void cancel_and_complete(system_op* op) noexcept {
-    cancel_and_complete<AwaitT>(op, [](AwaitT&) noexcept {});
-}
-
-template <typename ResultT>
-inline void deliver_or_queue(system_op*& waiter,
-                             ResultT*& active,
-                             std::deque<ResultT>& pending,
-                             ResultT&& value) {
-    if(waiter && active) {
-        *active = std::move(value);
-        auto w = waiter;
-        waiter = nullptr;
-        active = nullptr;
-        w->complete();
-        return;
-    }
-
-    pending.push_back(std::move(value));
-}
-
-template <typename ResultT>
-inline void deliver_or_store(system_op*& waiter,
-                             ResultT*& active,
-                             std::optional<ResultT>& pending,
-                             ResultT&& value) {
-    if(waiter && active) {
-        *active = std::move(value);
-        auto w = waiter;
-        waiter = nullptr;
-        active = nullptr;
-        w->complete();
-        return;
-    }
-
-    pending = std::move(value);
 }
 
 }  // namespace detail
