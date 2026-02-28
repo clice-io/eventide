@@ -1,5 +1,7 @@
 #include "eventide/async/process.h"
 
+#include <cassert>
+
 #include "libuv.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
@@ -206,9 +208,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     uv_process_options_t uv_opts{};
     uv_opts.exit_cb = +[](uv_process_t* handle, int64_t exit_status, int term_signal) {
         auto* self = static_cast<process::Self*>(handle->data);
-        if(self == nullptr) {
-            return;
-        }
+        assert(self != nullptr && "process exit callback requires process state in handle->data");
 
         process_await::notify(*self, process::exit_status{exit_status, term_signal});
     };

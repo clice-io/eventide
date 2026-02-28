@@ -1,3 +1,4 @@
+#include <cassert>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -101,10 +102,9 @@ template <typename Stream>
 void on_connection(uv_stream_t* server, int status) {
     using self_t = typename acceptor<Stream>::Self;
 
-    auto* listener = static_cast<self_t*>(server ? server->data : nullptr);
-    if(listener == nullptr) {
-        return;
-    }
+    assert(server != nullptr && "on_connection requires non-null server");
+    auto* listener = static_cast<self_t*>(server->data);
+    assert(listener != nullptr && "on_connection requires listener state in server->data");
 
     auto deliver = [&](result<Stream>&& value) {
         detail::deliver_or_queue(listener->waiter,
@@ -218,9 +218,7 @@ struct connect_await : system_op {
 
     static void on_connect(uv_connect_t* req, int status) {
         auto* aw = static_cast<connect_await*>(req->data);
-        if(!aw) {
-            return;
-        }
+        assert(aw != nullptr && "on_connect requires awaiter in req->data");
 
         detail::mark_cancelled_if(aw, status);
 

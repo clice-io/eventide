@@ -62,9 +62,7 @@ struct basic_tick_await : system_op {
 
     static void on_fire(HandleT* handle) {
         auto* watcher = static_cast<SelfT*>(handle->data);
-        if(watcher == nullptr) {
-            return;
-        }
+        assert(watcher != nullptr && "on_fire requires watcher state in handle->data");
 
         if(watcher->waiter) {
             auto w = watcher->waiter;
@@ -125,9 +123,7 @@ struct signal_await : system_op {
 
     static void on_fire(uv_signal_t* handle) {
         auto* watcher = static_cast<signal::Self*>(handle->data);
-        if(watcher == nullptr) {
-            return;
-        }
+        assert(watcher != nullptr && "on_fire requires watcher state in handle->data");
 
         if(watcher->waiter && watcher->active) {
             *watcher->active = {};

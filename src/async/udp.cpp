@@ -1,5 +1,6 @@
 #include "eventide/async/udp.h"
 
+#include <cassert>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -131,11 +132,7 @@ struct udp_recv_await : system_op {
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto* u = static_cast<udp::Self*>(handle->data);
-        if(u == nullptr) {
-            buf->base = nullptr;
-            buf->len = 0;
-            return;
-        }
+        assert(u != nullptr && "on_alloc requires udp state in handle->data");
 
         buf->base = u->buffer.data();
         buf->len = u->buffer.size();
@@ -147,9 +144,7 @@ struct udp_recv_await : system_op {
                         const struct sockaddr* addr,
                         unsigned flags) {
         auto* u = static_cast<udp::Self*>(handle->data);
-        if(u == nullptr) {
-            return;
-        }
+        assert(u != nullptr && "on_read requires udp state in handle->data");
 
         auto deliver = [&](result<udp::recv_result>&& value) {
             detail::deliver_or_queue(u->waiter, u->active, u->pending, std::move(value));
@@ -244,10 +239,9 @@ struct udp_send_await : system_op {
 
     static void on_send(uv_udp_send_t* req, int status) {
         auto* handle = static_cast<uv_udp_t*>(req->handle);
-        auto* u = handle ? static_cast<udp::Self*>(handle->data) : nullptr;
-        if(u == nullptr) {
-            return;
-        }
+        assert(handle != nullptr && "on_send requires req->handle");
+        auto* u = static_cast<udp::Self*>(handle->data);
+        assert(u != nullptr && "on_send requires udp state in handle->data");
 
         u->send_inflight = false;
 

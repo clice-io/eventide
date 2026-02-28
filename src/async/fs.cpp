@@ -1,5 +1,6 @@
 #include "eventide/async/fs.h"
 
+#include <cassert>
 #include <functional>
 
 #include "libuv.h"
@@ -84,9 +85,7 @@ struct fs_event_await : system_op {
 
     static void on_change(uv_fs_event_t* handle, const char* filename, int events, int status) {
         auto* watcher = static_cast<fs_event::Self*>(handle->data);
-        if(!watcher) {
-            return;
-        }
+        assert(watcher != nullptr && "on_change requires watcher state in handle->data");
 
         auto deliver = [&](result<fs_event::change>&& value) {
             if(watcher->waiter && watcher->active) {
@@ -309,9 +308,7 @@ static task<result<Result>> run_fs(Submit submit,
 
     auto after_cb = [](uv_fs_t* req) {
         auto* h = static_cast<fs_op<Result>*>(req->data);
-        if(h == nullptr) {
-            return;
-        }
+        assert(h != nullptr && "fs after_cb requires operation in req->data");
 
         detail::mark_cancelled_if(h, req->result);
 

@@ -29,11 +29,7 @@ struct stream_read_await : system_op {
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto s = static_cast<eventide::stream::Self*>(handle->data);
-        if(!s) {
-            buf->base = nullptr;
-            buf->len = 0;
-            return;
-        }
+        assert(s != nullptr && "on_alloc requires stream state in handle->data");
 
         auto [dst, writable] = s->buffer.get_write_ptr();
         buf->base = dst;
@@ -47,16 +43,15 @@ struct stream_read_await : system_op {
     // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<eventide::stream::Self*>(stream->data);
-        if(!s || nread < 0) {
-            if(s) {
-                uv::read_stop(*stream);
-                if(s->reader) {
-                    auto reader = s->reader;
-                    s->reader = nullptr;
-                    detail::mark_cancelled_if(reader, nread);
-                    s->error_code = detail::status_to_error(nread);
-                    reader->complete();
-                }
+        assert(s != nullptr && "on_read requires stream state in stream->data");
+        if(nread < 0) {
+            uv::read_stop(*stream);
+            if(s->reader) {
+                auto reader = s->reader;
+                s->reader = nullptr;
+                detail::mark_cancelled_if(reader, nread);
+                s->error_code = detail::status_to_error(nread);
+                reader->complete();
             }
             return;
         }
@@ -121,14 +116,11 @@ struct stream_read_some_await : system_op {
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
         auto s = static_cast<eventide::stream::Self*>(handle->data);
-        if(!s) {
-            buf->base = nullptr;
-            buf->len = 0;
-            return;
-        }
+        assert(s != nullptr && "on_alloc requires stream state in handle->data");
 
         auto* aw = static_cast<stream_read_some_await*>(s->reader);
-        if(!aw || aw->dst.empty()) {
+        assert(aw != nullptr && "on_alloc requires active read_some awaiter");
+        if(aw->dst.empty()) {
             buf->base = nullptr;
             buf->len = 0;
             return;
@@ -141,14 +133,10 @@ struct stream_read_some_await : system_op {
     // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<eventide::stream::Self*>(stream->data);
-        if(!s) {
-            return;
-        }
+        assert(s != nullptr && "on_read requires stream state in stream->data");
 
         auto* aw = static_cast<stream_read_some_await*>(s->reader);
-        if(!aw) {
-            return;
-        }
+        assert(aw != nullptr && "on_read requires active read_some awaiter");
 
         if(nread < 0) {
             aw->bytes = 0;
@@ -223,9 +211,8 @@ struct stream_write_await : system_op {
 
     static void on_write(uv_write_t* req, int status) {
         auto* aw = static_cast<stream_write_await*>(req->data);
-        if(!aw || !aw->self) {
-            return;
-        }
+        assert(aw != nullptr && "on_write requires awaiter in req->data");
+        assert(aw->self != nullptr && "on_write requires stream state");
 
         detail::mark_cancelled_if(aw, status);
 

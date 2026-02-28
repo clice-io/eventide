@@ -1,5 +1,7 @@
 #include "eventide/async/request.h"
 
+#include <cassert>
+
 #include "libuv.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
@@ -51,16 +53,15 @@ task<error> queue(work_fn fn, event_loop& loop) {
 
     auto work_cb = [](uv_work_t* req) {
         auto* holder = static_cast<work_op*>(req->data);
-        if(holder && holder->fn) {
+        assert(holder != nullptr && "work_cb requires operation in req->data");
+        if(holder->fn) {
             holder->fn();
         }
     };
 
     auto after_cb = [](uv_work_t* req, int status) {
         auto* holder = static_cast<work_op*>(req->data);
-        if(holder == nullptr) {
-            return;
-        }
+        assert(holder != nullptr && "after_cb requires operation in req->data");
 
         detail::mark_cancelled_if(holder, status);
         holder->result = detail::status_to_error(status);
