@@ -215,7 +215,16 @@ public:
     cancellation_source& operator=(const cancellation_source&) = delete;
 
     cancellation_source(cancellation_source&&) noexcept = default;
-    cancellation_source& operator=(cancellation_source&&) noexcept = default;
+
+    cancellation_source& operator=(cancellation_source&& other) noexcept {
+        if(this == &other) {
+            return *this;
+        }
+
+        cancel();
+        state_ = std::move(other.state_);
+        return *this;
+    }
 
     ~cancellation_source() {
         cancel();

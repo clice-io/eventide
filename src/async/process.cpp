@@ -242,7 +242,7 @@ task<process::wait_result> process::wait() {
     }
 
     if(self->has_waiter()) {
-        co_return std::unexpected(error::socket_is_already_connected);
+        co_return std::unexpected(error::connection_already_in_progress);
     }
 
     co_return co_await process_await{self.get()};

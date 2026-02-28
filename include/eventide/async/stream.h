@@ -51,8 +51,8 @@ public:
     /// Read available data into a std::string; waits for at least one read if empty.
     task<result<std::string>> read();
 
-    /// Read up to dst.size() bytes into dst; returns bytes read (0 on EOF/invalid).
-    task<std::size_t> read_some(std::span<char> dst);
+    /// Read up to dst.size() bytes into dst; returns bytes read, 0 on EOF, or an error.
+    task<result<std::size_t>> read_some(std::span<char> dst);
 
     using chunk = std::span<const char>;
 

@@ -25,11 +25,6 @@ int uv_thread_pool_size_for_test() {
         }
     }
 
-    constexpr int max_reasonable = 32;
-    if(value > max_reasonable) {
-        value = max_reasonable;
-    }
-
     return value;
 }
 
@@ -125,16 +120,35 @@ TEST_CASE(token_copies_share_state) {
     EXPECT_TRUE(token_b.cancelled());
 }
 
+TEST_CASE(source_move_assignment_cancels_replaced_state) {
+    cancellation_source lhs;
+    auto lhs_token = lhs.token();
+
+    cancellation_source rhs;
+    auto rhs_token = rhs.token();
+
+    lhs = std::move(rhs);
+
+    EXPECT_TRUE(lhs_token.cancelled());
+    EXPECT_FALSE(rhs_token.cancelled());
+
+    lhs.cancel();
+    EXPECT_TRUE(rhs_token.cancelled());
+}
+
 TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
     event_loop loop;
     cancellation_source source;
     event start_target;
+    event target_submitted;
     event target_done;
 
     const int pool_size = uv_thread_pool_size_for_test();
+    const int blocker_count = pool_size + 1;
     std::atomic<int> blockers_started{0};
     std::atomic<int> blockers_done{0};
     std::atomic<bool> release{false};
+    std::atomic<bool> target_started{false};
 
     int phase = 0;
     int observed_phase = 0;
@@ -155,7 +169,10 @@ TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
 
     auto target = [&]() -> task<> {
         co_await start_target.wait();
-        auto res = co_await with_token(source.token(), queue([] {}, loop));
+        target_submitted.set();
+        auto res = co_await with_token(
+            source.token(),
+            queue([&] { target_started.store(true, std::memory_order_release); }, loop));
         target_cancelled = !res.has_value();
         observed_phase = phase;
         target_done.set();
@@ -167,7 +184,7 @@ TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
         }
 
         start_target.set();
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await target_submitted.wait();
 
         phase = 1;
         source.cancel();
@@ -176,7 +193,7 @@ TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
         release.store(true, std::memory_order_release);
 
         co_await target_done.wait();
-        while(blockers_done.load(std::memory_order_acquire) < pool_size) {
+        while(blockers_done.load(std::memory_order_acquire) < blocker_count) {
             co_await sleep(std::chrono::milliseconds{1}, loop);
         }
 
@@ -184,8 +201,8 @@ TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
     };
 
     std::vector<task<>> blockers;
-    blockers.reserve(static_cast<std::size_t>(pool_size));
-    for(int i = 0; i < pool_size; ++i) {
+    blockers.reserve(static_cast<std::size_t>(blocker_count));
+    for(int i = 0; i < blocker_count; ++i) {
         blockers.push_back(blocker());
     }
 
@@ -201,15 +218,18 @@ TEST_CASE(with_token_queue_cancel_resumes_after_cancel_call_returns) {
 
     EXPECT_TRUE(target_cancelled);
     EXPECT_EQ(observed_phase, 2);
+    EXPECT_FALSE(target_started.load(std::memory_order_acquire));
 }
 
 TEST_CASE(with_token_fs_cancel_resumes_after_cancel_call_returns) {
     event_loop loop;
     cancellation_source source;
     event start_target;
+    event target_submitted;
     event target_done;
 
     const int pool_size = uv_thread_pool_size_for_test();
+    const int blocker_count = pool_size + 1;
     std::atomic<int> blockers_started{0};
     std::atomic<int> blockers_done{0};
     std::atomic<bool> release{false};
@@ -233,6 +253,7 @@ TEST_CASE(with_token_fs_cancel_resumes_after_cancel_call_returns) {
 
     auto target = [&]() -> task<> {
         co_await start_target.wait();
+        target_submitted.set();
         auto res = co_await with_token(source.token(), fs::stat(".", loop));
         target_cancelled = !res.has_value();
         observed_phase = phase;
@@ -245,7 +266,7 @@ TEST_CASE(with_token_fs_cancel_resumes_after_cancel_call_returns) {
         }
 
         start_target.set();
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await target_submitted.wait();
 
         phase = 1;
         source.cancel();
@@ -254,7 +275,7 @@ TEST_CASE(with_token_fs_cancel_resumes_after_cancel_call_returns) {
         release.store(true, std::memory_order_release);
 
         co_await target_done.wait();
-        while(blockers_done.load(std::memory_order_acquire) < pool_size) {
+        while(blockers_done.load(std::memory_order_acquire) < blocker_count) {
             co_await sleep(std::chrono::milliseconds{1}, loop);
         }
 
@@ -262,8 +283,8 @@ TEST_CASE(with_token_fs_cancel_resumes_after_cancel_call_returns) {
     };
 
     std::vector<task<>> blockers;
-    blockers.reserve(static_cast<std::size_t>(pool_size));
-    for(int i = 0; i < pool_size; ++i) {
+    blockers.reserve(static_cast<std::size_t>(blocker_count));
+    for(int i = 0; i < blocker_count; ++i) {
         blockers.push_back(blocker());
     }
 

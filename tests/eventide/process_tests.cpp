@@ -17,6 +17,15 @@ task<process::wait_result> wait_for_exit(process& proc) {
     co_return status;
 }
 
+task<process::wait_result> wait_for_exit(process& proc, int& done, int target) {
+    auto status = co_await proc.wait();
+    done += 1;
+    if(done == target) {
+        event_loop::current().stop();
+    }
+    co_return status;
+}
+
 }  // namespace
 
 TEST_SUITE(process_io) {
@@ -199,6 +208,40 @@ TEST_CASE(spawn_invalid_file) {
 
     auto spawn_res = process::spawn(opts, loop);
     EXPECT_FALSE(spawn_res.has_value());
+}
+
+TEST_CASE(wait_twice) {
+    event_loop loop;
+
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "exit 0"};
+#else
+    opts.file = "/bin/sh";
+    opts.args = {opts.file, "-c", "true"};
+#endif
+    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+
+    int done = 0;
+    auto first = wait_for_exit(spawn_res->proc, done, 2);
+    auto second = wait_for_exit(spawn_res->proc, done, 2);
+
+    loop.schedule(first);
+    loop.schedule(second);
+    loop.run();
+
+    auto first_result = first.result();
+    auto second_result = second.result();
+
+    EXPECT_TRUE(first_result.has_value());
+    EXPECT_FALSE(second_result.has_value());
+    if(!second_result.has_value()) {
+        EXPECT_EQ(second_result.error().value(), error::connection_already_in_progress.value());
+    }
 }
 
 };  // TEST_SUITE(process_io)

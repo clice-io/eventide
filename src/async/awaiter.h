@@ -182,14 +182,14 @@ struct latched_delivery : waiter_binding<ResultT> {
 
 template <typename ValueT>
 struct latest_value_delivery : waiter_binding<result<ValueT>> {
-    std::optional<ValueT> pending;
+    std::optional<result<ValueT>> pending;
 
     bool has_pending() const noexcept {
         return pending.has_value();
     }
 
     result<ValueT> take_pending() {
-        assert(pending.has_value() && "take_pending requires stored success value");
+        assert(pending.has_value() && "take_pending requires stored value");
         result<ValueT> out(std::move(*pending));
         pending.reset();
         return out;
@@ -201,15 +201,11 @@ struct latest_value_delivery : waiter_binding<result<ValueT>> {
             return;
         }
 
-        if(value.has_value()) {
-            pending = std::move(*value);
-        } else {
-            pending.reset();
-        }
+        pending = std::move(value);
     }
 
     void deliver(error err) {
-        deliver(std::unexpected(err));
+        deliver(result<ValueT>(std::unexpected(err)));
     }
 };
 

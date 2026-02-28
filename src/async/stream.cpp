@@ -93,14 +93,14 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
 struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     using await_base = uv::await_op<stream_read_some_await>;
-    using promise_t = task<std::size_t>::promise_type;
+    using promise_t = task<result<std::size_t>>::promise_type;
 
     // Stream self that owns the active read waiter.
     stream::Self* self;
     // Destination buffer provided by the caller.
     std::span<char> dst;
-    // Number of bytes read by the completion callback.
-    std::size_t bytes = 0;
+    // Final read result observed by await_resume().
+    result<std::size_t> out = std::unexpected(error());
 
     stream_read_some_await(stream::Self* self, std::span<char> buffer) : self(self), dst(buffer) {}
 
@@ -137,12 +137,13 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
         assert(aw != nullptr && "on_read requires active read_some awaiter");
 
-        auto err = uv::status_to_error(nread);
-        if(err) {
-            aw->bytes = 0;
+        if(nread == UV_EOF) {
+            aw->out = std::size_t{0};
+        } else if(auto err = uv::status_to_error(nread)) {
+            aw->out = std::unexpected(err);
             aw->mark_cancelled_if(nread);
         } else if(nread > 0) {
-            aw->bytes = static_cast<std::size_t>(nread);
+            aw->out = static_cast<std::size_t>(nread);
         } else {
             // nread=0 with no error means no data was read, but the stream is still alive (e.g.,
             // EAGAIN).
@@ -168,6 +169,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
 
         self->reader.arm(*this);
         if(auto err = uv::read_start(self->stream, on_alloc, on_read)) {
+            out = std::unexpected(err);
             self->reader.disarm();
             return waiting;
         }
@@ -175,11 +177,11 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         return this->link_continuation(&waiting.promise(), location);
     }
 
-    std::size_t await_resume() noexcept {
+    result<std::size_t> await_resume() noexcept {
         if(self) {
             self->reader.disarm();
         }
-        return bytes;
+        return std::move(out);
     }
 };
 
@@ -309,9 +311,13 @@ task<result<std::string>> stream::read() {
     co_return out;
 }
 
-task<std::size_t> stream::read_some(std::span<char> dst) {
-    if(!self || dst.empty()) {
-        co_return 0;
+task<result<std::size_t>> stream::read_some(std::span<char> dst) {
+    if(!self) {
+        co_return std::unexpected(error::invalid_argument);
+    }
+
+    if(dst.empty()) {
+        co_return std::size_t{0};
     }
 
     if(self->buffer.readable_bytes() != 0) {

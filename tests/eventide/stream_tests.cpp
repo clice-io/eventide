@@ -127,11 +127,14 @@ task<result<std::string>> read_from_pipe(pipe p) {
     co_return out;
 }
 
-task<std::string> read_some_from_pipe(pipe p) {
+task<result<std::string>> read_some_from_pipe(pipe p) {
     std::array<char, 64> buf{};
     auto n = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
     event_loop::current().stop();
-    co_return std::string(buf.data(), n);
+    if(!n.has_value()) {
+        co_return std::unexpected(n.error());
+    }
+    co_return std::string(buf.data(), *n);
 }
 
 task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
@@ -207,6 +210,21 @@ task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     co_return data;
 }
 
+task<result<std::size_t>> accept_and_read_some(tcp_socket::acceptor acc) {
+    auto conn_res = co_await acc.accept();
+    if(!conn_res.has_value()) {
+        event_loop::current().stop();
+        co_return std::unexpected(conn_res.error());
+    }
+
+    auto conn = std::move(*conn_res);
+    std::array<char, 64> buf{};
+    auto data = co_await conn.read_some(std::span<char>(buf.data(), buf.size()));
+
+    event_loop::current().stop();
+    co_return data;
+}
+
 task<result<std::string>> accept_and_read_once(tcp_socket::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
@@ -240,6 +258,21 @@ task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, int& done) {
     auto res = co_await acc.accept();
     bump_and_stop(done, 2);
     co_return res;
+}
+
+int set_abortive_close(socket_t sock) {
+    linger opt{};
+    opt.l_onoff = 1;
+    opt.l_linger = 0;
+#ifdef _WIN32
+    return ::setsockopt(sock,
+                        SOL_SOCKET,
+                        SO_LINGER,
+                        reinterpret_cast<const char*>(&opt),
+                        static_cast<int>(sizeof(opt)));
+#else
+    return ::setsockopt(sock, SOL_SOCKET, SO_LINGER, &opt, sizeof(opt));
+#endif
 }
 
 }  // namespace
@@ -289,7 +322,11 @@ TEST_CASE(read_some_from_fd) {
     loop.schedule(reader);
     loop.run();
 
-    EXPECT_EQ(reader.result(), message);
+    auto result = reader.result();
+    EXPECT_TRUE(result.has_value());
+    if(result.has_value()) {
+        EXPECT_EQ(*result, message);
+    }
 }
 
 TEST_CASE(read_chunk_from_fd) {
@@ -518,6 +555,35 @@ TEST_CASE(connect_and_write) {
     EXPECT_TRUE(server_res.has_value());
     EXPECT_EQ(*server_res, "eventide-tcp-connect");
     EXPECT_FALSE(static_cast<bool>(client_res));
+}
+
+TEST_CASE(read_some_error) {
+    int port = pick_free_port();
+    ASSERT_TRUE(port > 0);
+
+    event_loop loop;
+    auto acc_res = tcp_socket::listen("127.0.0.1", port, {}, loop);
+    ASSERT_TRUE(acc_res.has_value());
+
+    auto server = accept_and_read_some(std::move(*acc_res));
+
+    socket_t client_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_TRUE(client_fd != invalid_socket);
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<uint16_t>(port));
+
+    ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(set_abortive_close(client_fd), 0);
+    close_socket(client_fd);
+
+    loop.schedule(server);
+    loop.run();
+
+    auto result = server.result();
+    EXPECT_FALSE(result.has_value());
 }
 
 };  // TEST_SUITE(tcp)
