@@ -102,7 +102,7 @@ struct process_await : system_op {
 
 process::process() noexcept : self(nullptr, nullptr) {}
 
-process::process(Self* self) noexcept : self(self, Self::destroy) {}
+process::process(std::unique_ptr<Self, void (*)(void*)> self) noexcept : self(std::move(self)) {}
 
 process::~process() = default;
 
@@ -140,7 +140,7 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
 }
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
-    spawn_result out{process(new Self())};
+    spawn_result out{process(Self::make())};
 
     std::vector<std::string> argv_storage;
     if(opts.args.empty()) {

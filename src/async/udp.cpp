@@ -319,7 +319,7 @@ struct udp_send_await : system_op {
 
 udp::udp() noexcept : self(nullptr, nullptr) {}
 
-udp::udp(Self* state) noexcept : self(state, Self::destroy) {}
+udp::udp(std::unique_ptr<Self, void (*)(void*)> state) noexcept : self(std::move(state)) {}
 
 udp::~udp() = default;
 
@@ -367,7 +367,7 @@ result<udp> udp::create(event_loop& loop) {
     }
 
     state->init_handle();
-    return udp(state.release());
+    return udp(std::move(state));
 }
 
 result<udp> udp::create(create_options options, event_loop& loop) {
@@ -382,7 +382,7 @@ result<udp> udp::create(create_options options, event_loop& loop) {
     }
 
     state->init_handle();
-    return udp(state.release());
+    return udp(std::move(state));
 }
 
 result<udp> udp::open(int fd, event_loop& loop) {
@@ -397,7 +397,7 @@ result<udp> udp::open(int fd, event_loop& loop) {
         return std::unexpected(err);
     }
 
-    return udp(state.release());
+    return udp(std::move(state));
 }
 
 error udp::bind(std::string_view host, int port, bind_options options) {

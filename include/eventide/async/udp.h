@@ -142,7 +142,7 @@ public:
     task<result<recv_result>> recv();
 
 private:
-    explicit udp(Self* state) noexcept;
+    explicit udp(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };

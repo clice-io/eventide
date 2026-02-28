@@ -194,7 +194,8 @@ struct signal_await : system_op {
 
 #define EVENTIDE_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                       \
     WatcherType::WatcherType() noexcept : self(nullptr, nullptr) {}                                \
-    WatcherType::WatcherType(Self* state) noexcept : self(state, Self::destroy) {}                 \
+    WatcherType::WatcherType(std::unique_ptr<Self, void (*)(void*)> state) noexcept :              \
+        self(std::move(state)) {}                                                                  \
     WatcherType::~WatcherType() = default;                                                         \
     WatcherType::WatcherType(WatcherType&& other) noexcept = default;                              \
     WatcherType& WatcherType::operator=(WatcherType&& other) noexcept = default;                   \
@@ -216,7 +217,7 @@ timer timer::create(event_loop& loop) {
     uv::timer_init(loop, handle);
 
     state->init_handle();
-    return timer(state.release());
+    return timer(std::move(state));
 }
 
 void timer::start(std::chrono::milliseconds timeout, std::chrono::milliseconds repeat) {
@@ -269,7 +270,7 @@ result<signal> signal::create(event_loop& loop) {
     }
 
     state->init_handle();
-    return signal(state.release());
+    return signal(std::move(state));
 }
 
 error signal::start(int signum) {
@@ -332,7 +333,7 @@ task<error> signal::wait() {
         INIT_FN(loop, handle);                                                                     \
                                                                                                    \
         state->init_handle();                                                                      \
-        return WatcherType(state.release());                                                       \
+        return WatcherType(std::move(state));                                                      \
     }                                                                                              \
                                                                                                    \
     void WatcherType::start() {                                                                    \

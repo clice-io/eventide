@@ -152,7 +152,8 @@ struct fs_event_await : system_op {
 
 fs_event::fs_event() noexcept : self(nullptr, nullptr) {}
 
-fs_event::fs_event(Self* state) noexcept : self(state, Self::destroy) {}
+fs_event::fs_event(std::unique_ptr<Self, void (*)(void*)> state) noexcept :
+    self(std::move(state)) {}
 
 fs_event::~fs_event() = default;
 
@@ -171,7 +172,7 @@ result<fs_event> fs_event::create(event_loop& loop) {
     }
     state->init_handle();
 
-    return fs_event(state.release());
+    return fs_event(std::move(state));
 }
 
 error fs_event::start(const char* path, watch_options options) {

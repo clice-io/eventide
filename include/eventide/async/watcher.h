@@ -35,7 +35,7 @@ public:
     task<> wait();
 
 private:
-    explicit timer(Self* state) noexcept;
+    explicit timer(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };
@@ -64,7 +64,7 @@ public:
     task<error> wait();
 
 private:
-    explicit signal(Self* state) noexcept;
+    explicit signal(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };
@@ -93,7 +93,7 @@ public:
     task<> wait();
 
 private:
-    explicit idle(Self* state) noexcept;
+    explicit idle(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };
@@ -122,7 +122,7 @@ public:
     task<> wait();
 
 private:
-    explicit prepare(Self* state) noexcept;
+    explicit prepare(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };
@@ -151,7 +151,7 @@ public:
     task<> wait();
 
 private:
-    explicit check(Self* state) noexcept;
+    explicit check(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };

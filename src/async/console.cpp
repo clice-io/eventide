@@ -12,7 +12,7 @@ result<console> console::open(int fd, console::options opts, event_loop& loop) {
     }
     state->init_handle();
 
-    return console(state.release());
+    return console(std::move(state));
 }
 
 error console::set_mode(mode value) {
@@ -69,6 +69,7 @@ result<console::vterm_state> console::get_vterm_state() {
     return *out == UV_TTY_SUPPORTED ? vterm_state::supported : vterm_state::unsupported;
 }
 
-console::console(Self* state) noexcept : stream(state) {}
+console::console(std::unique_ptr<Self, void (*)(void*)> state) noexcept :
+    stream(std::move(state)) {}
 
 }  // namespace eventide

@@ -201,7 +201,7 @@ public:
     task<result<change>> wait();
 
 private:
-    explicit fs_event(Self* state) noexcept;
+    explicit fs_event(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };

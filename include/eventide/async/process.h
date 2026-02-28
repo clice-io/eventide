@@ -131,7 +131,7 @@ public:
     error kill(int signum);
 
 private:
-    explicit process(Self* state) noexcept;
+    explicit process(std::unique_ptr<Self, void (*)(void*)> state) noexcept;
 
     std::unique_ptr<Self, void (*)(void*)> self;
 };

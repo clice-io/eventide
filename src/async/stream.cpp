@@ -419,6 +419,6 @@ error stream::set_blocking(bool enabled) {
     return {};
 }
 
-stream::stream(Self* state) noexcept : self(state, Self::destroy) {}
+stream::stream(std::unique_ptr<Self, void (*)(void*)> state) noexcept : self(std::move(state)) {}
 
 }  // namespace eventide
