@@ -19,7 +19,7 @@ namespace eventide::jsonrpc {
 namespace {
 
 template <typename T>
-std::expected<T, std::string> parse_json_value(std::string_view json) {
+Result<T> parse_json_value(std::string_view json) {
     auto parsed = serde::json::simd::from_json<T>(json);
     if(!parsed) {
         return std::unexpected(std::string(simdjson::error_message(parsed.error())));
@@ -27,7 +27,7 @@ std::expected<T, std::string> parse_json_value(std::string_view json) {
     return std::move(*parsed);
 }
 
-std::expected<protocol::RequestID, std::string> parse_request_id(simdjson::ondemand::value& value) {
+Result<protocol::RequestID> parse_request_id(simdjson::ondemand::value& value) {
     std::int64_t integer_id = 0;
     auto integer_error = value.get_int64().get(integer_id);
     if(integer_error == simdjson::SUCCESS) {
@@ -93,7 +93,7 @@ struct outgoing_error_response_message {
 struct Peer::Self {
     struct PendingRequest {
         event ready;
-        std::optional<std::expected<std::string, std::string>> response;
+        std::optional<Result<std::string>> response;
     };
 
     std::unique_ptr<event_loop> owned_loop;
@@ -120,8 +120,8 @@ struct Peer::Self {
         }
     }
 
-    std::expected<std::string, std::string> build_success_response(const protocol::RequestID& id,
-                                                                   std::string_view result_json) {
+    Result<std::string> build_success_response(const protocol::RequestID& id,
+                                               std::string_view result_json) {
         auto result = parse_json_value<protocol::Value>(result_json);
         if(!result) {
             return std::unexpected(result.error());
@@ -133,9 +133,9 @@ struct Peer::Self {
         });
     }
 
-    std::expected<std::string, std::string> build_error_response(const protocol::RequestID& id,
-                                                                 protocol::integer code,
-                                                                 std::string message) {
+    Result<std::string> build_error_response(const protocol::RequestID& id,
+                                             protocol::integer code,
+                                             std::string message) {
         return detail::serialize_json(outgoing_error_response_message{
             .id = id,
             .error =
@@ -153,8 +153,7 @@ struct Peer::Self {
         }
     }
 
-    void complete_pending_request(const protocol::RequestID& id,
-                                  std::expected<std::string, std::string> response) {
+    void complete_pending_request(const protocol::RequestID& id, Result<std::string> response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
             return;
@@ -270,7 +269,7 @@ struct Peer::Self {
         complete_pending_request(id, std::string(*result_json));
     }
 
-    std::expected<void, std::string> dispatch_incoming_message(std::string_view payload) {
+    Result<void> dispatch_incoming_message(std::string_view payload) {
         simdjson::ondemand::parser parser;
         simdjson::padded_string json(payload);
 
@@ -421,7 +420,7 @@ Peer::Peer(event_loop& loop, std::unique_ptr<Transport> transport) :
 
 Peer::~Peer() = default;
 
-std::expected<void, std::string> Peer::close_output() {
+Result<void> Peer::close_output() {
     if(!self || !self->transport) {
         return std::unexpected("transport is null");
     }
@@ -437,8 +436,8 @@ void Peer::register_notification_callback(std::string_view method, NotificationC
     self->notification_callbacks.insert_or_assign(std::string(method), std::move(callback));
 }
 
-task<std::expected<std::string, std::string>> Peer::send_request_json(std::string_view method,
-                                                                      std::string params_json) {
+task<Result<std::string>> Peer::send_request_json(std::string_view method,
+                                                  std::string params_json) {
     if(!self || !self->transport) {
         co_return std::unexpected("transport is null");
     }
@@ -473,8 +472,7 @@ task<std::expected<std::string, std::string>> Peer::send_request_json(std::strin
     co_return std::move(*pending->response);
 }
 
-std::expected<void, std::string> Peer::send_notification_json(std::string_view method,
-                                                              std::string params_json) {
+Result<void> Peer::send_notification_json(std::string_view method, std::string params_json) {
     if(!self || !self->transport) {
         return std::unexpected("transport is null");
     }

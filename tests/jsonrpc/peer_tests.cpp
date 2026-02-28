@@ -152,7 +152,7 @@ private:
 };
 
 struct PendingAddResult {
-    std::expected<AddResult, std::string> value = std::unexpected("request not completed");
+    Result<AddResult> value = std::unexpected("request not completed");
 };
 
 namespace {

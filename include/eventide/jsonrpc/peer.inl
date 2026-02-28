@@ -82,7 +82,7 @@ constexpr std::string_view normalize_params_json(std::string_view params_json) {
 }
 
 template <typename T>
-std::expected<T, std::string> deserialize_json(std::string_view json) {
+Result<T> deserialize_json(std::string_view json) {
     auto parsed = serde::json::simd::from_json<T>(json);
     if(!parsed) {
         return std::unexpected(std::string(simdjson::error_message(parsed.error())));
@@ -91,7 +91,7 @@ std::expected<T, std::string> deserialize_json(std::string_view json) {
 }
 
 template <typename T>
-std::expected<std::string, std::string> serialize_json(const T& value) {
+Result<std::string> serialize_json(const T& value) {
     auto serialized = serde::json::simd::to_json(value);
     if(!serialized) {
         return std::unexpected(std::string(simdjson::error_message(serialized.error())));
@@ -125,9 +125,8 @@ RequestResult<Params> Peer::send_request(const Params& params) {
     co_return std::move(*parsed_result);
 }
 
-template <typename Result, typename Params>
-task<std::expected<Result, std::string>> Peer::send_request(std::string_view method,
-                                                            const Params& params) {
+template <typename ResultT, typename Params>
+task<Result<ResultT>> Peer::send_request(std::string_view method, const Params& params) {
     auto serialized_params = detail::serialize_json(params);
     if(!serialized_params) {
         co_return std::unexpected(serialized_params.error());
@@ -138,7 +137,7 @@ task<std::expected<Result, std::string>> Peer::send_request(std::string_view met
         co_return std::unexpected(raw_result.error());
     }
 
-    auto parsed_result = detail::deserialize_json<Result>(*raw_result);
+    auto parsed_result = detail::deserialize_json<ResultT>(*raw_result);
     if(!parsed_result) {
         co_return std::unexpected(parsed_result.error());
     }
@@ -147,7 +146,7 @@ task<std::expected<Result, std::string>> Peer::send_request(std::string_view met
 }
 
 template <typename Params>
-std::expected<void, std::string> Peer::send_notification(const Params& params) {
+Result<void> Peer::send_notification(const Params& params) {
     static_assert(detail::has_notification_traits_v<Params>,
                   "send_notification(params) requires NotificationTraits<Params>");
     using Traits = protocol::NotificationTraits<Params>;
@@ -160,8 +159,7 @@ std::expected<void, std::string> Peer::send_notification(const Params& params) {
 }
 
 template <typename Params>
-std::expected<void, std::string> Peer::send_notification(std::string_view method,
-                                                         const Params& params) {
+Result<void> Peer::send_notification(std::string_view method, const Params& params) {
     auto serialized_params = detail::serialize_json(params);
     if(!serialized_params) {
         return std::unexpected(serialized_params.error());
@@ -219,7 +217,7 @@ void Peer::bind_request_callback(std::string_view method, Callback&& callback) {
                     method_name = std::string(method),
                     peer = this](const protocol::RequestID& request_id,
                                  std::string_view params_json)
-        -> task<std::expected<std::string, std::string>> {
+        -> task<Result<std::string>> {
         auto parsed_params = detail::deserialize_json<Params>(
             detail::normalize_params_json<Params>(params_json));
         if(!parsed_params) {

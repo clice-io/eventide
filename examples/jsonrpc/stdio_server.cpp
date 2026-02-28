@@ -8,10 +8,7 @@
 namespace et = eventide;
 namespace jsonrpc = et::jsonrpc;
 
-namespace example {
-
-constexpr std::string_view add_method = "example/add";
-constexpr std::string_view log_method = "example/log";
+namespace {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -26,24 +23,24 @@ struct LogParams {
     std::string text;
 };
 
-}  // namespace example
+}  // namespace
 
 int main() {
     jsonrpc::Peer peer;
 
-    peer.on_request(example::add_method,
-                    [](jsonrpc::RequestContext&, const example::AddParams& params)
-                        -> jsonrpc::RequestResult<example::AddParams, example::AddResult> {
-                        co_return example::AddResult{.sum = params.a + params.b};
+    peer.on_request("example/add",
+                    [](jsonrpc::RequestContext&,
+                       const AddParams& params) -> jsonrpc::RequestResult<AddParams, AddResult> {
+                        co_return AddResult{.sum = params.a + params.b};
                     });
 
-    peer.on_notification(example::log_method, [](const example::LogParams& params) {
+    peer.on_notification("example/log", [](const LogParams& params) {
         std::println(stderr, "[example/log] {}", params.text);
     });
 
     std::println(stderr, "JSON-RPC stdio example is ready.");
-    std::println(stderr, "Request method: {}", example::add_method);
-    std::println(stderr, "Notification method: {}", example::log_method);
+    std::println(stderr, "Request method: {}", "example/add");
+    std::println(stderr, "Notification method: {}", "example/log");
 
     return peer.start();
 }

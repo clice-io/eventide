@@ -14,11 +14,7 @@
 namespace et = eventide;
 namespace jsonrpc = et::jsonrpc;
 
-namespace example {
-
-constexpr std::string_view add_method = "example/add";
-constexpr std::string_view note_method = "example/note";
-constexpr std::string_view client_add_method = "client/add";
+namespace {
 
 struct AddParams {
     std::int64_t a = 0;
@@ -93,14 +89,14 @@ private:
     bool closed = false;
 };
 
-}  // namespace example
+}  // namespace
 
 int main() {
-    auto transport = std::make_unique<example::ScriptedTransport>(
+    auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"example/add","params":{"a":2,"b":3}})",
         },
-        [](std::string_view payload, example::ScriptedTransport& channel) {
+        [](std::string_view payload, ScriptedTransport& channel) {
             if(payload.find("\"method\":\"client/add\"") != std::string_view::npos) {
                 channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":{"sum":4}})");
                 return;
@@ -115,25 +111,25 @@ int main() {
 
     jsonrpc::Peer peer(std::move(transport));
 
-    peer.on_request(example::add_method,
-                    [](jsonrpc::RequestContext& context, const example::AddParams& params)
-                        -> jsonrpc::RequestResult<example::AddParams, example::AddResult> {
-                        auto notify_status = context->send_notification(
-                            example::note_method,
-                            example::NoteParams{.text = "handling request"});
-                        if(!notify_status) {
-                            co_return std::unexpected(notify_status.error());
-                        }
+    peer.on_request(
+        "example/add",
+        [](jsonrpc::RequestContext& context,
+           const AddParams& params) -> jsonrpc::RequestResult<AddParams, AddResult> {
+            auto notify_status =
+                context->send_notification("example/note", NoteParams{.text = "handling request"});
+            if(!notify_status) {
+                co_return std::unexpected(notify_status.error());
+            }
 
-                        auto remote_sum = co_await context->send_request<example::AddResult>(
-                            example::client_add_method,
-                            example::ClientAddParams{.a = params.b, .b = 1});
-                        if(!remote_sum) {
-                            co_return std::unexpected(remote_sum.error());
-                        }
+            auto remote_sum =
+                co_await context->send_request<AddResult>("client/add",
+                                                          ClientAddParams{.a = params.b, .b = 1});
+            if(!remote_sum) {
+                co_return std::unexpected(remote_sum.error());
+            }
 
-                        co_return example::AddResult{.sum = params.a + params.b + remote_sum->sum};
-                    });
+            co_return AddResult{.sum = params.a + params.b + remote_sum->sum};
+        });
 
     auto status = peer.start();
     if(status != 0) {

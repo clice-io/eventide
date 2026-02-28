@@ -11,10 +11,7 @@
 namespace et = eventide;
 namespace jsonrpc = et::jsonrpc;
 
-namespace example {
-
-constexpr std::string_view build_method = "worker/build";
-constexpr std::string_view worker_log_method = "worker/log";
+namespace {
 
 struct BuildParams {
     std::string source;
@@ -31,14 +28,10 @@ struct WorkerLog {
     std::string text;
 };
 
-}  // namespace example
-
-namespace example {
-
-jsonrpc::RequestResult<BuildParams, BuildResult>
-    handle_build_request(jsonrpc::RequestContext& context, const BuildParams& params) {
+et::task<jsonrpc::Result<BuildResult>> handle_build_request(jsonrpc::RequestContext& context,
+                                                            const BuildParams& params) {
     auto log_status = context->send_notification(
-        worker_log_method,
+        "worker/log",
         WorkerLog{.text = "preparing compile command for " + params.source});
     if(!log_status) {
         co_return std::unexpected(log_status.error());
@@ -52,7 +45,7 @@ jsonrpc::RequestResult<BuildParams, BuildResult>
 
 et::task<void> run_parent_session(jsonrpc::Peer& peer, et::process child, int& exit_code) {
     auto build_result =
-        co_await peer.send_request<BuildResult>(build_method,
+        co_await peer.send_request<BuildResult>("worker/build",
                                                 BuildParams{
                                                     .source = "src/main.cpp",
                                                     .header = "vector",
@@ -100,7 +93,7 @@ et::task<void> run_parent_session(jsonrpc::Peer& peer, et::process child, int& e
 int run_worker() {
     jsonrpc::Peer peer;
 
-    peer.on_request(build_method, handle_build_request);
+    peer.on_request("worker/build", handle_build_request);
 
     return peer.start();
 }
@@ -111,9 +104,11 @@ int run_parent(std::string self_path) {
     et::process::options opts;
     opts.file = self_path;
     opts.args = {self_path, "--worker"};
-    opts.streams = {et::process::stdio::pipe(true, false),
-                    et::process::stdio::pipe(false, true),
-                    et::process::stdio::inherit()};
+    opts.streams = {
+        et::process::stdio::pipe(true, false),
+        et::process::stdio::pipe(false, true),
+        et::process::stdio::inherit(),
+    };
 
     auto spawned = et::process::spawn(opts, loop);
     if(!spawned) {
@@ -125,7 +120,7 @@ int run_parent(std::string self_path) {
                                                                 std::move(spawned->stdin_pipe));
     jsonrpc::Peer peer(loop, std::move(transport));
 
-    peer.on_notification(worker_log_method, [](const WorkerLog& params) {
+    peer.on_notification("worker/log", [](const WorkerLog& params) {
         std::println(stderr, "[worker/log] {}", params.text);
     });
 
@@ -141,13 +136,13 @@ int run_parent(std::string self_path) {
     return exit_code;
 }
 
-}  // namespace example
+}  // namespace
 
 int main(int argc, char** argv) {
     if(argc > 1 && std::string_view(argv[1]) == "--worker") {
-        return example::run_worker();
+        return run_worker();
     }
 
     auto self_path = std::filesystem::absolute(argv[0]).string();
-    return example::run_parent(std::move(self_path));
+    return run_parent(std::move(self_path));
 }
