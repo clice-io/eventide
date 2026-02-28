@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#include "libuv.h"
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/task.h"
@@ -11,7 +11,7 @@ namespace eventide {
 
 namespace {
 
-struct work_op : system_op {
+struct work_op : uv::await_op<work_op> {
     using promise_t = task<error>::promise_type;
 
     // libuv request object; req.data points back to this awaiter.
@@ -21,13 +21,11 @@ struct work_op : system_op {
     // Completion status consumed by await_resume().
     error result;
 
-    work_op() : system_op(async_node::NodeKind::SystemIO) {
-        action = &on_cancel;
-    }
+    work_op() = default;
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<work_op*>(op);
-        detail::cancel_uv_request(&self->req);
+        uv::cancel_uv_request(&self->req);
     }
 
     bool await_ready() const noexcept {
@@ -37,7 +35,7 @@ struct work_op : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
@@ -63,8 +61,8 @@ task<error> queue(work_fn fn, event_loop& loop) {
         auto* holder = static_cast<work_op*>(req->data);
         assert(holder != nullptr && "after_cb requires operation in req->data");
 
-        detail::mark_cancelled_if(holder, status);
-        holder->result = detail::status_to_error(status);
+        holder->mark_cancelled_if(status);
+        holder->result = uv::status_to_error(status);
         holder->complete();
     };
 

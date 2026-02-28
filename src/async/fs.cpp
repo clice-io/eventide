@@ -3,7 +3,7 @@
 #include <cassert>
 #include <functional>
 
-#include "libuv.h"
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 
@@ -11,7 +11,7 @@ namespace eventide {
 
 struct fs_event::Self :
     uv_handle<fs_event::Self, uv_fs_event_t>,
-    detail::latest_value_delivery<fs_event::change> {
+    uv::latest_value_delivery<fs_event::change> {
     uv_fs_event_t handle{};
 };
 
@@ -64,7 +64,8 @@ static fs_event::change_flags to_fs_change_flags(int events) {
     return out;
 }
 
-struct fs_event_await : system_op {
+struct fs_event_await : uv::await_op<fs_event_await> {
+    using await_base = uv::await_op<fs_event_await>;
     using promise_t = task<result<fs_event::change>>::promise_type;
 
     // Watched fs_event self used to register and clear waiter pointers.
@@ -72,12 +73,10 @@ struct fs_event_await : system_op {
     // Result slot written by on_change() and returned from await_resume().
     result<fs_event::change> outcome = std::unexpected(error());
 
-    explicit fs_event_await(fs_event::Self* watcher) : self(watcher) {
-        action = &on_cancel;
-    }
+    explicit fs_event_await(fs_event::Self* watcher) : self(watcher) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<fs_event_await>(op, [](auto& aw) {
+        await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 aw.self->disarm();
             }
@@ -88,7 +87,7 @@ struct fs_event_await : system_op {
         auto* watcher = static_cast<fs_event::Self*>(handle->data);
         assert(watcher != nullptr && "on_change requires watcher state in handle->data");
 
-        auto err = detail::status_to_error(status);
+        auto err = uv::status_to_error(status);
         if(err) {
             watcher->deliver(err);
             return;
@@ -114,7 +113,7 @@ struct fs_event_await : system_op {
             return waiting;
         }
         self->arm(*this, outcome);
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<fs_event::change> await_resume() noexcept {
@@ -200,7 +199,7 @@ task<result<fs_event::change>> fs_event::wait() {
 namespace {
 
 template <typename Result>
-struct fs_op : system_op {
+struct fs_op : uv::await_op<fs_op<Result>> {
     using promise_t = task<result<Result>>::promise_type;
 
     // Underlying libuv fs request; req.data points back to this awaiter.
@@ -210,13 +209,11 @@ struct fs_op : system_op {
     // Final result observed by await_resume().
     result<Result> out = std::unexpected(error());
 
-    fs_op() : system_op(async_node::NodeKind::SystemIO) {
-        action = &on_cancel;
-    }
+    fs_op() = default;
 
     static void on_cancel(system_op* op) {
         auto* self = static_cast<fs_op*>(op);
-        detail::cancel_uv_request(&self->req);
+        uv::cancel_uv_request(&self->req);
     }
 
     bool await_ready() const noexcept {
@@ -226,7 +223,7 @@ struct fs_op : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<Result> await_resume() noexcept {
@@ -290,10 +287,10 @@ static task<result<Result>> run_fs(Submit submit,
         auto* h = static_cast<fs_op<Result>*>(req->data);
         assert(h != nullptr && "fs after_cb requires operation in req->data");
 
-        detail::mark_cancelled_if(h, req->result);
+        h->mark_cancelled_if(req->result);
 
         if(req->result < 0) {
-            h->out = std::unexpected(detail::status_to_error(req->result));
+            h->out = std::unexpected(uv::status_to_error(req->result));
         } else {
             h->out = h->populate(*req);
         }

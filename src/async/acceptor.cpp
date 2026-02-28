@@ -3,7 +3,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "stream_internal.h"
+#include "awaiter.h"
 #include "eventide/async/loop.h"
 
 namespace eventide {
@@ -55,7 +55,8 @@ result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::options& opts) {
 }
 
 template <typename Stream>
-struct accept_await : system_op {
+struct accept_await : uv::await_op<accept_await<Stream>> {
+    using await_base = uv::await_op<accept_await<Stream>>;
     using promise_t = task<result<Stream>>::promise_type;
     using self_t = typename acceptor<Stream>::Self;
 
@@ -64,12 +65,10 @@ struct accept_await : system_op {
     // Result slot populated by connection callbacks.
     result<Stream> outcome = std::unexpected(error());
 
-    explicit accept_await(self_t* acceptor) : self(acceptor) {
-        action = &on_cancel;
-    }
+    explicit accept_await(self_t* acceptor) : self(acceptor) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<accept_await<Stream>>(op, [](auto& aw) {
+        await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 aw.self->disarm();
             }
@@ -87,7 +86,7 @@ struct accept_await : system_op {
             return waiting;
         }
         self->arm(*this, outcome);
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<Stream> await_resume() noexcept {
@@ -106,7 +105,7 @@ void on_connection(uv_stream_t* server, int status) {
     auto* listener = static_cast<self_t*>(server->data);
     assert(listener != nullptr && "on_connection requires listener state in server->data");
 
-    auto err = detail::status_to_error(status);
+    auto err = uv::status_to_error(status);
     if(err) {
         listener->deliver(err);
         return;
@@ -133,7 +132,8 @@ void on_connection(uv_stream_t* server, int status) {
 }
 
 template <typename Stream>
-struct connect_await : system_op {
+struct connect_await : uv::await_op<connect_await<Stream>> {
+    using await_base = uv::await_op<connect_await<Stream>>;
     using promise_t = task<result<Stream>>::promise_type;
     using self_ptr = stream::Self::pointer;
 
@@ -154,8 +154,6 @@ struct connect_await : system_op {
 
     connect_await(self_ptr self, std::string_view name, pipe::options opts) :
         self(std::move(self)), name(name) {
-        action = &on_cancel;
-
         if constexpr(std::is_same_v<Stream, pipe>) {
             if(this->name.empty()) {
                 ready = false;
@@ -176,10 +174,8 @@ struct connect_await : system_op {
     }
 
     connect_await(self_ptr self, std::string_view host, int port) : self(std::move(self)) {
-        action = &on_cancel;
-
         if constexpr(std::is_same_v<Stream, tcp_socket>) {
-            auto resolved = detail::resolve_addr(host, port);
+            auto resolved = uv::resolve_addr(host, port);
             if(!resolved) {
                 ready = false;
                 outcome = std::unexpected(resolved.error());
@@ -203,9 +199,9 @@ struct connect_await : system_op {
         auto* aw = static_cast<connect_await*>(req->data);
         assert(aw != nullptr && "on_connect requires awaiter in req->data");
 
-        detail::mark_cancelled_if(aw, status);
+        aw->mark_cancelled_if(status);
 
-        auto err = detail::status_to_error(status);
+        auto err = uv::status_to_error(status);
         if(err) {
             aw->outcome = std::unexpected(err);
         } else if(aw->self) {
@@ -253,7 +249,7 @@ struct connect_await : system_op {
             return waiting;
         }
 
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<Stream> await_resume() noexcept {
@@ -414,7 +410,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
     auto& acc = *self;
     auto& handle = acc.tcp;
 
-    auto resolved = detail::resolve_addr(host, port);
+    auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         return std::unexpected(resolved.error());
     }

@@ -6,7 +6,7 @@
 #include <optional>
 #include <utility>
 
-#include "libuv.h"
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 
@@ -16,11 +16,11 @@ static result<udp::endpoint> endpoint_from_sockaddr(const sockaddr* addr);
 
 struct udp::Self : uv_handle<udp::Self, uv_udp_t> {
     uv_udp_t handle{};
-    detail::queued_delivery<result<udp::recv_result>> recv;
+    uv::queued_delivery<result<udp::recv_result>> recv;
     std::vector<char> buffer;
     bool receiving = false;
 
-    detail::stored_delivery<error> send;
+    uv::stored_delivery<error> send;
     bool send_inflight = false;
 };
 
@@ -104,7 +104,8 @@ static udp::recv_flags to_udp_recv_flags(unsigned flags) {
     return out;
 }
 
-struct udp_recv_await : system_op {
+struct udp_recv_await : uv::await_op<udp_recv_await> {
+    using await_base = uv::await_op<udp_recv_await>;
     using promise_t = task<result<udp::recv_result>>::promise_type;
 
     // UDP socket self used to register waiter and manage recv lifecycle.
@@ -112,12 +113,10 @@ struct udp_recv_await : system_op {
     // Result slot written by on_read() and returned from await_resume().
     result<udp::recv_result> outcome = std::unexpected(error());
 
-    explicit udp_recv_await(udp::Self* socket) : self(socket) {
-        action = &on_cancel;
-    }
+    explicit udp_recv_await(udp::Self* socket) : self(socket) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<udp_recv_await>(op, [](auto& aw) {
+        await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self && aw.self->receiving) {
                 uv::udp_recv_stop(aw.self->handle);
                 aw.self->receiving = false;
@@ -144,9 +143,9 @@ struct udp_recv_await : system_op {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_read requires udp state in handle->data");
 
-        auto err = detail::status_to_error(nread);
+        auto err = uv::status_to_error(nread);
         if(err) {
-            detail::mark_cancelled_if(u->recv.waiter, nread);
+            u->recv.mark_cancelled_if(nread);
             u->recv.deliver(err);
             return;
         }
@@ -190,7 +189,7 @@ struct udp_recv_await : system_op {
             }
         }
 
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     result<udp::recv_result> await_resume() noexcept {
@@ -201,7 +200,7 @@ struct udp_recv_await : system_op {
     }
 };
 
-struct udp_send_await : system_op {
+struct udp_send_await : uv::await_op<udp_send_await> {
     using promise_t = task<error>::promise_type;
 
     // UDP socket self that owns send waiter and inflight flags.
@@ -216,9 +215,7 @@ struct udp_send_await : system_op {
     error result;
 
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
-        self(u), storage(data.begin(), data.end()), dest(std::move(d)) {
-        action = &on_cancel;
-    }
+        self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
 
     static void on_cancel(system_op* op) {
         auto* aw = static_cast<udp_send_await*>(op);
@@ -237,9 +234,9 @@ struct udp_send_await : system_op {
 
         u->send_inflight = false;
 
-        detail::mark_cancelled_if(u->send.waiter, status);
+        u->send.mark_cancelled_if(status);
 
-        auto ec = detail::status_to_error(status);
+        auto ec = uv::status_to_error(status);
 
         u->send.deliver(std::move(ec));
     }
@@ -282,7 +279,7 @@ struct udp_send_await : system_op {
         }
 
         self->send_inflight = true;
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
@@ -384,7 +381,7 @@ error udp::bind(std::string_view host, int port, bind_options options) {
         return uv_flags.error();
     }
 
-    auto resolved = detail::resolve_addr(host, port);
+    auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         return resolved.error();
     }
@@ -402,7 +399,7 @@ error udp::connect(std::string_view host, int port) {
         return error::invalid_argument;
     }
 
-    auto resolved = detail::resolve_addr(host, port);
+    auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         return resolved.error();
     }
@@ -432,7 +429,7 @@ task<error> udp::send(std::span<const char> data, std::string_view host, int por
         co_return error::invalid_argument;
     }
 
-    auto resolved = detail::resolve_addr(host, port);
+    auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         co_return resolved.error();
     }
@@ -455,7 +452,7 @@ error udp::try_send(std::span<const char> data, std::string_view host, int port)
         return error::invalid_argument;
     }
 
-    auto resolved = detail::resolve_addr(host, port);
+    auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
         return resolved.error();
     }

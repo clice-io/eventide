@@ -4,25 +4,24 @@
 #include <utility>
 #include <vector>
 
-#include "stream_internal.h"
+#include "awaiter.h"
 
 namespace eventide {
 
 namespace {
 
-struct stream_read_await : system_op {
+struct stream_read_await : uv::await_op<stream_read_await> {
+    using await_base = uv::await_op<stream_read_await>;
     // Stream self used to register reader waiter and store error status.
     stream::Self* self;
 
-    explicit stream_read_await(stream::Self* self) : self(self) {
-        action = &on_cancel;
-    }
+    explicit stream_read_await(stream::Self* self) : self(self) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<stream_read_await>(op, [](auto& aw) {
+        await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 uv::read_stop(aw.self->stream);
-                detail::clear_waiter(aw.self, &stream::Self::reader);
+                aw.self->reader.disarm();
             }
         });
     }
@@ -44,13 +43,14 @@ struct stream_read_await : system_op {
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<eventide::stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
-        if(nread < 0) {
+        auto err = uv::status_to_error(nread);
+        if(err) {
             uv::read_stop(*stream);
-            if(s->reader) {
-                auto reader = s->reader;
-                s->reader = nullptr;
-                detail::mark_cancelled_if(reader, nread);
-                s->error_code = detail::status_to_error(nread);
+            if(s->reader.has_waiter()) {
+                auto* reader = s->reader.waiter;
+                s->reader.mark_cancelled_if(nread);
+                s->reader.disarm();
+                s->error_code = err;
                 reader->complete();
             }
             return;
@@ -58,9 +58,9 @@ struct stream_read_await : system_op {
 
         s->buffer.advance_write(static_cast<size_t>(nread));
 
-        if(s->reader) {
-            auto reader = s->reader;
-            s->reader = nullptr;
+        if(s->reader.has_waiter()) {
+            auto* reader = s->reader.waiter;
+            s->reader.disarm();
             s->error_code = {};
             reader->complete();
         }
@@ -82,8 +82,8 @@ struct stream_read_await : system_op {
             self->error_code = err;
             return waiting;
         }
-        self->reader = this;
-        return link_continuation(&waiting.promise(), location);
+        self->reader.arm(*this);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
@@ -91,7 +91,8 @@ struct stream_read_await : system_op {
     }
 };
 
-struct stream_read_some_await : system_op {
+struct stream_read_some_await : uv::await_op<stream_read_some_await> {
+    using await_base = uv::await_op<stream_read_some_await>;
     using promise_t = task<std::size_t>::promise_type;
 
     // Stream self that owns the active read waiter.
@@ -101,15 +102,13 @@ struct stream_read_some_await : system_op {
     // Number of bytes read by the completion callback.
     std::size_t bytes = 0;
 
-    stream_read_some_await(stream::Self* self, std::span<char> buffer) : self(self), dst(buffer) {
-        action = &on_cancel;
-    }
+    stream_read_some_await(stream::Self* self, std::span<char> buffer) : self(self), dst(buffer) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<stream_read_some_await>(op, [](auto& aw) {
+        await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 uv::read_stop(aw.self->stream);
-                detail::clear_waiter(aw.self, &stream::Self::reader);
+                aw.self->reader.disarm();
             }
         });
     }
@@ -118,7 +117,7 @@ struct stream_read_some_await : system_op {
         auto s = static_cast<eventide::stream::Self*>(handle->data);
         assert(s != nullptr && "on_alloc requires stream state in handle->data");
 
-        auto* aw = static_cast<stream_read_some_await*>(s->reader);
+        auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
         assert(aw != nullptr && "on_alloc requires active read_some awaiter");
         if(aw->dst.empty()) {
             buf->base = nullptr;
@@ -135,12 +134,13 @@ struct stream_read_some_await : system_op {
         auto s = static_cast<eventide::stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
 
-        auto* aw = static_cast<stream_read_some_await*>(s->reader);
+        auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
         assert(aw != nullptr && "on_read requires active read_some awaiter");
 
-        if(nread < 0) {
+        auto err = uv::status_to_error(nread);
+        if(err) {
             aw->bytes = 0;
-            detail::mark_cancelled_if(aw, nread);
+            aw->mark_cancelled_if(nread);
         } else if(nread > 0) {
             aw->bytes = static_cast<std::size_t>(nread);
         } else {
@@ -150,7 +150,7 @@ struct stream_read_some_await : system_op {
         }
 
         uv::read_stop(*stream);
-        s->reader = nullptr;
+        s->reader.disarm();
         aw->complete();
     }
 
@@ -166,24 +166,24 @@ struct stream_read_some_await : system_op {
             return waiting;
         }
 
-        self->reader = this;
+        self->reader.arm(*this);
         if(auto err = uv::read_start(self->stream, on_alloc, on_read)) {
-            self->reader = nullptr;
+            self->reader.disarm();
             return waiting;
         }
 
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     std::size_t await_resume() noexcept {
         if(self) {
-            self->reader = nullptr;
+            self->reader.disarm();
         }
         return bytes;
     }
 };
 
-struct stream_write_await : system_op {
+struct stream_write_await : uv::await_op<stream_write_await> {
     using promise_t = task<error>::promise_type;
 
     // Stream self that owns the active write waiter.
@@ -196,9 +196,7 @@ struct stream_write_await : system_op {
     error error_code;
 
     stream_write_await(stream::Self* self, std::span<const char> data) :
-        self(self), storage(data.begin(), data.end()) {
-        action = &on_cancel;
-    }
+        self(self), storage(data.begin(), data.end()) {}
 
     static void on_cancel(system_op* op) {
         auto* aw = static_cast<stream_write_await*>(op);
@@ -214,16 +212,16 @@ struct stream_write_await : system_op {
         assert(aw != nullptr && "on_write requires awaiter in req->data");
         assert(aw->self != nullptr && "on_write requires stream state");
 
-        detail::mark_cancelled_if(aw, status);
+        aw->mark_cancelled_if(status);
 
-        auto err = detail::status_to_error(status);
+        auto err = uv::status_to_error(status);
         if(err) {
             aw->error_code = err;
         }
 
-        if(aw->self->writer) {
-            auto w = aw->self->writer;
-            aw->self->writer = nullptr;
+        if(aw->self->writer.has_waiter()) {
+            auto* w = aw->self->writer.waiter;
+            aw->self->writer.disarm();
             w->complete();
         }
     }
@@ -239,23 +237,23 @@ struct stream_write_await : system_op {
             return waiting;
         }
 
-        self->writer = this;
+        self->writer.arm(*this);
         req.data = this;
 
         uv_buf_t buf = uv::buf_init(storage.empty() ? nullptr : storage.data(),
                                     static_cast<unsigned>(storage.size()));
         if(auto err = uv::write(req, self->stream, std::span<const uv_buf_t>{&buf, 1}, on_write)) {
             error_code = err;
-            self->writer = nullptr;
+            self->writer.disarm();
             return waiting;
         }
 
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
         if(self) {
-            self->writer = nullptr;
+            self->writer.disarm();
         }
         return this->error_code;
     }
@@ -284,7 +282,14 @@ const void* stream::handle() const noexcept {
 }
 
 handle_type guess_handle(int fd) {
-    return stream_detail::to_handle_type(uv::guess_handle(fd));
+    switch(uv::guess_handle(fd)) {
+        case UV_FILE: return handle_type::file;
+        case UV_TTY: return handle_type::tty;
+        case UV_NAMED_PIPE: return handle_type::pipe;
+        case UV_TCP: return handle_type::tcp;
+        case UV_UDP: return handle_type::udp;
+        default: return handle_type::unknown;
+    }
 }
 
 task<result<std::string>> stream::read() {
@@ -349,7 +354,7 @@ task<error> stream::write(std::span<const char> data) {
         co_return error::invalid_argument;
     }
 
-    if(self->writer != nullptr) {
+    if(self->writer.has_waiter()) {
         assert(false && "stream::write supports a single writer at a time");
         co_return error::invalid_argument;
     }

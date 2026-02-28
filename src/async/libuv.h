@@ -13,7 +13,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "awaiter.h"
 #include "uv.h"
 #include "eventide/async/error.h"
 #include "eventide/async/frame.h"
@@ -105,8 +104,12 @@ struct tty_winsize {
     int height = 0;
 };
 
-ALWAYS_INLINE error status_to_error(int rc) noexcept {
-    return rc == 0 ? error{} : error(rc);
+template <typename StatusT>
+ALWAYS_INLINE error status_to_error(StatusT status) noexcept {
+    if(static_cast<long long>(status) < 0) {
+        return error(static_cast<int>(status));
+    }
+    return {};
 }
 
 template <handle_like H>
@@ -813,7 +816,7 @@ public:
     }
 };
 
-namespace detail {
+namespace uv {
 
 struct resolved_addr {
     sockaddr_storage storage{};
@@ -841,29 +844,6 @@ inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
     return std::unexpected(error::invalid_argument);
 }
 
-template <typename StatusT>
-inline bool is_cancelled_status(StatusT status) noexcept {
-    return static_cast<long long>(status) == static_cast<long long>(UV_ECANCELED);
-}
-
-template <typename StatusT>
-inline bool mark_cancelled_if(system_op* op, StatusT status) noexcept {
-    if(op == nullptr || !is_cancelled_status(status)) {
-        return false;
-    }
-
-    op->state = async_node::Cancelled;
-    return true;
-}
-
-template <typename StatusT>
-inline error status_to_error(StatusT status) noexcept {
-    if(static_cast<long long>(status) < 0) {
-        return error(static_cast<int>(status));
-    }
-    return {};
-}
-
 template <typename ReqT>
 inline void cancel_uv_request(ReqT* req) noexcept {
     if(req == nullptr) {
@@ -872,6 +852,6 @@ inline void cancel_uv_request(ReqT* req) noexcept {
     uv::cancel(*reinterpret_cast<uv_req_t*>(req));
 }
 
-}  // namespace detail
+}  // namespace uv
 
 }  // namespace eventide

@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#include "libuv.h"
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 
@@ -33,13 +33,14 @@ static unsigned int to_uv_process_flags(const process::creation_options& options
 
 struct process::Self :
     uv_handle<process::Self, uv_process_t>,
-    detail::latched_delivery<process::exit_status> {
+    uv::latched_delivery<process::exit_status> {
     uv_process_t handle{};
 };
 
 namespace {
 
-struct process_await : system_op {
+struct process_await : uv::await_op<process_await> {
+    using await_base = uv::await_op<process_await>;
     using promise_t = task<process::wait_result>::promise_type;
 
     // Process self used to install/remove waiter and active result pointers.
@@ -47,12 +48,10 @@ struct process_await : system_op {
     // Exit status slot filled by process exit callback.
     process::exit_status result{};
 
-    explicit process_await(process::Self* self) : self(self) {
-        action = &on_cancel;
-    }
+    explicit process_await(process::Self* self) : self(self) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<process_await>(op, [](auto& aw) {
+        await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 aw.self->disarm();
             }
@@ -74,7 +73,7 @@ struct process_await : system_op {
             return waiting;
         }
         self->arm(*this, result);
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     process::wait_result await_resume() noexcept {

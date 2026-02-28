@@ -1,6 +1,6 @@
 #include <memory>
 
-#include "stream_internal.h"
+#include "awaiter.h"
 #include "eventide/async/loop.h"
 
 namespace eventide {

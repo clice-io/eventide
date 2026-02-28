@@ -4,7 +4,7 @@
 #include <chrono>
 #include <memory>
 
-#include "libuv.h"
+#include "awaiter.h"
 #include "eventide/async/error.h"
 #include "eventide/async/loop.h"
 
@@ -44,19 +44,20 @@ struct signal::Self : uv_handle<signal::Self, uv_signal_t> {
 namespace {
 
 template <typename SelfT, typename HandleT>
-struct basic_tick_await : system_op {
+struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
+    using await_base = uv::await_op<basic_tick_await<SelfT, HandleT>>;
     using promise_t = task<>::promise_type;
 
     // Watcher self that owns waiter/pending counters.
     SelfT* self;
 
-    explicit basic_tick_await(SelfT* watcher) : self(watcher) {
-        action = &on_cancel;
-    }
+    explicit basic_tick_await(SelfT* watcher) : self(watcher) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<basic_tick_await>(op, [](auto& aw) {
-            detail::clear_waiter(aw.self, &SelfT::waiter);
+        await_base::complete_cancel(op, [](auto& aw) {
+            if(aw.self) {
+                aw.self->waiter = nullptr;
+            }
         });
     }
 
@@ -84,7 +85,7 @@ struct basic_tick_await : system_op {
             return waiting;
         }
         self->waiter = this;
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     void await_resume() noexcept {
@@ -103,7 +104,8 @@ using idle_await = basic_tick_await<idle::Self, uv_idle_t>;
 using prepare_await = basic_tick_await<prepare::Self, uv_prepare_t>;
 using check_await = basic_tick_await<check::Self, uv_check_t>;
 
-struct signal_await : system_op {
+struct signal_await : uv::await_op<signal_await> {
+    using await_base = uv::await_op<signal_await>;
     using promise_t = task<error>::promise_type;
 
     // Signal watcher self that owns waiter/active pointers.
@@ -111,13 +113,14 @@ struct signal_await : system_op {
     // Result slot returned by await_resume().
     error result{};
 
-    explicit signal_await(signal::Self* watcher) : self(watcher) {
-        action = &on_cancel;
-    }
+    explicit signal_await(signal::Self* watcher) : self(watcher) {}
 
     static void on_cancel(system_op* op) {
-        detail::cancel_and_complete<signal_await>(op, [](auto& aw) {
-            detail::clear_waiter_active(aw.self, &signal::Self::waiter, &signal::Self::active);
+        await_base::complete_cancel(op, [](auto& aw) {
+            if(aw.self) {
+                aw.self->waiter = nullptr;
+                aw.self->active = nullptr;
+            }
         });
     }
 
@@ -150,7 +153,7 @@ struct signal_await : system_op {
         }
         self->waiter = this;
         self->active = &result;
-        return link_continuation(&waiting.promise(), location);
+        return this->link_continuation(&waiting.promise(), location);
     }
 
     error await_resume() noexcept {
