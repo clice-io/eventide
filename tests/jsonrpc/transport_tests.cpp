@@ -3,10 +3,10 @@
 #include <string>
 #include <utility>
 
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
 #include "eventide/jsonrpc/transport.h"
 #include "eventide/zest/zest.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/stream.h"
 
 #ifdef _WIN32
 #include <BaseTsd.h>
@@ -80,7 +80,8 @@ TEST_CASE(stream_transport_reads_back_to_back_messages) {
 
     StreamTransport transport(stream(std::move(*input)));
 
-    const std::string first_payload = R"({"jsonrpc":"2.0","method":"example/note","params":{"text":"first"}})";
+    const std::string first_payload =
+        R"({"jsonrpc":"2.0","method":"example/note","params":{"text":"first"}})";
     const std::string second_payload = R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})";
     const auto payload = frame(first_payload) + frame(second_payload);
 

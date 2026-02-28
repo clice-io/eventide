@@ -1,5 +1,5 @@
-#include <cstdint>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
 #include "eventide/jsonrpc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
+#include "eventide/async/loop.h"
+#include "eventide/async/stream.h"
 #include "eventide/async/sync.h"
 #include "eventide/async/watcher.h"
 #include "eventide/serde/simdjson/deserializer.h"
@@ -194,7 +194,8 @@ std::string frame(std::string_view payload) {
 }
 
 task<> complete_request(Peer& peer, PendingAddResult& out) {
-    out.value = co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 2, .b = 3});
+    out.value =
+        co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 2, .b = 3});
     if(!peer.close_output() && out.value.has_value()) {
         out.value = std::unexpected("failed to close peer output");
     }
@@ -320,7 +321,8 @@ TEST_CASE(stream_transport_notification_then_response) {
     Peer peer(loop, std::move(transport));
 
     std::vector<std::string> seen_notes;
-    peer.on_notification("test/note", [&](const NoteParams& params) { seen_notes.push_back(params.text); });
+    peer.on_notification("test/note",
+                         [&](const NoteParams& params) { seen_notes.push_back(params.text); });
 
     PendingAddResult request_result;
     auto request = complete_request(peer, request_result);
