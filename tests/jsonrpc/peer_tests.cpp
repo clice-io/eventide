@@ -50,23 +50,39 @@ struct CustomNoteParams {
     std::string text;
 };
 
-struct RpcResponse {
+struct RPCResponse {
     std::string jsonrpc;
     protocol::RequestID id;
     std::optional<AddResult> result = {};
 };
 
-struct RpcRequest {
+struct RPCErrorResponse {
+    std::string jsonrpc;
+    protocol::ResponseID id;
+    protocol::ResponseError error;
+};
+
+struct RPCRequest {
     std::string jsonrpc;
     protocol::RequestID id;
     std::string method;
     AddParams params;
 };
 
-struct RpcNotification {
+struct RPCNotification {
     std::string jsonrpc;
     std::string method;
     NoteParams params;
+};
+
+struct CancelParams {
+    protocol::RequestID id;
+};
+
+struct RPCCancelNotification {
+    std::string jsonrpc;
+    std::string method;
+    CancelParams params;
 };
 
 class FakeTransport final : public Transport {
@@ -248,7 +264,7 @@ namespace eventide::jsonrpc {
 
 TEST_SUITE(jsonrpc_peer) {
 
-TEST_CASE(traits_registration_and_dispatch_order) {
+TEST_CASE(traits_dispatch_order) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -293,15 +309,15 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::simd::from_json<RPCResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<protocol::integer>(response->id), 1);
+    EXPECT_EQ(response->id.value, 1);
     ASSERT_TRUE(response->result.has_value());
     EXPECT_EQ(response->result->sum, 5);
 }
 
-TEST_CASE(stream_transport_notification_then_response) {
+TEST_CASE(stream_note_response) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -344,7 +360,7 @@ TEST_CASE(stream_transport_notification_then_response) {
     ASSERT_EQ(close_fd(outgoing_fds[0]), 0);
 }
 
-TEST_CASE(multiple_peers_share_external_event_loop) {
+TEST_CASE(peers_share_loop) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -380,21 +396,21 @@ TEST_CASE(multiple_peers_share_external_event_loop) {
     EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(transport1_ptr->outgoing().size(), 1U);
-    auto response1 = serde::json::simd::from_json<RpcResponse>(transport1_ptr->outgoing().front());
+    auto response1 = serde::json::simd::from_json<RPCResponse>(transport1_ptr->outgoing().front());
     ASSERT_TRUE(response1.has_value());
-    EXPECT_EQ(std::get<protocol::integer>(response1->id), 11);
+    EXPECT_EQ(response1->id.value, 11);
     ASSERT_TRUE(response1->result.has_value());
     EXPECT_EQ(response1->result->sum, 7);
 
     ASSERT_EQ(transport2_ptr->outgoing().size(), 1U);
-    auto response2 = serde::json::simd::from_json<RpcResponse>(transport2_ptr->outgoing().front());
+    auto response2 = serde::json::simd::from_json<RPCResponse>(transport2_ptr->outgoing().front());
     ASSERT_TRUE(response2.has_value());
-    EXPECT_EQ(std::get<protocol::integer>(response2->id), 22);
+    EXPECT_EQ(response2->id.value, 22);
     ASSERT_TRUE(response2->result.has_value());
     EXPECT_EQ(response2->result->sum, 21);
 }
 
-TEST_CASE(explicit_method_registration) {
+TEST_CASE(explicit_method) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -428,14 +444,14 @@ TEST_CASE(explicit_method_registration) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::simd::from_json<RPCResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(std::get<protocol::integer>(response->id), 2);
+    EXPECT_EQ(response->id.value, 2);
     ASSERT_TRUE(response->result.has_value());
     EXPECT_EQ(response->result->sum, 15);
 }
 
-TEST_CASE(send_request_and_notification_apis) {
+TEST_CASE(request_notify_apis) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -445,18 +461,19 @@ TEST_CASE(send_request_and_notification_apis) {
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
         },
         [](std::string_view payload, ScriptedTransport& channel) {
-            if(payload.find("\"method\":\"client/add/context\"") != std::string_view::npos) {
+            if(payload.find(R"("method":"client/add/context")") != std::string_view::npos) {
                 channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})");
                 return;
             }
 
-            if(payload.find("\"method\":\"client/add/peer\"") != std::string_view::npos) {
+            if(payload.find(R"("method":"client/add/peer")") != std::string_view::npos) {
                 channel.push_incoming(R"({"jsonrpc":"2.0","id":2,"result":{"sum":4}})");
                 return;
             }
 
-            if(payload.find("\"id\":7") != std::string_view::npos &&
-               payload.find("\"result\"") != std::string_view::npos) {
+            if(payload.find(R"("id":7)") != std::string_view::npos &&
+               (payload.find(R"("result")") != std::string_view::npos ||
+                payload.find(R"("error")") != std::string_view::npos)) {
                 channel.close();
             }
         });
@@ -470,7 +487,7 @@ TEST_CASE(send_request_and_notification_apis) {
     peer.on_request([&](RequestContext& context,
                         const AddParams& params) -> RequestResult<AddParams> {
         request_method = std::string(context.method);
-        request_id = std::get<protocol::integer>(context.id);
+        request_id = static_cast<protocol::integer>(context.id.value);
 
         auto notify_from_context =
             context->send_notification("client/note/context", CustomNoteParams{.text = "context"});
@@ -510,40 +527,701 @@ TEST_CASE(send_request_and_notification_apis) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 5U);
 
-    auto note_from_context = serde::json::simd::from_json<RpcNotification>(outgoing[0]);
+    auto note_from_context = serde::json::simd::from_json<RPCNotification>(outgoing[0]);
     ASSERT_TRUE(note_from_context.has_value());
     EXPECT_EQ(note_from_context->jsonrpc, "2.0");
     EXPECT_EQ(note_from_context->method, "client/note/context");
     EXPECT_EQ(note_from_context->params.text, "context");
 
-    auto note_from_peer = serde::json::simd::from_json<RpcNotification>(outgoing[1]);
+    auto note_from_peer = serde::json::simd::from_json<RPCNotification>(outgoing[1]);
     ASSERT_TRUE(note_from_peer.has_value());
     EXPECT_EQ(note_from_peer->jsonrpc, "2.0");
     EXPECT_EQ(note_from_peer->method, "client/note/peer");
     EXPECT_EQ(note_from_peer->params.text, "peer");
 
-    auto request_from_context = serde::json::simd::from_json<RpcRequest>(outgoing[2]);
+    auto request_from_context = serde::json::simd::from_json<RPCRequest>(outgoing[2]);
     ASSERT_TRUE(request_from_context.has_value());
     EXPECT_EQ(request_from_context->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<protocol::integer>(request_from_context->id), 1);
+    EXPECT_EQ(request_from_context->id.value, 1);
     EXPECT_EQ(request_from_context->method, "client/add/context");
     EXPECT_EQ(request_from_context->params.a, 2);
     EXPECT_EQ(request_from_context->params.b, 3);
 
-    auto request_from_peer = serde::json::simd::from_json<RpcRequest>(outgoing[3]);
+    auto request_from_peer = serde::json::simd::from_json<RPCRequest>(outgoing[3]);
     ASSERT_TRUE(request_from_peer.has_value());
     EXPECT_EQ(request_from_peer->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<protocol::integer>(request_from_peer->id), 2);
+    EXPECT_EQ(request_from_peer->id.value, 2);
     EXPECT_EQ(request_from_peer->method, "client/add/peer");
     EXPECT_EQ(request_from_peer->params.a, 3);
     EXPECT_EQ(request_from_peer->params.b, 1);
 
-    auto final_response = serde::json::simd::from_json<RpcResponse>(outgoing[4]);
+    auto final_response = serde::json::simd::from_json<RPCResponse>(outgoing[4]);
     ASSERT_TRUE(final_response.has_value());
     EXPECT_EQ(final_response->jsonrpc, "2.0");
-    EXPECT_EQ(std::get<protocol::integer>(final_response->id), 7);
+    EXPECT_EQ(final_response->id.value, 7);
     ASSERT_TRUE(final_response->result.has_value());
     EXPECT_EQ(final_response->result->sum, 13);
+}
+
+TEST_CASE(request_error_code) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":10,"method":"test/add","params":{"a":2,"b":3}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+
+    peer.on_request([&](RequestContext&, const AddParams&) -> RequestResult<AddParams> {
+        co_return std::unexpected(
+            RPCError(protocol::ErrorCode::InvalidParams, "forced invalid params"));
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    ASSERT_TRUE(response->id.has_value());
+    EXPECT_EQ(response->id->value, 10);
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
+    EXPECT_EQ(response->error.message, "forced invalid params");
+}
+
+TEST_CASE(request_error_data) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":12,"method":"test/add","params":{"a":2,"b":3}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+
+    peer.on_request([&](RequestContext&, const AddParams&) -> RequestResult<AddParams> {
+        protocol::Object data;
+        data.insert_or_assign("detail", protocol::Value(std::string("invalid payload")));
+        data.insert_or_assign("index", protocol::Value(std::int64_t{-3}));
+        co_return std::unexpected(RPCError(protocol::ErrorCode::InvalidParams,
+                                           "forced invalid params",
+                                           protocol::Value(std::move(data))));
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    ASSERT_TRUE(response->id.has_value());
+    EXPECT_EQ(response->id->value, 12);
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
+    EXPECT_EQ(response->error.message, "forced invalid params");
+    ASSERT_TRUE(response->error.data.has_value());
+
+    const auto& data_variant = static_cast<const protocol::Variant&>(*response->error.data);
+    const auto* object = std::get_if<protocol::Object>(&data_variant);
+    ASSERT_TRUE(object != nullptr);
+
+    auto detail_it = object->find("detail");
+    ASSERT_TRUE(detail_it != object->end());
+    const auto& detail_variant = static_cast<const protocol::Variant&>(detail_it->second);
+    ASSERT_TRUE(std::holds_alternative<std::string>(detail_variant));
+    EXPECT_EQ(std::get<std::string>(detail_variant), "invalid payload");
+
+    auto index_it = object->find("index");
+    ASSERT_TRUE(index_it != object->end());
+    const auto& index_variant = static_cast<const protocol::Variant&>(index_it->second);
+    ASSERT_TRUE(std::holds_alternative<std::int64_t>(index_variant));
+    EXPECT_EQ(std::get<std::int64_t>(index_variant), -3);
+}
+
+TEST_CASE(outbound_error_data) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"worker/build")") == std::string_view::npos) {
+                return;
+            }
+
+            channel.push_incoming(
+                R"({"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"remote failed","data":{"detail":"bad state","attempt":-1}}})");
+            channel.close();
+        });
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 5, .b = 6});
+        co_return;
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code, -32001);
+    EXPECT_EQ(request_result.error().message, "remote failed");
+    ASSERT_TRUE(request_result.error().data.has_value());
+
+    const auto& data_variant = static_cast<const protocol::Variant&>(*request_result.error().data);
+    const auto* object = std::get_if<protocol::Object>(&data_variant);
+    ASSERT_TRUE(object != nullptr);
+
+    auto detail_it = object->find("detail");
+    ASSERT_TRUE(detail_it != object->end());
+    const auto& detail_variant = static_cast<const protocol::Variant&>(detail_it->second);
+    ASSERT_TRUE(std::holds_alternative<std::string>(detail_variant));
+    EXPECT_EQ(std::get<std::string>(detail_variant), "bad state");
+
+    auto attempt_it = object->find("attempt");
+    ASSERT_TRUE(attempt_it != object->end());
+    const auto& attempt_variant = static_cast<const protocol::Variant&>(attempt_it->second);
+    ASSERT_TRUE(std::holds_alternative<std::int64_t>(attempt_variant));
+    EXPECT_EQ(std::get<std::int64_t>(attempt_variant), -1);
+}
+
+TEST_CASE(bad_response_silent) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"worker/build")") == std::string_view::npos) {
+                return;
+            }
+
+            channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"\uD800":0})");
+            channel.close();
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 5, .b = 6});
+        co_return;
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+    EXPECT_FALSE(request_result.error().message.empty());
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto request = serde::json::simd::from_json<RPCRequest>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(request.has_value());
+    EXPECT_EQ(request->method, "worker/build");
+}
+
+TEST_CASE(bad_params_invalid) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":11,"method":"test/add","params":"invalid"})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    bool invoked = false;
+
+    peer.on_request([&](RequestContext&, const AddParams&) -> RequestResult<AddParams> {
+        invoked = true;
+        co_return AddResult{.sum = 0};
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_FALSE(invoked);
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    ASSERT_TRUE(response->id.has_value());
+    EXPECT_EQ(response->id->value, 11);
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidParams));
+    EXPECT_FALSE(response->error.message.empty());
+}
+
+TEST_CASE(malformed_parse_null) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":1,"method":"test/add")",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    EXPECT_FALSE(response->id.has_value());
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::ParseError));
+    EXPECT_FALSE(response->error.message.empty());
+}
+
+TEST_CASE(invalid_request_null) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    EXPECT_FALSE(response->id.has_value());
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+    EXPECT_EQ(response->error.message, "message must contain method or id");
+}
+
+TEST_CASE(invalid_id_type) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":"11","method":"test/note","params":{"text":"x"}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    bool invoked = false;
+
+    peer.on_notification([&](const NoteParams&) { invoked = true; });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_FALSE(invoked);
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    EXPECT_FALSE(response->id.has_value());
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+    EXPECT_EQ(response->error.message, "request id must be integer or null");
+}
+
+TEST_CASE(cancel_inflight_request) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":21,"method":"test/add","params":{"a":2,"b":3}})",
+        R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":21}})",
+    });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    bool finished = false;
+
+    peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+        co_await sleep(std::chrono::milliseconds{10}, loop);
+        finished = true;
+        co_return AddResult{.sum = params.a + params.b};
+    });
+
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_FALSE(finished);
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    ASSERT_TRUE(response->id.has_value());
+    EXPECT_EQ(response->id->value, 21);
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(response->error.message, "request cancelled");
+}
+
+TEST_CASE(cancel_running_handler) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":22,"method":"test/add","params":{"a":2,"b":3}})",
+        },
+        nullptr);
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    bool started = false;
+    bool completed = false;
+    event handler_started;
+
+    peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+        started = true;
+        handler_started.set();
+        co_await sleep(std::chrono::milliseconds{20}, loop);
+        completed = true;
+        co_return AddResult{.sum = params.a + params.b};
+    });
+
+    auto canceler = [&]() -> task<> {
+        co_await handler_started.wait();
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        transport_ptr->push_incoming(
+            R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":22}})");
+        co_await sleep(std::chrono::milliseconds{5}, loop);
+        transport_ptr->close();
+    };
+
+    auto cancel_task = canceler();
+    loop.schedule(peer.run());
+    loop.schedule(cancel_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_TRUE(started);
+    EXPECT_FALSE(completed);
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto response =
+        serde::json::simd::from_json<RPCErrorResponse>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->jsonrpc, "2.0");
+    ASSERT_TRUE(response->id.has_value());
+    EXPECT_EQ(response->id->value, 22);
+    EXPECT_EQ(response->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(response->error.message, "request cancelled");
+}
+
+TEST_CASE(context_token_propagates) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":31,"method":"test/add","params":{"a":4,"b":5}})",
+        },
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"client/add/context")") != std::string_view::npos) {
+                channel.push_incoming(
+                    R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":31}})");
+                return;
+            }
+
+            if(payload.find(R"("method":"$/cancelRequest")") != std::string_view::npos) {
+                channel.close();
+            }
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    bool started = false;
+
+    peer.on_request([&](RequestContext& context,
+                        const AddParams& params) -> RequestResult<AddParams> {
+        started = true;
+
+        auto nested_result =
+            co_await context->send_request<AddResult>("client/add/context",
+                                                      CustomAddParams{.a = params.a, .b = params.b},
+                                                      context.cancellation);
+        if(!nested_result) {
+            co_return std::unexpected(nested_result.error());
+        }
+
+        co_return AddResult{.sum = nested_result->sum};
+    });
+
+    auto watchdog = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{20}, loop);
+        transport_ptr->close();
+    };
+
+    auto watchdog_task = watchdog();
+    loop.schedule(peer.run());
+    loop.schedule(watchdog_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    EXPECT_TRUE(started);
+
+    const auto& outgoing = transport_ptr->outgoing();
+    ASSERT_EQ(outgoing.size(), 3U);
+
+    auto nested_request = serde::json::simd::from_json<RPCRequest>(outgoing[0]);
+    ASSERT_TRUE(nested_request.has_value());
+    EXPECT_EQ(nested_request->jsonrpc, "2.0");
+    EXPECT_EQ(nested_request->id.value, 1);
+    EXPECT_EQ(nested_request->method, "client/add/context");
+    EXPECT_EQ(nested_request->params.a, 4);
+    EXPECT_EQ(nested_request->params.b, 5);
+
+    auto nested_cancel = serde::json::simd::from_json<RPCCancelNotification>(outgoing[1]);
+    ASSERT_TRUE(nested_cancel.has_value());
+    EXPECT_EQ(nested_cancel->jsonrpc, "2.0");
+    EXPECT_EQ(nested_cancel->method, "$/cancelRequest");
+    EXPECT_EQ(nested_cancel->params.id.value, 1);
+
+    auto final_error = serde::json::simd::from_json<RPCErrorResponse>(outgoing[2]);
+    ASSERT_TRUE(final_error.has_value());
+    EXPECT_EQ(final_error->jsonrpc, "2.0");
+    ASSERT_TRUE(final_error->id.has_value());
+    EXPECT_EQ(final_error->id->value, 31);
+    EXPECT_EQ(final_error->error.code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(final_error->error.message, "request cancelled");
+}
+
+TEST_CASE(outbound_cancel_request) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"$/cancelRequest")") != std::string_view::npos) {
+                channel.close();
+            }
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    cancellation_source source;
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result = co_await peer.send_request<AddResult>("worker/build",
+                                                               CustomAddParams{.a = 5, .b = 6},
+                                                               source.token());
+        co_return;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        source.cancel();
+    };
+
+    auto request_task = requester();
+    auto cancel_task = canceler();
+
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    loop.schedule(cancel_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(request_result.error().message, "request cancelled");
+
+    const auto& outgoing = transport_ptr->outgoing();
+    ASSERT_EQ(outgoing.size(), 2U);
+
+    auto request = serde::json::simd::from_json<RPCRequest>(outgoing[0]);
+    ASSERT_TRUE(request.has_value());
+    EXPECT_EQ(request->jsonrpc, "2.0");
+    EXPECT_EQ(request->id.value, 1);
+    EXPECT_EQ(request->method, "worker/build");
+
+    auto cancel = serde::json::simd::from_json<RPCCancelNotification>(outgoing[1]);
+    ASSERT_TRUE(cancel.has_value());
+    EXPECT_EQ(cancel->jsonrpc, "2.0");
+    EXPECT_EQ(cancel->method, "$/cancelRequest");
+    EXPECT_EQ(cancel->params.id.value, 1);
+}
+
+TEST_CASE(outbound_precancel) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    cancellation_source source;
+    source.cancel();
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result = co_await peer.send_request<AddResult>("worker/build",
+                                                               CustomAddParams{.a = 1, .b = 2},
+                                                               source.token());
+        co_return;
+    };
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        transport_ptr->close();
+    };
+
+    auto request_task = requester();
+    auto close_task = closer();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    loop.schedule(close_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(request_result.error().message, "request cancelled");
+    EXPECT_TRUE(transport_ptr->outgoing().empty());
+}
+
+TEST_CASE(outbound_timeout_cancel) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"$/cancelRequest")") != std::string_view::npos) {
+                channel.close();
+            }
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result = co_await peer.send_request<AddResult>("worker/build",
+                                                               CustomAddParams{.a = 8, .b = 9},
+                                                               std::chrono::milliseconds{1});
+        co_return;
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(request_result.error().message, "request timed out");
+
+    const auto& outgoing = transport_ptr->outgoing();
+    ASSERT_EQ(outgoing.size(), 2U);
+
+    auto request = serde::json::simd::from_json<RPCRequest>(outgoing[0]);
+    ASSERT_TRUE(request.has_value());
+    EXPECT_EQ(request->method, "worker/build");
+
+    auto cancel = serde::json::simd::from_json<RPCCancelNotification>(outgoing[1]);
+    ASSERT_TRUE(cancel.has_value());
+    EXPECT_EQ(cancel->method, "$/cancelRequest");
+}
+
+TEST_CASE(zero_timeout_cancel) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result = co_await peer.send_request<AddResult>("worker/build",
+                                                               CustomAddParams{.a = 1, .b = 1},
+                                                               std::chrono::milliseconds{0});
+        co_return;
+    };
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        transport_ptr->close();
+    };
+
+    auto request_task = requester();
+    auto close_task = closer();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    loop.schedule(close_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::RequestCancelled));
+    EXPECT_EQ(request_result.error().message, "request timed out");
+    EXPECT_TRUE(transport_ptr->outgoing().empty());
 }
 
 };  // TEST_SUITE(jsonrpc_peer)

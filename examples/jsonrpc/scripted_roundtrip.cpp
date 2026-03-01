@@ -98,13 +98,13 @@ int main() {
             R"({"jsonrpc":"2.0","id":7,"method":"example/add","params":{"a":2,"b":3}})",
         },
         [](std::string_view payload, ScriptedTransport& channel) {
-            if(payload.find("\"method\":\"client/add\"") != std::string_view::npos) {
+            if(payload.find(R"("method":"client/add")") != std::string_view::npos) {
                 channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":{"sum":4}})");
                 return;
             }
 
-            if(payload.find("\"id\":7") != std::string_view::npos &&
-               payload.find("\"result\"") != std::string_view::npos) {
+            if(payload.find(R"("id":7)") != std::string_view::npos &&
+               payload.find(R"("result")") != std::string_view::npos) {
                 channel.close();
             }
         });

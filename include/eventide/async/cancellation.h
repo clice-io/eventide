@@ -25,7 +25,7 @@ struct cancellation_watch_flag {
     bool cancelled = false;
 };
 
-class cancellation_state {
+class cancellation_state : public std::enable_shared_from_this<cancellation_state> {
 public:
     struct watcher_entry {
         std::size_t id = 0;
@@ -34,19 +34,21 @@ public:
     };
 
     bool cancelled() const noexcept {
-        return cancelled_;
+        return cancelled_state;
     }
 
     void cancel() noexcept {
-        if(cancelled_) {
+        if(cancelled_state) {
             return;
         }
 
-        cancelled_ = true;
-        auto watchers = std::move(watchers_);
-        watchers_.clear();
-
+        auto keepalive = this->shared_from_this();
+        cancelled_state = true;
         for(auto& watcher: watchers) {
+            if(watcher.id == 0) {
+                continue;
+            }
+
             if(auto flag = watcher.flag.lock()) {
                 flag->cancelled = true;
             }
@@ -55,27 +57,29 @@ public:
                 watcher.node->cancel();
             }
         }
+
+        watchers.clear();
     }
 
     std::size_t subscribe(async_node* node,
                           const std::shared_ptr<cancellation_watch_flag>& flag) noexcept {
         if(flag) {
-            flag->cancelled = cancelled_;
+            flag->cancelled = cancelled_state;
         }
 
-        if(cancelled_) {
+        if(cancelled_state) {
             if(node) {
                 node->cancel();
             }
             return 0;
         }
 
-        auto id = next_id_++;
-        if(next_id_ == 0) {
-            next_id_ = 1;
+        auto id = next_id++;
+        if(next_id == 0) {
+            next_id = 1;
         }
 
-        watchers_.push_back(watcher_entry{
+        watchers.push_back(watcher_entry{
             .id = id,
             .node = node,
             .flag = flag,
@@ -84,11 +88,11 @@ public:
     }
 
     void unsubscribe(std::size_t id) noexcept {
-        if(id == 0 || watchers_.empty()) {
+        if(id == 0 || watchers.empty()) {
             return;
         }
 
-        for(auto& watcher: watchers_) {
+        for(auto& watcher: watchers) {
             if(watcher.id == id) {
                 watcher.id = 0;
                 watcher.node = nullptr;
@@ -97,22 +101,23 @@ public:
             }
         }
 
-        compact();
+        if(!cancelled_state) {
+            compact();
+        }
     }
 
 private:
     void compact() noexcept {
-        watchers_.erase(
-            std::remove_if(watchers_.begin(),
-                           watchers_.end(),
-                           [](const watcher_entry& watcher) { return watcher.id == 0; }),
-            watchers_.end());
+        watchers.erase(std::remove_if(watchers.begin(),
+                                      watchers.end(),
+                                      [](const watcher_entry& watcher) { return watcher.id == 0; }),
+                       watchers.end());
     }
 
 private:
-    std::vector<watcher_entry> watchers_;
-    std::size_t next_id_ = 1;
-    bool cancelled_ = false;
+    std::vector<watcher_entry> watchers;
+    std::size_t next_id = 1;
+    bool cancelled_state = false;
 };
 
 }  // namespace detail
@@ -127,8 +132,9 @@ public:
         registration& operator=(const registration&) = delete;
 
         registration(registration&& other) noexcept :
-            state_(std::move(other.state_)), id_(other.id_), flag_(std::move(other.flag_)) {
-            other.id_ = 0;
+            state(std::move(other.state)), registration_id(other.registration_id),
+            watch_flag(std::move(other.watch_flag)) {
+            other.registration_id = 0;
         }
 
         registration& operator=(registration&& other) noexcept {
@@ -137,10 +143,10 @@ public:
             }
 
             unregister();
-            state_ = std::move(other.state_);
-            id_ = other.id_;
-            flag_ = std::move(other.flag_);
-            other.id_ = 0;
+            state = std::move(other.state);
+            registration_id = other.registration_id;
+            watch_flag = std::move(other.watch_flag);
+            other.registration_id = 0;
             return *this;
         }
 
@@ -149,16 +155,16 @@ public:
         }
 
         void unregister() noexcept {
-            if(state_ && id_ != 0) {
-                state_->unsubscribe(id_);
+            if(state && registration_id != 0) {
+                state->unsubscribe(registration_id);
             }
 
-            id_ = 0;
-            state_.reset();
+            registration_id = 0;
+            state.reset();
         }
 
         bool cancelled() const noexcept {
-            return flag_ && flag_->cancelled;
+            return watch_flag && watch_flag->cancelled;
         }
 
     private:
@@ -167,18 +173,18 @@ public:
         registration(std::shared_ptr<detail::cancellation_state> state,
                      std::size_t id,
                      std::shared_ptr<detail::cancellation_watch_flag> flag) :
-            state_(std::move(state)), id_(id), flag_(std::move(flag)) {}
+            state(std::move(state)), registration_id(id), watch_flag(std::move(flag)) {}
 
     private:
-        std::shared_ptr<detail::cancellation_state> state_;
-        std::size_t id_ = 0;
-        std::shared_ptr<detail::cancellation_watch_flag> flag_;
+        std::shared_ptr<detail::cancellation_state> state;
+        std::size_t registration_id = 0;
+        std::shared_ptr<detail::cancellation_watch_flag> watch_flag;
     };
 
     cancellation_token() = default;
 
     bool cancelled() const noexcept {
-        return state_ && state_->cancelled();
+        return state && state->cancelled();
     }
 
 private:
@@ -189,27 +195,27 @@ private:
 
     registration register_task(async_node* node) const {
         auto flag = std::make_shared<detail::cancellation_watch_flag>();
-        if(!state_) {
+        if(!state) {
             return registration(nullptr, 0, std::move(flag));
         }
 
-        auto id = state_->subscribe(node, flag);
-        return registration(state_, id, std::move(flag));
+        auto id = state->subscribe(node, flag);
+        return registration(state, id, std::move(flag));
     }
 
 private:
     friend class cancellation_source;
 
     explicit cancellation_token(std::shared_ptr<detail::cancellation_state> state) :
-        state_(std::move(state)) {}
+        state(std::move(state)) {}
 
 private:
-    std::shared_ptr<detail::cancellation_state> state_;
+    std::shared_ptr<detail::cancellation_state> state;
 };
 
 class cancellation_source {
 public:
-    cancellation_source() : state_(std::make_shared<detail::cancellation_state>()) {}
+    cancellation_source() : state(std::make_shared<detail::cancellation_state>()) {}
 
     cancellation_source(const cancellation_source&) = delete;
     cancellation_source& operator=(const cancellation_source&) = delete;
@@ -222,7 +228,7 @@ public:
         }
 
         cancel();
-        state_ = std::move(other.state_);
+        state = std::move(other.state);
         return *this;
     }
 
@@ -231,21 +237,21 @@ public:
     }
 
     void cancel() noexcept {
-        if(state_) {
-            state_->cancel();
+        if(state) {
+            state->cancel();
         }
     }
 
     bool cancelled() const noexcept {
-        return state_ && state_->cancelled();
+        return state && state->cancelled();
     }
 
     cancellation_token token() const noexcept {
-        return cancellation_token(state_);
+        return cancellation_token(state);
     }
 
 private:
-    std::shared_ptr<detail::cancellation_state> state_;
+    std::shared_ptr<detail::cancellation_state> state;
 };
 
 namespace detail {

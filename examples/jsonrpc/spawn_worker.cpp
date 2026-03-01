@@ -80,7 +80,7 @@ et::task<void> run_parent_session(jsonrpc::Peer& peer,
                                                     .include_path = plan.include_path,
                                                 });
     if(!build_result) {
-        outcome.error = "request failed: " + build_result.error();
+        outcome.error = "request failed: " + build_result.error().message;
     } else {
         std::println("[{}] worker command: {}",
                      build_result->worker_name,
@@ -92,7 +92,7 @@ et::task<void> run_parent_session(jsonrpc::Peer& peer,
 
     auto close_status = peer.close_output();
     if(!close_status && outcome.error.empty()) {
-        outcome.error = "closing worker output failed: " + close_status.error();
+        outcome.error = "closing worker output failed: " + close_status.error().message;
     }
 
     auto child_status = co_await child.wait();
