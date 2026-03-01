@@ -40,20 +40,20 @@ struct CustomNoteParams {
     std::string text;
 };
 
-struct RpcResponse {
+struct RPCResponse {
     std::string jsonrpc;
     protocol::variant<protocol::integer, protocol::string> id;
     protocol::optional<AddResult> result = {};
 };
 
-struct RpcRequest {
+struct RPCRequest {
     std::string jsonrpc;
     protocol::variant<protocol::integer, protocol::string> id;
     std::string method;
     AddParams params;
 };
 
-struct RpcNotification {
+struct RPCNotification {
     std::string jsonrpc;
     std::string method;
     NoteParams params;
@@ -162,7 +162,7 @@ namespace eventide::language {
 
 TEST_SUITE(language_jsonrpc_traits) {
 
-TEST_CASE(traits_registration_and_dispatch_order) {
+TEST_CASE(traits_dispatch_order) {
 // Visual Studio issue:
 // https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
@@ -210,7 +210,7 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::simd::from_json<RPCResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_EQ(std::get<protocol::integer>(response->id), 1);
@@ -218,7 +218,7 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     EXPECT_EQ(response->result->sum, 5);
 }
 
-TEST_CASE(explicit_method_registration) {
+TEST_CASE(explicit_method) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -252,14 +252,14 @@ TEST_CASE(explicit_method_registration) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::simd::from_json<RpcResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::simd::from_json<RPCResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(std::get<protocol::integer>(response->id), 2);
     ASSERT_TRUE(response->result.has_value());
     EXPECT_EQ(response->result->sum, 15);
 }
 
-TEST_CASE(send_request_and_notification_apis) {
+TEST_CASE(request_notify_apis) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();
     return;
@@ -269,18 +269,18 @@ TEST_CASE(send_request_and_notification_apis) {
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
         },
         [](std::string_view payload, ScriptedTransport& channel) {
-            if(payload.find("\"method\":\"client/add/context\"") != std::string_view::npos) {
+            if(payload.find(R"("method":"client/add/context")") != std::string_view::npos) {
                 channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})");
                 return;
             }
 
-            if(payload.find("\"method\":\"client/add/server\"") != std::string_view::npos) {
+            if(payload.find(R"("method":"client/add/server")") != std::string_view::npos) {
                 channel.push_incoming(R"({"jsonrpc":"2.0","id":2,"result":{"sum":4}})");
                 return;
             }
 
-            if(payload.find("\"id\":7") != std::string_view::npos &&
-               payload.find("\"result\"") != std::string_view::npos) {
+            if(payload.find(R"("id":7)") != std::string_view::npos &&
+               payload.find(R"("result")") != std::string_view::npos) {
                 channel.close();
             }
         });
@@ -334,19 +334,19 @@ TEST_CASE(send_request_and_notification_apis) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 5U);
 
-    auto note_from_context = serde::json::simd::from_json<RpcNotification>(outgoing[0]);
+    auto note_from_context = serde::json::simd::from_json<RPCNotification>(outgoing[0]);
     ASSERT_TRUE(note_from_context.has_value());
     EXPECT_EQ(note_from_context->jsonrpc, "2.0");
     EXPECT_EQ(note_from_context->method, "client/note/context");
     EXPECT_EQ(note_from_context->params.text, "context");
 
-    auto note_from_server = serde::json::simd::from_json<RpcNotification>(outgoing[1]);
+    auto note_from_server = serde::json::simd::from_json<RPCNotification>(outgoing[1]);
     ASSERT_TRUE(note_from_server.has_value());
     EXPECT_EQ(note_from_server->jsonrpc, "2.0");
     EXPECT_EQ(note_from_server->method, "client/note/server");
     EXPECT_EQ(note_from_server->params.text, "server");
 
-    auto request_from_context = serde::json::simd::from_json<RpcRequest>(outgoing[2]);
+    auto request_from_context = serde::json::simd::from_json<RPCRequest>(outgoing[2]);
     ASSERT_TRUE(request_from_context.has_value());
     EXPECT_EQ(request_from_context->jsonrpc, "2.0");
     EXPECT_EQ(std::get<protocol::integer>(request_from_context->id), 1);
@@ -354,7 +354,7 @@ TEST_CASE(send_request_and_notification_apis) {
     EXPECT_EQ(request_from_context->params.a, 2);
     EXPECT_EQ(request_from_context->params.b, 3);
 
-    auto request_from_server = serde::json::simd::from_json<RpcRequest>(outgoing[3]);
+    auto request_from_server = serde::json::simd::from_json<RPCRequest>(outgoing[3]);
     ASSERT_TRUE(request_from_server.has_value());
     EXPECT_EQ(request_from_server->jsonrpc, "2.0");
     EXPECT_EQ(std::get<protocol::integer>(request_from_server->id), 2);
@@ -362,7 +362,7 @@ TEST_CASE(send_request_and_notification_apis) {
     EXPECT_EQ(request_from_server->params.a, 3);
     EXPECT_EQ(request_from_server->params.b, 1);
 
-    auto final_response = serde::json::simd::from_json<RpcResponse>(outgoing[4]);
+    auto final_response = serde::json::simd::from_json<RPCResponse>(outgoing[4]);
     ASSERT_TRUE(final_response.has_value());
     EXPECT_EQ(final_response->jsonrpc, "2.0");
     EXPECT_EQ(std::get<protocol::integer>(final_response->id), 7);

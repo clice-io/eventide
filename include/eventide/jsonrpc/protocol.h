@@ -38,6 +38,7 @@ struct Value : Variant {
 };
 
 using RequestID = std::variant<integer, string>;
+using ResponseID = std::variant<integer, string, null>;
 
 enum class ErrorCode : integer {
     ParseError = -32700,
@@ -46,6 +47,7 @@ enum class ErrorCode : integer {
     InvalidParams = -32602,
     InternalError = -32603,
     RequestFailed = -32000,
+    RequestCancelled = -32800,
 };
 
 struct ResponseError {

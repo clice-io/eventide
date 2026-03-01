@@ -81,19 +81,23 @@ constexpr std::string_view normalize_params_json(std::string_view params_json) {
 }
 
 template <typename T>
-Result<T> deserialize_json(std::string_view json) {
+Result<T> deserialize_json(std::string_view json,
+                           protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
     auto parsed = serde::json::parse<T>(json);
     if(!parsed) {
-        return std::unexpected(std::string(serde::json::error_message(parsed.error())));
+        return std::unexpected(
+            RPCError(code, std::string(serde::json::error_message(parsed.error()))));
     }
     return std::move(*parsed);
 }
 
 template <typename T>
-Result<std::string> serialize_json(const T& value) {
+Result<std::string> serialize_json(const T& value,
+                                   protocol::ErrorCode code = protocol::ErrorCode::InternalError) {
     auto serialized = serde::json::to_string(value);
     if(!serialized) {
-        return std::unexpected(std::string(serde::json::error_message(serialized.error())));
+        return std::unexpected(
+            RPCError(code, std::string(serde::json::error_message(serialized.error()))));
     }
     return std::move(*serialized);
 }
@@ -102,6 +106,11 @@ Result<std::string> serialize_json(const T& value) {
 
 template <typename Params>
 RequestResult<Params> Peer::send_request(const Params& params) {
+    co_return co_await send_request(params, cancellation_token{});
+}
+
+template <typename Params>
+RequestResult<Params> Peer::send_request(const Params& params, cancellation_token token) {
     static_assert(detail::has_request_traits_v<Params>,
                   "send_request(params) requires RequestTraits<Params>");
     using Traits = protocol::RequestTraits<Params>;
@@ -111,7 +120,8 @@ RequestResult<Params> Peer::send_request(const Params& params) {
         co_return std::unexpected(serialized_params.error());
     }
 
-    auto raw_result = co_await send_request_json(Traits::method, std::move(*serialized_params));
+    auto raw_result =
+        co_await send_request_json(Traits::method, std::move(*serialized_params), std::move(token));
     if(!raw_result) {
         co_return std::unexpected(raw_result.error());
     }
@@ -124,14 +134,52 @@ RequestResult<Params> Peer::send_request(const Params& params) {
     co_return std::move(*parsed_result);
 }
 
+template <typename Params>
+RequestResult<Params> Peer::send_request(const Params& params, std::chrono::milliseconds timeout) {
+    static_assert(detail::has_request_traits_v<Params>,
+                  "send_request(params) requires RequestTraits<Params>");
+    using Traits = protocol::RequestTraits<Params>;
+
+    co_return co_await send_request<typename Traits::Result>(Traits::method, params, timeout);
+}
+
 template <typename ResultT, typename Params>
 task<Result<ResultT>> Peer::send_request(std::string_view method, const Params& params) {
+    co_return co_await send_request<ResultT>(method, params, cancellation_token{});
+}
+
+template <typename ResultT, typename Params>
+task<Result<ResultT>>
+    Peer::send_request(std::string_view method, const Params& params, cancellation_token token) {
     auto serialized_params = detail::serialize_json(params);
     if(!serialized_params) {
         co_return std::unexpected(serialized_params.error());
     }
 
-    auto raw_result = co_await send_request_json(method, std::move(*serialized_params));
+    auto raw_result = co_await send_request_json(method, std::move(*serialized_params), std::move(token));
+    if(!raw_result) {
+        co_return std::unexpected(raw_result.error());
+    }
+
+    auto parsed_result = detail::deserialize_json<ResultT>(*raw_result);
+    if(!parsed_result) {
+        co_return std::unexpected(parsed_result.error());
+    }
+
+    co_return std::move(*parsed_result);
+}
+
+template <typename ResultT, typename Params>
+task<Result<ResultT>>
+    Peer::send_request(std::string_view method,
+                       const Params& params,
+                       std::chrono::milliseconds timeout) {
+    auto serialized_params = detail::serialize_json(params);
+    if(!serialized_params) {
+        co_return std::unexpected(serialized_params.error());
+    }
+
+    auto raw_result = co_await send_request_json(method, std::move(*serialized_params), timeout);
     if(!raw_result) {
         co_return std::unexpected(raw_result.error());
     }
@@ -215,15 +263,17 @@ void Peer::bind_request_callback(std::string_view method, Callback&& callback) {
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
                     peer = this](const protocol::RequestID& request_id,
-                                 std::string_view params_json)
+                                 std::string_view params_json,
+                                 cancellation_token token)
         -> task<Result<std::string>> {
         auto parsed_params = detail::deserialize_json<Params>(
-            detail::normalize_params_json<Params>(params_json));
+            detail::normalize_params_json<Params>(params_json),
+            protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
             co_return std::unexpected(parsed_params.error());
         }
 
-        RequestContext context(*peer, request_id);
+        RequestContext context(*peer, request_id, std::move(token));
         context.method = method_name;
 
         auto result = co_await std::invoke(cb, context, *parsed_params);
@@ -231,7 +281,7 @@ void Peer::bind_request_callback(std::string_view method, Callback&& callback) {
             co_return std::unexpected(result.error());
         }
 
-        auto serialized = detail::serialize_json(*result);
+        auto serialized = detail::serialize_json(*result, protocol::ErrorCode::InternalError);
         if(!serialized) {
             co_return std::unexpected(serialized.error());
         }
