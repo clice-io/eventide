@@ -784,32 +784,6 @@ private:
     json::ValueRef currentValue{};
 };
 
-template <typename T>
-auto from_dom(const json::Value& dom, T& value) -> std::expected<void, Deserializer::error_type> {
-    Deserializer deserializer(dom);
-    if(!deserializer.valid()) {
-        return std::unexpected(deserializer.error());
-    }
-
-    auto result = serde::deserialize(deserializer, value);
-    if(!result) {
-        return std::unexpected(result.error());
-    }
-
-    return deserializer.finish();
-}
-
-template <typename T>
-    requires std::default_initializable<T>
-auto from_dom(const json::Value& dom) -> std::expected<T, Deserializer::error_type> {
-    T value{};
-    auto status = from_dom(dom, value);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
-    return value;
-}
-
 static_assert(serde::deserializer_like<Deserializer>);
 
 }  // namespace eventide::serde::json::yy

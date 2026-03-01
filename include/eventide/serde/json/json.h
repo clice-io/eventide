@@ -1,354 +1,121 @@
 #pragma once
 
+#include <concepts>
 #include <expected>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
-#include <tuple>
-#include <type_traits>
 #include <utility>
-#include <variant>
 
-#include "eventide/reflection/struct.h"
+#include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/json/simd_deserializer.h"
 #include "eventide/serde/json/simd_serializer.h"
-
-#if __has_include(<yyjson.h>)
-#include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/yy_deserializer.h"
 #include "eventide/serde/json/yy_serializer.h"
-#define EVENTIDE_SERDE_JSON_HAS_YYJSON 1
-#else
-#define EVENTIDE_SERDE_JSON_HAS_YYJSON 0
-#endif
 
 namespace eventide::serde::json {
 
-namespace detail {
-
-template <typename T>
-consteval bool has_dynamic_dom_impl();
-
-template <typename T>
-consteval bool has_dynamic_dom_variant() {
-    using U = std::remove_cvref_t<T>;
-    return []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (has_dynamic_dom_impl<std::variant_alternative_t<Is, U>>() || ...);
-    }(std::make_index_sequence<std::variant_size_v<U>>{});
-}
-
-template <typename T>
-consteval bool has_dynamic_dom_tuple_like() {
-    using U = std::remove_cvref_t<T>;
-    return []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (has_dynamic_dom_impl<std::tuple_element_t<Is, U>>() || ...);
-    }(std::make_index_sequence<std::tuple_size_v<U>>{});
-}
-
-template <typename T>
-consteval bool has_dynamic_dom_reflectable() {
-    using U = std::remove_cvref_t<T>;
-    return []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (has_dynamic_dom_impl<refl::field_type<U, Is>>() || ...);
-    }(std::make_index_sequence<refl::field_count<U>()>{});
-}
-
-template <typename T>
-consteval bool has_dynamic_dom_impl() {
-    using U = std::remove_cvref_t<T>;
-
-#if EVENTIDE_SERDE_JSON_HAS_YYJSON
-    if constexpr(std::same_as<U, Value> || std::same_as<U, Array> || std::same_as<U, Object>) {
-        return true;
-    } else
-#endif
-        if constexpr(serde::annotated_type<U>) {
-        return has_dynamic_dom_impl<typename U::annotated_type>();
-    } else if constexpr(is_specialization_of<std::optional, U>) {
-        return has_dynamic_dom_impl<typename U::value_type>();
-    } else if constexpr(is_specialization_of<std::variant, U>) {
-        return has_dynamic_dom_variant<U>();
-    } else if constexpr(serde::is_pair_v<U> || serde::is_tuple_v<U>) {
-        return has_dynamic_dom_tuple_like<U>();
-    } else if constexpr(std::ranges::input_range<U>) {
-        return has_dynamic_dom_impl<std::ranges::range_value_t<U>>();
-    } else if constexpr(refl::reflectable_class<U>) {
-        return has_dynamic_dom_reflectable<U>();
-    } else {
-        return false;
-    }
-}
-
-}  // namespace detail
-
-template <typename T>
-constexpr inline bool has_dynamic_dom_v = detail::has_dynamic_dom_impl<T>();
-
 template <typename T>
 auto parse(std::string_view json, T& value) -> std::expected<void, error_kind> {
-    if constexpr(!has_dynamic_dom_v<T>) {
-        return simd::from_json(json, value);
-    } else {
-#if EVENTIDE_SERDE_JSON_HAS_YYJSON
-        auto dom = Value::parse(json);
-        if(!dom) {
-            return std::unexpected(make_read_error(dom.error()));
-        }
-
-        auto status = yy::from_dom(*dom, value);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-        return {};
-#else
-        return std::unexpected(error_kind::type_mismatch);
-#endif
-    }
+    return simd::from_json(json, value);
 }
 
 template <typename T>
     requires std::default_initializable<T>
 auto parse(std::string_view json) -> std::expected<T, error_kind> {
-    if constexpr(!has_dynamic_dom_v<T>) {
-        return simd::from_json<T>(json);
-    } else {
-        T value{};
-        auto status = parse(json, value);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-        return value;
-    }
+    return simd::from_json<T>(json);
 }
 
 template <typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, error_kind> {
-    if constexpr(!has_dynamic_dom_v<T>) {
-        return simd::to_json(value, initial_capacity);
-    } else {
-#if EVENTIDE_SERDE_JSON_HAS_YYJSON
-        (void)initial_capacity;
-        auto dom = yy::to_dom(value);
-        if(!dom) {
-            return std::unexpected(dom.error());
-        }
-
-        auto json = dom->to_json_string();
-        if(!json) {
-            return std::unexpected(make_write_error(json.error()));
-        }
-        return std::move(*json);
-#else
-        (void)initial_capacity;
-        return std::unexpected(error_kind::type_mismatch);
-#endif
-    }
+    return simd::to_json(value, initial_capacity);
 }
 
 }  // namespace eventide::serde::json
 
-#if EVENTIDE_SERDE_JSON_HAS_YYJSON
 namespace eventide::serde {
-
-namespace detail {
 
 template <typename T>
 concept json_dynamic_dom_type =
     std::same_as<T, json::Value> || std::same_as<T, json::Array> || std::same_as<T, json::Object>;
 
 template <json_dynamic_dom_type T>
-auto deserialize_dynamic_dom(json::simd::Deserializer& deserializer, T& value)
-    -> std::expected<void, json::error_kind> {
-    auto raw = deserializer.deserialize_raw_json_view();
-    if(!raw) {
-        return std::unexpected(raw.error());
-    }
+struct deserialize_traits<json::simd::Deserializer, T> {
+    using error_type = json::error_kind;
 
-    auto parsed = T::parse(std::string_view(*raw));
-    if(!parsed) {
-        return std::unexpected(json::make_read_error(parsed.error()));
-    }
-
-    value = std::move(*parsed);
-    return {};
-}
-
-template <json_dynamic_dom_type T>
-auto serialize_dynamic_dom(json::simd::Serializer& serializer, const T& value)
-    -> std::expected<typename json::simd::Serializer::value_type,
-                     typename json::simd::Serializer::error_type> {
-    auto raw = value.to_json_string();
-    if(!raw) {
-        return std::unexpected(json::make_write_error(raw.error()));
-    }
-    return serializer.serialize_raw_json(*raw);
-}
-
-template <json_dynamic_dom_type T>
-auto serialize_dynamic_dom(json::yy::Serializer& serializer, const T& value)
-    -> std::expected<typename json::yy::Serializer::value_type,
-                     typename json::yy::Serializer::error_type> {
-    return serializer.append_json_value(value);
-}
-
-template <json_dynamic_dom_type T>
-auto deserialize_dynamic_dom(json::yy::Deserializer& deserializer, T& value)
-    -> std::expected<void, typename json::yy::Deserializer::error_type> {
-    auto dom = deserializer.capture_dom_value();
-    if(!dom) {
-        return std::unexpected(dom.error());
-    }
-
-    if constexpr(std::same_as<T, json::Value>) {
-        value = std::move(*dom);
-        return {};
-    } else if constexpr(std::same_as<T, json::Array>) {
-        auto array = dom->get_array();
-        if(!array) {
-            return std::unexpected(json::error_kind::type_mismatch);
+    static auto deserialize(json::simd::Deserializer& deserializer, T& value)
+        -> std::expected<void, error_type> {
+        auto raw = deserializer.deserialize_raw_json_view();
+        if(!raw) {
+            return std::unexpected(raw.error());
         }
-        value = std::move(*array);
-        return {};
-    } else if constexpr(std::same_as<T, json::Object>) {
-        auto object = dom->get_object();
-        if(!object) {
-            return std::unexpected(json::error_kind::type_mismatch);
+
+        auto parsed = T::parse(std::string_view(*raw));
+        if(!parsed) {
+            return std::unexpected(json::make_read_error(parsed.error()));
         }
-        value = std::move(*object);
+
+        value = std::move(*parsed);
         return {};
     }
-}
-
-}  // namespace detail
-
-template <>
-struct deserialize_traits<json::simd::Deserializer, json::Value> {
-    using error_type = json::error_kind;
-
-    static auto deserialize(json::simd::Deserializer& deserializer, json::Value& value)
-        -> std::expected<void, error_type> {
-        return detail::deserialize_dynamic_dom(deserializer, value);
-    }
 };
 
-template <>
-struct deserialize_traits<json::simd::Deserializer, json::Array> {
-    using error_type = json::error_kind;
-
-    static auto deserialize(json::simd::Deserializer& deserializer, json::Array& value)
-        -> std::expected<void, error_type> {
-        return detail::deserialize_dynamic_dom(deserializer, value);
-    }
-};
-
-template <>
-struct deserialize_traits<json::simd::Deserializer, json::Object> {
-    using error_type = json::error_kind;
-
-    static auto deserialize(json::simd::Deserializer& deserializer, json::Object& value)
-        -> std::expected<void, error_type> {
-        return detail::deserialize_dynamic_dom(deserializer, value);
-    }
-};
-
-template <>
-struct deserialize_traits<json::yy::Deserializer, json::Value> {
-    using error_type = typename json::yy::Deserializer::error_type;
-
-    static auto deserialize(json::yy::Deserializer& deserializer, json::Value& value)
-        -> std::expected<void, error_type> {
-        return detail::deserialize_dynamic_dom(deserializer, value);
-    }
-};
-
-template <>
-struct deserialize_traits<json::yy::Deserializer, json::Array> {
-    using error_type = typename json::yy::Deserializer::error_type;
-
-    static auto deserialize(json::yy::Deserializer& deserializer, json::Array& value)
-        -> std::expected<void, error_type> {
-        return detail::deserialize_dynamic_dom(deserializer, value);
-    }
-};
-
-template <>
-struct deserialize_traits<json::yy::Deserializer, json::Object> {
-    using error_type = typename json::yy::Deserializer::error_type;
-
-    static auto deserialize(json::yy::Deserializer& deserializer, json::Object& value)
-        -> std::expected<void, error_type> {
-        return detail::deserialize_dynamic_dom(deserializer, value);
-    }
-};
-
-template <>
-struct serialize_traits<json::simd::Serializer, json::Value> {
+template <json_dynamic_dom_type T>
+struct serialize_traits<json::simd::Serializer, T> {
     using value_type = typename json::simd::Serializer::value_type;
     using error_type = typename json::simd::Serializer::error_type;
 
-    static auto serialize(json::simd::Serializer& serializer, const json::Value& value)
+    static auto serialize(json::simd::Serializer& serializer, const T& value)
         -> std::expected<value_type, error_type> {
-        return detail::serialize_dynamic_dom(serializer, value);
+        auto raw = value.to_json_string();
+        if(!raw) {
+            return std::unexpected(json::make_write_error(raw.error()));
+        }
+        return serializer.serialize_raw_json(*raw);
     }
 };
 
-template <>
-struct serialize_traits<json::simd::Serializer, json::Array> {
-    using value_type = typename json::simd::Serializer::value_type;
-    using error_type = typename json::simd::Serializer::error_type;
-
-    static auto serialize(json::simd::Serializer& serializer, const json::Array& value)
-        -> std::expected<value_type, error_type> {
-        return detail::serialize_dynamic_dom(serializer, value);
-    }
-};
-
-template <>
-struct serialize_traits<json::simd::Serializer, json::Object> {
-    using value_type = typename json::simd::Serializer::value_type;
-    using error_type = typename json::simd::Serializer::error_type;
-
-    static auto serialize(json::simd::Serializer& serializer, const json::Object& value)
-        -> std::expected<value_type, error_type> {
-        return detail::serialize_dynamic_dom(serializer, value);
-    }
-};
-
-template <>
-struct serialize_traits<json::yy::Serializer, json::Value> {
+template <json_dynamic_dom_type T>
+struct serialize_traits<json::yy::Serializer, T> {
     using value_type = typename json::yy::Serializer::value_type;
     using error_type = typename json::yy::Serializer::error_type;
 
-    static auto serialize(json::yy::Serializer& serializer, const json::Value& value)
+    static auto serialize(json::yy::Serializer& serializer, const T& value)
         -> std::expected<value_type, error_type> {
-        return detail::serialize_dynamic_dom(serializer, value);
+        return serializer.append_json_value(value);
     }
 };
 
-template <>
-struct serialize_traits<json::yy::Serializer, json::Array> {
-    using value_type = typename json::yy::Serializer::value_type;
-    using error_type = typename json::yy::Serializer::error_type;
+template <json_dynamic_dom_type T>
+struct deserialize_traits<json::yy::Deserializer, T> {
+    using error_type = typename json::yy::Deserializer::error_type;
 
-    static auto serialize(json::yy::Serializer& serializer, const json::Array& value)
-        -> std::expected<value_type, error_type> {
-        return detail::serialize_dynamic_dom(serializer, value);
-    }
-};
-
-template <>
-struct serialize_traits<json::yy::Serializer, json::Object> {
-    using value_type = typename json::yy::Serializer::value_type;
-    using error_type = typename json::yy::Serializer::error_type;
-
-    static auto serialize(json::yy::Serializer& serializer, const json::Object& value)
-        -> std::expected<value_type, error_type> {
-        return detail::serialize_dynamic_dom(serializer, value);
+    static auto deserialize(json::yy::Deserializer& deserializer, T& value)
+        -> std::expected<void, error_type> {
+        auto dom = deserializer.capture_dom_value();
+        if(!dom) {
+            return std::unexpected(dom.error());
+        } else if constexpr(std::same_as<T, json::Value>) {
+            value = std::move(*dom);
+            return {};
+        } else if constexpr(std::same_as<T, json::Array>) {
+            auto array = dom->get_array();
+            if(!array) {
+                return std::unexpected(json::error_kind::type_mismatch);
+            }
+            value = std::move(*array);
+            return {};
+        } else {
+            auto object = dom->get_object();
+            if(!object) {
+                return std::unexpected(json::error_kind::type_mismatch);
+            }
+            value = std::move(*object);
+            return {};
+        }
     }
 };
 
 }  // namespace eventide::serde
-#endif

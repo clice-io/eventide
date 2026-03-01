@@ -246,7 +246,7 @@ private:
 };
 
 template <typename T>
-auto to_dom(const T& value) -> std::expected<json::Value, Serializer::error_type> {
+auto to_json(const T& value) -> std::expected<std::string, Serializer::error_type> {
     Serializer serializer;
     if(!serializer.valid()) {
         return std::unexpected(serializer.error());
@@ -256,19 +256,10 @@ auto to_dom(const T& value) -> std::expected<json::Value, Serializer::error_type
     if(!result) {
         return std::unexpected(result.error());
     }
-    return serializer.dom_value();
-}
 
-template <typename T>
-auto to_json(const T& value) -> std::expected<std::string, Serializer::error_type> {
-    auto dom = to_dom(value);
-    if(!dom) {
-        return std::unexpected(dom.error());
-    }
-
-    auto json = dom->to_json_string();
+    auto json = serializer.str();
     if(!json) {
-        return std::unexpected(Serializer::error_type::write_failed);
+        return std::unexpected(json.error());
     }
     return std::move(*json);
 }
