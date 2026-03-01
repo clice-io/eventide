@@ -117,11 +117,19 @@ et::task<void> run_parent_session(jsonrpc::Peer& peer,
 }
 
 int run_worker() {
-    jsonrpc::Peer peer;
+    et::event_loop loop;
+    auto transport = jsonrpc::StreamTransport::open_stdio(loop);
+    if(!transport) {
+        std::println(stderr, "failed to open stdio transport: {}", transport.error());
+        return 1;
+    }
+
+    jsonrpc::Peer peer(loop, std::move(*transport));
 
     peer.on_request("worker/build", handle_build_request);
 
-    return peer.start();
+    loop.schedule(peer.run());
+    return loop.run();
 }
 
 int run_parent(std::string self_path) {

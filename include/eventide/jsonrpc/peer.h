@@ -42,12 +42,6 @@ using RequestResult = task<Result<ResultT>>;
 
 class Peer {
 public:
-    Peer();
-
-    explicit Peer(event_loop& loop);
-
-    explicit Peer(std::unique_ptr<Transport> transport);
-
     Peer(event_loop& loop, std::unique_ptr<Transport> transport);
 
     Peer(const Peer&) = delete;
@@ -58,8 +52,6 @@ public:
     ~Peer();
 
     task<> run();
-
-    int start();
 
     Result<void> close_output();
 

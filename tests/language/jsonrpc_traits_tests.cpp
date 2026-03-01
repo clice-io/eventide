@@ -176,7 +176,8 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     });
     auto* transport_ptr = transport.get();
 
-    jsonrpc::Peer peer(std::move(transport));
+    eventide::event_loop loop;
+    jsonrpc::Peer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
@@ -199,7 +200,8 @@ TEST_CASE(traits_registration_and_dispatch_order) {
         }
     });
 
-    EXPECT_EQ(peer.start(), 0);
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(order.size(), 3U);
     EXPECT_EQ(order[0], "note:first");
@@ -227,7 +229,8 @@ TEST_CASE(explicit_method_registration) {
     });
     auto* transport_ptr = transport.get();
 
-    jsonrpc::Peer peer(std::move(transport));
+    eventide::event_loop loop;
+    jsonrpc::Peer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
@@ -241,7 +244,8 @@ TEST_CASE(explicit_method_registration) {
     peer.on_notification("custom/note",
                          [&](const NoteParams& params) { notifications.push_back(params.text); });
 
-    EXPECT_EQ(peer.start(), 0);
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
 
     EXPECT_EQ(request_method, "custom/add");
     ASSERT_EQ(notifications.size(), 1U);
@@ -282,7 +286,8 @@ TEST_CASE(send_request_and_notification_apis) {
         });
     auto* transport_ptr = transport.get();
 
-    jsonrpc::Peer peer(std::move(transport));
+    eventide::event_loop loop;
+    jsonrpc::Peer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
@@ -320,7 +325,8 @@ TEST_CASE(send_request_and_notification_apis) {
         co_return AddResult{.sum = context_result->sum + server_result->sum};
     });
 
-    EXPECT_EQ(peer.start(), 0);
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
 
     EXPECT_EQ(request_method, "test/add");
     EXPECT_EQ(request_id, 7);
