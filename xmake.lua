@@ -67,9 +67,7 @@ if has_config("ztest") then
 end
 if has_config("serde") and has_config("serde_simdjson") then
 	add_requires("simdjson v4.2.4")
-end
-if has_config("serde") and has_config("serde_yyjson") then
-	add_requires("yyjson v0.12.0")
+	add_requires("yyjson 0.12.0")
 end
 if has_config("serde") and has_config("serde_flatbuffers") then
 	add_requires("flatbuffers v25.2.10")
@@ -98,9 +96,7 @@ if has_config("serde") and has_config("serde_simdjson") then
 		add_headerfiles("include/(eventide/serde/json/*)")
 		add_deps("reflection")
 		add_packages("simdjson", { public = true })
-		if has_config("serde_yyjson") then
-			add_packages("yyjson", { public = true })
-		end
+		add_packages("yyjson", { public = true })
 	end)
 end
 
