@@ -341,6 +341,56 @@ TEST_CASE(stream_transport_notification_then_response) {
     ASSERT_EQ(close_fd(outgoing_fds[0]), 0);
 }
 
+TEST_CASE(multiple_peers_share_external_event_loop) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    event_loop loop;
+
+    auto transport1 = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":11,"method":"worker/one","params":{"a":2,"b":5}})",
+    });
+    auto* transport1_ptr = transport1.get();
+
+    auto transport2 = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":22,"method":"worker/two","params":{"a":7,"b":3}})",
+    });
+    auto* transport2_ptr = transport2.get();
+
+    Peer peer1(loop, std::move(transport1));
+    Peer peer2(loop, std::move(transport2));
+
+    peer1.on_request("worker/one",
+                     [](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+                         co_return AddResult{.sum = params.a + params.b};
+                     });
+
+    peer2.on_request("worker/two",
+                     [](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+                         co_return AddResult{.sum = params.a * params.b};
+                     });
+
+    loop.schedule(peer1.run());
+    loop.schedule(peer2.run());
+
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport1_ptr->outgoing().size(), 1U);
+    auto response1 = serde::json::simd::from_json<RpcResponse>(transport1_ptr->outgoing().front());
+    ASSERT_TRUE(response1.has_value());
+    EXPECT_EQ(std::get<protocol::integer>(response1->id), 11);
+    ASSERT_TRUE(response1->result.has_value());
+    EXPECT_EQ(response1->result->sum, 7);
+
+    ASSERT_EQ(transport2_ptr->outgoing().size(), 1U);
+    auto response2 = serde::json::simd::from_json<RpcResponse>(transport2_ptr->outgoing().front());
+    ASSERT_TRUE(response2.has_value());
+    EXPECT_EQ(std::get<protocol::integer>(response2->id), 22);
+    ASSERT_TRUE(response2->result.has_value());
+    EXPECT_EQ(response2->result->sum, 21);
+}
+
 TEST_CASE(explicit_method_registration) {
 #if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     skip();

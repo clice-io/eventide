@@ -57,6 +57,8 @@ public:
 
     ~Peer();
 
+    task<> run();
+
     int start();
 
     Result<void> close_output();

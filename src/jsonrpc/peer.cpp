@@ -105,7 +105,10 @@ struct Peer::Self {
         pending_requests;
     protocol::integer next_request_id = 1;
     std::deque<std::string> outgoing_queue;
+
+    bool running = false;
     bool writer_running = false;
+
     std::string startup_error;
 
     Self() : owned_loop(std::make_unique<event_loop>()), loop(owned_loop.get()) {}
@@ -368,21 +371,6 @@ struct Peer::Self {
 
         return {};
     }
-
-    task<> main_loop() {
-        while(transport) {
-            auto payload = co_await transport->read_message();
-            if(!payload.has_value()) {
-                fail_pending_requests("transport closed");
-                co_return;
-            }
-
-            auto dispatched = dispatch_incoming_message(*payload);
-            if(!dispatched) {
-                continue;
-            }
-        }
-    }
 };
 
 Peer::Peer() : self(std::make_unique<Self>()) {
@@ -419,6 +407,29 @@ Peer::Peer(event_loop& loop, std::unique_ptr<Transport> transport) :
 }
 
 Peer::~Peer() = default;
+
+task<> Peer::run() {
+    if(!self || !self->transport || self->running) {
+        co_return;
+    }
+
+    self->running = true;
+
+    while(self->transport) {
+        auto payload = co_await self->transport->read_message();
+        if(!payload.has_value()) {
+            self->fail_pending_requests("transport closed");
+            co_return;
+        }
+
+        auto dispatched = self->dispatch_incoming_message(*payload);
+        if(!dispatched) {
+            continue;
+        }
+    }
+
+    self->running = false;
+}
 
 Result<void> Peer::close_output() {
     if(!self || !self->transport) {
@@ -499,7 +510,7 @@ int Peer::start() {
         return -1;
     }
 
-    self->loop->schedule(self->main_loop());
+    self->loop->schedule(run());
     return self->loop->run();
 }
 
