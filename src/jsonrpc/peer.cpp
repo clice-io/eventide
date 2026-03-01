@@ -2,12 +2,10 @@
 
 #include <deque>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -31,122 +29,15 @@ Result<T> parse_json_value(std::string_view json,
     return std::move(*parsed);
 }
 
-Result<protocol::RequestID> parse_request_id(simdjson::ondemand::value& value) {
-    std::int64_t integer_id = 0;
-    auto integer_error = value.get_int64().get(integer_id);
-    if(integer_error == simdjson::SUCCESS) {
-        if(integer_id < (std::numeric_limits<protocol::integer>::min)() ||
-           integer_id > (std::numeric_limits<protocol::integer>::max)()) {
-            return std::unexpected(RPCError(protocol::ErrorCode::InvalidRequest,
-                                            "request id integer is out of range"));
-        }
-        return protocol::RequestID{static_cast<protocol::integer>(integer_id)};
-    }
+struct parsed_incoming_id {
+    bool present = false;
+    bool is_null = false;
+    protocol::RequestID request_id{};
+};
 
-    std::string_view string_id;
-    auto string_error = value.get_string().get(string_id);
-    if(string_error == simdjson::SUCCESS) {
-        return protocol::RequestID{std::string(string_id)};
-    }
-
-    return std::unexpected(
-        RPCError(protocol::ErrorCode::InvalidRequest, "request id must be integer or string"));
-}
-
-protocol::ResponseID response_id_from_request_id(const protocol::RequestID& id) {
-    return std::visit([](const auto& value) -> protocol::ResponseID { return value; }, id);
-}
-
-protocol::Value value_from_request_id(const protocol::RequestID& id) {
-    return std::visit(
-        [](const auto& value) -> protocol::Value {
-            using value_t = std::remove_cvref_t<decltype(value)>;
-            if constexpr(std::is_same_v<value_t, protocol::integer>) {
-                return protocol::Value{static_cast<std::int64_t>(value)};
-            } else {
-                return protocol::Value{value};
-            }
-        },
-        id);
-}
-
-std::optional<protocol::RequestID> request_id_from_response_id(const protocol::ResponseID& id) {
-    return std::visit(
-        [](const auto& value) -> std::optional<protocol::RequestID> {
-            using value_t = std::remove_cvref_t<decltype(value)>;
-            if constexpr(std::is_same_v<value_t, protocol::null>) {
-                return std::nullopt;
-            } else {
-                return protocol::RequestID{value};
-            }
-        },
-        id);
-}
-
-Result<protocol::ResponseID> parse_response_id(simdjson::ondemand::value& value) {
-    simdjson::ondemand::json_type type{};
-    auto type_error = value.type().get(type);
-    if(type_error != simdjson::SUCCESS) {
-        return std::unexpected(RPCError(protocol::ErrorCode::InvalidRequest,
-                                        std::string(simdjson::error_message(type_error))));
-    }
-
-    if(type == simdjson::ondemand::json_type::number ||
-       type == simdjson::ondemand::json_type::string) {
-        auto request_id = parse_request_id(value);
-        if(!request_id) {
-            return std::unexpected(request_id.error());
-        }
-        return response_id_from_request_id(*request_id);
-    }
-
-    if(type == simdjson::ondemand::json_type::null) {
-        return protocol::ResponseID{nullptr};
-    }
-
-    return std::unexpected(RPCError(protocol::ErrorCode::InvalidRequest,
-                                    "request id must be integer, string, or null"));
-}
-
-Result<protocol::RequestID> parse_cancel_request_id(std::string_view params_json) {
-    auto parsed_params =
-        parse_json_value<protocol::Object>(params_json, protocol::ErrorCode::InvalidParams);
-    if(!parsed_params) {
-        return std::unexpected(parsed_params.error());
-    }
-
-    auto id_it = parsed_params->find("id");
-    if(id_it == parsed_params->end()) {
-        return std::unexpected(
-            RPCError(protocol::ErrorCode::InvalidParams, "cancel request params must contain id"));
-    }
-
-    const auto& id_variant = static_cast<const protocol::Variant&>(id_it->second);
-    if(const auto* integer_id = std::get_if<std::int64_t>(&id_variant)) {
-        if(*integer_id < (std::numeric_limits<protocol::integer>::min)() ||
-           *integer_id > (std::numeric_limits<protocol::integer>::max)()) {
-            return std::unexpected(RPCError(protocol::ErrorCode::InvalidParams,
-                                            "cancel request id integer is out of range"));
-        }
-        return protocol::RequestID{static_cast<protocol::integer>(*integer_id)};
-    }
-
-    if(const auto* unsigned_id = std::get_if<std::uint32_t>(&id_variant)) {
-        if(*unsigned_id >
-           static_cast<std::uint32_t>((std::numeric_limits<protocol::integer>::max)())) {
-            return std::unexpected(RPCError(protocol::ErrorCode::InvalidParams,
-                                            "cancel request id integer is out of range"));
-        }
-        return protocol::RequestID{static_cast<protocol::integer>(*unsigned_id)};
-    }
-
-    if(const auto* string_id = std::get_if<std::string>(&id_variant)) {
-        return protocol::RequestID{*string_id};
-    }
-
-    return std::unexpected(RPCError(protocol::ErrorCode::InvalidParams,
-                                    "cancel request id must be integer or string"));
-}
+struct cancel_request_params {
+    protocol::RequestID id;
+};
 
 task<> cancel_after_timeout(std::chrono::milliseconds timeout,
                             std::shared_ptr<cancellation_source> timeout_source,
@@ -154,22 +45,6 @@ task<> cancel_after_timeout(std::chrono::milliseconds timeout,
     co_await sleep(timeout, loop);
     timeout_source->cancel();
 }
-
-struct request_id_hash {
-    std::size_t operator()(const protocol::RequestID& id) const noexcept {
-        return std::visit(
-            [](const auto& value) -> std::size_t {
-                using value_t = std::remove_cvref_t<decltype(value)>;
-                auto hashed = std::hash<value_t>{}(value);
-                if constexpr(std::is_same_v<value_t, protocol::integer>) {
-                    return hashed ^ 0x9e3779b97f4a7c15ULL;
-                } else {
-                    return hashed ^ 0x517cc1b727220a95ULL;
-                }
-            },
-            id);
-    }
-};
 
 struct outgoing_request_message {
     std::string jsonrpc = "2.0";
@@ -200,106 +75,49 @@ struct outgoing_error_response_message {
 
 struct Peer::Self {
     struct PendingRequest {
+        // Signaled when a response is available.
         event ready;
+
+        // Serialized JSON result or RPCError.
         std::optional<Result<std::string>> response;
     };
 
-    event_loop* loop = nullptr;
+    // Shared event loop used to schedule all peer coroutines.
+    event_loop& loop;
+
+    // Owning transport endpoint for I/O.
     std::unique_ptr<Transport> transport;
-    std::unordered_map<std::string, RequestCallback> request_callbacks;
-    std::unordered_map<std::string, NotificationCallback> notification_callbacks;
-    std::unordered_map<protocol::RequestID, std::shared_ptr<PendingRequest>, request_id_hash>
-        pending_requests;
-    std::unordered_map<protocol::RequestID, std::shared_ptr<cancellation_source>, request_id_hash>
-        incoming_requests;
-    protocol::integer next_request_id = 1;
+
+    // Buffered outbound JSON payloads.
     std::deque<std::string> outgoing_queue;
 
+    // Monotonic local request id generator.
+    protocol::RequestID::value_type next_request_id = 1;
+
+    // method -> request handler
+    std::unordered_map<std::string, RequestCallback> request_callbacks;
+    // method -> notification handler
+    std::unordered_map<std::string, NotificationCallback> notification_callbacks;
+
+    // Outbound requests waiting for response.
+    std::unordered_map<protocol::RequestID, std::shared_ptr<PendingRequest>> pending_requests;
+    // Inbound running handlers, cancellable by id.
+    std::unordered_map<protocol::RequestID, std::shared_ptr<cancellation_source>> incoming_requests;
+
+    // Peer read loop state flag.
     bool running = false;
+
+    // Outbound writer coroutine state flag.
     bool writer_running = false;
 
-    explicit Self(event_loop& external_loop) : loop(&external_loop) {}
+    explicit Self(event_loop& external_loop) : loop(external_loop) {}
 
+    // Outbound pipeline: enqueue message and flush through transport writer.
     void enqueue_outgoing(std::string payload) {
         outgoing_queue.push_back(std::move(payload));
         if(!writer_running) {
             writer_running = true;
-            loop->schedule(write_loop());
-        }
-    }
-
-    Result<std::string> build_success_response(const protocol::RequestID& id,
-                                               std::string_view result_json) {
-        auto result =
-            parse_json_value<protocol::Value>(result_json, protocol::ErrorCode::InternalError);
-        if(!result) {
-            return std::unexpected(result.error());
-        }
-
-        return detail::serialize_json(outgoing_success_response_message{
-            .id = id,
-            .result = std::move(*result),
-        });
-    }
-
-    Result<std::string> build_error_response(const protocol::ResponseID& id,
-                                             const RPCError& error) {
-        return detail::serialize_json(outgoing_error_response_message{
-            .id = id,
-            .error =
-                protocol::ResponseError{
-                                        .code = error.code,
-                                        .message = error.message,
-                                        .data = error.data,
-                                        },
-        });
-    }
-
-    void send_error(const protocol::ResponseID& id, const RPCError& error) {
-        auto response = build_error_response(id, error);
-        if(response) {
-            enqueue_outgoing(std::move(*response));
-        }
-    }
-
-    void send_error(const protocol::RequestID& id, const RPCError& error) {
-        send_error(response_id_from_request_id(id), error);
-    }
-
-    void send_error(const protocol::RequestID& id, protocol::ErrorCode code, std::string message) {
-        send_error(id, RPCError(code, std::move(message)));
-    }
-
-    void send_error(const protocol::ResponseID& id, protocol::ErrorCode code, std::string message) {
-        send_error(id, RPCError(code, std::move(message)));
-    }
-
-    void complete_pending_request(const protocol::RequestID& id, Result<std::string> response) {
-        if(auto it = pending_requests.find(id); it == pending_requests.end()) {
-            return;
-        } else {
-            auto pending = std::move(it->second);
-            pending_requests.erase(it);
-            pending->response = std::move(response);
-            pending->ready.set();
-        }
-    }
-
-    void fail_pending_requests(const std::string& message) {
-        if(pending_requests.empty()) {
-            return;
-        }
-
-        std::vector<std::shared_ptr<PendingRequest>> pending;
-        pending.reserve(pending_requests.size());
-        for(auto& pending_entry: pending_requests) {
-            pending.push_back(pending_entry.second);
-        }
-        pending_requests.clear();
-
-        for(auto& state: pending) {
-            state->response = std::unexpected(RPCError(message));
-            state->ready.set();
+            loop.schedule(write_loop());
         }
     }
 
@@ -323,26 +141,92 @@ struct Peer::Self {
         writer_running = false;
     }
 
+    void send_error(const protocol::ResponseID& id, const RPCError& error) {
+        auto response = detail::serialize_json(outgoing_error_response_message{
+            .id = id,
+            .error = protocol::ResponseError{error.code, error.message, error.data},
+        });
+        if(response) {
+            enqueue_outgoing(std::move(*response));
+        }
+    }
+
+    // Pending outbound request bookkeeping.
+    void complete_pending_request(const protocol::RequestID& id, Result<std::string> response) {
+        auto it = pending_requests.find(id);
+        if(it == pending_requests.end()) {
+            return;
+        }
+
+        auto pending = std::move(it->second);
+        pending_requests.erase(it);
+        pending->response = std::move(response);
+        pending->ready.set();
+    }
+
+    void fail_pending_requests(const std::string& message) {
+        if(pending_requests.empty()) {
+            return;
+        }
+
+        std::vector<std::shared_ptr<PendingRequest>> pending;
+        pending.reserve(pending_requests.size());
+        for(auto& pending_entry: pending_requests) {
+            pending.push_back(pending_entry.second);
+        }
+        pending_requests.clear();
+
+        for(auto& state: pending) {
+            state->response = std::unexpected(RPCError(message));
+            state->ready.set();
+        }
+    }
+
+    // Inbound dispatch helpers.
     void dispatch_notification(const std::string& method, std::string_view params_json) {
         if(method == "$/cancelRequest") {
-            auto cancel_id = parse_cancel_request_id(params_json);
-            if(!cancel_id) {
+            auto parsed_params =
+                parse_json_value<cancel_request_params>(params_json,
+                                                        protocol::ErrorCode::InvalidParams);
+            if(!parsed_params) {
                 return;
             }
 
-            if(auto it = incoming_requests.find(*cancel_id); it == incoming_requests.end()) {
-                return;
-            } else if(it->second) {
+            auto it = incoming_requests.find(parsed_params->id);
+            if(it != incoming_requests.end() && it->second) {
                 it->second->cancel();
             }
             return;
         }
 
-        if(auto it = notification_callbacks.find(method); it == notification_callbacks.end()) {
-            return;
-        } else {
+        if(auto it = notification_callbacks.find(method); it != notification_callbacks.end()) {
             it->second(params_json);
         }
+    }
+
+    void dispatch_request(const std::string& method,
+                          const protocol::RequestID& id,
+                          std::string_view params_json) {
+        if(incoming_requests.contains(id)) {
+            send_error(protocol::ResponseID{id},
+                       RPCError(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
+            return;
+        }
+
+        auto it = request_callbacks.find(method);
+        if(it == request_callbacks.end()) {
+            send_error(
+                protocol::ResponseID{id},
+                RPCError(protocol::ErrorCode::MethodNotFound, "method not found: " + method));
+            return;
+        }
+
+        auto callback = it->second;
+        auto cancel_source = std::make_shared<cancellation_source>();
+        incoming_requests.insert_or_assign(id, cancel_source);
+        auto task =
+            run_request(id, std::move(callback), std::string(params_json), cancel_source->token());
+        loop.schedule(std::move(task));
     }
 
     task<> run_request(protocol::RequestID id,
@@ -353,46 +237,36 @@ struct Peer::Self {
         incoming_requests.erase(id);
 
         if(!guarded_result.has_value()) {
-            send_error(id, protocol::ErrorCode::RequestCancelled, "request cancelled");
+            send_error(protocol::ResponseID{id},
+                       RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
             co_return;
         }
 
         auto result_json = std::move(*guarded_result);
         if(!result_json) {
-            send_error(id, result_json.error());
+            send_error(protocol::ResponseID{id}, result_json.error());
             co_return;
         }
 
-        auto response = build_success_response(id, *result_json);
+        auto result =
+            parse_json_value<protocol::Value>(*result_json, protocol::ErrorCode::InternalError);
+        if(!result) {
+            send_error(protocol::ResponseID{id},
+                       RPCError(protocol::ErrorCode::InternalError, result.error().message));
+            co_return;
+        }
+
+        auto response = detail::serialize_json(outgoing_success_response_message{
+            .id = id,
+            .result = std::move(*result),
+        });
         if(!response) {
-            send_error(id, RPCError(protocol::ErrorCode::InternalError, response.error().message));
+            send_error(protocol::ResponseID{id},
+                       RPCError(protocol::ErrorCode::InternalError, response.error().message));
             co_return;
         }
 
         enqueue_outgoing(std::move(*response));
-    }
-
-    void dispatch_request(const std::string& method,
-                          const protocol::RequestID& id,
-                          std::string_view params_json) {
-        if(incoming_requests.contains(id)) {
-            send_error(id, protocol::ErrorCode::InvalidRequest, "duplicate request id");
-            return;
-        }
-
-        if(auto it = request_callbacks.find(method); it == request_callbacks.end()) {
-            send_error(id, protocol::ErrorCode::MethodNotFound, "method not found: " + method);
-            return;
-        } else {
-            auto callback = it->second;
-            auto cancel_source = std::make_shared<cancellation_source>();
-            incoming_requests.insert_or_assign(id, cancel_source);
-            auto task = run_request(id,
-                                    std::move(callback),
-                                    std::string(params_json),
-                                    cancel_source->token());
-            loop->schedule(std::move(task));
-        }
     }
 
     void dispatch_response(const protocol::RequestID& id,
@@ -426,12 +300,10 @@ struct Peer::Self {
     }
 
     void dispatch_incoming_message(std::string_view payload) {
-        auto send_protocol_error = [this](std::optional<protocol::ResponseID> id,
-                                          protocol::ErrorCode code,
-                                          std::string message) {
-            auto response_id = id.value_or(protocol::ResponseID{nullptr});
-            send_error(response_id, code, std::move(message));
-        };
+        auto send_protocol_error =
+            [this](const protocol::ResponseID& id, protocol::ErrorCode code, std::string message) {
+                send_error(id, RPCError(code, std::move(message)));
+            };
 
         simdjson::ondemand::parser parser;
         simdjson::padded_string json(payload);
@@ -460,31 +332,33 @@ struct Peer::Self {
         }
 
         std::optional<std::string> method;
-        std::optional<protocol::ResponseID> id;
+        parsed_incoming_id id;
         std::optional<std::string_view> params_json;
         std::optional<std::string_view> result_json;
         std::optional<std::string_view> error_json;
-        auto fail_message = [this, &method, &send_protocol_error](
-                                std::optional<protocol::ResponseID> id,
-                                protocol::ErrorCode code,
-                                std::string message) {
-            if(!method.has_value() && id.has_value()) {
-                if(auto request_id = request_id_from_response_id(*id); request_id.has_value()) {
-                    complete_pending_request(*request_id,
-                                             std::unexpected(RPCError(code, std::move(message))));
-                }
-                return;
+        auto response_id = [&id]() -> protocol::ResponseID {
+            if(id.present && !id.is_null) {
+                return id.request_id;
             }
-
-            send_protocol_error(id, code, std::move(message));
+            return std::nullopt;
         };
+        auto fail_message =
+            [this, &method, &id, &response_id, &send_protocol_error](protocol::ErrorCode code,
+                                                                     std::string message) {
+                if(!method.has_value() && id.present && !id.is_null) {
+                    complete_pending_request(id.request_id,
+                                             std::unexpected(RPCError(code, std::move(message))));
+                    return;
+                }
+
+                send_protocol_error(response_id(), code, std::move(message));
+            };
 
         for(auto field_result: object) {
             simdjson::ondemand::field field{};
             auto field_error = std::move(field_result).get(field);
             if(field_error != simdjson::SUCCESS) {
-                fail_message(id,
-                             protocol::ErrorCode::InvalidRequest,
+                fail_message(protocol::ErrorCode::InvalidRequest,
                              std::string(simdjson::error_message(field_error)));
                 return;
             }
@@ -492,8 +366,7 @@ struct Peer::Self {
             std::string_view key;
             auto key_error = field.unescaped_key().get(key);
             if(key_error != simdjson::SUCCESS) {
-                fail_message(id,
-                             protocol::ErrorCode::InvalidRequest,
+                fail_message(protocol::ErrorCode::InvalidRequest,
                              std::string(simdjson::error_message(key_error)));
                 return;
             }
@@ -503,7 +376,7 @@ struct Peer::Self {
                 std::string_view method_text;
                 auto method_error = value.get_string().get(method_text);
                 if(method_error != simdjson::SUCCESS) {
-                    send_protocol_error(id,
+                    send_protocol_error(response_id(),
                                         protocol::ErrorCode::InvalidRequest,
                                         std::string(simdjson::error_message(method_error)));
                     return;
@@ -513,22 +386,47 @@ struct Peer::Self {
             }
 
             if(key == "id") {
-                auto parsed_id = parse_response_id(value);
-                if(!parsed_id) {
+                simdjson::ondemand::json_type id_type{};
+                auto id_type_error = value.type().get(id_type);
+                if(id_type_error != simdjson::SUCCESS) {
                     send_protocol_error(std::nullopt,
                                         protocol::ErrorCode::InvalidRequest,
-                                        parsed_id.error().message);
+                                        std::string(simdjson::error_message(id_type_error)));
                     return;
                 }
-                id = std::move(*parsed_id);
-                continue;
+
+                if(id_type == simdjson::ondemand::json_type::number) {
+                    std::int64_t integer_id = 0;
+                    auto integer_error = value.get_int64().get(integer_id);
+                    if(integer_error != simdjson::SUCCESS) {
+                        send_protocol_error(std::nullopt,
+                                            protocol::ErrorCode::InvalidRequest,
+                                            "request id must be integer");
+                        return;
+                    }
+
+                    id.present = true;
+                    id.is_null = false;
+                    id.request_id = protocol::RequestID{integer_id};
+                    continue;
+                }
+
+                if(id_type == simdjson::ondemand::json_type::null) {
+                    id.present = true;
+                    id.is_null = true;
+                    continue;
+                }
+
+                send_protocol_error(std::nullopt,
+                                    protocol::ErrorCode::InvalidRequest,
+                                    "request id must be integer or null");
+                return;
             }
 
             std::string_view raw_json;
             auto raw_error = value.raw_json().get(raw_json);
             if(raw_error != simdjson::SUCCESS) {
-                fail_message(id,
-                             protocol::ErrorCode::InvalidRequest,
+                fail_message(protocol::ErrorCode::InvalidRequest,
                              std::string(simdjson::error_message(raw_error)));
                 return;
             }
@@ -550,52 +448,49 @@ struct Peer::Self {
         }
 
         if(!document.at_end()) {
-            fail_message(id,
-                         protocol::ErrorCode::InvalidRequest,
+            fail_message(protocol::ErrorCode::InvalidRequest,
                          "trailing content after JSON-RPC message");
             return;
         }
 
         if(method.has_value()) {
             auto params = params_json.value_or(std::string_view{});
-            if(id.has_value()) {
-                auto request_id = request_id_from_response_id(*id);
-                if(!request_id) {
+            if(id.present) {
+                if(id.is_null) {
                     send_protocol_error(std::nullopt,
                                         protocol::ErrorCode::InvalidRequest,
-                                        "request id must be integer or string");
+                                        "request id must be integer");
                     return;
                 }
-                dispatch_request(*method, *request_id, params);
+
+                dispatch_request(*method, id.request_id, params);
             } else {
                 dispatch_notification(*method, params);
             }
             return;
         }
 
-        if(id.has_value()) {
-            auto request_id = request_id_from_response_id(*id);
-            if(!request_id) {
+        if(id.present) {
+            if(id.is_null) {
                 return;
             }
 
             if(result_json.has_value() == error_json.has_value()) {
                 complete_pending_request(
-                    *request_id,
+                    id.request_id,
                     std::unexpected(
                         RPCError(protocol::ErrorCode::InvalidRequest,
                                  "response must contain exactly one of result or error")));
                 return;
             }
 
-            dispatch_response(*request_id, result_json, error_json);
+            dispatch_response(id.request_id, result_json, error_json);
             return;
         }
 
         send_protocol_error(std::nullopt,
                             protocol::ErrorCode::InvalidRequest,
                             "message must contain method or id");
-        return;
     }
 };
 
@@ -690,7 +585,7 @@ task<Result<std::string>> Peer::send_request_json(std::string_view method,
         if(auto it = self->pending_requests.find(request_id); it != self->pending_requests.end()) {
             self->pending_requests.erase(it);
             protocol::Object cancel_params;
-            cancel_params.insert_or_assign("id", value_from_request_id(request_id));
+            cancel_params.insert_or_assign("id", protocol::Value{request_id.value});
             auto cancel_request = detail::serialize_json(outgoing_notification_message{
                 .method = "$/cancelRequest",
                 .params = protocol::Value(std::move(cancel_params)),
@@ -719,8 +614,8 @@ task<Result<std::string>> Peer::send_request_json(std::string_view method,
     }
 
     auto timeout_source = std::make_shared<cancellation_source>();
-    if(auto* loop_ptr = self ? self->loop : nullptr; loop_ptr != nullptr) {
-        loop_ptr->schedule(cancel_after_timeout(timeout, timeout_source, *loop_ptr));
+    if(self) {
+        self->loop.schedule(cancel_after_timeout(timeout, timeout_source, self->loop));
     }
 
     auto result =
