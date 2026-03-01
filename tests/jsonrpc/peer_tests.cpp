@@ -841,15 +841,18 @@ TEST_CASE(cancel_running_handler) {
     Peer peer(loop, std::move(transport));
     bool started = false;
     bool completed = false;
+    event handler_started;
 
     peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
         started = true;
+        handler_started.set();
         co_await sleep(std::chrono::milliseconds{20}, loop);
         completed = true;
         co_return AddResult{.sum = params.a + params.b};
     });
 
     auto canceler = [&]() -> task<> {
+        co_await handler_started.wait();
         co_await sleep(std::chrono::milliseconds{1}, loop);
         transport_ptr->push_incoming(
             R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":22}})");
