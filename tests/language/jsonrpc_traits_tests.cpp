@@ -7,13 +7,16 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/jsonrpc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/sync.h"
 #include "eventide/serde/simdjson/deserializer.h"
-#include "eventide/language/server.h"
+#include "eventide/language/protocol.h"
 
 namespace eventide::language {
+
+namespace jsonrpc = eventide::jsonrpc;
 
 struct AddParams {
     std::int64_t a = 0;
@@ -56,7 +59,7 @@ struct RpcNotification {
     NoteParams params;
 };
 
-class FakeTransport final : public Transport {
+class FakeTransport final : public jsonrpc::Transport {
 public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
@@ -83,7 +86,7 @@ private:
     std::size_t read_index = 0;
 };
 
-class ScriptedTransport final : public Transport {
+class ScriptedTransport final : public jsonrpc::Transport {
 public:
     using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
 
@@ -140,24 +143,24 @@ private:
 
 }  // namespace eventide::language
 
-namespace eventide::language::protocol {
+namespace eventide::jsonrpc::protocol {
 
 template <>
-struct RequestTraits<AddParams> {
-    using Result = AddResult;
+struct RequestTraits<eventide::language::AddParams> {
+    using Result = eventide::language::AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct NotificationTraits<NoteParams> {
+struct NotificationTraits<eventide::language::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-}  // namespace eventide::language::protocol
+}  // namespace eventide::jsonrpc::protocol
 
 namespace eventide::language {
 
-TEST_SUITE(language_server) {
+TEST_SUITE(language_jsonrpc_traits) {
 
 TEST_CASE(traits_registration_and_dispatch_order) {
 // Visual Studio issue:
@@ -173,17 +176,18 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     });
     auto* transport_ptr = transport.get();
 
-    LanguageServer server(std::move(transport));
+    jsonrpc::Peer peer(std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
 
-    server.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+    peer.on_request([&](jsonrpc::RequestContext&,
+                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
         order.emplace_back("request");
         co_return AddResult{.sum = params.a + params.b};
     });
 
-    server.on_notification([&](const NoteParams& params) {
+    peer.on_notification([&](const NoteParams& params) {
         if(params.text == "first") {
             first_seen = true;
             order.emplace_back("note:first");
@@ -195,7 +199,7 @@ TEST_CASE(traits_registration_and_dispatch_order) {
         }
     });
 
-    EXPECT_EQ(server.start(), 0);
+    EXPECT_EQ(peer.start(), 0);
 
     ASSERT_EQ(order.size(), 3U);
     EXPECT_EQ(order[0], "note:first");
@@ -223,21 +227,21 @@ TEST_CASE(explicit_method_registration) {
     });
     auto* transport_ptr = transport.get();
 
-    LanguageServer server(std::move(transport));
+    jsonrpc::Peer peer(std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
-    server.on_request(
-        "custom/add",
-        [&](RequestContext& context, const AddParams& params) -> RequestResult<AddParams> {
-            request_method = std::string(context.method);
-            co_return AddResult{.sum = params.a + params.b};
-        });
+    peer.on_request("custom/add",
+                    [&](jsonrpc::RequestContext& context,
+                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
+                        request_method = std::string(context.method);
+                        co_return AddResult{.sum = params.a + params.b};
+                    });
 
-    server.on_notification("custom/note",
-                           [&](const NoteParams& params) { notifications.push_back(params.text); });
+    peer.on_notification("custom/note",
+                         [&](const NoteParams& params) { notifications.push_back(params.text); });
 
-    EXPECT_EQ(server.start(), 0);
+    EXPECT_EQ(peer.start(), 0);
 
     EXPECT_EQ(request_method, "custom/add");
     ASSERT_EQ(notifications.size(), 1U);
@@ -278,12 +282,12 @@ TEST_CASE(send_request_and_notification_apis) {
         });
     auto* transport_ptr = transport.get();
 
-    LanguageServer server(std::move(transport));
+    jsonrpc::Peer peer(std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
-    server.on_request([&](RequestContext& context,
-                          const AddParams& params) -> RequestResult<AddParams> {
+    peer.on_request([&](jsonrpc::RequestContext& context,
+                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
         request_method = std::string(context.method);
         request_id = std::get<protocol::integer>(context.id);
 
@@ -294,7 +298,7 @@ TEST_CASE(send_request_and_notification_apis) {
         }
 
         auto notify_from_server =
-            server.send_notification("client/note/server", CustomNoteParams{.text = "server"});
+            peer.send_notification("client/note/server", CustomNoteParams{.text = "server"});
         if(!notify_from_server) {
             co_return std::unexpected(notify_from_server.error());
         }
@@ -307,8 +311,8 @@ TEST_CASE(send_request_and_notification_apis) {
         }
 
         auto server_result =
-            co_await server.send_request<AddResult>("client/add/server",
-                                                    CustomAddParams{.a = params.b, .b = 1});
+            co_await peer.send_request<AddResult>("client/add/server",
+                                                  CustomAddParams{.a = params.b, .b = 1});
         if(!server_result) {
             co_return std::unexpected(server_result.error());
         }
@@ -316,7 +320,7 @@ TEST_CASE(send_request_and_notification_apis) {
         co_return AddResult{.sum = context_result->sum + server_result->sum};
     });
 
-    EXPECT_EQ(server.start(), 0);
+    EXPECT_EQ(peer.start(), 0);
 
     EXPECT_EQ(request_method, "test/add");
     EXPECT_EQ(request_id, 7);
@@ -360,6 +364,6 @@ TEST_CASE(send_request_and_notification_apis) {
     EXPECT_EQ(final_response->result->sum, 13);
 }
 
-};  // TEST_SUITE(language_server)
+};  // TEST_SUITE(language_jsonrpc_traits)
 
 }  // namespace eventide::language

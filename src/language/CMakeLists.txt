@@ -3,7 +3,6 @@ add_library(eventide::language ALIAS eventide_language)
 
 target_sources(eventide_language PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/position.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/server.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/uri.cpp"
 )
 

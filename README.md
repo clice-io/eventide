@@ -41,10 +41,9 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
 
 ### `language` (`include/eventide/language/*`)
 
-- Typed language server abstraction (`LanguageServer`).
-- Typed request/notification registration with compile-time signature checks.
-- Stream transport abstraction for stdio / TCP (`Transport`, `StreamTransport`).
 - Generated LSP protocol model (`include/eventide/language/protocol.h`).
+- LSP URI and position helpers (`URI`, `PositionMapper`).
+- Typed RPC integration through `eventide::jsonrpc::Peer`.
 
 ### `option` (`include/eventide/option/*`)
 
@@ -85,7 +84,7 @@ include/
     async/       # Async runtime APIs
     common/      # Shared utilities
     deco/        # Declarative CLI layer built on option + reflection
-    language/    # LSP-facing server and transport interfaces
+    language/    # LSP protocol model and utilities
     option/      # LLVM-compatible option parsing layer
     reflection/  # Compile-time reflection utilities
     serde/       # Generic serde + backend adapters
@@ -96,7 +95,7 @@ src/
   option/        # Option parser implementation
   deco/          # Deco target wiring (header-only APIs)
   serde/         # FlatBuffers/FlexBuffers serde implementation
-  language/      # Language server + transport implementation
+  language/      # URI/position implementations
   reflection/    # Reflection target wiring (header-only public APIs)
   zest/          # Test runner implementation
 
