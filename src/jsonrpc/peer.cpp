@@ -464,23 +464,36 @@ struct Peer::Self {
         std::optional<std::string_view> params_json;
         std::optional<std::string_view> result_json;
         std::optional<std::string_view> error_json;
+        auto fail_message = [this, &method, &send_protocol_error](std::optional<protocol::ResponseID> id,
+                                                                   protocol::ErrorCode code,
+                                                                   std::string message) {
+            if(!method.has_value() && id.has_value()) {
+                if(auto request_id = request_id_from_response_id(*id); request_id.has_value()) {
+                    complete_pending_request(*request_id,
+                                             std::unexpected(RPCError(code, std::move(message))));
+                }
+                return;
+            }
+
+            send_protocol_error(id, code, std::move(message));
+        };
 
         for(auto field_result: object) {
             simdjson::ondemand::field field{};
             auto field_error = std::move(field_result).get(field);
             if(field_error != simdjson::SUCCESS) {
-                send_protocol_error(id,
-                                    protocol::ErrorCode::InvalidRequest,
-                                    std::string(simdjson::error_message(field_error)));
+                fail_message(id,
+                             protocol::ErrorCode::InvalidRequest,
+                             std::string(simdjson::error_message(field_error)));
                 return;
             }
 
             std::string_view key;
             auto key_error = field.unescaped_key().get(key);
             if(key_error != simdjson::SUCCESS) {
-                send_protocol_error(id,
-                                    protocol::ErrorCode::InvalidRequest,
-                                    std::string(simdjson::error_message(key_error)));
+                fail_message(id,
+                             protocol::ErrorCode::InvalidRequest,
+                             std::string(simdjson::error_message(key_error)));
                 return;
             }
 
@@ -513,9 +526,9 @@ struct Peer::Self {
             std::string_view raw_json;
             auto raw_error = value.raw_json().get(raw_json);
             if(raw_error != simdjson::SUCCESS) {
-                send_protocol_error(id,
-                                    protocol::ErrorCode::InvalidRequest,
-                                    std::string(simdjson::error_message(raw_error)));
+                fail_message(id,
+                             protocol::ErrorCode::InvalidRequest,
+                             std::string(simdjson::error_message(raw_error)));
                 return;
             }
 
@@ -536,9 +549,9 @@ struct Peer::Self {
         }
 
         if(!document.at_end()) {
-            send_protocol_error(id,
-                                protocol::ErrorCode::InvalidRequest,
-                                "trailing content after JSON-RPC message");
+            fail_message(id,
+                         protocol::ErrorCode::InvalidRequest,
+                         "trailing content after JSON-RPC message");
             return;
         }
 

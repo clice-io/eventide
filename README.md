@@ -51,7 +51,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - structurally invalid messages map to `InvalidRequest (-32600)` with `id: null`
   - parameter decode failures map to `InvalidParams (-32602)`
 - Cancellation behavior:
-  - inbound `$/cancelRequest` cancels matching in-flight handlers and returns `RequestCancelled (-32800, aligned with LSP `LSPErrorCodes::RequestCancelled`)`
+  - inbound `$/cancelRequest` cancels matching in-flight handlers and returns `RequestCancelled (-32800)` (aligned with LSP `LSPErrorCodes::RequestCancelled`)
   - outbound request cancellation (token or timeout) sends `$/cancelRequest` to the remote peer when the request is still pending
   - timeout overloads report `RequestCancelled (-32800)` with message `"request timed out"`
   - `RequestContext` delegates via `operator->`; use `context->send_request(..., context.cancellation)` to propagate the inbound handler token explicitly

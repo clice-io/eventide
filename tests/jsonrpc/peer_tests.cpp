@@ -472,7 +472,8 @@ TEST_CASE(request_notify_apis) {
             }
 
             if(payload.find(R"("id":7)") != std::string_view::npos &&
-               payload.find(R"("result")") != std::string_view::npos) {
+               (payload.find(R"("result")") != std::string_view::npos ||
+                payload.find(R"("error")") != std::string_view::npos)) {
                 channel.close();
             }
         });
@@ -699,6 +700,49 @@ TEST_CASE(outbound_error_data) {
     const auto& attempt_variant = static_cast<const protocol::Variant&>(attempt_it->second);
     ASSERT_TRUE(std::holds_alternative<std::int64_t>(attempt_variant));
     EXPECT_EQ(std::get<std::int64_t>(attempt_variant), -1);
+}
+
+TEST_CASE(bad_response_silent) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"worker/build")") == std::string_view::npos) {
+                return;
+            }
+
+            channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"\uD800":0})");
+            channel.close();
+        });
+    auto* transport_ptr = transport.get();
+
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
+    Result<AddResult> request_result = std::unexpected("request did not complete");
+
+    auto requester = [&]() -> task<> {
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 5, .b = 6});
+        co_return;
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::InvalidRequest));
+    EXPECT_FALSE(request_result.error().message.empty());
+
+    ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
+    auto request = serde::json::simd::from_json<RPCRequest>(transport_ptr->outgoing().front());
+    ASSERT_TRUE(request.has_value());
+    EXPECT_EQ(request->method, "worker/build");
 }
 
 TEST_CASE(bad_params_invalid) {
