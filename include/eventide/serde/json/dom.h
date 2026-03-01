@@ -7,12 +7,14 @@
 #include <cstdlib>
 #include <expected>
 #include <iterator>
+#include <memory>
 #include <new>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
@@ -30,6 +32,7 @@ class ObjectRef;
 class Value;
 class Array;
 class Object;
+class Builder;
 
 enum class ValueKind : std::uint8_t {
     invalid = 0,
@@ -373,6 +376,8 @@ public:
 
     static auto from_mutable_doc(yyjson_mut_doc* raw_doc) noexcept -> std::optional<Value>;
 
+    static auto copy_of(ValueRef source) -> std::expected<Value, error_kind>;
+
     [[nodiscard]] auto to_json_string() const -> std::expected<std::string, yyjson_write_code>;
 
     [[nodiscard]] ValueRef as_ref() const noexcept;
@@ -413,6 +418,7 @@ private:
 private:
     friend class Array;
     friend class Object;
+    friend class Builder;
 };
 
 class Array : public ArrayRef, private OwnedDoc {
@@ -509,6 +515,60 @@ private:
 
 private:
     friend class Value;
+};
+
+class Builder {
+public:
+    using status_t = std::expected<void, error_kind>;
+
+    Builder() noexcept;
+
+    [[nodiscard]] bool valid() const noexcept;
+
+    [[nodiscard]] error_kind error() const noexcept;
+
+    [[nodiscard]] bool complete() const noexcept;
+
+    auto begin_object() -> status_t;
+
+    auto end_object() -> status_t;
+
+    auto begin_array() -> status_t;
+
+    auto end_array() -> status_t;
+
+    auto key(std::string_view key_name) -> status_t;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    auto value(T&& value) -> status_t;
+
+    auto value_ref(ValueRef value) -> status_t;
+
+    [[nodiscard]] auto dom_value() const -> std::expected<Value, error_kind>;
+
+    [[nodiscard]] auto to_json_string() const -> std::expected<std::string, error_kind>;
+
+private:
+    enum class container_kind : std::uint8_t { array, object };
+
+    struct container_frame {
+        container_kind kind;
+        yyjson_mut_val* value = nullptr;
+        bool expect_key = true;
+        std::string pending_key;
+    };
+
+    auto append_mut_value(yyjson_mut_val* value) -> status_t;
+
+    void mark_invalid(error_kind error = error_kind::invalid_state) noexcept;
+
+private:
+    bool is_valid = true;
+    bool root_is_written = false;
+    error_kind last_error = error_kind::invalid_state;
+    std::vector<container_frame> stack;
+    std::shared_ptr<yyjson_mut_doc> doc;
 };
 
 }  // namespace eventide::serde::json

@@ -529,29 +529,15 @@ public:
         auto source = consume_value_ref();
         if(!source) {
             return std::unexpected(source.error());
+        } else {
+            auto copied = json::Value::copy_of(*source);
+            if(!copied.has_value()) {
+                mark_invalid(copied.error());
+                return std::unexpected(current_error());
+            } else {
+                return std::move(*copied);
+            }
         }
-
-        yyjson_mut_doc* rawDoc = yyjson_mut_doc_new(nullptr);
-        if(rawDoc == nullptr) {
-            mark_invalid(error_type::allocation_failed);
-            return std::unexpected(current_error());
-        }
-
-        auto copied = clone_value(rawDoc, *source);
-        if(!copied) {
-            yyjson_mut_doc_free(rawDoc);
-            mark_invalid(copied.error());
-            return std::unexpected(copied.error());
-        }
-
-        yyjson_mut_doc_set_root(rawDoc, *copied);
-        auto value = json::Value::from_mutable_doc(rawDoc);
-        if(!value) {
-            yyjson_mut_doc_free(rawDoc);
-            mark_invalid(error_type::invalid_state);
-            return std::unexpected(current_error());
-        }
-        return std::move(*value);
     }
 
 private:
@@ -610,104 +596,6 @@ private:
 
         value_scope scope(*this, input);
         return serde::deserialize(*this, out);
-    }
-
-    result_t<yyjson_mut_val*> clone_value(yyjson_mut_doc* doc, json::ValueRef source) {
-        if(doc == nullptr || !source.valid()) {
-            return std::unexpected(error_type::invalid_state);
-        } else if(source.is_null()) {
-            auto* value = yyjson_mut_null(doc);
-            return value ? result_t<yyjson_mut_val*>(value)
-                         : std::unexpected(error_type::allocation_failed);
-        } else if(source.is_bool()) {
-            auto parsed = source.get_bool();
-            if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
-            }
-            auto* value = yyjson_mut_bool(doc, *parsed);
-            return value ? result_t<yyjson_mut_val*>(value)
-                         : std::unexpected(error_type::allocation_failed);
-        } else if(source.is_int()) {
-            auto signedValue = source.get_int();
-            if(signedValue && *signedValue < 0) {
-                auto* value = yyjson_mut_sint(doc, *signedValue);
-                return value ? result_t<yyjson_mut_val*>(value)
-                             : std::unexpected(error_type::allocation_failed);
-            }
-
-            auto unsignedValue = source.get_uint();
-            if(!unsignedValue) {
-                return std::unexpected(error_type::type_mismatch);
-            }
-            auto* value = yyjson_mut_uint(doc, *unsignedValue);
-            return value ? result_t<yyjson_mut_val*>(value)
-                         : std::unexpected(error_type::allocation_failed);
-        } else if(source.is_number()) {
-            auto parsed = source.get_double();
-            if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
-            }
-            auto* value = yyjson_mut_real(doc, *parsed);
-            return value ? result_t<yyjson_mut_val*>(value)
-                         : std::unexpected(error_type::allocation_failed);
-        } else if(source.is_string()) {
-            auto parsed = source.get_string();
-            if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
-            }
-            auto* value = yyjson_mut_strncpy(doc, parsed->data(), parsed->size());
-            return value ? result_t<yyjson_mut_val*>(value)
-                         : std::unexpected(error_type::allocation_failed);
-        } else if(source.is_array()) {
-            auto array = source.get_array();
-            if(!array) {
-                return std::unexpected(error_type::type_mismatch);
-            }
-
-            auto* copiedArray = yyjson_mut_arr(doc);
-            if(copiedArray == nullptr) {
-                return std::unexpected(error_type::allocation_failed);
-            }
-
-            for(auto item: *array) {
-                auto copiedItem = clone_value(doc, item);
-                if(!copiedItem) {
-                    return std::unexpected(copiedItem.error());
-                }
-                if(!yyjson_mut_arr_add_val(copiedArray, *copiedItem)) {
-                    return std::unexpected(error_type::allocation_failed);
-                }
-            }
-            return copiedArray;
-        } else if(source.is_object()) {
-            auto object = source.get_object();
-            if(!object) {
-                return std::unexpected(error_type::type_mismatch);
-            }
-
-            auto* copiedObject = yyjson_mut_obj(doc);
-            if(copiedObject == nullptr) {
-                return std::unexpected(error_type::allocation_failed);
-            }
-
-            for(auto entry: *object) {
-                auto* key = yyjson_mut_strncpy(doc, entry.key.data(), entry.key.size());
-                if(key == nullptr) {
-                    return std::unexpected(error_type::allocation_failed);
-                }
-
-                auto copiedValue = clone_value(doc, entry.value);
-                if(!copiedValue) {
-                    return std::unexpected(copiedValue.error());
-                }
-                if(!yyjson_mut_obj_add(copiedObject, key, *copiedValue)) {
-                    return std::unexpected(error_type::allocation_failed);
-                }
-            }
-            return copiedObject;
-        } else {
-            return std::unexpected(error_type::type_mismatch);
-        }
     }
 
     result_t<value_kind> peek_value_kind() {

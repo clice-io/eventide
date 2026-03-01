@@ -722,6 +722,34 @@ inline auto Value::from_mutable_doc(yyjson_mut_doc* raw_doc) noexcept -> std::op
     return Value(tag_handle(root, true), tag_doc(raw_doc, true), ref_count, false);
 }
 
+inline auto Value::copy_of(ValueRef source) -> std::expected<Value, error_kind> {
+    if(!source.valid()) {
+        return std::unexpected(error_kind::invalid_state);
+    } else {
+        yyjson_mut_doc* raw_doc = yyjson_mut_doc_new(nullptr);
+        if(raw_doc == nullptr) {
+            return std::unexpected(error_kind::allocation_failed);
+        } else {
+            yyjson_mut_val* copied_root = source.mutable_ref()
+                                              ? yyjson_mut_val_mut_copy(raw_doc, source.mutable_ptr())
+                                              : yyjson_val_mut_copy(raw_doc, source.immutable_ptr());
+            if(copied_root == nullptr) {
+                yyjson_mut_doc_free(raw_doc);
+                return std::unexpected(error_kind::allocation_failed);
+            } else {
+                yyjson_mut_doc_set_root(raw_doc, copied_root);
+                auto copied = from_mutable_doc(raw_doc);
+                if(!copied.has_value()) {
+                    yyjson_mut_doc_free(raw_doc);
+                    return std::unexpected(error_kind::invalid_state);
+                } else {
+                    return std::move(*copied);
+                }
+            }
+        }
+    }
+}
+
 inline auto Value::to_json_string() const -> std::expected<std::string, yyjson_write_code> {
     if(!valid()) {
         return std::unexpected(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
@@ -1103,6 +1131,319 @@ inline auto Object::assign(std::string_view key, T&& value) -> status_t {
                 }
             }
         }
+    }
+}
+
+inline Builder::Builder() noexcept : doc(yyjson_mut_doc_new(nullptr), yyjson_mut_doc_free) {
+    if(doc == nullptr) {
+        mark_invalid(error_kind::allocation_failed);
+    }
+}
+
+inline bool Builder::valid() const noexcept {
+    return is_valid;
+}
+
+inline error_kind Builder::error() const noexcept {
+    return last_error;
+}
+
+inline bool Builder::complete() const noexcept {
+    return valid() && root_is_written && stack.empty();
+}
+
+inline auto Builder::begin_object() -> status_t {
+    if(!valid()) {
+        return std::unexpected(error());
+    } else {
+        auto* object = yyjson_mut_obj(doc.get());
+        if(object == nullptr) {
+            mark_invalid(error_kind::allocation_failed);
+            return std::unexpected(error());
+        } else {
+            auto appended = append_mut_value(object);
+            if(!appended.has_value()) {
+                return std::unexpected(appended.error());
+            } else {
+                stack.push_back(container_frame{
+                    .kind = container_kind::object,
+                    .value = object,
+                    .expect_key = true,
+                });
+                return {};
+            }
+        }
+    }
+}
+
+inline auto Builder::end_object() -> status_t {
+    if(!valid() || stack.empty()) {
+        mark_invalid();
+        return std::unexpected(error());
+    } else {
+        const auto& frame = stack.back();
+        if(frame.kind != container_kind::object || !frame.expect_key) {
+            mark_invalid();
+            return std::unexpected(error());
+        } else {
+            stack.pop_back();
+            return {};
+        }
+    }
+}
+
+inline auto Builder::begin_array() -> status_t {
+    if(!valid()) {
+        return std::unexpected(error());
+    } else {
+        auto* array = yyjson_mut_arr(doc.get());
+        if(array == nullptr) {
+            mark_invalid(error_kind::allocation_failed);
+            return std::unexpected(error());
+        } else {
+            auto appended = append_mut_value(array);
+            if(!appended.has_value()) {
+                return std::unexpected(appended.error());
+            } else {
+                stack.push_back(container_frame{
+                    .kind = container_kind::array,
+                    .value = array,
+                    .expect_key = false,
+                });
+                return {};
+            }
+        }
+    }
+}
+
+inline auto Builder::end_array() -> status_t {
+    if(!valid() || stack.empty()) {
+        mark_invalid();
+        return std::unexpected(error());
+    } else if(stack.back().kind != container_kind::array) {
+        mark_invalid();
+        return std::unexpected(error());
+    } else {
+        stack.pop_back();
+        return {};
+    }
+}
+
+inline auto Builder::key(std::string_view key_name) -> status_t {
+    if(!valid() || stack.empty()) {
+        mark_invalid();
+        return std::unexpected(error());
+    } else {
+        auto& frame = stack.back();
+        if(frame.kind != container_kind::object || !frame.expect_key) {
+            mark_invalid();
+            return std::unexpected(error());
+        } else {
+            frame.pending_key.assign(key_name.data(), key_name.size());
+            frame.expect_key = false;
+            return {};
+        }
+    }
+}
+
+template <typename T>
+    requires dom_writable_value<T>
+inline auto Builder::value(T&& value) -> status_t {
+    if(!valid()) {
+        return std::unexpected(error());
+    } else {
+        auto mut_value = Value::make_mut_value(doc.get(), std::forward<T>(value));
+        if(!mut_value.has_value()) {
+            mark_invalid(mut_value.error());
+            return std::unexpected(error());
+        } else {
+            return append_mut_value(*mut_value);
+        }
+    }
+}
+
+inline auto Builder::value_ref(ValueRef value) -> status_t {
+    if(!valid() || !value.valid()) {
+        mark_invalid();
+        return std::unexpected(error());
+    } else if(value.is_null()) {
+        return this->value(nullptr);
+    } else if(value.is_bool()) {
+        auto parsed = value.get_bool();
+        if(!parsed.has_value()) {
+            mark_invalid(error_kind::type_mismatch);
+            return std::unexpected(error());
+        } else {
+            return this->value(*parsed);
+        }
+    } else if(value.is_int()) {
+        auto signed_value = value.get_int();
+        if(signed_value.has_value() && *signed_value < 0) {
+            return this->value(*signed_value);
+        } else {
+            auto unsigned_value = value.get_uint();
+            if(!unsigned_value.has_value()) {
+                mark_invalid(error_kind::type_mismatch);
+                return std::unexpected(error());
+            } else {
+                return this->value(*unsigned_value);
+            }
+        }
+    } else if(value.is_number()) {
+        auto parsed = value.get_double();
+        if(!parsed.has_value()) {
+            mark_invalid(error_kind::type_mismatch);
+            return std::unexpected(error());
+        } else {
+            return this->value(*parsed);
+        }
+    } else if(value.is_string()) {
+        auto parsed = value.get_string();
+        if(!parsed.has_value()) {
+            mark_invalid(error_kind::type_mismatch);
+            return std::unexpected(error());
+        } else {
+            return this->value(*parsed);
+        }
+    } else if(value.is_array()) {
+        auto array = value.get_array();
+        if(!array.has_value()) {
+            mark_invalid(error_kind::type_mismatch);
+            return std::unexpected(error());
+        } else {
+            auto started = begin_array();
+            if(!started.has_value()) {
+                return std::unexpected(started.error());
+            } else {
+                for(auto item: *array) {
+                    auto status = value_ref(item);
+                    if(!status.has_value()) {
+                        return std::unexpected(status.error());
+                    }
+                }
+                return end_array();
+            }
+        }
+    } else if(value.is_object()) {
+        auto object = value.get_object();
+        if(!object.has_value()) {
+            mark_invalid(error_kind::type_mismatch);
+            return std::unexpected(error());
+        } else {
+            auto started = begin_object();
+            if(!started.has_value()) {
+                return std::unexpected(started.error());
+            } else {
+                for(auto entry: *object) {
+                    auto key_status = key(entry.key);
+                    if(!key_status.has_value()) {
+                        return std::unexpected(key_status.error());
+                    } else {
+                        auto status = value_ref(entry.value);
+                        if(!status.has_value()) {
+                            return std::unexpected(status.error());
+                        }
+                    }
+                }
+                return end_object();
+            }
+        }
+    } else {
+        mark_invalid(error_kind::type_mismatch);
+        return std::unexpected(error());
+    }
+}
+
+inline auto Builder::dom_value() const -> std::expected<Value, error_kind> {
+    if(!complete()) {
+        return std::unexpected(error());
+    } else {
+        yyjson_mut_doc* copied_doc = yyjson_mut_doc_mut_copy(doc.get(), nullptr);
+        if(copied_doc == nullptr) {
+            return std::unexpected(error_kind::allocation_failed);
+        } else {
+            auto value = Value::from_mutable_doc(copied_doc);
+            if(!value.has_value()) {
+                yyjson_mut_doc_free(copied_doc);
+                return std::unexpected(error_kind::invalid_state);
+            } else {
+                return std::move(*value);
+            }
+        }
+    }
+}
+
+inline auto Builder::to_json_string() const -> std::expected<std::string, error_kind> {
+    if(!complete()) {
+        return std::unexpected(error());
+    } else {
+        yyjson_write_err err{};
+        size_t len = 0;
+        auto* root = yyjson_mut_doc_get_root(doc.get());
+        if(root == nullptr) {
+            return std::unexpected(error_kind::invalid_state);
+        } else {
+            char* out = yyjson_mut_val_write_opts(root, YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
+            if(out == nullptr) {
+                return std::unexpected(make_write_error(err.code));
+            } else {
+                std::string json(out, len);
+                std::free(out);
+                return json;
+            }
+        }
+    }
+}
+
+inline auto Builder::append_mut_value(yyjson_mut_val* value) -> status_t {
+    if(!valid()) {
+        return std::unexpected(error());
+    } else if(value == nullptr) {
+        mark_invalid(error_kind::allocation_failed);
+        return std::unexpected(error());
+    } else if(stack.empty()) {
+        if(root_is_written) {
+            mark_invalid();
+            return std::unexpected(error());
+        } else {
+            yyjson_mut_doc_set_root(doc.get(), value);
+            root_is_written = true;
+            return {};
+        }
+    } else {
+        auto& frame = stack.back();
+        if(frame.kind == container_kind::array) {
+            if(!yyjson_mut_arr_add_val(frame.value, value)) {
+                mark_invalid(error_kind::allocation_failed);
+                return std::unexpected(error());
+            } else {
+                return {};
+            }
+        } else if(frame.expect_key) {
+            mark_invalid();
+            return std::unexpected(error());
+        } else {
+            yyjson_mut_val* key_value =
+                yyjson_mut_strncpy(doc.get(), frame.pending_key.data(), frame.pending_key.size());
+            if(key_value == nullptr) {
+                mark_invalid(error_kind::allocation_failed);
+                return std::unexpected(error());
+            } else if(!yyjson_mut_obj_put(frame.value, key_value, value)) {
+                mark_invalid(error_kind::allocation_failed);
+                return std::unexpected(error());
+            } else {
+                frame.pending_key.clear();
+                frame.expect_key = true;
+                return {};
+            }
+        }
+    }
+}
+
+inline void Builder::mark_invalid(error_kind error) noexcept {
+    is_valid = false;
+    if(last_error == error_kind::invalid_state || error != error_kind::invalid_state) {
+        last_error = error;
     }
 }
 
