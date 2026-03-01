@@ -148,6 +148,13 @@ Result<protocol::RequestID> parse_cancel_request_id(std::string_view params_json
                                     "cancel request id must be integer or string"));
 }
 
+task<> cancel_after_timeout(std::chrono::milliseconds timeout,
+                            std::shared_ptr<cancellation_source> timeout_source,
+                            event_loop& loop) {
+    co_await sleep(timeout, loop);
+    timeout_source->cancel();
+}
+
 struct request_id_hash {
     std::size_t operator()(const protocol::RequestID& id) const noexcept {
         return std::visit(
@@ -698,13 +705,8 @@ task<Result<std::string>> Peer::send_request_json(std::string_view method,
     }
 
     auto timeout_source = std::make_shared<cancellation_source>();
-    auto loop = self ? self->loop : nullptr;
-    if(loop != nullptr) {
-        auto timeout_task = [timeout, timeout_source, loop]() -> task<> {
-            co_await sleep(timeout, *loop);
-            timeout_source->cancel();
-        };
-        loop->schedule(timeout_task());
+    if(auto* loop_ptr = self ? self->loop : nullptr; loop_ptr != nullptr) {
+        loop_ptr->schedule(cancel_after_timeout(timeout, timeout_source, *loop_ptr));
     }
 
     auto result =
