@@ -15,7 +15,7 @@
 #include "eventide/async/stream.h"
 #include "eventide/async/sync.h"
 #include "eventide/async/watcher.h"
-#include "eventide/serde/simdjson/deserializer.h"
+#include "eventide/serde/json/simd_deserializer.h"
 
 #ifdef _WIN32
 #include <BaseTsd.h>

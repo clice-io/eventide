@@ -54,13 +54,24 @@ endif()
 
 if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
     set(TEST_SERDE_SIMDJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/simdjson/.*\\.cpp$")
+    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/serde/json/.*\\.cpp$")
     list(TRANSFORM TEST_SERDE_SIMDJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_SERDE_SIMDJSON_SOURCES}
     )
 else()
-    message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/simdjson/*")
+    message(STATUS "EVENTIDE_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/serde/json/*")
+endif()
+
+if(EVENTIDE_SERDE_ENABLE_YYJSON)
+    set(TEST_SERDE_YYJSON_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_SERDE_YYJSON_SOURCES INCLUDE REGEX "^tests/serde/json/(dom_tests|yyjson_.*)\\.cpp$")
+    list(TRANSFORM TEST_SERDE_YYJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_SERDE_YYJSON_SOURCES}
+    )
+else()
+    message(STATUS "EVENTIDE_SERDE_ENABLE_YYJSON=OFF: skipping tests/serde/json/*")
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
