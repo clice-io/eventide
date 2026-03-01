@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef EVENTIDE_LANGUAGE_SERVER_INL_FROM_HEADER
-#include "eventide/language/server.h"
+#ifndef EVENTIDE_JSONRPC_PEER_INL_FROM_HEADER
+#include "eventide/jsonrpc/peer.h"
 #endif
 
 #include <functional>
@@ -13,7 +13,7 @@
 #include "eventide/common/function_traits.h"
 #include "eventide/serde/json/json.h"
 
-namespace eventide::language {
+namespace eventide::jsonrpc {
 
 namespace detail {
 
@@ -74,14 +74,14 @@ constexpr std::string_view normalize_params_json(std::string_view params_json) {
         return params_json;
     }
     if constexpr(std::is_same_v<Params, protocol::null> ||
-                 std::is_same_v<Params, protocol::LSPAny>) {
+                 std::is_same_v<Params, protocol::Value>) {
         return "null";
     }
     return "{}";
 }
 
 template <typename T>
-std::expected<T, std::string> deserialize_json(std::string_view json) {
+Result<T> deserialize_json(std::string_view json) {
     auto parsed = serde::json::parse<T>(json);
     if(!parsed) {
         return std::unexpected(std::string(serde::json::error_message(parsed.error())));
@@ -90,7 +90,7 @@ std::expected<T, std::string> deserialize_json(std::string_view json) {
 }
 
 template <typename T>
-std::expected<std::string, std::string> serialize_json(const T& value) {
+Result<std::string> serialize_json(const T& value) {
     auto serialized = serde::json::to_string(value);
     if(!serialized) {
         return std::unexpected(std::string(serde::json::error_message(serialized.error())));
@@ -101,21 +101,31 @@ std::expected<std::string, std::string> serialize_json(const T& value) {
 }  // namespace detail
 
 template <typename Params>
-RequestResult<Params> LanguageServer::send_request(const Params& params) {
+RequestResult<Params> Peer::send_request(const Params& params) {
     static_assert(detail::has_request_traits_v<Params>,
                   "send_request(params) requires RequestTraits<Params>");
     using Traits = protocol::RequestTraits<Params>;
 
-    co_return co_await send_request(Traits::method, params);
+    auto serialized_params = detail::serialize_json(params);
+    if(!serialized_params) {
+        co_return std::unexpected(serialized_params.error());
+    }
+
+    auto raw_result = co_await send_request_json(Traits::method, std::move(*serialized_params));
+    if(!raw_result) {
+        co_return std::unexpected(raw_result.error());
+    }
+
+    auto parsed_result = detail::deserialize_json<typename Traits::Result>(*raw_result);
+    if(!parsed_result) {
+        co_return std::unexpected(parsed_result.error());
+    }
+
+    co_return std::move(*parsed_result);
 }
 
-template <typename Result, typename Params>
-task<std::expected<Result, std::string>> LanguageServer::send_request(std::string_view method,
-                                                                      const Params& params) {
-    static_assert(!detail::has_request_traits_v<Params>,
-                  "send_request<Result>(method, params) is for non-standard params; "
-                  "standard params should use send_request(params)");
-
+template <typename ResultT, typename Params>
+task<Result<ResultT>> Peer::send_request(std::string_view method, const Params& params) {
     auto serialized_params = detail::serialize_json(params);
     if(!serialized_params) {
         co_return std::unexpected(serialized_params.error());
@@ -126,7 +136,7 @@ task<std::expected<Result, std::string>> LanguageServer::send_request(std::strin
         co_return std::unexpected(raw_result.error());
     }
 
-    auto parsed_result = detail::deserialize_json<Result>(*raw_result);
+    auto parsed_result = detail::deserialize_json<ResultT>(*raw_result);
     if(!parsed_result) {
         co_return std::unexpected(parsed_result.error());
     }
@@ -135,21 +145,20 @@ task<std::expected<Result, std::string>> LanguageServer::send_request(std::strin
 }
 
 template <typename Params>
-std::expected<void, std::string> LanguageServer::send_notification(const Params& params) {
+Result<void> Peer::send_notification(const Params& params) {
     static_assert(detail::has_notification_traits_v<Params>,
                   "send_notification(params) requires NotificationTraits<Params>");
     using Traits = protocol::NotificationTraits<Params>;
 
-    return send_notification(Traits::method, params);
+    auto serialized_params = detail::serialize_json(params);
+    if(!serialized_params) {
+        return std::unexpected(serialized_params.error());
+    }
+    return send_notification_json(Traits::method, std::move(*serialized_params));
 }
 
 template <typename Params>
-std::expected<void, std::string> LanguageServer::send_notification(std::string_view method,
-                                                                   const Params& params) {
-    static_assert(!detail::has_notification_traits_v<Params>,
-                  "send_notification(method, params) is for non-standard params; "
-                  "standard params should use send_notification(params)");
-
+Result<void> Peer::send_notification(std::string_view method, const Params& params) {
     auto serialized_params = detail::serialize_json(params);
     if(!serialized_params) {
         return std::unexpected(serialized_params.error());
@@ -158,7 +167,7 @@ std::expected<void, std::string> LanguageServer::send_notification(std::string_v
 }
 
 template <typename Callback>
-void LanguageServer::on_request(Callback&& callback) {
+void Peer::on_request(Callback&& callback) {
     detail::validate_request_callback_signature<Callback>();
 
     using Params = detail::request_callback_params_t<Callback>;
@@ -174,7 +183,7 @@ void LanguageServer::on_request(Callback&& callback) {
 }
 
 template <typename Callback>
-void LanguageServer::on_request(std::string_view method, Callback&& callback) {
+void Peer::on_request(std::string_view method, Callback&& callback) {
     detail::validate_request_callback_signature<Callback>();
 
     using Params = detail::request_callback_params_t<Callback>;
@@ -182,7 +191,7 @@ void LanguageServer::on_request(std::string_view method, Callback&& callback) {
 }
 
 template <typename Callback>
-void LanguageServer::on_notification(Callback&& callback) {
+void Peer::on_notification(Callback&& callback) {
     detail::validate_notification_callback_signature<Callback>();
 
     using Params = detail::notification_callback_params_t<Callback>;
@@ -194,7 +203,7 @@ void LanguageServer::on_notification(Callback&& callback) {
 }
 
 template <typename Callback>
-void LanguageServer::on_notification(std::string_view method, Callback&& callback) {
+void Peer::on_notification(std::string_view method, Callback&& callback) {
     detail::validate_notification_callback_signature<Callback>();
 
     using Params = detail::notification_callback_params_t<Callback>;
@@ -202,19 +211,19 @@ void LanguageServer::on_notification(std::string_view method, Callback&& callbac
 }
 
 template <typename Params, typename Callback>
-void LanguageServer::bind_request_callback(std::string_view method, Callback&& callback) {
+void Peer::bind_request_callback(std::string_view method, Callback&& callback) {
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
-                    server = this](const protocol::RequestID& request_id,
-                                   std::string_view params_json)
-        -> task<std::expected<std::string, std::string>> {
+                    peer = this](const protocol::RequestID& request_id,
+                                 std::string_view params_json)
+        -> task<Result<std::string>> {
         auto parsed_params = detail::deserialize_json<Params>(
             detail::normalize_params_json<Params>(params_json));
         if(!parsed_params) {
             co_return std::unexpected(parsed_params.error());
         }
 
-        RequestContext context(*server, request_id);
+        RequestContext context(*peer, request_id);
         context.method = method_name;
 
         auto result = co_await std::invoke(cb, context, *parsed_params);
@@ -234,7 +243,7 @@ void LanguageServer::bind_request_callback(std::string_view method, Callback&& c
 }
 
 template <typename Params, typename Callback>
-void LanguageServer::bind_notification_callback(std::string_view method, Callback&& callback) {
+void Peer::bind_notification_callback(std::string_view method, Callback&& callback) {
     auto wrapped = [cb = std::forward<Callback>(callback)](std::string_view params_json) {
         auto parsed_params = detail::deserialize_json<Params>(
             detail::normalize_params_json<Params>(params_json));
@@ -247,4 +256,4 @@ void LanguageServer::bind_notification_callback(std::string_view method, Callbac
     register_notification_callback(method, std::move(wrapped));
 }
 
-}  // namespace eventide::language
+}  // namespace eventide::jsonrpc

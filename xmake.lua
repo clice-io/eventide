@@ -178,12 +178,20 @@ if has_config("deco") and has_config("option") then
 end
 
 if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+	target("jsonrpc", function()
+		set_kind("$(kind)")
+		add_files("src/jsonrpc/*.cpp")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/jsonrpc/*)")
+		add_deps("async", "serde_json")
+	end)
+
 	target("language", function()
 		set_kind("$(kind)")
 		add_files("src/language/*.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/language/*)")
-		add_deps("async", "serde_json")
+		add_deps("jsonrpc")
 	end)
 end
 
@@ -211,6 +219,7 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/serde/flatbuffers/**.cpp")
 		end
 		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+			add_files("tests/jsonrpc/**.cpp")
 			add_files("tests/language/**.cpp")
 		end
 
@@ -235,6 +244,7 @@ if has_config("test") and has_config("ztest") then
 			end
 		end
 		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+			add_deps("jsonrpc")
 			add_deps("language")
 		end
 
