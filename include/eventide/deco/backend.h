@@ -114,6 +114,28 @@ public:
         }
     }
 
+    constexpr std::string_view add(std::string_view str1,
+                                   std::string_view str2,
+                                   std::string_view str3) {
+        if constexpr(counting) {
+            offset += str1.size() + str2.size() + str3.size() + 1;
+            return str1;
+        } else {
+            if(offset + str1.size() + str2.size() + str3.size() + 1 > N) {
+                throw "String pool overflow";
+            }
+            std::copy(str1.begin(), str1.end(), pool.begin() + offset);
+            std::copy(str2.begin(), str2.end(), pool.begin() + offset + str1.size());
+            std::copy(str3.begin(),
+                      str3.end(),
+                      pool.begin() + offset + str1.size() + str2.size());
+            pool[offset + str1.size() + str2.size() + str3.size()] = '\0';
+            std::string_view result(pool.data() + offset, str1.size() + str2.size() + str3.size());
+            offset += str1.size() + str2.size() + str3.size() + 1;
+            return result;
+        }
+    }
+
     constexpr const char* add_c_str(std::string_view str) {
         if constexpr(counting) {
             add(str);
@@ -263,8 +285,9 @@ private:
     }
 
     constexpr static void on_config_field(std::vector<config_state>& config_stack,
-                                          const decl::ConfigFields& cfg,
+                                          const auto& cfg_owner,
                                           std::size_t level) {
+        auto cfg = ty::cfg_ty_of<decltype(cfg_owner)>{};
         switch(cfg.type) {
             case decl::ConfigFields::Type::Start: config_push(config_stack, cfg, level); break;
             case decl::ConfigFields::Type::End: config_pop_nearest_start(config_stack); break;
@@ -310,12 +333,10 @@ private:
             constexpr auto idx = decltype(field)::index();
             constexpr auto name = decltype(field)::name();
             if constexpr(ty::is_config_field<FieldTy>) {
-                on_config_field(config_stack,
-                                static_cast<const decl::ConfigFields&>(field.value()),
-                                level);
+                on_config_field(config_stack, field.value(), level);
                 return true;
             } else if constexpr(ty::deco_option_like<FieldTy>) {
-                using CfgTy = ty::cfg_ty_of<FieldTy>;
+                using CfgTy = ty::field_ty_of<FieldTy>;
                 const auto cfg = make_configured_cfg<CfgTy>(config_stack);
                 const bool keep_going =
                     bool(on_option(field.value(), cfg, name, std::index_sequence<Path..., idx>{}));
@@ -347,28 +368,48 @@ private:
         return item;
     }
 
+    constexpr std::string_view generate_name_from_field(std::string_view field_name,
+                                                        bool with_prefix = false) {
+        auto normalized_name = strPool.add_replace(field_name, '_', '-');
+        if(!with_prefix) {
+            return normalized_name;
+        }
+        if(normalized_name.size() == 1) {
+            return strPool.add("-", normalized_name);
+        } else {
+            return strPool.add("--", normalized_name);
+        }
+    }
+
+    constexpr void set_generated_name_from_field(info_item& item,
+                                                 std::string_view field_name,
+                                                 std::string_view suffix = {}) {
+        auto normalized_name = generate_name_from_field(field_name);
+        if(normalized_name.size() == 1) {
+            item._prefixes = backend::pfx_dash;
+            item._prefixed_name = suffix.empty() ? strPool.add("-", normalized_name)
+                                                 : strPool.add("-", normalized_name, suffix);
+        } else {
+            item._prefixes = backend::pfx_double;
+            item._prefixed_name = suffix.empty() ? strPool.add("--", normalized_name)
+                                                 : strPool.add("--", normalized_name, suffix);
+        }
+    }
+
+    constexpr void set_prefixed_name(info_item& target, std::string_view full_name) {
+        auto parsed = parse_named_option(full_name);
+        target._prefixes = parsed.prefixes;
+        target._prefixed_name = strPool.add(parsed.prefix, parsed.name);
+    }
+
     constexpr auto& set_named_options(unsigned item_id,
                                       accessor_fn mapped_accessor,
                                       std::string_view field_name,
                                       const decl::NamedOptionFields& fields) {
         const auto category = fields.category.ptr();
         auto& item = item_by_id(item_id);
-
-        auto set_prefixed_name = [this](info_item& target, std::string_view full_name) {
-            auto parsed = parse_named_option(full_name);
-            target._prefixes = parsed.prefixes;
-            target._prefixed_name = strPool.add(parsed.prefix, parsed.name);
-        };
-
         if(fields.names.empty()) {
-            auto normalized_name = strPool.add_replace(field_name, '_', '-');
-            if(normalized_name.size() == 1) {
-                item._prefixes = backend::pfx_dash;
-                item._prefixed_name = strPool.add("-", normalized_name);
-            } else {
-                item._prefixes = backend::pfx_double;
-                item._prefixed_name = strPool.add("--", normalized_name);
-            }
+            set_generated_name_from_field(item, field_name);
             set_common_options(item, fields);
             set_category_for_item(item.id, category);
             return item;
@@ -438,14 +479,91 @@ private:
         set_named_options(item.id, mapped_accessor, field_name, cfg);
     }
 
+    constexpr static bool has_kv_style(char style, decl::KVStyle expected) {
+        return (style & static_cast<char>(expected)) != 0;
+    }
+
+    constexpr static unsigned char kv_kind_from_name(std::string_view full_name) {
+        if(full_name.ends_with('=') || full_name.ends_with(':')) {
+            return backend::Option::JoinedClass;
+        }
+        return backend::Option::SeparateClass;
+    }
+
+    constexpr void add_generated_kv_joined_alias(unsigned item_id,
+                                                 accessor_fn mapped_accessor,
+                                                 std::string_view field_name,
+                                                 const decl::KVFields& fields) {
+        auto& base_item = item_by_id(item_id);
+        auto& alias = new_item(mapped_accessor);
+        auto alias_id = alias.id;
+        alias = base_item;
+        alias.id = alias_id;
+        alias.kind = backend::Option::JoinedClass;
+        set_generated_name_from_field(alias, field_name, "=");
+        set_common_options(alias, fields);
+        set_category_for_item(alias.id, fields.category.ptr());
+    }
+
+    constexpr auto& set_kv_options_split_by_name(unsigned item_id,
+                                                 accessor_fn mapped_accessor,
+                                                 std::string_view field_name,
+                                                 const decl::KVFields& fields) {
+        const auto category = fields.category.ptr();
+        auto& item = item_by_id(item_id);
+
+        auto set_kv_name_and_kind = [&](info_item& target, std::string_view full_name) {
+            set_prefixed_name(target, full_name);
+            target.kind = kv_kind_from_name(full_name);
+        };
+
+        if(fields.names.empty()) {
+            set_generated_name_from_field(item, field_name);
+            item.kind = backend::Option::SeparateClass;
+            set_common_options(item, fields);
+            set_category_for_item(item.id, category);
+            add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, fields);
+            return item;
+        }
+
+        set_kv_name_and_kind(item, fields.names.front());
+        set_category_for_item(item.id, category);
+
+        const auto item_snapshot = item;
+        for(std::size_t i = 1; i < fields.names.size(); ++i) {
+            auto& alias = new_item(mapped_accessor);
+            auto alias_id = alias.id;
+            alias = item_snapshot;
+            alias.id = alias_id;
+            set_kv_name_and_kind(alias, fields.names[i]);
+            set_common_options(alias, fields);
+            set_category_for_item(alias.id, category);
+        }
+
+        set_common_options(item_by_id(item_id), fields);
+        return item_by_id(item_id);
+    }
+
     constexpr void add_kv_option(const decl::KVFields& cfg,
                                  accessor_fn mapped_accessor,
                                  std::string_view field_name) {
+        const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
+        const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
+        if(!allow_joined && !allow_separate) {
+            throw "DecoKV style must include Joined and/or Separate";
+        }
+
         auto& item = new_item(mapped_accessor);
-        item.kind = (cfg.style == decl::KVStyle::Joined) ? backend::Option::JoinedClass
-                                                         : backend::Option::SeparateClass;
         item.param = 1;
+        if(allow_joined && allow_separate) {
+            set_kv_options_split_by_name(item.id, mapped_accessor, field_name, cfg);
+            return;
+        }
+        item.kind = allow_joined ? backend::Option::JoinedClass : backend::Option::SeparateClass;
         set_named_options(item.id, mapped_accessor, field_name, cfg);
+        if(allow_joined && cfg.names.empty()) {
+            add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, cfg);
+        }
     }
 
     constexpr void add_comma_option(const decl::CommaJoinedFields& cfg,
@@ -536,7 +654,7 @@ public:
             [this](const auto& field, const auto& cfg, std::string_view field_name, auto path) {
                 using FieldTy = std::remove_cvref_t<decltype(field)>;
                 const auto mapped_accessor = accessor_from_path(path);
-                using CfgTy = ty::cfg_ty_of<FieldTy>;
+                using CfgTy = ty::field_ty_of<FieldTy>;
                 if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
                     add_input_option(cfg, mapped_accessor);
                 } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {

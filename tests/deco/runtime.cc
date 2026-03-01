@@ -12,7 +12,6 @@
 
 namespace {
 
-// clang-format off
 struct Version {
     DecoFlag(names = {"-v", "--version"}, help = "Show version and exit")
     version;
@@ -34,7 +33,7 @@ struct Request {
         } type;
 
         std::optional<std::string> into(std::string_view input) {
-            if (input == "GET" || input == "POST") {
+            if(input == "GET" || input == "POST") {
                 type = (input == "GET") ? Type::Get : Type::Post;
                 return std::nullopt;
             } else {
@@ -50,7 +49,7 @@ struct Request {
         std::string url;
 
         std::optional<std::string> into(std::string_view input) {
-            if (input.starts_with("http://") || input.starts_with("https://")) {
+            if(input.starts_with("http://") || input.starts_with("https://")) {
                 url = std::string(input);
                 return std::nullopt;
             } else {
@@ -62,11 +61,11 @@ struct Request {
     DecoFlag(help = "Enable verbose output", required = false)
     verbose = false;
 
-    DecoKV(names = {"-X", "--type"}, meta_var = "<Method>")<RequestType>
-    method;
+    DecoKV(names = {"-X", "--type"}, meta_var = "<Method>")
+    <RequestType> method;
 
-    DecoKV(meta_var = "<URL>", help = "Request URL")<Url>
-    url;
+    DecoKV(meta_var = "<URL>", help = "Request URL")
+    <Url> url;
 };
 
 struct WebCliOpt {
@@ -90,6 +89,7 @@ struct WebCliOpt {
             .description = "request options",
         };
     };
+
     DECO_CFG(required = false, category = Cate::version_category);
     Version version;
 
@@ -116,16 +116,16 @@ struct InputAndTrailingOpt {
         };
     };
 
-    DecoInput(required = false; category = Cate::input_category;)<std::string> input;
-    DecoPack(required = false; category = Cate::trailing_category;)<std::vector<std::string>>
-        trailing;
+    DecoInput(required = false; category = Cate::input_category;)
+    <std::string> input;
+    DecoPack(required = false; category = Cate::trailing_category;)
+    <std::vector<std::string>> trailing;
 };
 
 struct TrailingOnlyOpt {
-    DecoPack(required = false;)<std::vector<std::string>> trailing;
+    DecoPack(required = false)
+    <std::vector<std::string>> trailing;
 };
-
-// clang-format on
 
 }  // namespace
 

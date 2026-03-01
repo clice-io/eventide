@@ -46,7 +46,9 @@
             __VA_ARGS__;                                                                           \
         }                                                                                          \
     };                                                                                             \
-    DECO_CFG_STRUCT_NAME(id) DECO_CFG_NAME(id);
+    struct {                                                                                       \
+        using __deco_cfg_ty = DECO_CFG_STRUCT_NAME(id);                                            \
+    } DECO_CFG_NAME(id);
 
 #define DECO_CFG(...)                                                                              \
     DECO_CONFIG_IMPL(__COUNTER__, deco::decl::ConfigFields::Type::Next, __VA_ARGS__)
@@ -57,13 +59,12 @@
 
 #define DECO_DECLARE_OPTION_TYPED_IMPL(id, option_base_ty, cfg_base_ty, using_block, ...)          \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_ty {                                   \
-        struct __cfg_ty : public cfg_base_ty {                                                     \
+        struct __deco_field_ty : public cfg_base_ty {                                              \
             using _deco_base_t = cfg_base_ty;                                                      \
-            using_block constexpr __cfg_ty() {                                                     \
+            using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
             }                                                                                      \
         };                                                                                         \
-        constexpr static auto deco_field_ty = __cfg_ty::deco_field_ty;                             \
         using _deco_base_t = option_base_ty;                                                       \
         using _deco_base_t::_deco_base_t;                                                          \
         constexpr ~DECO_OPTION_STRUCT_NAME(id)() = default;                                        \
@@ -86,13 +87,13 @@
                                           ...)                                                     \
     template <res_concept ResTy = default_res_type>                                                \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_tpl<ResTy> {                           \
-        struct __cfg_ty : public cfg_base_ty {                                                     \
+        struct __deco_field_ty : public cfg_base_ty {                                              \
             using _deco_base_t = cfg_base_ty;                                                      \
-            using_block constexpr __cfg_ty() {                                                     \
+            using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
             }                                                                                      \
         };                                                                                         \
-        constexpr static auto deco_field_ty = __cfg_ty::deco_field_ty;                             \
+        constexpr static auto deco_field_ty = __deco_field_ty::deco_field_ty;                      \
         using _deco_base_t = option_base_tpl<ResTy>;                                               \
         using _deco_base_t::_deco_base_t;                                                          \
         constexpr ~DECO_OPTION_STRUCT_NAME(id)() = default;                                        \
