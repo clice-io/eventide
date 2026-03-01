@@ -92,6 +92,7 @@ private:
 }  // namespace
 
 int main() {
+    et::event_loop loop;
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"example/add","params":{"a":2,"b":3}})",
@@ -109,7 +110,7 @@ int main() {
         });
     auto* transport_ptr = transport.get();
 
-    jsonrpc::Peer peer(std::move(transport));
+    jsonrpc::Peer peer(loop, std::move(transport));
 
     peer.on_request(
         "example/add",
@@ -131,7 +132,8 @@ int main() {
             co_return AddResult{.sum = params.a + params.b + remote_sum->sum};
         });
 
-    auto status = peer.start();
+    loop.schedule(peer.run());
+    auto status = loop.run();
     if(status != 0) {
         std::println(stderr, "peer exited with status {}", status);
         return status;

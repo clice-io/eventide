@@ -26,7 +26,14 @@ struct LogParams {
 }  // namespace
 
 int main() {
-    jsonrpc::Peer peer;
+    et::event_loop loop;
+    auto transport = jsonrpc::StreamTransport::open_stdio(loop);
+    if(!transport) {
+        std::println(stderr, "failed to open stdio transport: {}", transport.error());
+        return 1;
+    }
+
+    jsonrpc::Peer peer(loop, std::move(*transport));
 
     peer.on_request("example/add",
                     [](jsonrpc::RequestContext&,
@@ -42,5 +49,6 @@ int main() {
     std::println(stderr, "Request method: {}", "example/add");
     std::println(stderr, "Notification method: {}", "example/log");
 
-    return peer.start();
+    loop.schedule(peer.run());
+    return loop.run();
 }

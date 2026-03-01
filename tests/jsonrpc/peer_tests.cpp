@@ -260,7 +260,8 @@ TEST_CASE(traits_registration_and_dispatch_order) {
     });
     auto* transport_ptr = transport.get();
 
-    Peer peer(std::move(transport));
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
@@ -282,7 +283,8 @@ TEST_CASE(traits_registration_and_dispatch_order) {
         }
     });
 
-    EXPECT_EQ(peer.start(), 0);
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
 
     ASSERT_EQ(order.size(), 3U);
     EXPECT_EQ(order[0], "note:first");
@@ -328,10 +330,11 @@ TEST_CASE(stream_transport_notification_then_response) {
     auto request = complete_request(peer, request_result);
     auto remote = write_notification_then_response(incoming_fds[1], loop);
 
+    loop.schedule(peer.run());
     loop.schedule(request);
     loop.schedule(remote);
 
-    EXPECT_EQ(peer.start(), 0);
+    EXPECT_EQ(loop.run(), 0);
 
     ASSERT_TRUE(request_result.value.has_value());
     EXPECT_EQ(request_result.value->sum, 9);
@@ -339,6 +342,56 @@ TEST_CASE(stream_transport_notification_then_response) {
     EXPECT_EQ(seen_notes.front(), "first");
 
     ASSERT_EQ(close_fd(outgoing_fds[0]), 0);
+}
+
+TEST_CASE(multiple_peers_share_external_event_loop) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    skip();
+    return;
+#endif
+    event_loop loop;
+
+    auto transport1 = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":11,"method":"worker/one","params":{"a":2,"b":5}})",
+    });
+    auto* transport1_ptr = transport1.get();
+
+    auto transport2 = std::make_unique<FakeTransport>(std::vector<std::string>{
+        R"({"jsonrpc":"2.0","id":22,"method":"worker/two","params":{"a":7,"b":3}})",
+    });
+    auto* transport2_ptr = transport2.get();
+
+    Peer peer1(loop, std::move(transport1));
+    Peer peer2(loop, std::move(transport2));
+
+    peer1.on_request("worker/one",
+                     [](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+                         co_return AddResult{.sum = params.a + params.b};
+                     });
+
+    peer2.on_request("worker/two",
+                     [](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+                         co_return AddResult{.sum = params.a * params.b};
+                     });
+
+    loop.schedule(peer1.run());
+    loop.schedule(peer2.run());
+
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_EQ(transport1_ptr->outgoing().size(), 1U);
+    auto response1 = serde::json::simd::from_json<RpcResponse>(transport1_ptr->outgoing().front());
+    ASSERT_TRUE(response1.has_value());
+    EXPECT_EQ(std::get<protocol::integer>(response1->id), 11);
+    ASSERT_TRUE(response1->result.has_value());
+    EXPECT_EQ(response1->result->sum, 7);
+
+    ASSERT_EQ(transport2_ptr->outgoing().size(), 1U);
+    auto response2 = serde::json::simd::from_json<RpcResponse>(transport2_ptr->outgoing().front());
+    ASSERT_TRUE(response2.has_value());
+    EXPECT_EQ(std::get<protocol::integer>(response2->id), 22);
+    ASSERT_TRUE(response2->result.has_value());
+    EXPECT_EQ(response2->result->sum, 21);
 }
 
 TEST_CASE(explicit_method_registration) {
@@ -352,7 +405,8 @@ TEST_CASE(explicit_method_registration) {
     });
     auto* transport_ptr = transport.get();
 
-    Peer peer(std::move(transport));
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
@@ -366,7 +420,8 @@ TEST_CASE(explicit_method_registration) {
     peer.on_notification("custom/note",
                          [&](const NoteParams& params) { notifications.push_back(params.text); });
 
-    EXPECT_EQ(peer.start(), 0);
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
 
     EXPECT_EQ(request_method, "custom/add");
     ASSERT_EQ(notifications.size(), 1U);
@@ -407,7 +462,8 @@ TEST_CASE(send_request_and_notification_apis) {
         });
     auto* transport_ptr = transport.get();
 
-    Peer peer(std::move(transport));
+    event_loop loop;
+    Peer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
@@ -445,7 +501,8 @@ TEST_CASE(send_request_and_notification_apis) {
         co_return AddResult{.sum = context_result->sum + peer_result->sum};
     });
 
-    EXPECT_EQ(peer.start(), 0);
+    loop.schedule(peer.run());
+    EXPECT_EQ(loop.run(), 0);
 
     EXPECT_EQ(request_method, "test/add");
     EXPECT_EQ(request_id, 7);

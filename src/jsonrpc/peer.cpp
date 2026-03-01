@@ -96,7 +96,6 @@ struct Peer::Self {
         std::optional<Result<std::string>> response;
     };
 
-    std::unique_ptr<event_loop> owned_loop;
     event_loop* loop = nullptr;
     std::unique_ptr<Transport> transport;
     std::unordered_map<std::string, RequestCallback> request_callbacks;
@@ -105,10 +104,9 @@ struct Peer::Self {
         pending_requests;
     protocol::integer next_request_id = 1;
     std::deque<std::string> outgoing_queue;
-    bool writer_running = false;
-    std::string startup_error;
 
-    Self() : owned_loop(std::make_unique<event_loop>()), loop(owned_loop.get()) {}
+    bool running = false;
+    bool writer_running = false;
 
     explicit Self(event_loop& external_loop) : loop(&external_loop) {}
 
@@ -368,57 +366,37 @@ struct Peer::Self {
 
         return {};
     }
-
-    task<> main_loop() {
-        while(transport) {
-            auto payload = co_await transport->read_message();
-            if(!payload.has_value()) {
-                fail_pending_requests("transport closed");
-                co_return;
-            }
-
-            auto dispatched = dispatch_incoming_message(*payload);
-            if(!dispatched) {
-                continue;
-            }
-        }
-    }
 };
-
-Peer::Peer() : self(std::make_unique<Self>()) {
-    auto stdio = StreamTransport::open_stdio(*self->loop);
-    if(!stdio) {
-        self->startup_error = stdio.error();
-        return;
-    }
-    self->transport = std::move(*stdio);
-}
-
-Peer::Peer(event_loop& loop) : self(std::make_unique<Self>(loop)) {
-    auto stdio = StreamTransport::open_stdio(*self->loop);
-    if(!stdio) {
-        self->startup_error = stdio.error();
-        return;
-    }
-    self->transport = std::move(*stdio);
-}
-
-Peer::Peer(std::unique_ptr<Transport> transport) : self(std::make_unique<Self>()) {
-    self->transport = std::move(transport);
-    if(!self->transport) {
-        self->startup_error = "transport is null";
-    }
-}
 
 Peer::Peer(event_loop& loop, std::unique_ptr<Transport> transport) :
     self(std::make_unique<Self>(loop)) {
     self->transport = std::move(transport);
-    if(!self->transport) {
-        self->startup_error = "transport is null";
-    }
 }
 
 Peer::~Peer() = default;
+
+task<> Peer::run() {
+    if(!self || !self->transport || self->running) {
+        co_return;
+    }
+
+    self->running = true;
+
+    while(self->transport) {
+        auto payload = co_await self->transport->read_message();
+        if(!payload.has_value()) {
+            self->fail_pending_requests("transport closed");
+            break;
+        }
+
+        auto dispatched = self->dispatch_incoming_message(*payload);
+        if(!dispatched) {
+            continue;
+        }
+    }
+
+    self->running = false;
+}
 
 Result<void> Peer::close_output() {
     if(!self || !self->transport) {
@@ -492,15 +470,6 @@ Result<void> Peer::send_notification_json(std::string_view method, std::string p
 
     self->enqueue_outgoing(std::move(*notification_json));
     return {};
-}
-
-int Peer::start() {
-    if(!self || !self->transport) {
-        return -1;
-    }
-
-    self->loop->schedule(self->main_loop());
-    return self->loop->run();
 }
 
 }  // namespace eventide::jsonrpc
