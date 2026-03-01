@@ -464,9 +464,10 @@ struct Peer::Self {
         std::optional<std::string_view> params_json;
         std::optional<std::string_view> result_json;
         std::optional<std::string_view> error_json;
-        auto fail_message = [this, &method, &send_protocol_error](std::optional<protocol::ResponseID> id,
-                                                                   protocol::ErrorCode code,
-                                                                   std::string message) {
+        auto fail_message = [this, &method, &send_protocol_error](
+                                std::optional<protocol::ResponseID> id,
+                                protocol::ErrorCode code,
+                                std::string message) {
             if(!method.has_value() && id.has_value()) {
                 if(auto request_id = request_id_from_response_id(*id); request_id.has_value()) {
                     complete_pending_request(*request_id,
