@@ -105,8 +105,14 @@ public:
             return std::unexpected(current_error());
         }
 
-        auto value = json::Value::from_mutable_doc(doc);
+        yyjson_mut_doc* copied_doc = yyjson_mut_doc_mut_copy(doc.get(), nullptr);
+        if(copied_doc == nullptr) {
+            return std::unexpected(error_type::allocation_failed);
+        }
+
+        auto value = json::Value::from_mutable_doc(copied_doc);
         if(!value) {
+            yyjson_mut_doc_free(copied_doc);
             return std::unexpected(error_type::invalid_state);
         }
         return std::move(*value);
@@ -242,14 +248,25 @@ public:
             return std::unexpected(current_error());
         }
 
-        yyjson_mut_val* copied = nullptr;
-        if(value.is_mutable()) {
-            copied = yyjson_mut_val_mut_copy(doc.get(),
-                                             const_cast<yyjson_mut_val*>(value.mutable_value()));
-        } else {
-            copied =
-                yyjson_val_mut_copy(doc.get(), const_cast<yyjson_val*>(value.immutable_value()));
+        auto raw_json = value.to_json_string();
+        if(!raw_json) {
+            mark_invalid(error_type::write_failed);
+            return std::unexpected(current_error());
         }
+
+        yyjson_read_err read_error{};
+        yyjson_doc* source_doc = yyjson_read_opts(const_cast<char*>(raw_json->data()),
+                                                  raw_json->size(),
+                                                  YYJSON_READ_NOFLAG,
+                                                  nullptr,
+                                                  &read_error);
+        if(source_doc == nullptr) {
+            mark_invalid(make_read_error(read_error.code));
+            return std::unexpected(current_error());
+        }
+
+        yyjson_mut_val* copied = yyjson_val_mut_copy(doc.get(), yyjson_doc_get_root(source_doc));
+        yyjson_doc_free(source_doc);
         if(copied == nullptr) {
             mark_invalid(error_type::allocation_failed);
             return std::unexpected(current_error());
@@ -260,6 +277,14 @@ public:
             return std::unexpected(status.error());
         }
         return {};
+    }
+
+    result_t<value_type> append_json_value(const json::Array& value) {
+        return append_json_value(value.as_value());
+    }
+
+    result_t<value_type> append_json_value(const json::Object& value) {
+        return append_json_value(value.as_value());
     }
 
 private:

@@ -32,6 +32,7 @@ enum class error_kind : std::uint16_t {
     tape_error,
     index_out_of_bounds,
     no_such_field,
+    already_exists,
     unknown,
 };
 
@@ -49,6 +50,7 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
         case error_kind::tape_error: return "tape error";
         case error_kind::index_out_of_bounds: return "index out of bounds";
         case error_kind::no_such_field: return "no such field";
+        case error_kind::already_exists: return "already exists";
         case error_kind::unknown:
         default: return "unknown json error";
     }
@@ -80,6 +82,7 @@ constexpr auto to_simdjson_error(error_kind error) noexcept -> simdjson::error_c
         case error_kind::io_error: return simdjson::IO_ERROR;
         case error_kind::index_out_of_bounds: return simdjson::INDEX_OUT_OF_BOUNDS;
         case error_kind::no_such_field: return simdjson::NO_SUCH_FIELD;
+        case error_kind::already_exists: return simdjson::NO_SUCH_FIELD;
         case error_kind::parse_error:
         case error_kind::write_failed:
         case error_kind::invalid_state:

@@ -1,22 +1,26 @@
 #pragma once
 
+#include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
-#include <memory>
+#include <iterator>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
+#include <type_traits>
 #include <utility>
-#include <variant>
 
 #if __has_include(<yyjson.h>)
 #include <yyjson.h>
 #else
 #error "yyjson.h not found. Enable EVENTIDE_SERDE_ENABLE_YYJSON or add yyjson include paths."
 #endif
+
+#include "eventide/serde/json/error.h"
 
 namespace eventide::serde::json {
 
@@ -27,940 +31,489 @@ class Value;
 class Array;
 class Object;
 
-namespace detail {
-
-struct value_handle {
-    yyjson_val* value = nullptr;
-    bool is_mutable = false;
+enum class ValueKind : std::uint8_t {
+    invalid = 0,
+    null_value,
+    boolean,
+    integer,
+    number,
+    string,
+    array,
+    object,
 };
 
-constexpr auto make_handle(const yyjson_val* value) noexcept -> value_handle {
-    return value_handle{
-        .value = const_cast<yyjson_val*>(value),
-        .is_mutable = false,
-    };
-}
+template <typename T>
+constexpr inline bool dom_writable_char_array_v =
+    std::is_array_v<std::remove_reference_t<T>> &&
+    std::same_as<std::remove_cv_t<std::remove_extent_t<std::remove_reference_t<T>>>, char>;
 
-constexpr auto make_handle(const yyjson_mut_val* value) noexcept -> value_handle {
-    return value_handle{
-        .value = reinterpret_cast<yyjson_val*>(const_cast<yyjson_mut_val*>(value)),
-        .is_mutable = true,
-    };
-}
+template <typename T>
+constexpr inline bool dom_writable_value_v =
+    std::same_as<std::remove_cvref_t<T>, std::nullptr_t> ||
+    std::same_as<std::remove_cvref_t<T>, bool> ||
+    (std::integral<std::remove_cvref_t<T>> && std::is_signed_v<std::remove_cvref_t<T>> &&
+     !std::same_as<std::remove_cvref_t<T>, bool>) ||
+    (std::integral<std::remove_cvref_t<T>> && std::is_unsigned_v<std::remove_cvref_t<T>>) ||
+    std::floating_point<std::remove_cvref_t<T>> ||
+    std::same_as<std::remove_cvref_t<T>, std::string_view> ||
+    std::same_as<std::remove_cvref_t<T>, const char*> ||
+    std::same_as<std::remove_cvref_t<T>, char*> || dom_writable_char_array_v<T> ||
+    std::same_as<std::remove_cvref_t<T>, Value> || std::same_as<std::remove_cvref_t<T>, Array> ||
+    std::same_as<std::remove_cvref_t<T>, Object>;
 
-constexpr auto as_mutable(value_handle handle) noexcept -> yyjson_mut_val* {
-    return reinterpret_cast<yyjson_mut_val*>(handle.value);
-}
+template <typename T>
+concept dom_writable_value = dom_writable_value_v<T>;
 
-constexpr auto as_immutable(value_handle handle) noexcept -> const yyjson_val* {
-    return handle.value;
-}
-
-constexpr auto valid(value_handle handle) noexcept -> bool {
-    return handle.value != nullptr;
-}
-
-inline auto is_null(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_null(as_mutable(handle));
-    }
-    return yyjson_is_null(handle.value);
-}
-
-inline auto is_bool(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_bool(as_mutable(handle));
-    }
-    return yyjson_is_bool(handle.value);
-}
-
-inline auto is_int(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_int(as_mutable(handle));
-    }
-    return yyjson_is_int(handle.value);
-}
-
-inline auto is_num(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_num(as_mutable(handle));
-    }
-    return yyjson_is_num(handle.value);
-}
-
-inline auto is_str(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_str(as_mutable(handle));
-    }
-    return yyjson_is_str(handle.value);
-}
-
-inline auto is_arr(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_arr(as_mutable(handle));
-    }
-    return yyjson_is_arr(handle.value);
-}
-
-inline auto is_obj(value_handle handle) noexcept -> bool {
-    if(handle.is_mutable) {
-        return yyjson_mut_is_obj(as_mutable(handle));
-    }
-    return yyjson_is_obj(handle.value);
-}
-
-inline auto arr_size(value_handle handle) noexcept -> std::size_t {
-    if(handle.is_mutable) {
-        return yyjson_mut_arr_size(as_mutable(handle));
-    }
-    return yyjson_arr_size(handle.value);
-}
-
-inline auto obj_size(value_handle handle) noexcept -> std::size_t {
-    if(handle.is_mutable) {
-        return yyjson_mut_obj_size(as_mutable(handle));
-    }
-    return yyjson_obj_size(handle.value);
-}
-
-inline auto arr_get(value_handle handle, std::size_t index) noexcept -> value_handle {
-    if(handle.is_mutable) {
-        return value_handle{
-            .value = reinterpret_cast<yyjson_val*>(yyjson_mut_arr_get(as_mutable(handle), index)),
-            .is_mutable = true,
-        };
-    }
-    return value_handle{
-        .value = yyjson_arr_get(handle.value, index),
-        .is_mutable = false,
-    };
-}
-
-inline auto obj_getn(value_handle handle, std::string_view key) noexcept -> value_handle {
-    if(handle.is_mutable) {
-        return value_handle{
-            .value = reinterpret_cast<yyjson_val*>(
-                yyjson_mut_obj_getn(as_mutable(handle), key.data(), key.size())),
-            .is_mutable = true,
-        };
-    }
-    return value_handle{
-        .value = yyjson_obj_getn(handle.value, key.data(), key.size()),
-        .is_mutable = false,
-    };
-}
-
-inline auto as_bool(value_handle handle) noexcept -> std::optional<bool> {
-    if(!is_bool(handle)) {
-        return std::nullopt;
-    }
-    if(handle.is_mutable) {
-        return yyjson_mut_get_bool(as_mutable(handle));
-    }
-    return yyjson_get_bool(handle.value);
-}
-
-inline auto as_sint(value_handle handle) noexcept -> std::optional<std::int64_t> {
-    if(!is_int(handle)) {
-        return std::nullopt;
-    }
-    if(handle.is_mutable) {
-        return yyjson_mut_get_sint(as_mutable(handle));
-    }
-    return yyjson_get_sint(handle.value);
-}
-
-inline auto as_uint(value_handle handle) noexcept -> std::optional<std::uint64_t> {
-    if(!is_int(handle)) {
-        return std::nullopt;
-    }
-    if(handle.is_mutable) {
-        return yyjson_mut_get_uint(as_mutable(handle));
-    }
-    return yyjson_get_uint(handle.value);
-}
-
-inline auto as_num(value_handle handle) noexcept -> std::optional<double> {
-    if(!is_num(handle)) {
-        return std::nullopt;
-    }
-    if(handle.is_mutable) {
-        return yyjson_mut_get_num(as_mutable(handle));
-    }
-    return yyjson_get_num(handle.value);
-}
-
-inline auto as_str(value_handle handle) noexcept -> std::optional<std::string_view> {
-    if(!is_str(handle)) {
-        return std::nullopt;
-    }
-    if(handle.is_mutable) {
-        const char* text = yyjson_mut_get_str(as_mutable(handle));
-        return std::string_view(text, yyjson_mut_get_len(as_mutable(handle)));
-    }
-    const char* text = yyjson_get_str(handle.value);
-    return std::string_view(text, yyjson_get_len(handle.value));
-}
-
-}  // namespace detail
-
-class RefBase {
+class TaggedRef {
 public:
-    constexpr RefBase() noexcept = default;
+    TaggedRef() noexcept = default;
 
-    [[nodiscard]] constexpr bool valid() const noexcept {
-        return detail::valid(handle);
-    }
+    [[nodiscard]] bool valid() const noexcept;
 
-    [[nodiscard]] const yyjson_val* raw() const noexcept {
-        return detail::as_immutable(handle);
-    }
-
-    [[nodiscard]] yyjson_mut_val* raw_mutable() const noexcept {
-        if(!handle.is_mutable) {
-            return nullptr;
-        }
-        return detail::as_mutable(handle);
-    }
-
-    [[nodiscard]] bool mutable_ref() const noexcept {
-        return handle.is_mutable;
-    }
+    [[nodiscard]] bool mutable_ref() const noexcept;
 
 protected:
-    explicit constexpr RefBase(const yyjson_val* value) noexcept :
-        handle(detail::make_handle(value)) {}
+    constexpr static std::uintptr_t k_mutable_bit = std::uintptr_t{1};
 
-    explicit constexpr RefBase(const yyjson_mut_val* value) noexcept :
-        handle(detail::make_handle(value)) {}
+    explicit TaggedRef(const yyjson_val* value) noexcept;
 
-    explicit constexpr RefBase(detail::value_handle handle) noexcept : handle(handle) {}
+    explicit TaggedRef(const yyjson_mut_val* value) noexcept;
 
-    [[nodiscard]] constexpr auto handle_value() const noexcept -> detail::value_handle {
-        return handle;
-    }
+    explicit TaggedRef(std::uintptr_t tagged_handle) noexcept;
 
-protected:
-    detail::value_handle handle{};
-};
+    [[nodiscard]] std::uintptr_t tagged_handle() const noexcept;
 
-class ValueRef : public RefBase {
-public:
-    constexpr ValueRef() noexcept = default;
+    [[nodiscard]] void* untagged_ptr() const noexcept;
 
-    explicit constexpr ValueRef(const yyjson_val* value) noexcept : RefBase(value) {}
+    [[nodiscard]] yyjson_val* immutable_ptr() const noexcept;
 
-    explicit constexpr ValueRef(const yyjson_mut_val* value) noexcept : RefBase(value) {}
+    [[nodiscard]] yyjson_mut_val* mutable_ptr() const noexcept;
 
-    [[nodiscard]] bool is_null() const noexcept {
-        return valid() && detail::is_null(handle);
-    }
+    [[nodiscard]] static std::uintptr_t tag_handle(const void* pointer, bool mutable_bit) noexcept;
 
-    [[nodiscard]] bool is_bool() const noexcept {
-        return valid() && detail::is_bool(handle);
-    }
-
-    [[nodiscard]] bool is_int() const noexcept {
-        return valid() && detail::is_int(handle);
-    }
-
-    [[nodiscard]] bool is_number() const noexcept {
-        return valid() && detail::is_num(handle);
-    }
-
-    [[nodiscard]] bool is_string() const noexcept {
-        return valid() && detail::is_str(handle);
-    }
-
-    [[nodiscard]] bool is_array() const noexcept {
-        return valid() && detail::is_arr(handle);
-    }
-
-    [[nodiscard]] bool is_object() const noexcept {
-        return valid() && detail::is_obj(handle);
-    }
-
-    [[nodiscard]] std::optional<bool> as_bool() const noexcept {
-        if(!valid()) {
-            return std::nullopt;
-        }
-        return detail::as_bool(handle);
-    }
-
-    [[nodiscard]] std::optional<std::int64_t> as_int() const noexcept {
-        if(!valid()) {
-            return std::nullopt;
-        }
-        return detail::as_sint(handle);
-    }
-
-    [[nodiscard]] std::optional<std::uint64_t> as_uint() const noexcept {
-        if(!valid()) {
-            return std::nullopt;
-        }
-        return detail::as_uint(handle);
-    }
-
-    [[nodiscard]] std::optional<double> as_double() const noexcept {
-        if(!valid()) {
-            return std::nullopt;
-        }
-        return detail::as_num(handle);
-    }
-
-    [[nodiscard]] std::optional<std::string_view> as_string() const noexcept {
-        if(!valid()) {
-            return std::nullopt;
-        }
-        return detail::as_str(handle);
-    }
-
-    [[nodiscard]] std::optional<ArrayRef> as_array() const noexcept;
-
-    [[nodiscard]] std::optional<ObjectRef> as_object() const noexcept;
+    void set_tagged_handle(std::uintptr_t tagged_handle) noexcept;
 
 private:
-    explicit constexpr ValueRef(detail::value_handle handle) noexcept : RefBase(handle) {}
+    std::uintptr_t tagged_handle_value = 0;
+
+    friend class OwnedDoc;
+};
+
+class ValueRef : public TaggedRef {
+public:
+    ValueRef() noexcept = default;
+
+    explicit ValueRef(const yyjson_val* value) noexcept;
+
+    explicit ValueRef(const yyjson_mut_val* value) noexcept;
+
+    [[nodiscard]] ValueKind kind() const noexcept;
+
+    [[nodiscard]] bool is_null() const noexcept;
+
+    [[nodiscard]] bool is_bool() const noexcept;
+
+    [[nodiscard]] bool is_int() const noexcept;
+
+    [[nodiscard]] bool is_number() const noexcept;
+
+    [[nodiscard]] bool is_string() const noexcept;
+
+    [[nodiscard]] bool is_array() const noexcept;
+
+    [[nodiscard]] bool is_object() const noexcept;
+
+    [[nodiscard]] std::optional<bool> get_bool() const noexcept;
+
+    [[nodiscard]] std::optional<std::int64_t> get_int() const noexcept;
+
+    [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept;
+
+    [[nodiscard]] std::optional<double> get_double() const noexcept;
+
+    [[nodiscard]] std::optional<std::string_view> get_string() const noexcept;
+
+    [[nodiscard]] std::optional<ArrayRef> get_array() const noexcept;
+
+    [[nodiscard]] std::optional<ObjectRef> get_object() const noexcept;
+
+    [[nodiscard]] bool as_bool() const;
+
+    [[nodiscard]] std::int64_t as_int() const;
+
+    [[nodiscard]] std::uint64_t as_uint() const;
+
+    [[nodiscard]] double as_double() const;
+
+    [[nodiscard]] std::string_view as_string() const;
+
+    [[nodiscard]] ArrayRef as_array() const;
+
+    [[nodiscard]] ObjectRef as_object() const;
+
+    void assert_valid() const;
+
+    void assert_kind(ValueKind expected) const;
+
+protected:
+    explicit ValueRef(std::uintptr_t tagged_handle) noexcept;
 
 private:
     friend class ArrayRef;
     friend class ObjectRef;
+    friend class Value;
 };
 
-class ArrayRef : public RefBase {
+class ArrayRef : public TaggedRef {
 public:
-    constexpr ArrayRef() noexcept = default;
+    class iterator;
 
-    explicit constexpr ArrayRef(const yyjson_val* value) noexcept : RefBase(value) {}
+    ArrayRef() noexcept = default;
 
-    explicit constexpr ArrayRef(const yyjson_mut_val* value) noexcept : RefBase(value) {}
+    explicit ArrayRef(const yyjson_val* value) noexcept;
 
-    [[nodiscard]] bool valid() const noexcept {
-        return RefBase::valid() && detail::is_arr(handle);
-    }
+    explicit ArrayRef(const yyjson_mut_val* value) noexcept;
 
-    [[nodiscard]] std::size_t size() const noexcept {
-        if(!valid()) {
-            return 0;
-        }
-        return detail::arr_size(handle);
-    }
+    [[nodiscard]] bool valid() const noexcept;
 
-    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept {
-        if(!valid()) {
-            return {};
-        }
-        return ValueRef(detail::arr_get(handle, index));
-    }
+    [[nodiscard]] std::size_t size() const noexcept;
+
+    [[nodiscard]] bool empty() const noexcept;
+
+    [[nodiscard]] std::optional<ValueRef> get(std::size_t index) const noexcept;
+
+    [[nodiscard]] ValueRef at(std::size_t index) const;
+
+    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
+
+    void assert_valid() const;
+
+    [[nodiscard]] iterator begin() const noexcept;
+
+    [[nodiscard]] iterator end() const noexcept;
+
+protected:
+    explicit ArrayRef(std::uintptr_t tagged_handle) noexcept;
 
 private:
-    explicit constexpr ArrayRef(detail::value_handle handle) noexcept : RefBase(handle) {}
+    [[nodiscard]] ValueRef unchecked_get(std::size_t index) const noexcept;
 
 private:
     friend class ValueRef;
+    friend class Array;
 };
 
-class ObjectRef : public RefBase {
+class ArrayRef::iterator {
 public:
-    constexpr ObjectRef() noexcept = default;
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = ValueRef;
+    using difference_type = std::ptrdiff_t;
 
-    explicit constexpr ObjectRef(const yyjson_val* value) noexcept : RefBase(value) {}
+    iterator() = default;
 
-    explicit constexpr ObjectRef(const yyjson_mut_val* value) noexcept : RefBase(value) {}
+    [[nodiscard]] value_type operator*() const noexcept;
 
-    ObjectRef(const ObjectRef& other) noexcept : RefBase(other.handle), objectIndex(nullptr) {}
+    auto operator++() noexcept -> iterator&;
 
-    auto operator=(const ObjectRef& other) noexcept -> ObjectRef& {
-        if(this == &other) {
-            return *this;
-        }
-        handle = other.handle;
-        objectIndex.reset();
-        return *this;
-    }
+    auto operator++(int) noexcept -> iterator;
 
-    ObjectRef(ObjectRef&&) noexcept = default;
-
-    auto operator=(ObjectRef&&) noexcept -> ObjectRef& = default;
-
-    [[nodiscard]] bool valid() const noexcept {
-        return RefBase::valid() && detail::is_obj(handle);
-    }
-
-    [[nodiscard]] std::size_t size() const noexcept {
-        if(!valid()) {
-            return 0;
-        }
-        return detail::obj_size(handle);
-    }
-
-    [[nodiscard]] ValueRef operator[](std::string_view key) const {
-        if(!valid()) {
-            return {};
-        }
-
-        const auto object_size = detail::obj_size(handle);
-        if(object_size < kObjectIndexThreshold) {
-            return ValueRef(detail::obj_getn(handle, key));
-        }
-
-        ensure_object_index();
-        auto iter = objectIndex->find(key);
-        if(iter == objectIndex->end()) {
-            return {};
-        }
-
-        return ValueRef(detail::value_handle{
-            .value = iter->second,
-            .is_mutable = handle.is_mutable,
-        });
-    }
+    [[nodiscard]] bool operator==(const iterator& other) const noexcept;
 
 private:
-    void ensure_object_index() const {
-        if(objectIndex) {
-            return;
-        }
-
-        auto index = std::make_unique<std::unordered_map<std::string_view, yyjson_val*>>();
-        index->reserve(detail::obj_size(handle));
-
-        if(handle.is_mutable) {
-            yyjson_mut_val* key = nullptr;
-            yyjson_mut_obj_iter iter = yyjson_mut_obj_iter_with(detail::as_mutable(handle));
-            while((key = yyjson_mut_obj_iter_next(&iter)) != nullptr) {
-                yyjson_mut_val* value = yyjson_mut_obj_iter_get_val(key);
-                const char* key_text = yyjson_mut_get_str(key);
-                if(key_text == nullptr) {
-                    continue;
-                }
-                index->try_emplace(std::string_view(key_text, yyjson_mut_get_len(key)),
-                                   reinterpret_cast<yyjson_val*>(value));
-            }
-        } else {
-            yyjson_val* key = nullptr;
-            yyjson_obj_iter iter = yyjson_obj_iter_with(handle.value);
-            while((key = yyjson_obj_iter_next(&iter)) != nullptr) {
-                yyjson_val* value = yyjson_obj_iter_get_val(key);
-                const char* key_text = yyjson_get_str(key);
-                if(key_text == nullptr) {
-                    continue;
-                }
-                index->try_emplace(std::string_view(key_text, yyjson_get_len(key)), value);
-            }
-        }
-
-        objectIndex = std::move(index);
-    }
+    iterator(const ArrayRef* owner, std::size_t index) noexcept;
 
 private:
-    constexpr static std::size_t kObjectIndexThreshold = 16;
+    friend class ArrayRef;
 
-    explicit constexpr ObjectRef(detail::value_handle handle) noexcept : RefBase(handle) {}
-
-private:
-    friend class ValueRef;
-
-    mutable std::unique_ptr<std::unordered_map<std::string_view, yyjson_val*>> objectIndex;
+    const ArrayRef* owner = nullptr;
+    std::size_t index = 0;
 };
 
-inline auto ValueRef::as_array() const noexcept -> std::optional<ArrayRef> {
-    if(!is_array()) {
-        return std::nullopt;
-    }
-    return ArrayRef(handle);
-}
-
-inline auto ValueRef::as_object() const noexcept -> std::optional<ObjectRef> {
-    if(!is_object()) {
-        return std::nullopt;
-    }
-    return ObjectRef(handle);
-}
-
-class Value {
+class ObjectRef : public TaggedRef {
 public:
-    using immutable_doc_ptr = std::shared_ptr<yyjson_doc>;
-    using mutable_doc_ptr = std::shared_ptr<yyjson_mut_doc>;
-    using doc_owner = std::variant<immutable_doc_ptr, mutable_doc_ptr>;
-
-    enum class error_code : std::uint8_t {
-        invalid_state,
-        allocation_failed,
-        type_mismatch,
+    struct entry {
+        std::string_view key;
+        ValueRef value{};
     };
 
-    using status_t = std::expected<void, error_code>;
+    class iterator;
 
-    Value() = default;
+    ObjectRef() noexcept = default;
 
-    static auto parse(std::string_view json) -> std::expected<Value, yyjson_read_code> {
-        yyjson_read_err err{};
-        yyjson_doc* raw_doc = yyjson_read_opts(const_cast<char*>(json.data()),
-                                               json.size(),
-                                               YYJSON_READ_NOFLAG,
-                                               nullptr,
-                                               &err);
-        if(raw_doc == nullptr) {
-            return std::unexpected(err.code);
-        }
+    explicit ObjectRef(const yyjson_val* value) noexcept;
 
-        auto doc = immutable_doc_ptr(raw_doc, yyjson_doc_free);
-        return Value(std::move(doc), yyjson_doc_get_root(raw_doc));
-    }
+    explicit ObjectRef(const yyjson_mut_val* value) noexcept;
 
-    static auto from_immutable_doc(yyjson_doc* raw_doc) -> std::optional<Value> {
-        if(raw_doc == nullptr) {
-            return std::nullopt;
-        }
-        auto doc = immutable_doc_ptr(raw_doc, yyjson_doc_free);
-        return Value(std::move(doc), yyjson_doc_get_root(raw_doc));
-    }
+    [[nodiscard]] bool valid() const noexcept;
 
-    static auto from_mutable_doc(yyjson_mut_doc* raw_doc) -> std::optional<Value> {
-        if(raw_doc == nullptr) {
-            return std::nullopt;
-        }
-        auto doc = mutable_doc_ptr(raw_doc, yyjson_mut_doc_free);
-        auto* root = yyjson_mut_doc_get_root(raw_doc);
-        if(root == nullptr) {
-            return std::nullopt;
-        }
-        return Value(std::move(doc), reinterpret_cast<const yyjson_val*>(root));
-    }
+    [[nodiscard]] std::size_t size() const noexcept;
 
-    static auto from_mutable_doc(mutable_doc_ptr doc) -> std::optional<Value> {
-        if(doc == nullptr) {
-            return std::nullopt;
-        }
-        auto* root = yyjson_mut_doc_get_root(doc.get());
-        if(root == nullptr) {
-            return std::nullopt;
-        }
-        return Value(doc_owner(std::move(doc)), reinterpret_cast<const yyjson_val*>(root));
-    }
+    [[nodiscard]] bool empty() const noexcept;
 
-    [[nodiscard]] bool valid() const noexcept {
-        return valuePtr != nullptr;
-    }
+    [[nodiscard]] std::optional<ValueRef> get(std::string_view key) const noexcept;
 
-    [[nodiscard]] bool is_mutable() const noexcept {
-        return std::holds_alternative<mutable_doc_ptr>(doc);
-    }
+    [[nodiscard]] bool contains(std::string_view key) const noexcept;
 
-    [[nodiscard]] ValueRef as_ref() const noexcept {
-        if(is_mutable()) {
-            return ValueRef(mutable_value());
-        }
-        return ValueRef(readable_value());
-    }
+    [[nodiscard]] ValueRef at(std::string_view key) const;
 
-    [[nodiscard]] bool is_array() const noexcept {
-        return as_ref().is_array();
-    }
+    [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
 
-    [[nodiscard]] bool is_object() const noexcept {
-        return as_ref().is_object();
-    }
+    void assert_valid() const;
 
-    [[nodiscard]] std::optional<ArrayRef> as_array_ref() const noexcept {
-        return as_ref().as_array();
-    }
+    [[nodiscard]] iterator begin() const noexcept;
 
-    [[nodiscard]] std::optional<ObjectRef> as_object_ref() const noexcept {
-        return as_ref().as_object();
-    }
-
-    [[nodiscard]] std::optional<Array> as_array() const;
-
-    [[nodiscard]] std::optional<Object> as_object() const;
-
-    [[nodiscard]] auto to_json_string() const -> std::expected<std::string, yyjson_write_code> {
-        if(!valid()) {
-            return std::unexpected(YYJSON_WRITE_ERROR_INVALID_PARAMETER);
-        }
-
-        yyjson_write_err err{};
-        size_t len = 0;
-        char* out = nullptr;
-        if(std::holds_alternative<immutable_doc_ptr>(doc)) {
-            out = yyjson_val_write_opts(readable_value(), YYJSON_WRITE_NOFLAG, nullptr, &len, &err);
-        } else {
-            out = yyjson_mut_val_write_opts(mutable_value(),
-                                            YYJSON_WRITE_NOFLAG,
-                                            nullptr,
-                                            &len,
-                                            &err);
-        }
-        if(out == nullptr) {
-            return std::unexpected(err.code);
-        }
-
-        std::string json(out, len);
-        std::free(out);
-        return json;
-    }
-
-    status_t set_null() {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_set_null(*mutable_root)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t set_bool(bool value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_set_bool(*mutable_root, value)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t set_int(std::int64_t value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_set_sint(*mutable_root, value)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t set_uint(std::uint64_t value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_set_uint(*mutable_root, value)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t set_real(double value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_set_real(*mutable_root, value)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t append_int(std::int64_t value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_is_arr(*mutable_root)) {
-            return std::unexpected(error_code::type_mismatch);
-        }
-
-        auto* doc = mutable_doc();
-        if(doc == nullptr) {
-            return std::unexpected(error_code::invalid_state);
-        }
-        if(!yyjson_mut_arr_add_sint(doc, *mutable_root, value)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t append(const Value& value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_is_arr(*mutable_root)) {
-            return std::unexpected(error_code::type_mismatch);
-        }
-
-        auto copied = copy_subtree_into_this_doc(value);
-        if(!copied) {
-            return std::unexpected(copied.error());
-        }
-        if(!yyjson_mut_arr_add_val(*mutable_root, *copied)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t put_int(std::string_view key, std::int64_t value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_is_obj(*mutable_root)) {
-            return std::unexpected(error_code::type_mismatch);
-        }
-
-        auto* doc = mutable_doc();
-        if(doc == nullptr) {
-            return std::unexpected(error_code::invalid_state);
-        }
-
-        yyjson_mut_val* key_value = yyjson_mut_strncpy(doc, key.data(), key.size());
-        yyjson_mut_val* int_value = yyjson_mut_sint(doc, value);
-        if(key_value == nullptr || int_value == nullptr) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-
-        if(!yyjson_mut_obj_put(*mutable_root, key_value, int_value)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    status_t put(std::string_view key, const Value& value) {
-        auto mutable_root = mutable_root_value();
-        if(!mutable_root) {
-            return std::unexpected(mutable_root.error());
-        }
-        if(!yyjson_mut_is_obj(*mutable_root)) {
-            return std::unexpected(error_code::type_mismatch);
-        }
-
-        auto* doc = mutable_doc();
-        if(doc == nullptr) {
-            return std::unexpected(error_code::invalid_state);
-        }
-
-        yyjson_mut_val* key_value = yyjson_mut_strncpy(doc, key.data(), key.size());
-        if(key_value == nullptr) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-
-        auto copied = copy_subtree_into_this_doc(value);
-        if(!copied) {
-            return std::unexpected(copied.error());
-        }
-        if(!yyjson_mut_obj_put(*mutable_root, key_value, *copied)) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return {};
-    }
-
-    [[nodiscard]] const yyjson_val* immutable_value() const noexcept {
-        return readable_value();
-    }
-
-    [[nodiscard]] const yyjson_mut_val* mutable_value() const noexcept {
-        if(!is_mutable()) {
-            return nullptr;
-        }
-        return static_cast<const yyjson_mut_val*>(valuePtr);
-    }
+    [[nodiscard]] iterator end() const noexcept;
 
 protected:
-    Value(doc_owner doc, const yyjson_val* value) :
-        doc(std::move(doc)), valuePtr(const_cast<void*>(static_cast<const void*>(value))) {}
-
-    [[nodiscard]] const yyjson_val* readable_value() const noexcept {
-        if(valuePtr == nullptr) {
-            return nullptr;
-        }
-        if(std::holds_alternative<immutable_doc_ptr>(doc)) {
-            return static_cast<const yyjson_val*>(valuePtr);
-        }
-        return reinterpret_cast<const yyjson_val*>(static_cast<const yyjson_mut_val*>(valuePtr));
-    }
-
-    [[nodiscard]] yyjson_mut_doc* mutable_doc() noexcept {
-        if(!std::holds_alternative<mutable_doc_ptr>(doc)) {
-            return nullptr;
-        }
-        return std::get<mutable_doc_ptr>(doc).get();
-    }
-
-    status_t ensure_writable() {
-        if(!valid()) {
-            return std::unexpected(error_code::invalid_state);
-        }
-
-        if(std::holds_alternative<immutable_doc_ptr>(doc)) {
-            auto* copied = yyjson_doc_mut_copy(std::get<immutable_doc_ptr>(doc).get(), nullptr);
-            if(copied == nullptr) {
-                return std::unexpected(error_code::allocation_failed);
-            }
-            doc = mutable_doc_ptr(copied, yyjson_mut_doc_free);
-            valuePtr = yyjson_mut_doc_get_root(copied);
-            return {};
-        }
-
-        auto& current = std::get<mutable_doc_ptr>(doc);
-        if(current.use_count() <= 1) {
-            return {};
-        }
-
-        auto* copied = yyjson_mut_doc_mut_copy(current.get(), nullptr);
-        if(copied == nullptr) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        doc = mutable_doc_ptr(copied, yyjson_mut_doc_free);
-        valuePtr = yyjson_mut_doc_get_root(copied);
-        return {};
-    }
-
-    [[nodiscard]] auto mutable_root_value() -> std::expected<yyjson_mut_val*, error_code> {
-        auto writable = ensure_writable();
-        if(!writable) {
-            return std::unexpected(writable.error());
-        }
-
-        auto* root = static_cast<yyjson_mut_val*>(valuePtr);
-        if(root == nullptr) {
-            return std::unexpected(error_code::invalid_state);
-        }
-        return root;
-    }
-
-    [[nodiscard]] auto copy_subtree_into_this_doc(const Value& value)
-        -> std::expected<yyjson_mut_val*, error_code> {
-        auto* doc = mutable_doc();
-        if(doc == nullptr) {
-            return std::unexpected(error_code::invalid_state);
-        }
-
-        yyjson_mut_val* copied = nullptr;
-        if(value.is_mutable()) {
-            copied =
-                yyjson_mut_val_mut_copy(doc, const_cast<yyjson_mut_val*>(value.mutable_value()));
-        } else {
-            copied = yyjson_val_mut_copy(doc, const_cast<yyjson_val*>(value.immutable_value()));
-        }
-
-        if(copied == nullptr) {
-            return std::unexpected(error_code::allocation_failed);
-        }
-        return copied;
-    }
-
-protected:
-    doc_owner doc{};
-    void* valuePtr = nullptr;
-};
-
-class Array : public Value {
-public:
-    Array() = default;
-
-    static auto parse(std::string_view json) -> std::expected<Array, yyjson_read_code> {
-        auto parsed = Value::parse(json);
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
-        auto array = parsed->as_array();
-        if(!array) {
-            return std::unexpected(YYJSON_READ_ERROR_INVALID_PARAMETER);
-        }
-        return std::move(*array);
-    }
-
-    static auto from_immutable_doc(yyjson_doc* raw_doc) -> std::optional<Array> {
-        auto value = Value::from_immutable_doc(raw_doc);
-        if(!value) {
-            return std::nullopt;
-        }
-        return value->as_array();
-    }
-
-    [[nodiscard]] ArrayRef as_ref() const noexcept {
-        if(is_mutable()) {
-            return ArrayRef(mutable_value());
-        }
-        return ArrayRef(readable_value());
-    }
-
-    [[nodiscard]] std::size_t size() const noexcept {
-        return as_ref().size();
-    }
-
-    status_t append_int(std::int64_t value) {
-        return Value::append_int(value);
-    }
-
-    status_t append(const Value& value) {
-        return Value::append(value);
-    }
+    explicit ObjectRef(std::uintptr_t tagged_handle) noexcept;
 
 private:
-    Array(doc_owner doc, const yyjson_val* value) : Value(std::move(doc), value) {}
+    friend class ValueRef;
+    friend class Object;
+};
+
+class ObjectRef::iterator {
+public:
+    using iterator_category = std::input_iterator_tag;
+    using value_type = entry;
+    using difference_type = std::ptrdiff_t;
+
+    iterator() = default;
+
+    [[nodiscard]] value_type operator*() const noexcept;
+
+    auto operator++() noexcept -> iterator&;
+
+    auto operator++(int) noexcept -> iterator;
+
+    [[nodiscard]] bool operator==(const iterator& other) const noexcept;
+
+private:
+    iterator(const ObjectRef* owner, bool end) noexcept;
+
+private:
+    friend class ObjectRef;
+
+    const ObjectRef* owner = nullptr;
+    bool end_flag = true;
+    bool mutable_mode = false;
+    yyjson_obj_iter immutable_iter{};
+    yyjson_mut_obj_iter mutable_iter{};
+    yyjson_val* immutable_key = nullptr;
+    yyjson_mut_val* mutable_key = nullptr;
+};
+
+class OwnedDoc {
+public:
+    using status_t = std::expected<void, error_kind>;
+
+    OwnedDoc() noexcept = default;
+
+    OwnedDoc(const OwnedDoc& other) noexcept;
+
+    auto operator=(const OwnedDoc& other) noexcept -> OwnedDoc&;
+
+    OwnedDoc(OwnedDoc&& other) noexcept;
+
+    auto operator=(OwnedDoc&& other) noexcept -> OwnedDoc&;
+
+    ~OwnedDoc();
+
+    [[nodiscard]] bool has_owner() const noexcept;
+
+    [[nodiscard]] int use_count() const noexcept;
+
+    [[nodiscard]] bool mutable_doc() const noexcept;
+
+protected:
+    OwnedDoc(std::uintptr_t tagged_doc_handle, int* ref_count, bool retain_owner) noexcept;
+
+    constexpr static std::uintptr_t k_mutable_bit = std::uintptr_t{1};
+    std::uintptr_t tagged_doc_handle = 0;
+    int* ref_count = nullptr;
+
+    [[nodiscard]] static std::uintptr_t tag_doc(const void* pointer, bool mutable_bit) noexcept;
+
+    [[nodiscard]] yyjson_doc* immutable_doc_ptr() const noexcept;
+
+    [[nodiscard]] yyjson_mut_doc* mutable_doc_ptr() const noexcept;
+
+    auto ensure_writable_doc_and_rebind_root(TaggedRef& ref)
+        -> std::expected<yyjson_mut_val*, error_kind>;
+
+private:
+    void retain() noexcept;
+
+    void release() noexcept;
+};
+
+class Value : public ValueRef, private OwnedDoc {
+public:
+    using status_t = std::expected<void, error_kind>;
+
+    struct parse_options {
+        yyjson_read_flag flags = YYJSON_READ_NOFLAG;
+        yyjson_alc* allocator = nullptr;
+    };
+
+    Value() noexcept = default;
+
+    Value(const Value&) noexcept = default;
+    auto operator=(const Value&) noexcept -> Value& = default;
+    Value(Value&&) noexcept = default;
+    auto operator=(Value&&) noexcept -> Value& = default;
+    ~Value() = default;
+
+    static auto parse(std::string_view json) -> std::expected<Value, yyjson_read_code>;
+
+    static auto parse(std::string_view json, parse_options options)
+        -> std::expected<Value, yyjson_read_code>;
+
+    static auto from_immutable_doc(yyjson_doc* raw_doc) noexcept -> std::optional<Value>;
+
+    static auto from_mutable_doc(yyjson_mut_doc* raw_doc) noexcept -> std::optional<Value>;
+
+    [[nodiscard]] auto to_json_string() const -> std::expected<std::string, yyjson_write_code>;
+
+    [[nodiscard]] ValueRef as_ref() const noexcept;
+
+    using OwnedDoc::has_owner;
+    using OwnedDoc::use_count;
+    using OwnedDoc::mutable_doc;
+
+    [[nodiscard]] std::optional<Array> get_array() const noexcept;
+
+    [[nodiscard]] std::optional<Object> get_object() const noexcept;
+
+    [[nodiscard]] Array as_array() const;
+
+    [[nodiscard]] Object as_object() const;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    auto set(T&& value) -> status_t;
+
+    template <typename T>
+        requires (dom_writable_value<T> && !std::same_as<std::remove_cvref_t<T>, Value>)
+    auto operator=(T&& value) -> Value&;
+
+private:
+    [[nodiscard]] auto writable_node() -> std::expected<yyjson_mut_val*, error_kind>;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    static auto make_mut_value(yyjson_mut_doc* doc, T&& value)
+        -> std::expected<yyjson_mut_val*, error_kind>;
+
+    Value(std::uintptr_t tagged_value_handle,
+          std::uintptr_t tagged_doc_handle,
+          int* ref_count,
+          bool retain_owner) noexcept;
+
+private:
+    friend class Array;
+    friend class Object;
+};
+
+class Array : public ArrayRef, private OwnedDoc {
+public:
+    using status_t = std::expected<void, error_kind>;
+
+    Array() noexcept = default;
+
+    Array(const Array&) noexcept = default;
+    auto operator=(const Array&) noexcept -> Array& = default;
+    Array(Array&&) noexcept = default;
+    auto operator=(Array&&) noexcept -> Array& = default;
+    ~Array() = default;
+
+    static auto from_immutable_doc(yyjson_doc* raw_doc) noexcept -> std::optional<Array>;
+
+    static auto from_mutable_doc(yyjson_mut_doc* raw_doc) noexcept -> std::optional<Array>;
+
+    static auto parse(std::string_view json) -> std::expected<Array, yyjson_read_code>;
+
+    [[nodiscard]] auto to_json_string() const -> std::expected<std::string, yyjson_write_code>;
+
+    [[nodiscard]] ArrayRef as_ref() const noexcept;
+
+    using OwnedDoc::has_owner;
+    using OwnedDoc::use_count;
+    using OwnedDoc::mutable_doc;
+
+    [[nodiscard]] Value as_value() const noexcept;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    auto push_back(T&& value) -> status_t;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    auto insert(std::size_t index, T&& value) -> status_t;
+
+private:
+    [[nodiscard]] auto writable_node() -> std::expected<yyjson_mut_val*, error_kind>;
+
+    Array(std::uintptr_t tagged_value_handle,
+          std::uintptr_t tagged_doc_handle,
+          int* ref_count,
+          bool retain_owner) noexcept;
 
 private:
     friend class Value;
 };
 
-class Object : public Value {
+class Object : public ObjectRef, private OwnedDoc {
 public:
-    Object() = default;
+    using status_t = std::expected<void, error_kind>;
 
-    static auto parse(std::string_view json) -> std::expected<Object, yyjson_read_code> {
-        auto parsed = Value::parse(json);
-        if(!parsed) {
-            return std::unexpected(parsed.error());
-        }
-        auto object = parsed->as_object();
-        if(!object) {
-            return std::unexpected(YYJSON_READ_ERROR_INVALID_PARAMETER);
-        }
-        return std::move(*object);
-    }
+    Object() noexcept = default;
 
-    static auto from_immutable_doc(yyjson_doc* raw_doc) -> std::optional<Object> {
-        auto value = Value::from_immutable_doc(raw_doc);
-        if(!value) {
-            return std::nullopt;
-        }
-        return value->as_object();
-    }
+    Object(const Object&) noexcept = default;
+    auto operator=(const Object&) noexcept -> Object& = default;
+    Object(Object&&) noexcept = default;
+    auto operator=(Object&&) noexcept -> Object& = default;
+    ~Object() = default;
 
-    [[nodiscard]] ObjectRef as_ref() const noexcept {
-        if(is_mutable()) {
-            return ObjectRef(mutable_value());
-        }
-        return ObjectRef(readable_value());
-    }
+    static auto from_immutable_doc(yyjson_doc* raw_doc) noexcept -> std::optional<Object>;
 
-    [[nodiscard]] std::size_t size() const noexcept {
-        return as_ref().size();
-    }
+    static auto from_mutable_doc(yyjson_mut_doc* raw_doc) noexcept -> std::optional<Object>;
 
-    status_t put_int(std::string_view key, std::int64_t value) {
-        return Value::put_int(key, value);
-    }
+    static auto parse(std::string_view json) -> std::expected<Object, yyjson_read_code>;
 
-    status_t put(std::string_view key, const Value& value) {
-        return Value::put(key, value);
-    }
+    [[nodiscard]] auto to_json_string() const -> std::expected<std::string, yyjson_write_code>;
+
+    [[nodiscard]] ObjectRef as_ref() const noexcept;
+
+    using OwnedDoc::has_owner;
+    using OwnedDoc::use_count;
+    using OwnedDoc::mutable_doc;
+
+    [[nodiscard]] Value as_value() const noexcept;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    auto insert(std::string_view key, T&& value) -> status_t;
+
+    template <typename T>
+        requires dom_writable_value<T>
+    auto assign(std::string_view key, T&& value) -> status_t;
 
 private:
-    Object(doc_owner doc, const yyjson_val* value) : Value(std::move(doc), value) {}
+    [[nodiscard]] auto writable_node() -> std::expected<yyjson_mut_val*, error_kind>;
+
+    Object(std::uintptr_t tagged_value_handle,
+           std::uintptr_t tagged_doc_handle,
+           int* ref_count,
+           bool retain_owner) noexcept;
 
 private:
     friend class Value;
 };
-
-inline auto Value::as_array() const -> std::optional<Array> {
-    if(!is_array()) {
-        return std::nullopt;
-    }
-    return Array(doc, readable_value());
-}
-
-inline auto Value::as_object() const -> std::optional<Object> {
-    if(!is_object()) {
-        return std::nullopt;
-    }
-    return Object(doc, readable_value());
-}
 
 }  // namespace eventide::serde::json
+
+#ifndef EVENTIDE_SERDE_JSON_DOM_INL_INCLUDED
+#define EVENTIDE_SERDE_JSON_DOM_INL_INCLUDED 1
+#include "eventide/serde/json/dom.inl"
+#endif

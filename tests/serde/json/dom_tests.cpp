@@ -34,15 +34,15 @@ TEST_CASE(parse_and_view_basic) {
     ASSERT_TRUE(node.has_value());
 
     auto root = node->as_ref();
-    auto object = root.as_object();
+    auto object = root.get_object();
     ASSERT_TRUE(object.has_value());
     ASSERT_EQ((*object)["a"].as_int(), 1);
     ASSERT_EQ((*object)["b"].as_string(), std::string_view("x"));
 
-    auto array = (*object)["arr"].as_array();
+    auto array = (*object)["arr"].get_array();
     ASSERT_TRUE(array.has_value());
     ASSERT_EQ((*array)[1].as_int(), 2);
-    EXPECT_FALSE((*object)["missing"].valid());
+    EXPECT_FALSE((*object).get("missing").has_value());
 }
 
 TEST_CASE(object_lookup_lazy_index_threshold) {
@@ -50,7 +50,7 @@ TEST_CASE(object_lookup_lazy_index_threshold) {
     auto node = json::Value::parse(json_text);
     ASSERT_TRUE(node.has_value());
 
-    auto object = node->as_ref().as_object();
+    auto object = node->as_ref().get_object();
     ASSERT_TRUE(object.has_value());
     for(int i = 0; i < 32; ++i) {
         std::string key = "k" + std::to_string(i);
@@ -63,13 +63,12 @@ TEST_CASE(cow_mutation_preserves_copy) {
     ASSERT_TRUE(node.has_value());
 
     auto copy = *node;
-    ASSERT_TRUE(node->put_int("n", 2).has_value());
+    auto node_object = node->as_object();
+    ASSERT_TRUE(node_object.assign("n", 2).has_value());
 
-    auto node_object = node->as_ref().as_object();
-    auto copy_object = copy.as_ref().as_object();
-    ASSERT_TRUE(node_object.has_value());
+    auto copy_object = copy.as_ref().get_object();
     ASSERT_TRUE(copy_object.has_value());
-    EXPECT_EQ((*node_object)["n"].as_int(), 2);
+    EXPECT_EQ(node_object["n"].as_int(), 2);
     EXPECT_EQ((*copy_object)["n"].as_int(), 1);
 }
 
@@ -77,12 +76,12 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     auto parsed = json::parse<mixed_payload>(R"({"id":7,"extra":{"name":"alice","n":1}})");
     ASSERT_TRUE(parsed.has_value());
     ASSERT_EQ(parsed->id, 7);
-    auto extra_object = parsed->extra.as_ref().as_object();
-    ASSERT_TRUE(extra_object.has_value());
-    ASSERT_EQ((*extra_object)["name"].as_string(), std::string_view("alice"));
-    ASSERT_EQ((*extra_object)["n"].as_int(), 1);
+    auto extra_object = parsed->extra.as_object();
+    ASSERT_EQ(extra_object["name"].as_string(), std::string_view("alice"));
+    ASSERT_EQ(extra_object["n"].as_int(), 1);
 
-    ASSERT_TRUE(parsed->extra.put_int("n", 2).has_value());
+    ASSERT_TRUE(extra_object.assign("n", 2).has_value());
+    parsed->extra = extra_object.as_value();
 
     auto encoded = json::to_string(*parsed);
     ASSERT_TRUE(encoded.has_value());
@@ -90,7 +89,7 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     auto reparsed = json::parse<mixed_payload>(*encoded);
     ASSERT_TRUE(reparsed.has_value());
     EXPECT_EQ(reparsed->id, 7);
-    auto reparsed_extra_object = reparsed->extra.as_ref().as_object();
+    auto reparsed_extra_object = reparsed->extra.as_ref().get_object();
     ASSERT_TRUE(reparsed_extra_object.has_value());
     EXPECT_EQ((*reparsed_extra_object)["name"].as_string(), std::string_view("alice"));
     EXPECT_EQ((*reparsed_extra_object)["n"].as_int(), 2);

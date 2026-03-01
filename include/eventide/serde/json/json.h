@@ -206,14 +206,14 @@ auto deserialize_dynamic_dom(json::yy::Deserializer& deserializer, T& value)
         value = std::move(*dom);
         return {};
     } else if constexpr(std::same_as<T, json::Array>) {
-        auto array = dom->as_array();
+        auto array = dom->get_array();
         if(!array) {
             return std::unexpected(json::error_kind::type_mismatch);
         }
         value = std::move(*array);
         return {};
     } else if constexpr(std::same_as<T, json::Object>) {
-        auto object = dom->as_object();
+        auto object = dom->get_object();
         if(!object) {
             return std::unexpected(json::error_kind::type_mismatch);
         }

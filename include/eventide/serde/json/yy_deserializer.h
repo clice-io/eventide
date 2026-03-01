@@ -326,7 +326,7 @@ public:
 
     status_t deserialize_bool(bool& value) {
         return read_scalar(value, [](json::ValueRef ref) -> result_t<bool> {
-            auto parsed = ref.as_bool();
+            auto parsed = ref.get_bool();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
             }
@@ -338,7 +338,7 @@ public:
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(parsed, [](json::ValueRef ref) -> result_t<std::int64_t> {
-            auto parsed = ref.as_int();
+            auto parsed = ref.get_int();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
             }
@@ -361,7 +361,7 @@ public:
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
         auto status = read_scalar(parsed, [](json::ValueRef ref) -> result_t<std::uint64_t> {
-            auto parsed = ref.as_uint();
+            auto parsed = ref.get_uint();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
             }
@@ -384,7 +384,7 @@ public:
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
         auto status = read_scalar(parsed, [](json::ValueRef ref) -> result_t<double> {
-            auto parsed = ref.as_double();
+            auto parsed = ref.get_double();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
             }
@@ -413,7 +413,7 @@ public:
     status_t deserialize_char(char& value) {
         std::string_view text;
         auto status = read_scalar(text, [](json::ValueRef ref) -> result_t<std::string_view> {
-            auto parsed = ref.as_string();
+            auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
             }
@@ -435,7 +435,7 @@ public:
     status_t deserialize_str(std::string& value) {
         std::string_view text;
         auto status = read_scalar(text, [](json::ValueRef ref) -> result_t<std::string_view> {
-            auto parsed = ref.as_string();
+            auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
             }
@@ -537,19 +537,14 @@ public:
             return std::unexpected(current_error());
         }
 
-        yyjson_mut_val* copied = nullptr;
-        if(source->mutable_ref()) {
-            copied = yyjson_mut_val_mut_copy(rawDoc, source->raw_mutable());
-        } else {
-            copied = yyjson_val_mut_copy(rawDoc, const_cast<yyjson_val*>(source->raw()));
-        }
-        if(copied == nullptr) {
+        auto copied = clone_value(rawDoc, *source);
+        if(!copied) {
             yyjson_mut_doc_free(rawDoc);
-            mark_invalid(error_type::allocation_failed);
-            return std::unexpected(current_error());
+            mark_invalid(copied.error());
+            return std::unexpected(copied.error());
         }
 
-        yyjson_mut_doc_set_root(rawDoc, copied);
+        yyjson_mut_doc_set_root(rawDoc, *copied);
         auto value = json::Value::from_mutable_doc(rawDoc);
         if(!value) {
             yyjson_mut_doc_free(rawDoc);
@@ -615,6 +610,104 @@ private:
 
         value_scope scope(*this, input);
         return serde::deserialize(*this, out);
+    }
+
+    result_t<yyjson_mut_val*> clone_value(yyjson_mut_doc* doc, json::ValueRef source) {
+        if(doc == nullptr || !source.valid()) {
+            return std::unexpected(error_type::invalid_state);
+        } else if(source.is_null()) {
+            auto* value = yyjson_mut_null(doc);
+            return value ? result_t<yyjson_mut_val*>(value)
+                         : std::unexpected(error_type::allocation_failed);
+        } else if(source.is_bool()) {
+            auto parsed = source.get_bool();
+            if(!parsed) {
+                return std::unexpected(error_type::type_mismatch);
+            }
+            auto* value = yyjson_mut_bool(doc, *parsed);
+            return value ? result_t<yyjson_mut_val*>(value)
+                         : std::unexpected(error_type::allocation_failed);
+        } else if(source.is_int()) {
+            auto signedValue = source.get_int();
+            if(signedValue && *signedValue < 0) {
+                auto* value = yyjson_mut_sint(doc, *signedValue);
+                return value ? result_t<yyjson_mut_val*>(value)
+                             : std::unexpected(error_type::allocation_failed);
+            }
+
+            auto unsignedValue = source.get_uint();
+            if(!unsignedValue) {
+                return std::unexpected(error_type::type_mismatch);
+            }
+            auto* value = yyjson_mut_uint(doc, *unsignedValue);
+            return value ? result_t<yyjson_mut_val*>(value)
+                         : std::unexpected(error_type::allocation_failed);
+        } else if(source.is_number()) {
+            auto parsed = source.get_double();
+            if(!parsed) {
+                return std::unexpected(error_type::type_mismatch);
+            }
+            auto* value = yyjson_mut_real(doc, *parsed);
+            return value ? result_t<yyjson_mut_val*>(value)
+                         : std::unexpected(error_type::allocation_failed);
+        } else if(source.is_string()) {
+            auto parsed = source.get_string();
+            if(!parsed) {
+                return std::unexpected(error_type::type_mismatch);
+            }
+            auto* value = yyjson_mut_strncpy(doc, parsed->data(), parsed->size());
+            return value ? result_t<yyjson_mut_val*>(value)
+                         : std::unexpected(error_type::allocation_failed);
+        } else if(source.is_array()) {
+            auto array = source.get_array();
+            if(!array) {
+                return std::unexpected(error_type::type_mismatch);
+            }
+
+            auto* copiedArray = yyjson_mut_arr(doc);
+            if(copiedArray == nullptr) {
+                return std::unexpected(error_type::allocation_failed);
+            }
+
+            for(auto item: *array) {
+                auto copiedItem = clone_value(doc, item);
+                if(!copiedItem) {
+                    return std::unexpected(copiedItem.error());
+                }
+                if(!yyjson_mut_arr_add_val(copiedArray, *copiedItem)) {
+                    return std::unexpected(error_type::allocation_failed);
+                }
+            }
+            return copiedArray;
+        } else if(source.is_object()) {
+            auto object = source.get_object();
+            if(!object) {
+                return std::unexpected(error_type::type_mismatch);
+            }
+
+            auto* copiedObject = yyjson_mut_obj(doc);
+            if(copiedObject == nullptr) {
+                return std::unexpected(error_type::allocation_failed);
+            }
+
+            for(auto entry: *object) {
+                auto* key = yyjson_mut_strncpy(doc, entry.key.data(), entry.key.size());
+                if(key == nullptr) {
+                    return std::unexpected(error_type::allocation_failed);
+                }
+
+                auto copiedValue = clone_value(doc, entry.value);
+                if(!copiedValue) {
+                    return std::unexpected(copiedValue.error());
+                }
+                if(!yyjson_mut_obj_add(copiedObject, key, *copiedValue)) {
+                    return std::unexpected(error_type::allocation_failed);
+                }
+            }
+            return copiedObject;
+        } else {
+            return std::unexpected(error_type::type_mismatch);
+        }
     }
 
     result_t<value_kind> peek_value_kind() {
@@ -716,36 +809,11 @@ private:
         std::vector<typename DeserializeObject::object_entry> entries;
         entries.reserve(object.size());
 
-        if(object.mutable_ref()) {
-            yyjson_mut_obj_iter iter = yyjson_mut_obj_iter_with(object.raw_mutable());
-            yyjson_mut_val* key = nullptr;
-            while((key = yyjson_mut_obj_iter_next(&iter)) != nullptr) {
-                yyjson_mut_val* value = yyjson_mut_obj_iter_get_val(key);
-                const char* keyText = yyjson_mut_get_str(key);
-                if(keyText == nullptr || value == nullptr) {
-                    continue;
-                }
-
-                entries.push_back(typename DeserializeObject::object_entry{
-                    .key = std::string_view(keyText, yyjson_mut_get_len(key)),
-                    .value = json::ValueRef(value),
-                });
-            }
-        } else {
-            yyjson_obj_iter iter = yyjson_obj_iter_with(const_cast<yyjson_val*>(object.raw()));
-            yyjson_val* key = nullptr;
-            while((key = yyjson_obj_iter_next(&iter)) != nullptr) {
-                yyjson_val* value = yyjson_obj_iter_get_val(key);
-                const char* keyText = yyjson_get_str(key);
-                if(keyText == nullptr || value == nullptr) {
-                    continue;
-                }
-
-                entries.push_back(typename DeserializeObject::object_entry{
-                    .key = std::string_view(keyText, yyjson_get_len(key)),
-                    .value = json::ValueRef(value),
-                });
-            }
+        for(auto entry: object) {
+            entries.push_back(typename DeserializeObject::object_entry{
+                .key = entry.key,
+                .value = entry.value,
+            });
         }
 
         return entries;
@@ -786,7 +854,7 @@ private:
             return std::unexpected(ref.error());
         }
 
-        auto array = ref->as_array();
+        auto array = ref->get_array();
         if(!array) {
             mark_invalid(error_type::type_mismatch);
             return std::unexpected(current_error());
@@ -800,7 +868,7 @@ private:
             return std::unexpected(ref.error());
         }
 
-        auto object = ref->as_object();
+        auto object = ref->get_object();
         if(!object) {
             mark_invalid(error_type::type_mismatch);
             return std::unexpected(current_error());
