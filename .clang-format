@@ -149,6 +149,7 @@ StatementMacros:
   - DECO_CFG_END
   - DecoKV
   - DecoFlag
+  - DecoFlagN
   - DecoComma
   - DecoInput
   - DecoPack

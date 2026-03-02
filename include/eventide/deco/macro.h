@@ -123,6 +123,12 @@
                               DECO_USING_FLAG,                                                     \
                               __VA_ARGS__)
 
+#define DecoFlagN(...)                                                                             \
+    DECO_DECLARE_OPTION_TYPED(deco::decl::FlagOption<std::uint32_t>,                               \
+                              deco::decl::FlagFields,                                              \
+                              DECO_USING_FLAG,                                                     \
+                              __VA_ARGS__)
+
 #define DecoInput(...)                                                                             \
     DECO_DECLARE_OPTION_TEMPLATE(deco::trait::ScalarResultType,                                    \
                                  std::string,                                                      \

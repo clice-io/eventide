@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "eventide/deco/macro.h"
@@ -165,6 +166,18 @@ struct MultiExclusiveCategoryOpt {
     DecoFlag(required = false; category = requestCategory;)
     request;
 };
+
+using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
+static_assert(std::is_base_of_v<deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
+                                ParseAllStorage>);
+static_assert(std::is_same_v<
+              ParseAllStorage,
+              deco::detail::LLVMOptGenerator<ParseAllOpt,
+                                             deco::detail::BuildStorage<ParseAllOpt>::record>>);
+static_assert(
+    std::is_same_v<
+        ParseAllStorage,
+        deco::detail::OptManager<ParseAllOpt, deco::detail::BuildStorage<ParseAllOpt>::record>>);
 
 using Parsed = eventide::option::ParsedArgument;
 
