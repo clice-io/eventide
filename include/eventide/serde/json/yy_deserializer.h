@@ -16,6 +16,7 @@
 #include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
+#include "eventide/serde/variant.h"
 
 namespace eventide::serde::json::yy {
 
@@ -445,35 +446,7 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        auto seq = deserialize_seq(std::nullopt);
-        if(!seq) {
-            return std::unexpected(seq.error());
-        }
-
-        value.clear();
-        while(true) {
-            auto hasNext = seq->has_next();
-            if(!hasNext) {
-                return std::unexpected(hasNext.error());
-            }
-            if(!*hasNext) {
-                break;
-            }
-
-            std::uint64_t byte = 0;
-            auto byteStatus = seq->deserialize_element(byte);
-            if(!byteStatus) {
-                return std::unexpected(byteStatus.error());
-            }
-            if(byte > std::numeric_limits<std::uint8_t>::max()) {
-                mark_invalid(error_type::number_out_of_range);
-                return std::unexpected(current_error());
-            }
-
-            value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte)));
-        }
-
-        return seq->end();
+        return serde::detail::deserialize_bytes_from_seq(*this, value);
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
@@ -622,71 +595,27 @@ private:
         return std::unexpected(current_error());
     }
 
+    static serde::type_hint map_to_type_hint(value_kind kind) {
+        switch(kind) {
+            case value_kind::null: return serde::type_hint::null_like;
+            case value_kind::boolean: return serde::type_hint::boolean;
+            case value_kind::number: return serde::type_hint::integer | serde::type_hint::floating;
+            case value_kind::string: return serde::type_hint::string;
+            case value_kind::array: return serde::type_hint::array;
+            case value_kind::object: return serde::type_hint::object;
+            default: return serde::type_hint::any;
+        }
+    }
+
     template <typename T>
     constexpr static bool variant_candidate_matches(value_kind kind) {
-        using U = std::remove_cvref_t<T>;
-
-        if constexpr(serde::annotated_type<U>) {
-            using annotated_t = typename U::annotated_type;
-            return variant_candidate_matches<annotated_t>(kind);
-        } else if constexpr(is_specialization_of<std::optional, U>) {
-            if(kind == value_kind::null) {
-                return true;
-            }
-            return variant_candidate_matches<typename U::value_type>(kind);
-        } else if constexpr(std::same_as<U, std::nullptr_t>) {
-            return kind == value_kind::null;
-        } else if constexpr(std::same_as<U, std::monostate>) {
-            return kind == value_kind::null;
-        } else if constexpr(serde::bool_like<U>) {
-            return kind == value_kind::boolean;
-        } else if constexpr(serde::int_like<U> || serde::uint_like<U> || serde::floating_like<U>) {
-            return kind == value_kind::number;
-        } else if constexpr(serde::char_like<U> || std::same_as<U, std::string> ||
-                            std::derived_from<U, std::string>) {
-            return kind == value_kind::string;
-        } else if constexpr(std::same_as<U, std::vector<std::byte>>) {
-            return kind == value_kind::array;
-        } else if constexpr(is_pair_v<U> || is_tuple_v<U>) {
-            return kind == value_kind::array;
-        } else if constexpr(std::ranges::input_range<U>) {
-            constexpr auto formatKind = format_kind<U>;
-            if constexpr(formatKind == range_format::map) {
-                return kind == value_kind::object;
-            } else if constexpr(formatKind == range_format::sequence ||
-                                formatKind == range_format::set) {
-                return kind == value_kind::array;
-            } else {
-                return true;
-            }
-        } else if constexpr(refl::reflectable_class<U>) {
-            return kind == value_kind::object;
-        } else {
-            return true;
-        }
+        return serde::has_any(serde::expected_type_hints<T>(), map_to_type_hint(kind));
     }
 
     template <typename Alt, typename... Ts>
     static auto deserialize_variant_candidate(json::ValueRef source, std::variant<Ts...>& value)
         -> status_t {
-        Alt candidate{};
-        Deserializer probe(source);
-        if(!probe.valid()) {
-            return std::unexpected(probe.error());
-        }
-
-        auto status = serde::deserialize(probe, candidate);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-
-        auto finished = probe.finish();
-        if(!finished) {
-            return std::unexpected(finished.error());
-        }
-
-        value = std::move(candidate);
-        return {};
+        return serde::try_deserialize_variant_candidate<Deserializer, Alt>(source, value);
     }
 
     result_t<std::vector<typename DeserializeObject::object_entry>>

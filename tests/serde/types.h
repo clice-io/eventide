@@ -114,8 +114,8 @@ inline auto make_ultimate() -> UltimateTest {
 
     out.compound = Compound{
         .string_list = {"alpha", "beta", "gamma"},
-        .fixed_array = {1.5F, -2.25F, 0.0F},
-        .heterogeneous_tuple = std::tuple<int, bool, std::string>{7, true, "tuple"},
+        .fixed_array = {1.5F,    -2.25F, 0.0F   },
+        .heterogeneous_tuple = std::tuple<int, bool, std::string>{7,       true,   "tuple"},
     };
 
     out.nullables = Nullables{
@@ -131,12 +131,13 @@ inline auto make_ultimate() -> UltimateTest {
 
     out.adts = ADTs{
         .role = Role::User,
-        .multi_variant = Basic{
-            .is_valid = true,
-            .i32 = 64,
-            .f64 = 2.5,
-            .text = "variant",
-        },
+        .multi_variant =
+            Basic{
+                  .is_valid = true,
+                  .i32 = 64,
+                  .f64 = 2.5,
+                  .text = "variant",
+                  },
     };
 
     out.hard_map = HardMap{

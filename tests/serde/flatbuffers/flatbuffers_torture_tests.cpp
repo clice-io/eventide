@@ -3,12 +3,11 @@
 #include <string>
 #include <variant>
 
+#include "../types.h"
+#include "eventide/zest/zest.h"
 #include "eventide/serde/flatbuffers/binary.h"
 #include "eventide/serde/flatbuffers/flex_deserializer.h"
 #include "eventide/serde/flatbuffers/flex_serializer.h"
-#include "eventide/zest/zest.h"
-
-#include "../types.h"
 
 namespace eventide::serde {
 

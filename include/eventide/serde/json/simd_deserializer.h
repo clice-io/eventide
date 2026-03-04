@@ -15,6 +15,7 @@
 
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
+#include "eventide/serde/variant.h"
 
 namespace eventide::serde::json::simd {
 
@@ -572,35 +573,7 @@ public:
     }
 
     status_t deserialize_bytes(std::vector<std::byte>& value) {
-        auto seq = deserialize_seq(std::nullopt);
-        if(!seq) {
-            return std::unexpected(seq.error());
-        }
-
-        value.clear();
-        while(true) {
-            auto has_next = seq->has_next();
-            if(!has_next) {
-                return std::unexpected(has_next.error());
-            }
-            if(!*has_next) {
-                break;
-            }
-
-            std::uint64_t byte = 0;
-            auto byte_status = seq->deserialize_element(byte);
-            if(!byte_status) {
-                return std::unexpected(byte_status.error());
-            }
-            if(byte > std::numeric_limits<std::uint8_t>::max()) {
-                mark_invalid(simdjson::NUMBER_OUT_OF_RANGE);
-                return std::unexpected(current_error());
-            }
-
-            value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte)));
-        }
-
-        return seq->end();
+        return serde::detail::deserialize_bytes_from_seq(*this, value);
     }
 
     result_t<DeserializeSeq> deserialize_seq(std::optional<std::size_t> len) {
@@ -766,58 +739,35 @@ private:
         return out;
     }
 
+    static serde::type_hint
+        map_to_type_hint(simdjson::ondemand::json_type json_type,
+                         std::optional<simdjson::ondemand::number_type> number_type) {
+        switch(json_type) {
+            case simdjson::ondemand::json_type::null: return serde::type_hint::null_like;
+            case simdjson::ondemand::json_type::boolean: return serde::type_hint::boolean;
+            case simdjson::ondemand::json_type::number: {
+                if(!number_type.has_value()) {
+                    return serde::type_hint::integer | serde::type_hint::floating;
+                }
+                if(*number_type == simdjson::ondemand::number_type::signed_integer ||
+                   *number_type == simdjson::ondemand::number_type::unsigned_integer) {
+                    return serde::type_hint::integer;
+                }
+                return serde::type_hint::floating;
+            }
+            case simdjson::ondemand::json_type::string: return serde::type_hint::string;
+            case simdjson::ondemand::json_type::array: return serde::type_hint::array;
+            case simdjson::ondemand::json_type::object: return serde::type_hint::object;
+            default: return serde::type_hint::any;
+        }
+    }
+
     template <typename T>
     constexpr static bool
         variant_candidate_matches(simdjson::ondemand::json_type json_type,
                                   std::optional<simdjson::ondemand::number_type> number_type) {
-        using U = std::remove_cvref_t<T>;
-
-        if constexpr(serde::annotated_type<U>) {
-            using annotated_t = typename U::annotated_type;
-            return variant_candidate_matches<annotated_t>(json_type, number_type);
-        } else if constexpr(is_specialization_of<std::optional, U>) {
-            if(json_type == simdjson::ondemand::json_type::null) {
-                return true;
-            }
-            return variant_candidate_matches<typename U::value_type>(json_type, number_type);
-        } else if constexpr(std::same_as<U, std::nullptr_t>) {
-            return json_type == simdjson::ondemand::json_type::null;
-        } else if constexpr(std::same_as<U, std::monostate>) {
-            return json_type == simdjson::ondemand::json_type::null;
-        } else if constexpr(serde::bool_like<U>) {
-            return json_type == simdjson::ondemand::json_type::boolean;
-        } else if constexpr(serde::int_like<U> || serde::uint_like<U>) {
-            if(json_type != simdjson::ondemand::json_type::number) {
-                return false;
-            }
-            if(!number_type.has_value()) {
-                return true;
-            }
-            return *number_type == simdjson::ondemand::number_type::signed_integer ||
-                   *number_type == simdjson::ondemand::number_type::unsigned_integer;
-        } else if constexpr(serde::floating_like<U>) {
-            return json_type == simdjson::ondemand::json_type::number;
-        } else if constexpr(serde::char_like<U> || std::same_as<U, std::string> ||
-                            std::derived_from<U, std::string>) {
-            return json_type == simdjson::ondemand::json_type::string;
-        } else if constexpr(std::same_as<U, std::vector<std::byte>>) {
-            return json_type == simdjson::ondemand::json_type::array;
-        } else if constexpr(is_pair_v<U> || is_tuple_v<U>) {
-            return json_type == simdjson::ondemand::json_type::array;
-        } else if constexpr(std::ranges::input_range<U>) {
-            constexpr auto kind = format_kind<U>;
-            if constexpr(kind == range_format::map) {
-                return json_type == simdjson::ondemand::json_type::object;
-            } else if constexpr(kind == range_format::sequence || kind == range_format::set) {
-                return json_type == simdjson::ondemand::json_type::array;
-            } else {
-                return true;
-            }
-        } else if constexpr(refl::reflectable_class<U>) {
-            return json_type == simdjson::ondemand::json_type::object;
-        } else {
-            return true;
-        }
+        return serde::has_any(serde::expected_type_hints<T>(),
+                              map_to_type_hint(json_type, number_type));
     }
 
     template <typename Alt, typename... Ts>

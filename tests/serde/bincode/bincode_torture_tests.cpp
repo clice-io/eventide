@@ -1,10 +1,9 @@
 #include <string>
 #include <variant>
 
-#include "eventide/serde/bincode.h"
-#include "eventide/zest/zest.h"
-
 #include "../types.h"
+#include "eventide/zest/zest.h"
+#include "eventide/serde/bincode.h"
 
 namespace eventide::serde {
 

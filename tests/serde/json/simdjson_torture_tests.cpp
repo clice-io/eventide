@@ -1,11 +1,10 @@
-#include "eventide/serde/json/simd_deserializer.h"
-#include "eventide/serde/json/simd_serializer.h"
-#include "eventide/zest/zest.h"
-
 #include <string>
 #include <variant>
 
 #include "../types.h"
+#include "eventide/zest/zest.h"
+#include "eventide/serde/json/simd_deserializer.h"
+#include "eventide/serde/json/simd_serializer.h"
 
 namespace eventide::serde {
 

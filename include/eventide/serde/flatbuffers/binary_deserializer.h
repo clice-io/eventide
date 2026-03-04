@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <optional>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <string>
@@ -339,7 +339,8 @@ private:
                 if(written_count >= expected_count) {
                     return std::unexpected(object_error_code::invalid_state);
                 }
-                out[written_count] = static_cast<element_t>(std::forward<decltype(element)>(element));
+                out[written_count] =
+                    static_cast<element_t>(std::forward<decltype(element)>(element));
                 ++written_count;
                 return {};
             } else {
@@ -370,8 +371,8 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto status = store_element(
-                    std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))});
+                auto status =
+                    store_element(std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))});
                 if(!status) {
                     return std::unexpected(status.error());
                 }
@@ -400,7 +401,8 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    auto status = store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
+                    auto status =
+                        store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
                     if(!status) {
                         return std::unexpected(status.error());
                     }
@@ -412,7 +414,8 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    auto status = store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
+                    auto status =
+                        store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
                     if(!status) {
                         return std::unexpected(status.error());
                     }
@@ -426,8 +429,8 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto status =
-                    store_element(static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                auto status = store_element(
+                    static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 if(!status) {
                     return std::unexpected(status.error());
                 }
@@ -440,8 +443,8 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto status = store_element(
-                    static_cast<element_clean_t>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                auto status = store_element(static_cast<element_clean_t>(
+                    vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
                 if(!status) {
                     return std::unexpected(status.error());
                 }
@@ -632,8 +635,9 @@ private:
             return {};
         } else if constexpr(is_specialization_of<std::unique_ptr, U>) {
             using value_t = typename U::element_type;
-            static_assert(std::default_initializable<value_t>,
-                          "binary::from_flatbuffer unique_ptr requires default-constructible pointee");
+            static_assert(
+                std::default_initializable<value_t>,
+                "binary::from_flatbuffer unique_ptr requires default-constructible pointee");
             static_assert(std::same_as<typename U::deleter_type, std::default_delete<value_t>>,
                           "binary::from_flatbuffer unique_ptr with custom deleter is unsupported");
 
@@ -651,8 +655,9 @@ private:
             return {};
         } else if constexpr(is_specialization_of<std::shared_ptr, U>) {
             using value_t = typename U::element_type;
-            static_assert(std::default_initializable<value_t>,
-                          "binary::from_flatbuffer shared_ptr requires default-constructible pointee");
+            static_assert(
+                std::default_initializable<value_t>,
+                "binary::from_flatbuffer shared_ptr requires default-constructible pointee");
 
             if(!has_field(table, field)) {
                 out.reset();

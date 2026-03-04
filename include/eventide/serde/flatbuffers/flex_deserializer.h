@@ -165,8 +165,8 @@ public:
             } else if constexpr(serde::str_like<clean_alt_t>) {
                 return reference->IsString() || reference->IsKey();
             } else if constexpr(serde::bytes_like<clean_alt_t>) {
-                return reference->IsBlob() ||
-                       (reference->IsVector() && !reference->IsMap()) || reference->IsString();
+                return reference->IsBlob() || (reference->IsVector() && !reference->IsMap()) ||
+                       reference->IsString();
             } else if constexpr(is_pair_v<clean_alt_t> || is_tuple_v<clean_alt_t>) {
                 return reference->IsVector() && !reference->IsMap();
             } else if constexpr(std::ranges::input_range<clean_alt_t>) {

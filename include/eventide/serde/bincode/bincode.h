@@ -57,9 +57,9 @@ public:
 
     using status_t = result_t<void>;
 
-    class SerializeSeq {
+    class SerializeElements {
     public:
-        SerializeSeq(Serializer& serializer, std::size_t expected_count) noexcept :
+        SerializeElements(Serializer& serializer, std::size_t expected_count) noexcept :
             serializer(serializer), expected_count(expected_count) {}
 
         template <typename T>
@@ -76,57 +76,6 @@ public:
             ++written_count;
             return {};
         }
-
-        result_t<value_type> end() {
-            if(written_count != expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-            return {};
-        }
-
-    private:
-        Serializer& serializer;
-        std::size_t expected_count = 0;
-        std::size_t written_count = 0;
-    };
-
-    class SerializeTuple {
-    public:
-        SerializeTuple(Serializer& serializer, std::size_t expected_count) noexcept :
-            serializer(serializer), expected_count(expected_count) {}
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            if(written_count >= expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-
-            auto status = serde::serialize(serializer, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-
-            ++written_count;
-            return {};
-        }
-
-        result_t<value_type> end() {
-            if(written_count != expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-            return {};
-        }
-
-    private:
-        Serializer& serializer;
-        std::size_t expected_count = 0;
-        std::size_t written_count = 0;
-    };
-
-    class SerializeMap {
-    public:
-        SerializeMap(Serializer& serializer, std::size_t expected_count) noexcept :
-            serializer(serializer), expected_count(expected_count) {}
 
         template <typename K, typename V>
         status_t serialize_entry(const K& key, const V& value) {
@@ -148,37 +97,9 @@ public:
             return {};
         }
 
-        result_t<value_type> end() {
-            if(written_count != expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-            return {};
-        }
-
-    private:
-        Serializer& serializer;
-        std::size_t expected_count = 0;
-        std::size_t written_count = 0;
-    };
-
-    class SerializeStruct {
-    public:
-        SerializeStruct(Serializer& serializer, std::size_t expected_count) noexcept :
-            serializer(serializer), expected_count(expected_count) {}
-
         template <typename T>
         status_t serialize_field(std::string_view /*key*/, const T& value) {
-            if(written_count >= expected_count) {
-                return serializer.mark_invalid(error_type::invalid_state);
-            }
-
-            auto status = serde::serialize(serializer, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-
-            ++written_count;
-            return {};
+            return serialize_element(value);
         }
 
         result_t<value_type> end() {
@@ -193,6 +114,11 @@ public:
         std::size_t expected_count = 0;
         std::size_t written_count = 0;
     };
+
+    using SerializeSeq = SerializeElements;
+    using SerializeTuple = SerializeElements;
+    using SerializeMap = SerializeElements;
+    using SerializeStruct = SerializeElements;
 
     Serializer() = default;
 
@@ -499,38 +425,9 @@ public:
         std::size_t read_count = 0;
     };
 
-    class DeserializeMap {
+    class DeserializeUnsupported {
     public:
-        explicit DeserializeMap(Deserializer& deserializer) noexcept : deserializer(deserializer) {}
-
-        result_t<std::optional<std::string_view>> next_key() {
-            return std::unexpected(error_type::unsupported_operation);
-        }
-
-        status_t invalid_key(std::string_view /*key_name*/) {
-            return deserializer.mark_invalid(error_type::unsupported_operation);
-        }
-
-        template <typename T>
-        status_t deserialize_value(T& /*value*/) {
-            return deserializer.mark_invalid(error_type::unsupported_operation);
-        }
-
-        status_t skip_value() {
-            return deserializer.mark_invalid(error_type::unsupported_operation);
-        }
-
-        status_t end() {
-            return deserializer.mark_invalid(error_type::unsupported_operation);
-        }
-
-    private:
-        Deserializer& deserializer;
-    };
-
-    class DeserializeStruct {
-    public:
-        explicit DeserializeStruct(Deserializer& deserializer) noexcept :
+        explicit DeserializeUnsupported(Deserializer& deserializer) noexcept :
             deserializer(deserializer) {}
 
         result_t<std::optional<std::string_view>> next_key() {
@@ -557,6 +454,9 @@ public:
     private:
         Deserializer& deserializer;
     };
+
+    using DeserializeMap = DeserializeUnsupported;
+    using DeserializeStruct = DeserializeUnsupported;
 
     explicit Deserializer(std::span<const std::byte> bytes) : bytes(bytes) {}
 
@@ -771,11 +671,11 @@ public:
     }
 
     result_t<DeserializeMap> deserialize_map(std::optional<std::size_t> /*len*/) {
-        return DeserializeMap(*this);
+        return DeserializeUnsupported(*this);
     }
 
     result_t<DeserializeStruct> deserialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        return DeserializeStruct(*this);
+        return DeserializeUnsupported(*this);
     }
 
     result_t<std::size_t> read_length_prefix() {
@@ -818,8 +718,7 @@ private:
 
         unsigned_t raw = 0;
         for(std::size_t i = 0; i < sizeof(unsigned_t); ++i) {
-            const auto byte =
-                std::to_integer<std::uint8_t>(bytes[offset + i]);
+            const auto byte = std::to_integer<std::uint8_t>(bytes[offset + i]);
             raw |= (static_cast<unsigned_t>(byte) << (i * 8));
         }
 
@@ -899,8 +798,7 @@ auto from_bytes(std::span<const std::byte> bytes, T& value) -> std::expected<voi
 }
 
 template <typename T>
-auto from_bytes(std::span<const std::uint8_t> bytes, T& value)
-    -> std::expected<void, error_kind> {
+auto from_bytes(std::span<const std::uint8_t> bytes, T& value) -> std::expected<void, error_kind> {
     return from_bytes(
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()),
         value);
@@ -965,7 +863,8 @@ struct deserialize_traits<bincode::Deserializer, T> {
     using deserializer_t = bincode::Deserializer;
     using error_type = typename deserializer_t::error_type;
 
-    static auto deserialize(deserializer_t& deserializer, T& value) -> std::expected<void, error_type> {
+    static auto deserialize(deserializer_t& deserializer, T& value)
+        -> std::expected<void, error_type> {
         std::expected<void, error_type> field_status{};
 
         refl::for_each(value, [&](auto field) {
@@ -994,7 +893,8 @@ struct deserialize_traits<bincode::Deserializer, T> {
     using key_t = typename map_t::key_type;
     using mapped_t = typename map_t::mapped_type;
 
-    static auto deserialize(deserializer_t& deserializer, T& value) -> std::expected<void, error_type> {
+    static auto deserialize(deserializer_t& deserializer, T& value)
+        -> std::expected<void, error_type> {
         static_assert(std::default_initializable<key_t>,
                       "bincode map deserialization requires default-constructible key_type");
         static_assert(std::default_initializable<mapped_t>,

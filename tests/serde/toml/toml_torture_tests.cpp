@@ -3,10 +3,9 @@
 #include <string>
 #include <variant>
 
-#include "eventide/serde/toml.h"
-#include "eventide/zest/zest.h"
-
 #include "../types.h"
+#include "eventide/zest/zest.h"
+#include "eventide/serde/toml.h"
 
 namespace eventide::serde {
 
