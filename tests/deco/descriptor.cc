@@ -9,27 +9,32 @@
 namespace {
 
 struct DescOpt {
-    DecoFlag(names = {"-v", "--verbose"}; help = "Show version and exit";
-             required = false;) verbose;
+    DecoFlag(names = {"-v", "--verbose"}; help = "Show version and exit"; required = false;)
+    verbose;
 
     DecoKV(names = {"-o", "--output"}; meta_var = "FILE"; help = "Write output to FILE";
-           required = false;)<std::string> output;
+           required = false;)
+    <std::string> output;
 
     DecoKVStyled(deco::decl::KVStyle::Joined, names = {"-I", "--include"}; meta_var = "DIR";
                  help = "Add include search path";
-                 required = false;)<std::string> include_dir;
+                 required = false;)
+    <std::string> include_dir;
 
     DecoComma(names = {"--tags", "-T"}; meta_var = "TAG"; help = "Comma-separated tags";
-              required = false;)<std::vector<std::string>> tags;
+              required = false;)
+    <std::vector<std::string>> tags;
 
-    DecoMulti(2, names = {"--pair"}; meta_var = "VAL"; help = "Two values";
-              required = false;)<std::vector<std::string>> pair;
+    DecoMulti(2, names = {"--pair"}; meta_var = "VAL"; help = "Two values"; required = false;)
+    <std::vector<std::string>> pair;
 
-    DecoInput(meta_var = "INPUT"; help = "Input file"; required = false;)<std::string> input;
-    DecoPack(meta_var = "ARG"; help = "Trailing arguments";
-             required = false;)<std::vector<std::string>> trailing;
+    DecoInput(meta_var = "INPUT"; help = "Input file"; required = false;)
+    <std::string> input;
+    DecoPack(meta_var = "ARG"; help = "Trailing arguments"; required = false;)
+    <std::vector<std::string>> trailing;
 
-    DecoFlag(help = "Unnamed flag fallback"; required = false;) unnamed;
+    DecoFlag(help = "Unnamed flag fallback"; required = false;)
+    unnamed;
 };
 
 }  // namespace
