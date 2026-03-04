@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/serde/flatbuffers/binary/schema.h"
+#include "eventide/serde/flatbuffers/binary_schema.h"
 #include "eventide/serde/serde.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)

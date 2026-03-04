@@ -7,6 +7,7 @@
 #include <expected>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -19,7 +20,7 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
-#include "eventide/serde/flatbuffers/binary/schema.h"
+#include "eventide/serde/flatbuffers/binary_schema.h"
 #include "eventide/serde/serde.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -675,6 +676,17 @@ private:
 
         if constexpr(serde::annotated_type<U>) {
             return collect_field(writers, field, serde::annotated_value(value));
+        } else if constexpr(is_specialization_of<std::optional, U>) {
+            if(!value.has_value()) {
+                return {};
+            }
+            return collect_field(writers, field, value.value());
+        } else if constexpr(is_specialization_of<std::unique_ptr, U> ||
+                            is_specialization_of<std::shared_ptr, U>) {
+            if(!value) {
+                return {};
+            }
+            return collect_field(writers, field, *value);
         } else if constexpr(std::same_as<clean_t, std::nullptr_t>) {
             return {};
         } else if constexpr(std::is_enum_v<clean_t>) {
@@ -717,11 +729,6 @@ private:
             const auto offset = builder.CreateVector(data, bytes.size());
             writers.push_back([this, field, offset] { builder.AddOffset(field, offset); });
             return {};
-        } else if constexpr(is_specialization_of<std::optional, U>) {
-            if(!value.has_value()) {
-                return {};
-            }
-            return collect_field(writers, field, value.value());
         } else if constexpr(is_specialization_of<std::variant, U>) {
             auto offset = encode_variant(value);
             if(!offset) {

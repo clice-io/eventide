@@ -782,6 +782,8 @@ private:
             return variant_candidate_matches<typename U::value_type>(json_type, number_type);
         } else if constexpr(std::same_as<U, std::nullptr_t>) {
             return json_type == simdjson::ondemand::json_type::null;
+        } else if constexpr(std::same_as<U, std::monostate>) {
+            return json_type == simdjson::ondemand::json_type::null;
         } else if constexpr(serde::bool_like<U>) {
             return json_type == simdjson::ondemand::json_type::boolean;
         } else if constexpr(serde::int_like<U> || serde::uint_like<U>) {

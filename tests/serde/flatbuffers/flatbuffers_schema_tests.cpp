@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
-#include "eventide/serde/flatbuffers/binary/schema.h"
+#include "eventide/serde/flatbuffers/binary_schema.h"
 
 namespace eventide::serde {
 

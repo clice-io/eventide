@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <memory>
 #include <ranges>
 #include <span>
 #include <string>
@@ -15,8 +16,8 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
-#include "eventide/serde/flatbuffers/binary/schema.h"
-#include "eventide/serde/flatbuffers/binary/serializer.h"
+#include "eventide/serde/flatbuffers/binary_schema.h"
+#include "eventide/serde/flatbuffers/binary_serializer.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>
@@ -323,8 +324,44 @@ private:
         if constexpr(requires { out.clear(); }) {
             out.clear();
         }
-        static_assert(eventide::detail::sequence_insertable<U, element_t>,
-                      "binary::from_flatbuffer sequence requires insertable container");
+
+        constexpr bool index_assignable_fixed_size =
+            !eventide::detail::sequence_insertable<U, element_t> &&
+            requires(U& container, std::size_t index, element_t value) {
+                std::tuple_size<U>::value;
+                container[index] = std::move(value);
+            };
+
+        std::size_t written_count = 0;
+        auto store_element = [&](auto&& element) -> status_t {
+            if constexpr(index_assignable_fixed_size) {
+                constexpr auto expected_count = std::tuple_size_v<U>;
+                if(written_count >= expected_count) {
+                    return std::unexpected(object_error_code::invalid_state);
+                }
+                out[written_count] = static_cast<element_t>(std::forward<decltype(element)>(element));
+                ++written_count;
+                return {};
+            } else {
+                auto ok = eventide::detail::append_sequence_element(
+                    out,
+                    static_cast<element_t>(std::forward<decltype(element)>(element)));
+                if(!ok) {
+                    return std::unexpected(object_error_code::unsupported_type);
+                }
+                return {};
+            }
+        };
+
+        auto finalize_sequence = [&]() -> status_t {
+            if constexpr(index_assignable_fixed_size) {
+                constexpr auto expected_count = std::tuple_size_v<U>;
+                if(written_count != expected_count) {
+                    return std::unexpected(object_error_code::invalid_state);
+                }
+            }
+            return {};
+        };
 
         if constexpr(std::same_as<element_clean_t, std::byte>) {
             const auto* vector =
@@ -333,15 +370,13 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto ok = eventide::detail::append_sequence_element(
-                    out,
-                    static_cast<element_t>(
-                        std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))}));
-                if(!ok) {
-                    return std::unexpected(object_error_code::unsupported_type);
+                auto status = store_element(
+                    std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(i))});
+                if(!status) {
+                    return std::unexpected(status.error());
                 }
             }
-            return {};
+            return finalize_sequence();
         } else if constexpr(serde::bool_like<element_clean_t> || serde::int_like<element_clean_t> ||
                             serde::uint_like<element_clean_t>) {
             const auto* vector =
@@ -350,14 +385,12 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto ok = eventide::detail::append_sequence_element(
-                    out,
-                    static_cast<element_t>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
-                if(!ok) {
-                    return std::unexpected(object_error_code::unsupported_type);
+                auto status = store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
+                if(!status) {
+                    return std::unexpected(status.error());
                 }
             }
-            return {};
+            return finalize_sequence();
         } else if constexpr(serde::floating_like<element_clean_t>) {
             if constexpr(std::same_as<element_clean_t, float> ||
                          std::same_as<element_clean_t, double>) {
@@ -367,30 +400,24 @@ private:
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    auto ok = eventide::detail::append_sequence_element(
-                        out,
-                        static_cast<element_t>(
-                            vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
-                    if(!ok) {
-                        return std::unexpected(object_error_code::unsupported_type);
+                    auto status = store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
+                    if(!status) {
+                        return std::unexpected(status.error());
                     }
                 }
-                return {};
+                return finalize_sequence();
             } else {
                 const auto* vector = table->GetPointer<const ::flatbuffers::Vector<double>*>(field);
                 if(vector == nullptr) {
                     return std::unexpected(object_error_code::invalid_state);
                 }
                 for(std::size_t i = 0; i < vector->size(); ++i) {
-                    auto ok = eventide::detail::append_sequence_element(
-                        out,
-                        static_cast<element_t>(
-                            vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
-                    if(!ok) {
-                        return std::unexpected(object_error_code::unsupported_type);
+                    auto status = store_element(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)));
+                    if(!status) {
+                        return std::unexpected(status.error());
                     }
                 }
-                return {};
+                return finalize_sequence();
             }
         } else if constexpr(serde::char_like<element_clean_t>) {
             const auto* vector =
@@ -399,15 +426,13 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto ok = eventide::detail::append_sequence_element(
-                    out,
-                    static_cast<element_t>(
-                        static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
-                if(!ok) {
-                    return std::unexpected(object_error_code::unsupported_type);
+                auto status =
+                    store_element(static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                if(!status) {
+                    return std::unexpected(status.error());
                 }
             }
-            return {};
+            return finalize_sequence();
         } else if constexpr(std::is_enum_v<element_clean_t>) {
             using storage_t = std::underlying_type_t<element_clean_t>;
             const auto* vector = table->GetPointer<const ::flatbuffers::Vector<storage_t>*>(field);
@@ -415,15 +440,13 @@ private:
                 return std::unexpected(object_error_code::invalid_state);
             }
             for(std::size_t i = 0; i < vector->size(); ++i) {
-                auto ok = eventide::detail::append_sequence_element(
-                    out,
-                    static_cast<element_t>(static_cast<element_clean_t>(
-                        vector->Get(static_cast<::flatbuffers::uoffset_t>(i)))));
-                if(!ok) {
-                    return std::unexpected(object_error_code::unsupported_type);
+                auto status = store_element(
+                    static_cast<element_clean_t>(vector->Get(static_cast<::flatbuffers::uoffset_t>(i))));
+                if(!status) {
+                    return std::unexpected(status.error());
                 }
             }
-            return {};
+            return finalize_sequence();
         } else if constexpr(serde::str_like<element_clean_t>) {
             const auto* vector = table->GetPointer<
                 const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::String>>*>(field);
@@ -437,23 +460,20 @@ private:
                 }
                 if constexpr(std::same_as<element_t, std::string> ||
                              std::derived_from<element_t, std::string>) {
-                    std::string value(text->data(), text->size());
-                    auto ok = eventide::detail::append_sequence_element(out, std::move(value));
-                    if(!ok) {
-                        return std::unexpected(object_error_code::unsupported_type);
+                    auto status = store_element(std::string(text->data(), text->size()));
+                    if(!status) {
+                        return std::unexpected(status.error());
                     }
                 } else if constexpr(std::same_as<element_t, std::string_view>) {
-                    auto ok = eventide::detail::append_sequence_element(
-                        out,
-                        std::string_view(text->data(), text->size()));
-                    if(!ok) {
-                        return std::unexpected(object_error_code::unsupported_type);
+                    auto status = store_element(std::string_view(text->data(), text->size()));
+                    if(!status) {
+                        return std::unexpected(status.error());
                     }
                 } else {
                     return std::unexpected(object_error_code::unsupported_type);
                 }
             }
-            return {};
+            return finalize_sequence();
         } else if constexpr(can_inline_struct_v<element_clean_t>) {
             const auto* vector =
                 table->GetPointer<const ::flatbuffers::Vector<const element_clean_t*>*>(field);
@@ -465,14 +485,12 @@ private:
                 if(element == nullptr) {
                     return std::unexpected(object_error_code::invalid_state);
                 }
-                auto ok =
-                    eventide::detail::append_sequence_element(out,
-                                                              static_cast<element_t>(*element));
-                if(!ok) {
-                    return std::unexpected(object_error_code::unsupported_type);
+                auto status = store_element(*element);
+                if(!status) {
+                    return std::unexpected(status.error());
                 }
             }
-            return {};
+            return finalize_sequence();
         } else if constexpr(refl::reflectable_class<element_clean_t>) {
             const auto* vector = table->GetPointer<
                 const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
@@ -491,13 +509,13 @@ private:
                     if(!decoded) {
                         return std::unexpected(decoded.error());
                     }
-                    auto ok = eventide::detail::append_sequence_element(out, std::move(element));
-                    if(!ok) {
-                        return std::unexpected(object_error_code::unsupported_type);
+                    auto status = store_element(std::move(element));
+                    if(!status) {
+                        return std::unexpected(status.error());
                     }
                 }
             }
-            return {};
+            return finalize_sequence();
         } else {
             const auto* vector = table->GetPointer<
                 const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
@@ -516,13 +534,13 @@ private:
                     if(!decoded) {
                         return std::unexpected(decoded.error());
                     }
-                    auto ok = eventide::detail::append_sequence_element(out, std::move(element));
-                    if(!ok) {
-                        return std::unexpected(object_error_code::unsupported_type);
+                    auto status = store_element(std::move(element));
+                    if(!status) {
+                        return std::unexpected(status.error());
                     }
                 }
             }
-            return {};
+            return finalize_sequence();
         }
     }
 
@@ -611,6 +629,42 @@ private:
                 out.reset();
                 return status;
             }
+            return {};
+        } else if constexpr(is_specialization_of<std::unique_ptr, U>) {
+            using value_t = typename U::element_type;
+            static_assert(std::default_initializable<value_t>,
+                          "binary::from_flatbuffer unique_ptr requires default-constructible pointee");
+            static_assert(std::same_as<typename U::deleter_type, std::default_delete<value_t>>,
+                          "binary::from_flatbuffer unique_ptr with custom deleter is unsupported");
+
+            if(!has_field(table, field)) {
+                out.reset();
+                return {};
+            }
+
+            auto value = std::make_unique<value_t>();
+            auto status = decode_field(table, field, *value, true);
+            if(!status) {
+                return status;
+            }
+            out = std::move(value);
+            return {};
+        } else if constexpr(is_specialization_of<std::shared_ptr, U>) {
+            using value_t = typename U::element_type;
+            static_assert(std::default_initializable<value_t>,
+                          "binary::from_flatbuffer shared_ptr requires default-constructible pointee");
+
+            if(!has_field(table, field)) {
+                out.reset();
+                return {};
+            }
+
+            auto value = std::make_shared<value_t>();
+            auto status = decode_field(table, field, *value, true);
+            if(!status) {
+                return status;
+            }
+            out = std::move(value);
             return {};
         } else {
             if(!has_field(table, field)) {

@@ -138,8 +138,84 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        /// FIXME: This is wrong implementation.
-        return std::visit([&](auto& item) { return serde::deserialize(*this, item); }, value);
+        static_assert((std::default_initializable<Ts> && ...),
+                      "variant deserialization requires default-constructible alternatives");
+
+        auto reference = active_reference();
+        if(!reference) {
+            return std::unexpected(reference.error());
+        }
+
+        auto matches = [&]<typename Alt>() -> bool {
+            using clean_alt_t = std::remove_cvref_t<Alt>;
+            if constexpr(std::same_as<clean_alt_t, std::monostate>) {
+                return reference->IsNull();
+            } else if constexpr(std::same_as<clean_alt_t, std::nullptr_t>) {
+                return reference->IsNull();
+            } else if constexpr(serde::bool_like<clean_alt_t>) {
+                return reference->IsBool();
+            } else if constexpr(serde::int_like<clean_alt_t>) {
+                return reference->IsInt() || reference->IsUInt();
+            } else if constexpr(serde::uint_like<clean_alt_t>) {
+                return reference->IsUInt() || reference->IsInt();
+            } else if constexpr(serde::floating_like<clean_alt_t>) {
+                return reference->IsNumeric();
+            } else if constexpr(serde::char_like<clean_alt_t>) {
+                return reference->IsString() || reference->IsKey();
+            } else if constexpr(serde::str_like<clean_alt_t>) {
+                return reference->IsString() || reference->IsKey();
+            } else if constexpr(serde::bytes_like<clean_alt_t>) {
+                return reference->IsBlob() ||
+                       (reference->IsVector() && !reference->IsMap()) || reference->IsString();
+            } else if constexpr(is_pair_v<clean_alt_t> || is_tuple_v<clean_alt_t>) {
+                return reference->IsVector() && !reference->IsMap();
+            } else if constexpr(std::ranges::input_range<clean_alt_t>) {
+                constexpr auto kind = eventide::format_kind<clean_alt_t>;
+                if constexpr(kind == eventide::range_format::map) {
+                    return reference->IsMap();
+                } else {
+                    return reference->IsVector() && !reference->IsMap();
+                }
+            } else if constexpr(refl::reflectable_class<clean_alt_t>) {
+                return reference->IsMap();
+            } else {
+                return true;
+            }
+        };
+
+        bool matched = false;
+        std::expected<void, error_type> status = std::unexpected(error_code::invalid_type);
+
+        auto try_alternative = [&]<typename Alt>() {
+            if(matched || !matches.template operator()<Alt>()) {
+                return;
+            }
+
+            matched = true;
+            Alt candidate{};
+            auto candidate_status = deserialize_from_reference(*reference, candidate);
+            if(!candidate_status) {
+                status = std::unexpected(candidate_status.error());
+                return;
+            }
+
+            value = std::move(candidate);
+            status = {};
+        };
+
+        (try_alternative.template operator()<Ts>(), ...);
+
+        if(!matched) {
+            mark_invalid(error_code::invalid_type);
+            return std::unexpected(current_error());
+        }
+
+        if(!status) {
+            return std::unexpected(status.error());
+        }
+
+        consume_root_if_needed();
+        return {};
     }
 
     status_t deserialize_bool(bool& value);

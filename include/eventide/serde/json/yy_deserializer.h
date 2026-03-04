@@ -636,6 +636,8 @@ private:
             return variant_candidate_matches<typename U::value_type>(kind);
         } else if constexpr(std::same_as<U, std::nullptr_t>) {
             return kind == value_kind::null;
+        } else if constexpr(std::same_as<U, std::monostate>) {
+            return kind == value_kind::null;
         } else if constexpr(serde::bool_like<U>) {
             return kind == value_kind::boolean;
         } else if constexpr(serde::int_like<U> || serde::uint_like<U> || serde::floating_like<U>) {

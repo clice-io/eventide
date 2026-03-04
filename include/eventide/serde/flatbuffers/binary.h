@@ -1,6 +1,6 @@
 #pragma once
 
-#include "eventide/serde/flatbuffers/binary/deserializer.h"
-#include "eventide/serde/flatbuffers/binary/proxy.h"
-#include "eventide/serde/flatbuffers/binary/schema.h"
-#include "eventide/serde/flatbuffers/binary/serializer.h"
+#include "eventide/serde/flatbuffers/binary_deserializer.h"
+#include "eventide/serde/flatbuffers/binary_proxy.h"
+#include "eventide/serde/flatbuffers/binary_schema.h"
+#include "eventide/serde/flatbuffers/binary_serializer.h"
