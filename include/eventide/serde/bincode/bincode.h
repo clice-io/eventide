@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
+#include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde::bincode {
@@ -507,10 +508,11 @@ public:
             return std::unexpected(parsed.error());
         }
 
-        if(!std::in_range<T>(*parsed)) {
-            return mark_invalid(error_type::number_out_of_range);
+        auto narrowed = serde::detail::narrow_int<T>(*parsed, error_type::number_out_of_range);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
         }
-        value = static_cast<T>(*parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -521,10 +523,11 @@ public:
             return std::unexpected(parsed.error());
         }
 
-        if(!std::in_range<T>(*parsed)) {
-            return mark_invalid(error_type::number_out_of_range);
+        auto narrowed = serde::detail::narrow_uint<T>(*parsed, error_type::number_out_of_range);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
         }
-        value = static_cast<T>(*parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -536,18 +539,11 @@ public:
         }
 
         const double parsed = std::bit_cast<double>(*raw);
-        if constexpr(!std::same_as<T, double>) {
-            if(std::isfinite(parsed)) {
-                const auto low = static_cast<long double>((std::numeric_limits<T>::lowest)());
-                const auto high = static_cast<long double>((std::numeric_limits<T>::max)());
-                const auto value_as_long_double = static_cast<long double>(parsed);
-                if(value_as_long_double < low || value_as_long_double > high) {
-                    return mark_invalid(error_type::number_out_of_range);
-                }
-            }
+        auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
         }
-
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         return {};
     }
 

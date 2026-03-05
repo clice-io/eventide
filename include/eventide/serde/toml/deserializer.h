@@ -14,6 +14,9 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/serde/detail/deserialize_helpers.h"
+#include "eventide/serde/detail/narrow.h"
+#include "eventide/serde/detail/type_utils.h"
 #include "eventide/serde/serde.h"
 #include "eventide/serde/toml/error.h"
 #include "eventide/serde/toml/serializer.h"
@@ -30,35 +33,9 @@ namespace eventide::serde::toml {
 
 namespace detail {
 
-template <typename T>
-struct remove_annotation {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-    requires requires { typename std::remove_cvref_t<T>::annotated_type; }
-struct remove_annotation<T> {
-    using type = std::remove_cvref_t<typename std::remove_cvref_t<T>::annotated_type>;
-};
-
-template <typename T>
-using remove_annotation_t = typename remove_annotation<T>::type;
-
-template <typename T>
-struct remove_optional {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-struct remove_optional<std::optional<T>> {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-using remove_optional_t = typename remove_optional<std::remove_cvref_t<T>>::type;
-
-template <typename T>
-using clean_t = remove_optional_t<remove_annotation_t<T>>;
+using serde::detail::clean_t;
+using serde::detail::remove_annotation_t;
+using serde::detail::remove_optional_t;
 
 template <typename T>
 consteval bool is_map_like() {
@@ -204,102 +181,12 @@ public:
         bool strict_length = false;
     };
 
-    class DeserializeObject {
-    public:
-        result_t<std::optional<std::string_view>> next_key() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(pending_value) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-            if(index == entries.size()) {
-                return std::optional<std::string_view>{};
-            }
-
-            pending_value = true;
-            return std::optional<std::string_view>{entries[index].key};
-        }
-
-        status_t invalid_key(std::string_view /*key*/) {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(!pending_value) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-
-            ++index;
-            pending_value = false;
-            return {};
-        }
-
-        template <typename T>
-        status_t deserialize_value(T& value) {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(!pending_value) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-
-            auto status = deserializer.deserialize_from_node(entries[index].value, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-
-            ++index;
-            pending_value = false;
-            return {};
-        }
-
-        status_t skip_value() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(!pending_value) {
-                deserializer.mark_invalid(error_kind::invalid_state);
-                return std::unexpected(deserializer.current_error());
-            }
-
-            ++index;
-            pending_value = false;
-            return {};
-        }
-
-        status_t end() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-
-            if(pending_value) {
-                auto status = skip_value();
-                if(!status) {
-                    return std::unexpected(status.error());
-                }
-            }
-
-            index = entries.size();
-            return {};
-        }
-
-    private:
+    class DeserializeObject :
+        public serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*> {
+        using Base = serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
         friend class Deserializer;
 
-        struct object_entry {
-            std::string_view key;
-            const ::toml::node* value = nullptr;
-        };
-
-        explicit DeserializeObject(Deserializer& deserializer) : deserializer(deserializer) {}
-
-        Deserializer& deserializer;
-        std::vector<object_entry> entries;
-        std::size_t index = 0;
-        bool pending_value = false;
+        explicit DeserializeObject(Deserializer& deserializer) : Base(deserializer) {}
     };
 
     using DeserializeSeq = DeserializeArray;
@@ -348,9 +235,6 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        static_assert((std::default_initializable<Ts> && ...),
-                      "variant deserialization requires default-constructible alternatives");
-
         auto kind = peek_node_kind();
         if(!kind) {
             return std::unexpected(kind.error());
@@ -361,33 +245,12 @@ public:
             return std::unexpected(source.error());
         }
 
-        bool matched = false;
-        bool considered = false;
-        error_type last_error = error_type::type_mismatch;
-
-        auto try_alternative = [&](auto type_tag) {
-            if(matched) {
-                return;
-            }
-
-            using alt_t = typename decltype(type_tag)::type;
-            if(!variant_candidate_matches<alt_t>(*kind)) {
-                return;
-            }
-
-            considered = true;
-            auto status = deserialize_variant_candidate<alt_t>(*source, value);
-            if(status) {
-                matched = true;
-            } else {
-                last_error = status.error();
-            }
-        };
-
-        (try_alternative(std::type_identity<Ts>{}), ...);
-
-        if(!matched) {
-            mark_invalid(considered ? last_error : error_type::type_mismatch);
+        auto result = serde::try_variant_dispatch<Deserializer>(*source,
+                                                                map_to_type_hint(*kind),
+                                                                value,
+                                                                error_type::type_mismatch);
+        if(!result) {
+            mark_invalid(result.error());
             return std::unexpected(current_error());
         }
         return {};
@@ -417,12 +280,13 @@ public:
             return std::unexpected(status.error());
         }
 
-        if(!std::in_range<T>(parsed)) {
-            mark_invalid(error_kind::number_out_of_range);
+        auto narrowed = serde::detail::narrow_int<T>(parsed, error_kind::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -446,12 +310,14 @@ public:
         }
 
         const auto unsigned_value = static_cast<std::uint64_t>(parsed);
-        if(!std::in_range<T>(unsigned_value)) {
-            mark_invalid(error_kind::number_out_of_range);
+        auto narrowed =
+            serde::detail::narrow_uint<T>(unsigned_value, error_kind::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(unsigned_value);
+        value = *narrowed;
         return {};
     }
 
@@ -469,17 +335,13 @@ public:
             return std::unexpected(status.error());
         }
 
-        if constexpr(!std::same_as<T, double>) {
-            const auto low = static_cast<long double>((std::numeric_limits<T>::lowest)());
-            const auto high = static_cast<long double>((std::numeric_limits<T>::max)());
-            const auto value_as_long_double = static_cast<long double>(parsed);
-            if(value_as_long_double < low || value_as_long_double > high) {
-                mark_invalid(error_kind::number_out_of_range);
-                return std::unexpected(current_error());
-            }
+        auto narrowed = serde::detail::narrow_float<T>(parsed, error_kind::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
+            return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -496,12 +358,14 @@ public:
             return std::unexpected(status.error());
         }
 
-        if(text.size() != 1U) {
-            mark_invalid(error_kind::type_mismatch);
+        auto narrowed =
+            serde::detail::narrow_char(std::string_view(text), error_kind::type_mismatch);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = text.front();
+        value = *narrowed;
         return {};
     }
 
@@ -545,7 +409,7 @@ public:
         object.entries.reserve((*table)->size());
         for(const auto& [key, value]: **table) {
             object.entries.push_back(
-                typename DeserializeMap::object_entry{key.str(), std::addressof(value)});
+                typename DeserializeMap::entry{key.str(), std::addressof(value)});
         }
         return object;
     }
@@ -555,42 +419,30 @@ public:
     }
 
     result_t<::toml::table> capture_table() {
-        auto node = consume_node();
-        if(!node) {
-            return std::unexpected(node.error());
+        auto table = open_as<::toml::table>();
+        if(!table) {
+            return std::unexpected(table.error());
         }
-        if(*node == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-
-        const auto* table = (*node)->as_table();
-        if(table == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-        return *table;
+        return **table;
     }
 
     result_t<::toml::array> capture_array() {
-        auto node = consume_node();
-        if(!node) {
-            return std::unexpected(node.error());
+        auto array = open_as<::toml::array>();
+        if(!array) {
+            return std::unexpected(array.error());
         }
-        if(*node == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-
-        const auto* array = (*node)->as_array();
-        if(array == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-        return *array;
+        return **array;
     }
 
 private:
+    friend class serde::detail::IndexedObjectDeserializer<Deserializer, const ::toml::node*>;
+
+    /// Bridge method for shared deserialize helpers.
+    template <typename T>
+    status_t deserialize_entry_value(const ::toml::node* value, T& out) {
+        return deserialize_from_node(value, out);
+    }
+
     enum class node_kind : std::uint8_t {
         none,
         boolean,
@@ -693,80 +545,63 @@ private:
         }
     }
 
-    template <typename T>
-    constexpr static bool variant_candidate_matches(node_kind kind) {
-        return serde::has_any(serde::expected_type_hints<T>(), map_to_type_hint(kind));
-    }
-
-    template <typename Alt, typename... Ts>
-    static auto deserialize_variant_candidate(const ::toml::node* source,
-                                              std::variant<Ts...>& value) -> status_t {
-        return serde::try_deserialize_variant_candidate<Deserializer, Alt>(source, value);
+    result_t<const ::toml::node*> access_node(bool consume) {
+        if(!is_valid) {
+            return std::unexpected(current_error());
+        }
+        if(has_current_value) {
+            return current_node;
+        }
+        if(root_consumed) {
+            mark_invalid(error_kind::invalid_state);
+            return std::unexpected(current_error());
+        }
+        if(consume) {
+            root_consumed = true;
+        }
+        return root_node;
     }
 
     result_t<const ::toml::node*> peek_node() {
-        if(!is_valid) {
-            return std::unexpected(current_error());
-        }
-        if(has_current_value) {
-            return current_node;
-        }
-        if(root_consumed) {
-            mark_invalid(error_kind::invalid_state);
-            return std::unexpected(current_error());
-        }
-        return root_node;
+        return access_node(false);
     }
 
     result_t<const ::toml::node*> consume_node() {
-        if(!is_valid) {
+        return access_node(true);
+    }
+
+    template <typename T>
+    result_t<const T*> open_as() {
+        auto node = consume_node();
+        if(!node) {
+            return std::unexpected(node.error());
+        }
+        if(*node == nullptr) {
+            mark_invalid(error_kind::type_mismatch);
             return std::unexpected(current_error());
         }
-        if(has_current_value) {
-            return current_node;
-        }
-        if(root_consumed) {
-            mark_invalid(error_kind::invalid_state);
+
+        const auto* casted = [&]() -> const T* {
+            if constexpr(std::same_as<T, ::toml::array>) {
+                return (*node)->as_array();
+            } else {
+                return (*node)->as_table();
+            }
+        }();
+
+        if(casted == nullptr) {
+            mark_invalid(error_kind::type_mismatch);
             return std::unexpected(current_error());
         }
-        root_consumed = true;
-        return root_node;
+        return casted;
     }
 
     result_t<const ::toml::array*> open_array() {
-        auto node = consume_node();
-        if(!node) {
-            return std::unexpected(node.error());
-        }
-        if(*node == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-
-        const auto* array = (*node)->as_array();
-        if(array == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-        return array;
+        return open_as<::toml::array>();
     }
 
     result_t<const ::toml::table*> open_table() {
-        auto node = consume_node();
-        if(!node) {
-            return std::unexpected(node.error());
-        }
-        if(*node == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-
-        const auto* table = (*node)->as_table();
-        if(table == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
-        }
-        return table;
+        return open_as<::toml::table>();
     }
 
     void mark_invalid(error_type error = error_type::invalid_state) {

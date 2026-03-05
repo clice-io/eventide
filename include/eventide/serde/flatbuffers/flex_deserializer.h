@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/flatbuffers/error.h"
 #include "eventide/serde/serde.h"
 
@@ -242,12 +243,13 @@ public:
             return std::unexpected(current_error());
         }
 
-        if(!std::in_range<T>(parsed)) {
-            mark_invalid(error_code::number_out_of_range);
+        auto narrowed = serde::detail::narrow_int<T>(parsed, error_code::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         consume_root_if_needed();
         return {};
     }
@@ -274,12 +276,13 @@ public:
             return std::unexpected(current_error());
         }
 
-        if(!std::in_range<T>(parsed)) {
-            mark_invalid(error_code::number_out_of_range);
+        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_code::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         consume_root_if_needed();
         return {};
     }
@@ -296,19 +299,13 @@ public:
         }
 
         const double parsed = reference->AsDouble();
-        if constexpr(!std::same_as<T, double>) {
-            if(std::isfinite(parsed)) {
-                const auto low = static_cast<long double>((std::numeric_limits<T>::lowest)());
-                const auto high = static_cast<long double>((std::numeric_limits<T>::max)());
-                const auto v = static_cast<long double>(parsed);
-                if(v < low || v > high) {
-                    mark_invalid(error_code::number_out_of_range);
-                    return std::unexpected(current_error());
-                }
-            }
+        auto narrowed = serde::detail::narrow_float<T>(parsed, error_code::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
+            return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         consume_root_if_needed();
         return {};
     }

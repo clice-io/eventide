@@ -1,9 +1,8 @@
 #if __has_include(<flatbuffers/flexbuffers.h>) && __has_include(<flatbuffers/flatbuffers.h>)
 
 #include <string>
-#include <variant>
 
-#include "../types.h"
+#include "../roundtrip_suite.h"
 #include "eventide/zest/zest.h"
 #include "eventide/serde/flatbuffers/binary.h"
 #include "eventide/serde/flatbuffers/flex_deserializer.h"
@@ -13,9 +12,7 @@ namespace eventide::serde {
 
 namespace {
 
-using test_types::UltimateTest;
-
-auto roundtrip_flex(const UltimateTest& input) -> std::expected<UltimateTest, flex::error_code> {
+auto rt_flex = []<typename T>(const T& input) -> std::expected<T, flex::error_code> {
     auto encoded = flex::to_flatbuffer(input);
     if(!encoded) {
         return std::unexpected(encoded.error());
@@ -23,12 +20,11 @@ auto roundtrip_flex(const UltimateTest& input) -> std::expected<UltimateTest, fl
     if(encoded->empty()) {
         return std::unexpected(flex::error_code::invalid_state);
     }
+    return flex::from_flatbuffer<T>(*encoded);
+};
 
-    return flex::from_flatbuffer<UltimateTest>(*encoded);
-}
-
-auto roundtrip_binary(const UltimateTest& input)
-    -> std::expected<UltimateTest, flatbuffers::binary::object_error_code> {
+auto rt_binary =
+    []<typename T>(const T& input) -> std::expected<T, flatbuffers::binary::object_error_code> {
     auto encoded = flatbuffers::binary::to_flatbuffer(input);
     if(!encoded) {
         return std::unexpected(encoded.error());
@@ -36,80 +32,25 @@ auto roundtrip_binary(const UltimateTest& input)
     if(encoded->empty()) {
         return std::unexpected(flatbuffers::binary::object_error_code::invalid_state);
     }
-
-    return flatbuffers::binary::from_flatbuffer<UltimateTest>(*encoded);
-}
+    return flatbuffers::binary::from_flatbuffer<T>(*encoded);
+};
 
 TEST_SUITE(serde_flatbuffers_torture) {
 
-TEST_CASE(ultimate_roundtrip_flex) {
-    {
-        auto input = test_types::make_ultimate();
-        auto output = roundtrip_flex(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
+TEST_CASE(ultimate_roundtrip_flex){
+    SERDE_TEST_ULTIMATE_ROUNDTRIP(rt_flex)} TEST_CASE(variant_and_nullables_roundtrip_flex){
+    SERDE_TEST_VARIANT_NULLABLES_ROUNDTRIP(rt_flex)} TEST_CASE(scalars_roundtrip_flex){
+    SERDE_TEST_SCALARS_ROUNDTRIP(rt_flex)} TEST_CASE(nested_containers_roundtrip_flex){
+    SERDE_TEST_NESTED_CONTAINERS_ROUNDTRIP(rt_flex)} TEST_CASE(empty_containers_roundtrip_flex){
+    SERDE_TEST_EMPTY_CONTAINERS_ROUNDTRIP(rt_flex)}
 
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = std::monostate{};
-        input.nullables.opt_value.reset();
-        input.nullables.heap_allocated.reset();
-        auto output = roundtrip_flex(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = 123;
-        auto output = roundtrip_flex(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = std::string("variant-text");
-        auto output = roundtrip_flex(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-}
-
-TEST_CASE(ultimate_roundtrip_binary) {
-    {
-        auto input = test_types::make_ultimate();
-        auto output = roundtrip_binary(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = std::monostate{};
-        input.nullables.opt_value.reset();
-        input.nullables.heap_allocated.reset();
-        auto output = roundtrip_binary(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = 123;
-        auto output = roundtrip_binary(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = std::string("variant-text");
-        auto output = roundtrip_binary(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
+TEST_CASE(ultimate_roundtrip_binary){
+    SERDE_TEST_ULTIMATE_ROUNDTRIP(rt_binary)} TEST_CASE(variant_and_nullables_roundtrip_binary){
+    SERDE_TEST_VARIANT_NULLABLES_ROUNDTRIP(rt_binary)} TEST_CASE(scalars_roundtrip_binary){
+    SERDE_TEST_SCALARS_ROUNDTRIP(rt_binary)} TEST_CASE(nested_containers_roundtrip_binary){
+    SERDE_TEST_NESTED_CONTAINERS_ROUNDTRIP(
+        rt_binary)} TEST_CASE(empty_containers_roundtrip_binary) {
+    SERDE_TEST_EMPTY_CONTAINERS_ROUNDTRIP(rt_binary)
 }
 
 };  // TEST_SUITE(serde_flatbuffers_torture)

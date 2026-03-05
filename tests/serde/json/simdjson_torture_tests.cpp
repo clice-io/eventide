@@ -1,7 +1,6 @@
 #include <string>
-#include <variant>
 
-#include "../types.h"
+#include "../roundtrip_suite.h"
 #include "eventide/zest/zest.h"
 #include "eventide/serde/json/simd_deserializer.h"
 #include "eventide/serde/json/simd_serializer.h"
@@ -12,52 +11,23 @@ namespace {
 
 using json::simd::from_json;
 using json::simd::to_json;
-using test_types::UltimateTest;
 
-auto roundtrip(const UltimateTest& input) -> std::expected<UltimateTest, json::error_kind> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, json::error_kind> {
     auto encoded = to_json(input);
     if(!encoded) {
         return std::unexpected(encoded.error());
     }
-
-    return from_json<UltimateTest>(*encoded);
-}
+    return from_json<T>(*encoded);
+};
 
 TEST_SUITE(serde_simdjson_torture) {
 
-TEST_CASE(ultimate_roundtrip_json_simd) {
-    auto input = test_types::make_ultimate();
-    auto output = roundtrip(input);
-    ASSERT_TRUE(output.has_value());
-    EXPECT_EQ(input, *output);
-}
-
-TEST_CASE(variant_and_nullables_roundtrip_json_simd) {
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = std::monostate{};
-        input.nullables.opt_value.reset();
-        input.nullables.heap_allocated.reset();
-        auto output = roundtrip(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = 123;
-        auto output = roundtrip(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
-
-    {
-        auto input = test_types::make_ultimate();
-        input.adts.multi_variant = std::string("variant-text");
-        auto output = roundtrip(input);
-        ASSERT_TRUE(output.has_value());
-        EXPECT_EQ(input, *output);
-    }
+TEST_CASE(ultimate_roundtrip){
+    SERDE_TEST_ULTIMATE_ROUNDTRIP(rt)} TEST_CASE(variant_and_nullables_roundtrip){
+    SERDE_TEST_VARIANT_NULLABLES_ROUNDTRIP(rt)} TEST_CASE(scalars_roundtrip){
+    SERDE_TEST_SCALARS_ROUNDTRIP(rt)} TEST_CASE(nested_containers_roundtrip){
+    SERDE_TEST_NESTED_CONTAINERS_ROUNDTRIP(rt)} TEST_CASE(empty_containers_roundtrip) {
+    SERDE_TEST_EMPTY_CONTAINERS_ROUNDTRIP(rt)
 }
 
 };  // TEST_SUITE(serde_simdjson_torture)

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "eventide/common/ranges.h"
+#include "eventide/serde/detail/type_utils.h"
 #include "eventide/serde/flatbuffers/binary_schema.h"
 #include "eventide/serde/flatbuffers/binary_serializer.h"
 
@@ -38,35 +39,9 @@ using result_t = std::expected<T, object_error_code>;
 
 using status_t = result_t<void>;
 
-template <typename T>
-struct remove_annotation {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-    requires requires { typename std::remove_cvref_t<T>::annotated_type; }
-struct remove_annotation<T> {
-    using type = std::remove_cvref_t<typename std::remove_cvref_t<T>::annotated_type>;
-};
-
-template <typename T>
-using remove_annotation_t = typename remove_annotation<T>::type;
-
-template <typename T>
-struct remove_optional {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-struct remove_optional<std::optional<T>> {
-    using type = std::remove_cvref_t<T>;
-};
-
-template <typename T>
-using remove_optional_t = typename remove_optional<std::remove_cvref_t<T>>::type;
-
-template <typename T>
-using clean_t = remove_optional_t<remove_annotation_t<T>>;
+using serde::detail::clean_t;
+using serde::detail::remove_annotation_t;
+using serde::detail::remove_optional_t;
 
 template <typename T>
 consteval bool has_annotated_fields() {

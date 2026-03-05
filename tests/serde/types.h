@@ -102,6 +102,76 @@ struct UltimateTest {
     auto operator==(const UltimateTest&) const -> bool = default;
 };
 
+struct Scalars {
+    bool b{};
+    std::int8_t i8{};
+    std::int16_t i16{};
+    std::int32_t i32{};
+    std::int64_t i64{};
+    std::uint8_t u8{};
+    std::uint16_t u16{};
+    std::uint32_t u32{};
+    std::uint64_t u64{};
+    float f32{};
+    double f64{};
+    char ch{};
+    std::string str;
+
+    auto operator==(const Scalars&) const -> bool = default;
+};
+
+struct NestedContainers {
+    std::vector<std::vector<int>> nested_vec;
+    std::map<std::string, std::vector<int>> map_of_vecs;
+    std::optional<std::vector<int>> opt_vec;
+
+    auto operator==(const NestedContainers&) const -> bool = default;
+};
+
+struct EmptyContainers {
+    std::vector<int> empty_vec;
+    std::map<std::string, int> empty_map;
+    std::string empty_str;
+    std::optional<int> empty_opt;
+
+    auto operator==(const EmptyContainers&) const -> bool = default;
+};
+
+inline auto make_scalars() -> Scalars {
+    return Scalars{
+        .b = true,
+        .i8 = -42,
+        .i16 = -1000,
+        .i32 = -100000,
+        .i64 = -9999999999LL,
+        .u8 = 200,
+        .u16 = 50000,
+        .u32 = 3000000000U,
+        .u64 = 10000000000ULL,
+        .f32 = 3.14F,
+        .f64 = 2.718281828,
+        .ch = 'Z',
+        .str = "hello scalars",
+    };
+}
+
+inline auto make_nested_containers() -> NestedContainers {
+    return NestedContainers{
+        .nested_vec = {{1, 2, 3}, {4, 5}, {6}},
+        .map_of_vecs = {{"a", {10, 20}}, {"b", {30}}},
+        .opt_vec = std::vector<int>{1, 2, 3},
+    };
+}
+
+inline auto make_empty_containers() -> EmptyContainers {
+    return EmptyContainers{
+        .empty_vec = {},
+        .empty_map = {},
+        .empty_str = "",
+        .empty_opt = std::nullopt,
+    };
+}
+
 inline auto make_ultimate() -> UltimateTest {
     UltimateTest out;
 

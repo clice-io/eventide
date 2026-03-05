@@ -231,8 +231,8 @@ public:
     }
 
 private:
-    friend class json::detail::SerializeArray<Serializer>;
-    friend class json::detail::SerializeObject<Serializer>;
+    friend class serde::detail::SerializeArray<Serializer>;
+    friend class serde::detail::SerializeObject<Serializer>;
 
     enum class container_kind : std::uint8_t { array, object };
 

@@ -101,4 +101,57 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
     return {};
 }
 
+/// Shared variant dispatch for DOM-like deserializers.
+///
+/// Given a source value and a type_hint describing its data-model category,
+/// iterate all variant alternatives, check if the hint matches, and attempt
+/// deserialization via the probe-deserialize-finish pattern.
+///
+/// D: the Deserializer type (must be constructible from Source)
+/// Source: the captured value (e.g., json::ValueRef, const toml::node*)
+/// hint: the serde::type_hint for the current value
+/// mismatch_error: the error value to use when no alternative matches
+template <typename D, typename Source, typename... Ts>
+auto try_variant_dispatch(Source&& source,
+                          type_hint hint,
+                          std::variant<Ts...>& value,
+                          typename D::error_type mismatch_error)
+    -> std::expected<void, typename D::error_type> {
+    static_assert((std::default_initializable<Ts> && ...),
+                  "variant deserialization requires default-constructible alternatives");
+
+    using error_type = typename D::error_type;
+
+    bool matched = false;
+    bool considered = false;
+    error_type last_error = mismatch_error;
+
+    auto try_alternative = [&](auto type_tag) {
+        if(matched) {
+            return;
+        }
+
+        using alt_t = typename decltype(type_tag)::type;
+        if(!has_any(expected_type_hints<alt_t>(), hint)) {
+            return;
+        }
+
+        considered = true;
+        auto status =
+            try_deserialize_variant_candidate<D, alt_t>(std::forward<Source>(source), value);
+        if(status) {
+            matched = true;
+        } else {
+            last_error = status.error();
+        }
+    };
+
+    (try_alternative(std::type_identity<Ts>{}), ...);
+
+    if(!matched) {
+        return std::unexpected(considered ? last_error : mismatch_error);
+    }
+    return {};
+}
+
 }  // namespace eventide::serde

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "eventide/serde/detail/serialize_helpers.h"
 #include "eventide/serde/flatbuffers/error.h"
 #include "eventide/serde/serde.h"
 
@@ -35,58 +36,8 @@ public:
 
     using status_t = result_t<void>;
 
-    class SerializeArray {
-    public:
-        explicit SerializeArray(Serializer& serializer) noexcept : serializer(serializer) {}
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            auto result = serde::serialize(serializer, value);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            return {};
-        }
-
-        result_t<value_type> end() {
-            return serializer.end_array();
-        }
-
-    private:
-        Serializer& serializer;
-    };
-
-    class SerializeObject {
-    public:
-        explicit SerializeObject(Serializer& serializer) noexcept : serializer(serializer) {}
-
-        template <typename K, typename V>
-        status_t serialize_entry(const K& key, const V& value) {
-            auto key_status = serializer.key(serde::spelling::map_key_to_string(key));
-            if(!key_status) {
-                return std::unexpected(key_status.error());
-            }
-
-            return serde::serialize(serializer, value);
-        }
-
-        template <typename T>
-        status_t serialize_field(std::string_view key, const T& value) {
-            auto key_status = serializer.key(key);
-            if(!key_status) {
-                return std::unexpected(key_status.error());
-            }
-
-            return serde::serialize(serializer, value);
-        }
-
-        result_t<value_type> end() {
-            return serializer.end_object();
-        }
-
-    private:
-        Serializer& serializer;
-    };
+    using SerializeArray = serde::detail::SerializeArray<Serializer>;
+    using SerializeObject = serde::detail::SerializeObject<Serializer>;
 
     using SerializeSeq = SerializeArray;
     using SerializeTuple = SerializeArray;
@@ -134,6 +85,9 @@ public:
     result_t<SerializeStruct> serialize_struct(std::string_view name, std::size_t len);
 
 private:
+    friend class serde::detail::SerializeArray<Serializer>;
+    friend class serde::detail::SerializeObject<Serializer>;
+
     enum class container_kind : std::uint8_t { array, object };
 
     struct container_frame {

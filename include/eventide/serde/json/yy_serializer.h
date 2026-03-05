@@ -174,8 +174,8 @@ public:
     }
 
 private:
-    friend class json::detail::SerializeArray<Serializer>;
-    friend class json::detail::SerializeObject<Serializer>;
+    friend class serde::detail::SerializeArray<Serializer>;
+    friend class serde::detail::SerializeObject<Serializer>;
 
     status_t begin_object() {
         return builder.begin_object();

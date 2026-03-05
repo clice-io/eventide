@@ -13,6 +13,8 @@
 #include <variant>
 #include <vector>
 
+#include "eventide/serde/detail/deserialize_helpers.h"
+#include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/json/dom.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
@@ -29,183 +31,24 @@ public:
 
     using status_t = result_t<void>;
 
-    class DeserializeArray {
-    public:
-        result_t<bool> has_next() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            return index < array.size();
-        }
-
-        template <typename T>
-        status_t deserialize_element(T& value) {
-            auto hasNext = has_next();
-            if(!hasNext) {
-                return std::unexpected(hasNext.error());
-            }
-            if(!*hasNext) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
-            }
-
-            auto status = deserializer.deserialize_from_value_ref(array[index], value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-
-            ++index;
-            ++consumedCount;
-            return {};
-        }
-
-        status_t skip_element() {
-            auto hasNext = has_next();
-            if(!hasNext) {
-                return std::unexpected(hasNext.error());
-            }
-            if(!*hasNext) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
-            }
-
-            ++index;
-            ++consumedCount;
-            return {};
-        }
-
-        status_t end() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-
-            auto hasNext = has_next();
-            if(!hasNext) {
-                return std::unexpected(hasNext.error());
-            }
-
-            if(isStrictLength) {
-                if(consumedCount != expectedLength || *hasNext) {
-                    deserializer.mark_invalid();
-                    return std::unexpected(deserializer.current_error());
-                }
-                return {};
-            }
-
-            index = array.size();
-            return {};
-        }
-
-    private:
+    class DeserializeArray :
+        public serde::detail::IndexedArrayDeserializer<Deserializer, json::ArrayRef> {
+        using Base = serde::detail::IndexedArrayDeserializer<Deserializer, json::ArrayRef>;
         friend class Deserializer;
 
         DeserializeArray(Deserializer& deserializer,
                          json::ArrayRef array,
                          std::size_t expectedLength,
                          bool isStrictLength) :
-            deserializer(deserializer), array(array), expectedLength(expectedLength),
-            isStrictLength(isStrictLength) {}
-
-        Deserializer& deserializer;
-        json::ArrayRef array;
-        std::size_t index = 0;
-        std::size_t expectedLength = 0;
-        std::size_t consumedCount = 0;
-        bool isStrictLength = false;
+            Base(deserializer, array, array.size(), expectedLength, isStrictLength) {}
     };
 
-    class DeserializeObject {
-    public:
-        result_t<std::optional<std::string_view>> next_key() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(hasPendingValue) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
-            }
-            if(index == entries.size()) {
-                return std::optional<std::string_view>{};
-            }
-
-            hasPendingValue = true;
-            return std::optional<std::string_view>{entries[index].key};
-        }
-
-        status_t invalid_key(std::string_view /*key_name*/) {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(!hasPendingValue) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
-            }
-
-            ++index;
-            hasPendingValue = false;
-            return {};
-        }
-
-        template <typename T>
-        status_t deserialize_value(T& value) {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(!hasPendingValue) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
-            }
-
-            auto status = deserializer.deserialize_from_value_ref(entries[index].value, value);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-
-            ++index;
-            hasPendingValue = false;
-            return {};
-        }
-
-        status_t skip_value() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-            if(!hasPendingValue) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
-            }
-
-            ++index;
-            hasPendingValue = false;
-            return {};
-        }
-
-        status_t end() {
-            if(!deserializer.valid()) {
-                return std::unexpected(deserializer.current_error());
-            }
-
-            if(hasPendingValue) {
-                auto skipped = skip_value();
-                if(!skipped) {
-                    return std::unexpected(skipped.error());
-                }
-            }
-
-            index = entries.size();
-            return {};
-        }
-
-    private:
+    class DeserializeObject :
+        public serde::detail::IndexedObjectDeserializer<Deserializer, json::ValueRef> {
+        using Base = serde::detail::IndexedObjectDeserializer<Deserializer, json::ValueRef>;
         friend class Deserializer;
 
-        struct object_entry {
-            std::string_view key;
-            json::ValueRef value;
-        };
-
-        DeserializeObject(Deserializer& deserializer, json::ObjectRef object) :
-            deserializer(deserializer) {
+        DeserializeObject(Deserializer& deserializer, json::ObjectRef object) : Base(deserializer) {
             auto collected = deserializer.collect_object_entries(object);
             if(!collected) {
                 deserializer.mark_invalid(collected.error());
@@ -213,11 +56,6 @@ public:
             }
             entries = std::move(*collected);
         }
-
-        Deserializer& deserializer;
-        std::vector<object_entry> entries;
-        std::size_t index = 0;
-        bool hasPendingValue = false;
     };
 
     using DeserializeSeq = DeserializeArray;
@@ -275,9 +113,6 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        static_assert((std::default_initializable<Ts> && ...),
-                      "variant deserialization requires default-constructible alternatives");
-
         auto valueKind = peek_value_kind();
         if(!valueKind) {
             return std::unexpected(valueKind.error());
@@ -288,33 +123,12 @@ public:
             return std::unexpected(source.error());
         }
 
-        bool matched = false;
-        bool considered = false;
-        error_type lastError = error_type::type_mismatch;
-
-        auto try_alternative = [&](auto typeTag) {
-            if(matched) {
-                return;
-            }
-
-            using alt_t = typename decltype(typeTag)::type;
-            if(!variant_candidate_matches<alt_t>(*valueKind)) {
-                return;
-            }
-
-            considered = true;
-            auto candidate = deserialize_variant_candidate<alt_t>(*source, value);
-            if(candidate) {
-                matched = true;
-            } else {
-                lastError = candidate.error();
-            }
-        };
-
-        (try_alternative(std::type_identity<Ts>{}), ...);
-
-        if(!matched) {
-            mark_invalid(considered ? lastError : error_type::type_mismatch);
+        auto result = serde::try_variant_dispatch<Deserializer>(*source,
+                                                                map_to_type_hint(*valueKind),
+                                                                value,
+                                                                error_type::type_mismatch);
+        if(!result) {
+            mark_invalid(result.error());
             return std::unexpected(current_error());
         }
         return {};
@@ -344,12 +158,13 @@ public:
             return std::unexpected(status.error());
         }
 
-        if(!std::in_range<T>(parsed)) {
-            mark_invalid(error_type::number_out_of_range);
+        auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -367,12 +182,13 @@ public:
             return std::unexpected(status.error());
         }
 
-        if(!std::in_range<T>(parsed)) {
-            mark_invalid(error_type::number_out_of_range);
+        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -390,19 +206,13 @@ public:
             return std::unexpected(status.error());
         }
 
-        if constexpr(!std::same_as<T, double>) {
-            if(std::isfinite(parsed)) {
-                const auto low = static_cast<long double>((std::numeric_limits<T>::lowest)());
-                const auto high = static_cast<long double>((std::numeric_limits<T>::max)());
-                const auto valueAsLongDouble = static_cast<long double>(parsed);
-                if(valueAsLongDouble < low || valueAsLongDouble > high) {
-                    mark_invalid(error_type::number_out_of_range);
-                    return std::unexpected(current_error());
-                }
-            }
+        auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
+            return std::unexpected(current_error());
         }
 
-        value = static_cast<T>(parsed);
+        value = *narrowed;
         return {};
     }
 
@@ -419,12 +229,13 @@ public:
             return std::unexpected(status.error());
         }
 
-        if(text.size() != 1) {
-            mark_invalid(error_type::type_mismatch);
+        auto narrowed = serde::detail::narrow_char(text, error_type::type_mismatch);
+        if(!narrowed) {
+            mark_invalid(narrowed.error());
             return std::unexpected(current_error());
         }
 
-        value = text.front();
+        value = *narrowed;
         return {};
     }
 
@@ -509,6 +320,9 @@ public:
     }
 
 private:
+    friend class serde::detail::IndexedArrayDeserializer<Deserializer, json::ArrayRef>;
+    friend class serde::detail::IndexedObjectDeserializer<Deserializer, json::ValueRef>;
+
     enum class value_kind : std::uint8_t {
         null,
         boolean,
@@ -566,6 +380,17 @@ private:
         return serde::deserialize(*this, out);
     }
 
+    /// Bridge methods for shared deserialize helpers.
+    template <typename T>
+    status_t deserialize_element_value(json::ArrayRef array, std::size_t index, T& out) {
+        return deserialize_from_value_ref(array[index], out);
+    }
+
+    template <typename T>
+    status_t deserialize_entry_value(json::ValueRef value, T& out) {
+        return deserialize_from_value_ref(value, out);
+    }
+
     result_t<value_kind> peek_value_kind() {
         auto ref = peek_value_ref();
         if(!ref) {
@@ -607,24 +432,13 @@ private:
         }
     }
 
-    template <typename T>
-    constexpr static bool variant_candidate_matches(value_kind kind) {
-        return serde::has_any(serde::expected_type_hints<T>(), map_to_type_hint(kind));
-    }
-
-    template <typename Alt, typename... Ts>
-    static auto deserialize_variant_candidate(json::ValueRef source, std::variant<Ts...>& value)
-        -> status_t {
-        return serde::try_deserialize_variant_candidate<Deserializer, Alt>(source, value);
-    }
-
-    result_t<std::vector<typename DeserializeObject::object_entry>>
+    result_t<std::vector<typename DeserializeObject::entry>>
         collect_object_entries(json::ObjectRef object) {
-        std::vector<typename DeserializeObject::object_entry> entries;
+        std::vector<typename DeserializeObject::entry> entries;
         entries.reserve(object.size());
 
         for(auto entry: object) {
-            entries.push_back(typename DeserializeObject::object_entry{
+            entries.push_back(typename DeserializeObject::entry{
                 .key = entry.key,
                 .value = entry.value,
             });
@@ -633,7 +447,7 @@ private:
         return entries;
     }
 
-    result_t<json::ValueRef> peek_value_ref() {
+    result_t<json::ValueRef> access_value_ref(bool consume) {
         if(!isValid) {
             return std::unexpected(current_error());
         }
@@ -643,23 +457,19 @@ private:
         if(rootConsumed || !rootValue.valid()) {
             mark_invalid();
             return std::unexpected(current_error());
+        }
+        if(consume) {
+            rootConsumed = true;
         }
         return rootValue;
     }
 
+    result_t<json::ValueRef> peek_value_ref() {
+        return access_value_ref(false);
+    }
+
     result_t<json::ValueRef> consume_value_ref() {
-        if(!isValid) {
-            return std::unexpected(current_error());
-        }
-        if(hasCurrentValue) {
-            return currentValue;
-        }
-        if(rootConsumed || !rootValue.valid()) {
-            mark_invalid();
-            return std::unexpected(current_error());
-        }
-        rootConsumed = true;
-        return rootValue;
+        return access_value_ref(true);
     }
 
     result_t<json::ArrayRef> open_array() {
