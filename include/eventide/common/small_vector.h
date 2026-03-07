@@ -170,10 +170,6 @@ private:
     size_storage_type m_size = 0;
     size_storage_type m_capacity;
 
-    constexpr static size_type size_type_max() noexcept {
-        return (std::numeric_limits<size_storage_type>::max)();
-    }
-
 protected:
     [[nodiscard]] constexpr static auto pointer_range(pointer first, pointer last) noexcept {
         return std::ranges::subrange(first, last);
@@ -250,10 +246,6 @@ private:
         return mem::allocation_guard<value_type>(capacity);
     }
 
-    [[nodiscard]] constexpr static auto allocate_storage(size_type count) {
-        return mem::allocate<value_type>(count);
-    }
-
     template <typename... Args>
     [[nodiscard]] constexpr static auto make_temporary(Args&&... args) {
         return mem::stack_temporary<value_type>(std::forward<Args>(args)...);
@@ -288,23 +280,19 @@ private:
         return false;
     }
 
-    [[nodiscard]] constexpr bool safe_to_reference_after_resize(const_pointer ptr,
-                                                                size_type new_size) const noexcept {
-        if(!references_storage(ptr)) {
-            return true;
-        }
-
-        if(new_size <= size()) {
-            return ptr < prefix(new_size).end();
-        }
-
-        return new_size <= capacity();
-    }
-
     constexpr void assert_safe_to_reference_after_resize(const_pointer ptr,
                                                          size_type new_size) const noexcept {
+        auto safe = [&]() noexcept {
+            if(!references_storage(ptr)) {
+                return true;
+            }
+            if(new_size <= size()) {
+                return ptr < prefix(new_size).end();
+            }
+            return new_size <= capacity();
+        };
         assert(
-            safe_to_reference_after_resize(ptr, new_size) &&
+            safe() &&
             "Attempting to reference an element of the vector in an operation that " "invalidates it");
     }
 
@@ -390,17 +378,6 @@ private:
         this->m_size = 0;
     }
 
-    constexpr void destroy_and_deallocate() noexcept {
-        auto old_begin = this->m_begin;
-        const auto old_capacity = this->m_capacity;
-        const auto was_inline = old_begin == inline_begin();
-        destroy_elements();
-        if(!was_inline) {
-            mem::deallocate(old_begin, old_capacity);
-        }
-        reset_to_small(0);
-    }
-
     constexpr void commit_replacement(pointer new_begin,
                                       size_type new_size,
                                       size_type new_capacity) noexcept {
@@ -432,14 +409,6 @@ private:
         if(new_size > capacity()) {
             grow_to(new_size);
         }
-    }
-
-    constexpr void grow_and_assign(size_type count, const_reference value) {
-        const auto new_capacity = next_capacity(count);
-        auto guard = make_allocation_guard(new_capacity);
-        auto* out = mem::uninitialized_fill(counted_range(guard.data(), count), value);
-        guard.mark(out);
-        commit_replacement(guard.release(), count, new_capacity);
     }
 
     constexpr void resize_fill(size_type count, const_reference value) {
@@ -499,7 +468,11 @@ private:
 
     constexpr void assign_copies(size_type count, const_reference value) {
         if(count > capacity()) {
-            grow_and_assign(count, value);
+            const auto new_capacity = next_capacity(count);
+            auto guard = make_allocation_guard(new_capacity);
+            auto* out = mem::uninitialized_fill(counted_range(guard.data(), count), value);
+            guard.mark(out);
+            commit_replacement(guard.release(), count, new_capacity);
             return;
         }
 
@@ -528,7 +501,7 @@ private:
         const auto old_size = size();
         const auto new_size = checked_size(old_size, 1);
         const auto new_capacity = next_capacity(new_size);
-        auto* new_begin = allocate_storage(new_capacity);
+        auto* new_begin = mem::allocate<value_type>(new_capacity);
         auto* relocated_end = new_begin;
         bool back_constructed = false;
 
@@ -787,7 +760,13 @@ protected:
 
     constexpr void move_assign_from_other(hybrid_vector&& other) {
         if(should_steal_allocation_from(other)) {
-            destroy_and_deallocate();
+            auto old_begin = this->m_begin;
+            const auto old_capacity = this->m_capacity;
+            const auto was_inline = old_begin == inline_begin();
+            destroy_elements();
+            if(!was_inline) {
+                mem::deallocate(old_begin, old_capacity);
+            }
             steal_allocation_from(other);
             return;
         }
@@ -817,10 +796,6 @@ protected:
                                 prefix(current_size).end());
         this->set_size(other_size);
         other.clear();
-    }
-
-    constexpr void copy_from_other(const hybrid_vector& other) {
-        append(std::ranges::subrange(other.begin(), other.end()));
     }
 
 public:
@@ -915,7 +890,7 @@ public:
     }
 
     [[nodiscard]] constexpr size_type max_size() const noexcept {
-        return (std::min)(size_type_max(),
+        return (std::min)(static_cast<size_type>((std::numeric_limits<size_storage_type>::max)()),
                           (std::numeric_limits<size_type>::max)() / sizeof(value_type));
     }
 
@@ -1340,7 +1315,7 @@ public:
     }
 
     constexpr small_vector(const base_type& other) : small_vector() {
-        this->copy_from_other(other);
+        this->append(std::ranges::subrange(other.begin(), other.end()));
     }
 
     constexpr small_vector(base_type&& other) : small_vector() {
