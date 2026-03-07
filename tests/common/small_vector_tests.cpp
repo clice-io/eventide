@@ -1,9 +1,10 @@
 #include <algorithm>
 #include <array>
-#include <iterator>
 #include <numeric>
-#include <sstream>
+#include <optional>
+#include <ranges>
 #include <string>
+#include <variant>
 
 #ifdef __cpp_exceptions
 #include <stdexcept>
@@ -16,7 +17,6 @@ namespace eventide {
 
 namespace {
 
-// Helper: move-only type
 struct move_only {
     int value = 0;
 
@@ -44,7 +44,6 @@ struct move_only {
     }
 };
 
-// Helper: non-trivial type that tracks construction/destruction
 static int nontrivial_alive = 0;
 
 struct nontrivial {
@@ -89,915 +88,960 @@ struct nontrivial {
     auto operator<=>(const nontrivial& rhs) const = default;
 };
 
-// Helper: minimal input iterator wrapping a pointer
-template <typename T>
-struct input_iter {
-    using iterator_category = std::input_iterator_tag;
-    using value_type = T;
-    using difference_type = std::ptrdiff_t;
-    using pointer = const T*;
-    using reference = const T&;
+constexpr bool constexpr_int_operations() {
+    small_vector<int, 4> values{1, 2, 3};
+    std::array<int, 2> tail = {4, 5};
 
-    const T* ptr;
+    values.append(tail);
+    values.insert(values.begin() + 1, 9);
+    values.erase(values.begin() + 2);
+    values.resize_for_overwrite(7);
+    values[5] = 11;
+    values[6] = 12;
 
-    input_iter() : ptr(nullptr) {}
+    const auto popped = values.pop_back_val();
+    values.shrink_to_fit();
 
-    explicit input_iter(const T* p) : ptr(p) {}
-
-    reference operator*() const {
-        return *ptr;
-    }
-
-    pointer operator->() const {
-        return ptr;
-    }
-
-    input_iter& operator++() {
-        ++ptr;
-        return *this;
-    }
-
-    input_iter operator++(int) {
-        auto tmp = *this;
-        ++ptr;
-        return tmp;
-    }
-
-    bool operator==(const input_iter& o) const {
-        return ptr == o.ptr;
-    }
-};
-
-TEST_SUITE(common_small_vector) {
-
-// ---------------------------------------------------------------------------
-// 1. Default constructor
-// ---------------------------------------------------------------------------
-TEST_CASE(default_constructor) {
-    small_vector<int, 4> v;
-    EXPECT_TRUE(v.empty());
-    EXPECT_EQ(v.size(), 0U);
-    EXPECT_EQ(v.capacity(), 4U);
-    EXPECT_EQ(v.inline_capacity(), 4U);
-    EXPECT_TRUE(v.inlined());
-    EXPECT_TRUE(v.inlinable());
+    return values.size() == 6 && values.front() == 1 && values[1] == 9 && values.back() == 11 &&
+           popped == 12 && !values.inlined() &&
+           (values <=> small_vector<int, 0>{1, 9, 3, 4, 5, 11}) == std::strong_ordering::equal;
 }
 
-// ---------------------------------------------------------------------------
-// 2. Count constructors
-// ---------------------------------------------------------------------------
-TEST_CASE(count_constructor_default) {
-    small_vector<int, 4> v(3);
-    EXPECT_EQ(v.size(), 3U);
-    for(std::size_t i = 0; i < v.size(); ++i)
-        EXPECT_EQ(v[i], 0);
-    EXPECT_TRUE(v.inlined());
+constexpr bool constexpr_string_operations() {
+    small_vector<std::string, 2> values;
+    values.emplace_back("alpha");
+    values.emplace_back("beta");
+    values.resize(4, std::string("tail"));
+    values.pop_back();
+    values.shrink_to_fit();
+
+    return values.size() == 3 && values.front() == "alpha" && values[1] == "beta" &&
+           values.back() == "tail";
 }
 
-TEST_CASE(count_constructor_value) {
-    small_vector<int, 2> v(5, 42);
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_FALSE(v.inlined());
-    for(std::size_t i = 0; i < v.size(); ++i)
-        EXPECT_EQ(v[i], 42);
+constexpr bool constexpr_optional_operations() {
+    constexpr auto size =
+        small_vector<std::optional<int>, 0>{std::optional<int>{1}, std::nullopt}.size();
+    static_assert(size == 2);
+
+    small_vector<std::optional<int>, 1> values;
+    std::array<std::optional<int>, 3> source = {
+        std::optional<int>{1},
+        std::nullopt,
+        std::optional<int>{3},
+    };
+
+    values.assign(source);
+    values.erase(values.begin() + 1);
+    values.push_back(std::optional<int>{4});
+
+    return values.size() == 3 && values[0].value() == 1 && values[1].value() == 3 &&
+           values[2].value() == 4;
 }
 
-// ---------------------------------------------------------------------------
-// 3. Range constructors
-// ---------------------------------------------------------------------------
-TEST_CASE(range_constructor_forward_iterator) {
-    std::array<int, 5> arr = {10, 20, 30, 40, 50};
-    small_vector<int, 4> v(arr.begin(), arr.end());
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_FALSE(v.inlined());
-    for(std::size_t i = 0; i < arr.size(); ++i)
-        EXPECT_EQ(v[i], arr[i]);
+constexpr bool constexpr_variant_operations() {
+    using value_type = std::variant<int, std::string>;
+
+    small_vector<value_type, 1> values;
+    values.emplace_back(1);
+    values.emplace_back(std::string("two"));
+    values.emplace_back(3);
+    values.erase(values.begin());
+    values.shrink_to_fit();
+
+    return values.size() == 2 && std::get<std::string>(values[0]) == "two" &&
+           std::get<int>(values[1]) == 3;
 }
 
-TEST_CASE(range_constructor_input_iterator) {
-    int data[] = {1, 2, 3};
-    small_vector<int, 4> v(input_iter<int>(data), input_iter<int>(data + 3));
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0], 1);
-    EXPECT_EQ(v[1], 2);
-    EXPECT_EQ(v[2], 3);
+TEST_SUITE(small_vector) {
+
+TEST_CASE(constexpr) {
+    static_assert(small_vector{1, 2, 3}.size() == 3);
+    static_assert(vector<int>{1, 2, 3, 4}.size() == 4);
+
+    static_assert(constexpr_int_operations());
+    static_assert(constexpr_string_operations());
+    static_assert(constexpr_optional_operations());
+    static_assert(constexpr_variant_operations());
 }
 
-// ---------------------------------------------------------------------------
-// 4. Initializer list constructor
-// ---------------------------------------------------------------------------
-TEST_CASE(initializer_list_constructor) {
-    small_vector<int, 4> v = {1, 2, 3, 4, 5};
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_EQ(v[0], 1);
-    EXPECT_EQ(v[4], 5);
-}
-
-// ---------------------------------------------------------------------------
-// 5. Copy constructor
-// ---------------------------------------------------------------------------
-TEST_CASE(copy_constructor_inline) {
-    small_vector<int, 4> a = {1, 2, 3};
-    small_vector<int, 4> b(a);
-    EXPECT_EQ(a, b);
-    EXPECT_TRUE(b.inlined());
-}
-
-TEST_CASE(copy_constructor_allocated) {
-    small_vector<int, 2> a = {1, 2, 3, 4, 5};
-    small_vector<int, 2> b(a);
-    EXPECT_EQ(a, b);
-    EXPECT_FALSE(b.inlined());
-}
-
-TEST_CASE(copy_constructor_cross_capacity) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 8> b(a);
-    EXPECT_EQ(b.size(), 3U);
-    EXPECT_EQ(b[0], 1);
-    EXPECT_EQ(b[1], 2);
-    EXPECT_EQ(b[2], 3);
-    EXPECT_TRUE(b.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 6. Move constructor
-// ---------------------------------------------------------------------------
-TEST_CASE(move_constructor_inline) {
-    small_vector<int, 4> a = {1, 2, 3};
-    small_vector<int, 4> b(std::move(a));
-    EXPECT_EQ(b.size(), 3U);
-    EXPECT_EQ(b[0], 1);
-    EXPECT_TRUE(b.inlined());
-}
-
-TEST_CASE(move_constructor_allocated) {
-    small_vector<int, 2> a = {1, 2, 3, 4};
-    auto* old_data = a.data();
-    small_vector<int, 2> b(std::move(a));
-    EXPECT_EQ(b.size(), 4U);
-    EXPECT_EQ(b.data(), old_data);  // should steal the allocation
-    EXPECT_TRUE(a.empty());
-}
-
-TEST_CASE(move_constructor_cross_capacity) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 8> b(std::move(a));
-    EXPECT_EQ(b.size(), 3U);
-    EXPECT_EQ(b[0], 1);
-    EXPECT_EQ(b[2], 3);
-    EXPECT_TRUE(b.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 7. Generator constructor
-// ---------------------------------------------------------------------------
-TEST_CASE(generator_constructor) {
-    int counter = 0;
-    small_vector<int, 4> v(5, [&counter]() { return counter++; });
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_EQ(v[0], 0);
-    EXPECT_EQ(v[1], 1);
-    EXPECT_EQ(v[4], 4);
-}
-
-// ---------------------------------------------------------------------------
-// 8. Destructor - proper cleanup of non-trivial types
-// ---------------------------------------------------------------------------
-TEST_CASE(destructor_cleanup) {
-    nontrivial_alive = 0;
+TEST_CASE(construction_and_copy_move) {
+    // Default and count constructors.
     {
-        small_vector<nontrivial, 2> v;
-        v.emplace_back(1);
-        v.emplace_back(2);
-        v.emplace_back(3);
+        small_vector<int, 4> values;
+        EXPECT_TRUE(values.empty());
+        EXPECT_EQ(values.size(), 0U);
+        EXPECT_EQ(values.capacity(), 4U);
+        EXPECT_EQ(values.inline_capacity(), 4U);
+        EXPECT_TRUE(values.inlined());
+        EXPECT_TRUE(values.inlinable());
+    }
+    {
+        small_vector<int, 4> values(3);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_TRUE(values.inlined());
+        for(std::size_t i = 0; i < values.size(); ++i) {
+            EXPECT_EQ(values[i], 0);
+        }
+    }
+    {
+        small_vector<int, 2> values(5, 42);
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_FALSE(values.inlined());
+        for(std::size_t i = 0; i < values.size(); ++i) {
+            EXPECT_EQ(values[i], 42);
+        }
+    }
+
+    // Range and initializer-list constructors.
+    {
+        std::array<int, 5> source = {10, 20, 30, 40, 50};
+        small_vector<int, 4> values(source);
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_FALSE(values.inlined());
+        for(std::size_t i = 0; i < source.size(); ++i) {
+            EXPECT_EQ(values[i], source[i]);
+        }
+    }
+    {
+        std::array<int, 3> source_data = {1, 2, 3};
+        auto source = std::views::all(source_data);
+        small_vector<int, 4> values(source);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[1], 2);
+        EXPECT_EQ(values[2], 3);
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4, 5};
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[4], 5);
+    }
+
+    // Copy constructors across inline, heap, and cross-capacity storage.
+    {
+        small_vector<int, 4> source = {1, 2, 3};
+        small_vector<int, 4> copy(source);
+        EXPECT_EQ(copy, source);
+        EXPECT_TRUE(copy.inlined());
+    }
+    {
+        small_vector<int, 2> source = {1, 2, 3, 4, 5};
+        small_vector<int, 2> copy(source);
+        EXPECT_EQ(copy, source);
+        EXPECT_FALSE(copy.inlined());
+    }
+    {
+        small_vector<int, 2> source = {1, 2, 3};
+        small_vector<int, 8> copy(source);
+        EXPECT_EQ(copy.size(), 3U);
+        EXPECT_EQ(copy[0], 1);
+        EXPECT_EQ(copy[1], 2);
+        EXPECT_EQ(copy[2], 3);
+        EXPECT_TRUE(copy.inlined());
+    }
+
+    // Move constructors should preserve values and steal heap allocations.
+    {
+        small_vector<int, 4> source = {1, 2, 3};
+        small_vector<int, 4> moved(std::move(source));
+        EXPECT_EQ(moved.size(), 3U);
+        EXPECT_EQ(moved[0], 1);
+        EXPECT_TRUE(moved.inlined());
+    }
+    {
+        small_vector<int, 2> source = {1, 2, 3, 4};
+        auto* old_data = source.data();
+        small_vector<int, 2> moved(std::move(source));
+        EXPECT_EQ(moved.size(), 4U);
+        EXPECT_EQ(moved.data(), old_data);
+        EXPECT_TRUE(source.empty());
+    }
+    {
+        small_vector<int, 4> source;
+        source.reserve(16);
+        source.push_back(7);
+        auto* old_data = source.data();
+
+        small_vector<int, 4> moved(std::move(source));
+        EXPECT_EQ(moved.size(), 1U);
+        EXPECT_EQ(moved[0], 7);
+        EXPECT_EQ(moved.data(), old_data);
+        EXPECT_FALSE(moved.inlined());
+    }
+    {
+        small_vector<int, 2> source = {1, 2, 3};
+        auto* old_data = source.data();
+        small_vector<int, 8> moved(std::move(source));
+        EXPECT_EQ(moved.size(), 3U);
+        EXPECT_EQ(moved[0], 1);
+        EXPECT_EQ(moved[2], 3);
+        EXPECT_EQ(moved.data(), old_data);
+        EXPECT_FALSE(moved.inlined());
+    }
+
+    // Generator constructors should call the generator once per element.
+    {
+        int counter = 0;
+        small_vector<int, 4> values(5, [&counter]() { return counter++; });
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values[0], 0);
+        EXPECT_EQ(values[1], 1);
+        EXPECT_EQ(values[4], 4);
+    }
+}
+
+TEST_CASE(assignment_and_append) {
+    // Copy assignment should handle self-assignment and mixed storage shapes.
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        const auto* self = &values;
+        values = *self;
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 1);
+    }
+    {
+        small_vector<int, 4> dst = {1, 2};
+        small_vector<int, 4> src = {3, 4, 5};
+        dst = src;
+        EXPECT_EQ(dst, src);
+        EXPECT_TRUE(dst.inlined());
+    }
+    {
+        small_vector<int, 2> dst = {1, 2, 3};
+        small_vector<int, 2> src = {4};
+        dst = src;
+        EXPECT_EQ(dst.size(), 1U);
+        EXPECT_EQ(dst[0], 4);
+    }
+    {
+        small_vector<int, 2> dst = {1};
+        small_vector<int, 2> src = {4, 5, 6, 7};
+        dst = src;
+        EXPECT_EQ(dst, src);
+        EXPECT_FALSE(dst.inlined());
+    }
+    {
+        small_vector<int, 2> dst = {1, 2, 3};
+        small_vector<int, 2> src = {4, 5, 6, 7, 8};
+        dst = src;
+        EXPECT_EQ(dst, src);
+    }
+    {
+        small_vector<int, 2> src = {1, 2, 3};
+        small_vector<int, 8> dst;
+        dst.assign(src);
+        EXPECT_EQ(dst.size(), 3U);
+        EXPECT_EQ(dst[2], 3);
+        EXPECT_TRUE(dst.inlined());
+    }
+
+    // Move assignment should preserve values and steal heap allocations when possible.
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        auto* self = &values;
+        values = std::move(*self);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 1);
+    }
+    {
+        small_vector<int, 4> dst = {1, 2};
+        small_vector<int, 4> src = {3, 4, 5};
+        dst = std::move(src);
+        EXPECT_EQ(dst.size(), 3U);
+        EXPECT_EQ(dst[0], 3);
+    }
+    {
+        small_vector<int, 2> dst = {1};
+        small_vector<int, 2> src = {3, 4, 5, 6};
+        auto* old_data = src.data();
+        dst = std::move(src);
+        EXPECT_EQ(dst.size(), 4U);
+        EXPECT_EQ(dst.data(), old_data);
+    }
+    {
+        small_vector<int, 2> dst = {1, 2, 3};
+        small_vector<int, 2> src = {7};
+        dst = std::move(src);
+        EXPECT_EQ(dst.size(), 1U);
+        EXPECT_EQ(dst[0], 7);
+    }
+    {
+        small_vector<int, 2> src = {1, 2, 3};
+        small_vector<int, 8> dst = {10};
+        auto* old_data = src.data();
+        dst.assign(std::move(src));
+        EXPECT_EQ(dst.size(), 3U);
+        EXPECT_EQ(dst[0], 1);
+        EXPECT_EQ(dst.data(), old_data);
+        EXPECT_FALSE(dst.inlined());
+    }
+
+    // Assign APIs should cover counts, ranges, initializer lists, and internal references.
+    {
+        small_vector<int, 4> values = {1, 2};
+        values = {10, 20, 30, 40, 50};
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values[0], 10);
+        EXPECT_EQ(values[4], 50);
+    }
+    {
+        small_vector<int, 4> values = {1};
+        values.assign(5, 99);
+        EXPECT_EQ(values.size(), 5U);
+        for(std::size_t i = 0; i < values.size(); ++i) {
+            EXPECT_EQ(values[i], 99);
+        }
+    }
+    {
+        small_vector<int, 2> values = {1, 2, 3, 4};
+        auto* old_data = values.data();
+        const auto old_capacity = values.capacity();
+        values.assign(3, 9);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values.capacity(), old_capacity);
+        EXPECT_EQ(values.data(), old_data);
+        EXPECT_EQ(values, small_vector<int, 2>{9, 9, 9});
+    }
+    {
+        std::array<int, 3> source = {7, 8, 9};
+        small_vector<int, 4> values = {1, 2, 3, 4, 5};
+        values.assign(source);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 7);
+    }
+    {
+        small_vector<int, 4> values;
+        values.assign({100, 200});
+        EXPECT_EQ(values.size(), 2U);
+        EXPECT_EQ(values[0], 100);
+        EXPECT_EQ(values[1], 200);
+    }
+    {
+        small_vector<int, 2> values = {7, 8, 9};
+        values.assign(4, values[0]);
+        EXPECT_EQ(values, small_vector<int, 2>{7, 7, 7, 7});
+    }
+
+    // Append APIs should accept ranges, initializer lists, copy/move sources, and internal refs.
+    {
+        small_vector<int, 3> values = {1, 2, 3};
+        std::array<int, 3> tail = {4, 5, 6};
+        values.append(tail);
+        EXPECT_EQ(values, small_vector<int, 3>{1, 2, 3, 4, 5, 6});
+    }
+    {
+        small_vector<int, 4> values = {1, 2};
+        values.append({3, 4, 5});
+        EXPECT_EQ(values, small_vector<int, 4>{1, 2, 3, 4, 5});
+    }
+    {
+        small_vector<int, 2> values = {3, 4};
+        values.append(2, values[0]);
+        EXPECT_EQ(values, small_vector<int, 2>{3, 4, 3, 3});
+    }
+    {
+        small_vector<int, 4> src = {4, 5};
+        small_vector<int, 4> dst = {1, 2, 3};
+        dst.append(src);
+        EXPECT_EQ(dst, small_vector<int, 4>{1, 2, 3, 4, 5});
+        EXPECT_EQ(src.size(), 2U);
+    }
+    {
+        small_vector<int, 4> src = {4, 5};
+        small_vector<int, 4> dst = {1, 2, 3};
+        dst.append(std::move(src));
+        EXPECT_EQ(dst, small_vector<int, 4>{1, 2, 3, 4, 5});
+        EXPECT_TRUE(src.empty());
+    }
+}
+
+TEST_CASE(modifiers) {
+    // push_back and emplace_back should preserve values across inline and heap growth.
+    {
+        small_vector<std::string, 2> values;
+        std::string greeting = "hello";
+        values.push_back(greeting);
+        values.push_back(std::string("world"));
+        values.push_back(std::string("!"));
+
+        EXPECT_EQ(values[0], std::string("hello"));
+        EXPECT_EQ(greeting, std::string("hello"));
+        EXPECT_EQ(values[1], std::string("world"));
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_FALSE(values.inlined());
+    }
+    {
+        small_vector<int, 2> values = {1, 2};
+        values.push_back(values[0]);
+        EXPECT_EQ(values, small_vector<int, 2>{1, 2, 1});
+    }
+    {
+        small_vector<std::string, 2> values;
+        values.emplace_back(3, 'x');
+        values.emplace_back("test");
+        auto& ref = values.emplace_back("more");
+
+        EXPECT_EQ(values[0], std::string("xxx"));
+        EXPECT_EQ(values[1], std::string("test"));
+        EXPECT_EQ(ref, std::string("more"));
+    }
+
+    // pop_back and pop_back_val should update size and return the removed value.
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.pop_back();
+        EXPECT_EQ(values.size(), 2U);
+        EXPECT_EQ(values.back(), 2);
+
+        const auto removed = values.pop_back_val();
+        EXPECT_EQ(removed, 2);
+        EXPECT_EQ(values.size(), 1U);
+
+        values.pop_back();
+        EXPECT_TRUE(values.empty());
+    }
+
+    // Insert and emplace should cover single elements, counts, ranges, and edge positions.
+    {
+        small_vector<int, 4> values = {1, 3};
+        int middle = 2;
+        auto it = values.insert(values.begin() + 1, middle);
+        EXPECT_EQ(*it, 2);
+        EXPECT_EQ(values, small_vector<int, 4>{1, 2, 3});
+    }
+    {
+        small_vector<std::string, 4> values = {std::string("a"), std::string("c")};
+        auto it = values.insert(values.begin() + 1, std::string("b"));
+        EXPECT_EQ(*it, std::string("b"));
+        EXPECT_EQ(values.size(), 3U);
+    }
+    {
+        small_vector<int, 2> values = {1, 5};
+        values.insert(values.begin() + 1, 3, 9);
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values[1], 9);
+        EXPECT_EQ(values[3], 9);
+        EXPECT_EQ(values[4], 5);
+    }
+    {
+        small_vector<int, 2> values = {1, 2};
+        values.insert(values.begin() + 1, values[0]);
+        values.insert(values.begin() + 2, 2, values[0]);
+        EXPECT_EQ(values, small_vector<int, 2>{1, 1, 1, 1, 2});
+    }
+    {
+        small_vector<int, 4> values = {1, 5};
+        std::array<int, 3> source = {2, 3, 4};
+        values.insert(values.begin() + 1, source);
+        EXPECT_EQ(values, small_vector<int, 4>{1, 2, 3, 4, 5});
+    }
+    {
+        small_vector<int, 4> values = {1, 5};
+        std::array<int, 3> source_data = {2, 3, 4};
+        auto source = std::views::all(source_data);
+        values.insert(values.begin() + 1, source);
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values[1], 2);
+        EXPECT_EQ(values[4], 5);
+    }
+    {
+        small_vector<int, 4> values = {1, 5};
+        values.insert(values.begin() + 1, {2, 3, 4});
+        values.insert(values.begin(), 0);
+        values.insert(values.end(), 6);
+        EXPECT_EQ(values, small_vector<int, 4>{0, 1, 2, 3, 4, 5, 6});
+    }
+    {
+        small_vector<std::string, 4> values;
+        values.emplace(values.begin(), "first");
+        values.emplace(values.end(), "last");
+        values.emplace(values.begin() + 1, 3, 'x');
+        EXPECT_EQ(values[0], std::string("first"));
+        EXPECT_EQ(values[1], std::string("xxx"));
+        EXPECT_EQ(values[2], std::string("last"));
+    }
+
+    // Erase and clear should maintain ordering and preserve capacity where appropriate.
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4};
+        auto it = values.erase(values.begin() + 1);
+        EXPECT_EQ(*it, 3);
+        EXPECT_EQ(values, small_vector<int, 4>{1, 3, 4});
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4, 5};
+        auto it = values.erase(values.begin() + 1, values.begin() + 4);
+        EXPECT_EQ(*it, 5);
+        EXPECT_EQ(values, small_vector<int, 4>{1, 5});
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.erase(values.begin());
+        values.erase(values.end() - 1);
+        EXPECT_EQ(values, small_vector<int, 4>{2});
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.erase(values.begin(), values.end());
+        EXPECT_TRUE(values.empty());
+    }
+    {
+        small_vector<int, 3> values = {1, 2, 3, 4};
+        const auto capacity_before_clear = values.capacity();
+        values.clear();
+        EXPECT_TRUE(values.empty());
+        EXPECT_EQ(values.capacity(), capacity_before_clear);
+        values.push_back(9);
+        EXPECT_EQ(values[0], 9);
+    }
+}
+
+TEST_CASE(capacity_and_storage_management) {
+    // resize should cover growth, shrink, overwrite growth, and internal references.
+    {
+        small_vector<int, 4> values = {1, 2};
+        values.resize(5);
+        EXPECT_EQ(values.size(), 5U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[1], 2);
+        EXPECT_EQ(values[2], 0);
+        EXPECT_EQ(values[4], 0);
+    }
+    {
+        small_vector<int, 4> values = {1};
+        values.resize(4, 77);
+        EXPECT_EQ(values.size(), 4U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[3], 77);
+    }
+    {
+        small_vector<int, 2> values = {5, 6};
+        values.resize(4, values[0]);
+        EXPECT_EQ(values, small_vector<int, 2>{5, 6, 5, 5});
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4, 5};
+        values.resize(2);
+        EXPECT_EQ(values.size(), 2U);
+        EXPECT_EQ(values[1], 2);
+    }
+    {
+        small_vector<int, 4> values = {1, 2};
+        values.resize_for_overwrite(5);
+        values[2] = 20;
+        values[3] = 30;
+        values[4] = 40;
+        values.resize_for_overwrite(3);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[1], 2);
+        EXPECT_EQ(values[2], 20);
+    }
+
+    // reserve and shrink_to_fit should manage heap transitions in both directions.
+    {
+        small_vector<int, 4> values;
+        values.reserve(100);
+        EXPECT_GE(values.capacity(), 100U);
+        EXPECT_FALSE(values.inlined());
+        EXPECT_TRUE(values.empty());
+    }
+    {
+        small_vector<int, 4> values = {1, 2};
+        const auto capacity_before = values.capacity();
+        values.reserve(2);
+        EXPECT_EQ(values.capacity(), capacity_before);
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        values.reserve(16);
+        EXPECT_FALSE(values.inlined());
+        values.shrink_to_fit();
+        EXPECT_TRUE(values.inlined());
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[2], 3);
+    }
+    {
+        small_vector<int, 2> values;
+        for(int i = 0; i < 100; ++i) {
+            values.push_back(i);
+        }
+        values.resize(5);
+        const auto old_capacity = values.capacity();
+        values.shrink_to_fit();
+        EXPECT_LE(values.capacity(), old_capacity);
+        EXPECT_EQ(values.size(), 5U);
+    }
+
+    // swap, size/capacity accessors, and inline-capacity metadata should stay consistent.
+    {
+        small_vector<int, 4> a = {1, 2};
+        small_vector<int, 4> b = {3, 4, 5};
+        a.swap(b);
+        EXPECT_EQ(a, small_vector<int, 4>{3, 4, 5});
+        EXPECT_EQ(b, small_vector<int, 4>{1, 2});
+    }
+    {
+        small_vector<int, 2> a = {1, 2};
+        small_vector<int, 2> b = {3, 4, 5, 6};
+        a.swap(b);
+        EXPECT_EQ(a.size(), 4U);
+        EXPECT_EQ(b.size(), 2U);
+        EXPECT_EQ(a[0], 3);
+        EXPECT_EQ(b[0], 1);
+    }
+    {
+        small_vector<int, 2> a = {1, 2, 3};
+        small_vector<int, 2> b = {4, 5, 6, 7};
+        a.swap(b);
+        EXPECT_EQ(a.size(), 4U);
+        EXPECT_EQ(b.size(), 3U);
+        EXPECT_EQ(a[0], 4);
+        EXPECT_EQ(b[0], 1);
+    }
+    {
+        small_vector<int, 2> a = {1, 2, 3};
+        small_vector<int, 6> b = {7, 8};
+        a.swap(b);
+        EXPECT_EQ(a, small_vector<int, 2>{7, 8});
+        EXPECT_EQ(b, small_vector<int, 6>{1, 2, 3});
+        EXPECT_FALSE(a.inlined());
+        EXPECT_TRUE(b.inlined());
+    }
+    {
+        small_vector<int, 4> values;
+        EXPECT_TRUE(values.empty());
+        EXPECT_EQ(values.size(), 0U);
+        EXPECT_EQ(values.capacity(), 4U);
+        EXPECT_TRUE(values.max_size() > 0U);
+
+        values.push_back(1);
+        EXPECT_FALSE(values.empty());
+        EXPECT_EQ(values.size(), 1U);
+    }
+    {
+        small_vector<int, 3> values;
+        EXPECT_TRUE(values.inlined());
+        EXPECT_TRUE(values.inlinable());
+        EXPECT_EQ(values.inline_capacity(), 3U);
+
+        values = {1, 2, 3};
+        EXPECT_TRUE(values.inlined());
+        EXPECT_TRUE(values.inlinable());
+
+        values.push_back(4);
+        EXPECT_FALSE(values.inlined());
+        EXPECT_FALSE(values.inlinable());
+
+        values.resize(2);
+        EXPECT_FALSE(values.inlined());
+        EXPECT_TRUE(values.inlinable());
+
+        values.shrink_to_fit();
+        EXPECT_TRUE(values.inlined());
+    }
+    {
+        small_vector<int, 0> values;
+        EXPECT_TRUE(values.empty());
+        EXPECT_EQ(values.inline_capacity(), 0U);
+        EXPECT_TRUE(values.inlined());
+
+        values.push_back(1);
+        values.push_back(2);
+        EXPECT_EQ(values.size(), 2U);
+        EXPECT_FALSE(values.inlined());
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[1], 2);
+    }
+}
+
+TEST_CASE(accessors_iterators_comparison_and_erased_capacity_api) {
+    // Accessors should work in mutable and const contexts.
+    {
+        small_vector<int, 4> values = {10, 20, 30};
+        EXPECT_EQ(values.at(0), 10);
+        EXPECT_EQ(values.at(2), 30);
+        EXPECT_EQ(values[0], 10);
+        EXPECT_EQ(values[2], 30);
+
+        values[1] = 99;
+        values.front() = 11;
+        values.back() = 33;
+        EXPECT_EQ(values[0], 11);
+        EXPECT_EQ(values[1], 99);
+        EXPECT_EQ(values[2], 33);
+
+        int* data = values.data();
+        EXPECT_EQ(data[0], 11);
+        EXPECT_EQ(data[2], 33);
+
+        const auto& const_values = values;
+        EXPECT_EQ(const_values.at(1), 99);
+        EXPECT_EQ(const_values.front(), 11);
+        EXPECT_EQ(const_values.back(), 33);
+        EXPECT_EQ(const_values.data()[1], 99);
+    }
+
+    // Iterators and range-based loops should traverse in all directions.
+    {
+        small_vector<int, 4> values = {1, 2, 3, 4};
+        int sum = 0;
+        for(auto it = values.begin(); it != values.end(); ++it) {
+            sum += *it;
+        }
+        EXPECT_EQ(sum, 10);
+        EXPECT_EQ(*values.begin(), 1);
+        EXPECT_EQ(*(values.end() - 1), 4);
+        EXPECT_EQ(*values.cbegin(), 1);
+    }
+    {
+        const small_vector<int, 4> values = {10, 20, 30};
+        int sum = 0;
+        for(auto it = values.cbegin(); it != values.cend(); ++it) {
+            sum += *it;
+        }
+        EXPECT_EQ(sum, 60);
+
+        auto rit = values.crbegin();
+        EXPECT_EQ(*rit, 30);
+        ++rit;
+        EXPECT_EQ(*rit, 20);
+        ++rit;
+        EXPECT_EQ(*rit, 10);
+        ++rit;
+        EXPECT_TRUE(rit == values.crend());
+    }
+    {
+        small_vector<int, 4> values = {1, 2, 3};
+        small_vector<int, 4> reversed;
+        int product = 1;
+        for(auto x: values) {
+            product *= x;
+        }
+        for(auto it = values.rbegin(); it != values.rend(); ++it) {
+            reversed.push_back(*it);
+        }
+        EXPECT_EQ(product, 6);
+        EXPECT_EQ(reversed, small_vector<int, 4>{3, 2, 1});
+    }
+
+    // Comparison operators and CTAD should work across capacities.
+    {
+        small_vector<int, 4> a = {1, 2, 3};
+        small_vector<int, 4> b = {1, 2, 3};
+        small_vector<int, 4> c = {1, 2, 4};
+        small_vector<int, 4> d = {1, 2};
+
+        EXPECT_TRUE(a == b);
+        EXPECT_FALSE(a != b);
+        EXPECT_FALSE(a == c);
+        EXPECT_TRUE(a != c);
+        EXPECT_FALSE(a == d);
+        EXPECT_TRUE(a < c);
+        EXPECT_TRUE(c > a);
+        EXPECT_TRUE(a <= b);
+        EXPECT_TRUE(a >= b);
+        EXPECT_TRUE(d < a);
+    }
+    {
+        small_vector<int, 2> a = {1, 2, 3};
+        small_vector<int, 8> b = {1, 2, 3};
+        small_vector<int, 8> c = {1, 2, 4};
+        EXPECT_TRUE(a == b);
+        EXPECT_TRUE(a < c);
+    }
+    {
+        std::array<int, 4> source = {1, 2, 3, 4};
+        small_vector values(source);
+        EXPECT_EQ(values.size(), 4U);
+        EXPECT_EQ(values[0], 1);
+        EXPECT_EQ(values[3], 4);
+        static_assert(std::is_same_v<decltype(values)::value_type, int>);
+    }
+
+    // The erased inline-capacity API should work for read-only and mutable callers.
+    {
+        small_vector<int, 2> a = {1, 2, 3};
+        small_vector<int, 8> b = {4, 5};
+        EXPECT_EQ(std::accumulate(a.begin(), a.end(), 0), 6);
+        EXPECT_EQ(std::accumulate(b.begin(), b.end(), 0), 9);
+    }
+    {
+        small_vector<int, 2> src = {1, 2, 3};
+        small_vector<int, 8> dst = {9};
+        dst.assign(src);
+        EXPECT_EQ(dst, small_vector<int, 8>{1, 2, 3});
+
+        dst.push_back(dst.back());
+        EXPECT_EQ(dst, small_vector<int, 8>{1, 2, 3, 3});
+
+        src.push_back(src.back());
+        EXPECT_EQ(src, small_vector<int, 2>{1, 2, 3, 3});
+    }
+}
+
+TEST_CASE(special_value_types_and_lifetime) {
+    // Destruction should clean up non-trivial values after inline and heap growth.
+    {
+        nontrivial_alive = 0;
+        small_vector<nontrivial, 2> values;
+        values.emplace_back(1);
+        values.emplace_back(2);
+        values.emplace_back(3);
         EXPECT_EQ(nontrivial_alive, 3);
+    }
+    EXPECT_EQ(nontrivial_alive, 0);
+
+    // Move-only values should support emplacement, move construction, and move assignment.
+    {
+        small_vector<move_only, 2> values;
+        values.emplace_back(1);
+        values.emplace_back(2);
+        values.push_back(move_only{3});
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0].value, 1);
+        EXPECT_EQ(values[1].value, 2);
+        EXPECT_EQ(values[2].value, 3);
+    }
+    {
+        small_vector<move_only, 2> src;
+        src.emplace_back(10);
+        src.emplace_back(20);
+        small_vector<move_only, 2> moved(std::move(src));
+        EXPECT_EQ(moved.size(), 2U);
+        EXPECT_EQ(moved[0].value, 10);
+        EXPECT_EQ(moved[1].value, 20);
+    }
+    {
+        small_vector<move_only, 2> src;
+        src.emplace_back(5);
+        src.emplace_back(6);
+
+        small_vector<move_only, 2> dst;
+        dst.emplace_back(99);
+        dst = std::move(src);
+
+        EXPECT_EQ(dst.size(), 2U);
+        EXPECT_EQ(dst[0].value, 5);
+        EXPECT_EQ(dst[1].value, 6);
+    }
+
+    // Trivially copyable and non-trivial types should both survive growth and reassignment.
+    {
+        static_assert(std::is_trivially_copyable_v<int>);
+        small_vector<int, 4> values = {1, 2, 3, 4};
+        small_vector<int, 4> copy = values;
+        small_vector<int, 4> moved = std::move(copy);
+
+        EXPECT_EQ(values, moved);
+        moved.insert(moved.begin() + 2, 99);
+        EXPECT_EQ(moved[2], 99);
+        EXPECT_EQ(moved[3], 3);
+    }
+    {
+        nontrivial_alive = 0;
+        small_vector<nontrivial, 2> values;
+        values.emplace_back(1);
+        values.emplace_back(2);
+        EXPECT_EQ(nontrivial_alive, 2);
+
+        values.emplace_back(3);
+        EXPECT_EQ(nontrivial_alive, 3);
+        EXPECT_EQ(values[0].value, 1);
+        EXPECT_EQ(values[2].value, 3);
+
+        values.erase(values.begin());
+        EXPECT_EQ(nontrivial_alive, 2);
+
+        values.clear();
+        EXPECT_EQ(nontrivial_alive, 0);
+    }
+    {
+        nontrivial_alive = 0;
+        small_vector<nontrivial, 2> src;
+        src.emplace_back(10);
+        src.emplace_back(20);
+
+        small_vector<nontrivial, 2> copy(src);
+        EXPECT_EQ(nontrivial_alive, 4);
+        EXPECT_EQ(copy[0].value, 10);
+
+        small_vector<nontrivial, 2> assigned;
+        assigned = src;
+        EXPECT_EQ(nontrivial_alive, 6);
     }
     EXPECT_EQ(nontrivial_alive, 0);
 }
 
-// ---------------------------------------------------------------------------
-// 9. Copy assignment
-// ---------------------------------------------------------------------------
-TEST_CASE(copy_assignment_self) {
-    small_vector<int, 4> v = {1, 2, 3};
-    const auto* p = &v;
-    v = *p;
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0], 1);
+TEST_CASE(growth_and_edge_cases) {
+    // Repeated growth should preserve values and support post-construction algorithms.
+    {
+        small_vector<int, 4> values;
+        constexpr int count = 1000;
+        for(int i = 0; i < count; ++i) {
+            values.push_back(i);
+        }
+
+        EXPECT_EQ(values.size(), static_cast<std::size_t>(count));
+        EXPECT_FALSE(values.inlined());
+        for(int i = 0; i < count; ++i) {
+            EXPECT_EQ(values[static_cast<std::size_t>(i)], i);
+        }
+    }
+    {
+        small_vector<int, 2> values(500);
+        std::iota(values.begin(), values.end(), 0);
+        EXPECT_EQ(values.size(), 500U);
+        EXPECT_EQ(values[0], 0);
+        EXPECT_EQ(values[499], 499);
+    }
+
+    // Empty containers should support erase, insert, swap, and reserve transitions.
+    {
+        small_vector<int, 4> values;
+        const auto it = values.erase(values.begin(), values.end());
+        EXPECT_TRUE(it == values.end());
+        EXPECT_TRUE(values.empty());
+    }
+    {
+        small_vector<int, 4> values;
+        values.insert(values.begin(), 42);
+        EXPECT_EQ(values.size(), 1U);
+        EXPECT_EQ(values[0], 42);
+    }
+    {
+        small_vector<int, 4> values;
+        std::array<int, 3> source = {1, 2, 3};
+        values.insert(values.begin(), source);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 1);
+    }
+    {
+        small_vector<int, 4> values;
+        values.insert(values.begin(), 3, 7);
+        EXPECT_EQ(values.size(), 3U);
+        EXPECT_EQ(values[0], 7);
+        EXPECT_EQ(values[2], 7);
+    }
+    {
+        small_vector<int, 4> a;
+        small_vector<int, 4> b = {1, 2, 3};
+        a.swap(b);
+        EXPECT_EQ(a.size(), 3U);
+        EXPECT_TRUE(b.empty());
+    }
+    {
+        small_vector<int, 4> values;
+        values.reserve(10);
+        EXPECT_TRUE(values.empty());
+        EXPECT_GE(values.capacity(), 10U);
+        values.push_back(1);
+        EXPECT_EQ(values.size(), 1U);
+    }
 }
 
-TEST_CASE(copy_assignment_inline_to_inline) {
-    small_vector<int, 4> a = {1, 2};
-    small_vector<int, 4> b = {3, 4, 5};
-    a = b;
-    EXPECT_EQ(a, b);
-    EXPECT_TRUE(a.inlined());
-}
-
-TEST_CASE(copy_assignment_inline_to_allocated) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 2> b = {4};
-    a = b;
-    EXPECT_EQ(a.size(), 1U);
-    EXPECT_EQ(a[0], 4);
-}
-
-TEST_CASE(copy_assignment_allocated_to_inline) {
-    small_vector<int, 2> a = {1};
-    small_vector<int, 2> b = {4, 5, 6, 7};
-    a = b;
-    EXPECT_EQ(a, b);
-    EXPECT_FALSE(a.inlined());
-}
-
-TEST_CASE(copy_assignment_allocated_to_allocated) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 2> b = {4, 5, 6, 7, 8};
-    a = b;
-    EXPECT_EQ(a, b);
-}
-
-TEST_CASE(copy_assignment_cross_capacity) {
-    small_vector<int, 2> src = {1, 2, 3};
-    small_vector<int, 8> dst;
-    dst.assign(src);
-    EXPECT_EQ(dst.size(), 3U);
-    EXPECT_EQ(dst[2], 3);
-    EXPECT_TRUE(dst.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 10. Move assignment
-// ---------------------------------------------------------------------------
-TEST_CASE(move_assignment_self) {
-    small_vector<int, 4> v = {1, 2, 3};
-    auto* p = &v;
-    v = std::move(*p);
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0], 1);
-}
-
-TEST_CASE(move_assignment_inline_to_inline) {
-    small_vector<int, 4> a = {1, 2};
-    small_vector<int, 4> b = {3, 4, 5};
-    a = std::move(b);
-    EXPECT_EQ(a.size(), 3U);
-    EXPECT_EQ(a[0], 3);
-}
-
-TEST_CASE(move_assignment_allocated_steal) {
-    small_vector<int, 2> a = {1};
-    small_vector<int, 2> b = {3, 4, 5, 6};
-    auto* old_data = b.data();
-    a = std::move(b);
-    EXPECT_EQ(a.size(), 4U);
-    EXPECT_EQ(a.data(), old_data);
-}
-
-TEST_CASE(move_assignment_allocated_to_inline) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 2> b = {7};
-    a = std::move(b);
-    EXPECT_EQ(a.size(), 1U);
-    EXPECT_EQ(a[0], 7);
-}
-
-TEST_CASE(move_assignment_cross_capacity) {
-    small_vector<int, 2> src = {1, 2, 3};
-    small_vector<int, 8> dst = {10};
-    dst.assign(std::move(src));
-    EXPECT_EQ(dst.size(), 3U);
-    EXPECT_EQ(dst[0], 1);
-    EXPECT_TRUE(dst.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 11. Initializer list assignment
-// ---------------------------------------------------------------------------
-TEST_CASE(initializer_list_assignment) {
-    small_vector<int, 4> v = {1, 2};
-    v = {10, 20, 30, 40, 50};
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_EQ(v[0], 10);
-    EXPECT_EQ(v[4], 50);
-}
-
-// ---------------------------------------------------------------------------
-// 12. assign()
-// ---------------------------------------------------------------------------
-TEST_CASE(assign_count_value) {
-    small_vector<int, 4> v = {1};
-    v.assign(5, 99);
-    EXPECT_EQ(v.size(), 5U);
-    for(std::size_t i = 0; i < v.size(); ++i)
-        EXPECT_EQ(v[i], 99);
-}
-
-TEST_CASE(assign_range) {
-    std::array<int, 3> arr = {7, 8, 9};
-    small_vector<int, 4> v = {1, 2, 3, 4, 5};
-    v.assign(arr.begin(), arr.end());
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0], 7);
-}
-
-TEST_CASE(assign_initializer_list) {
-    small_vector<int, 4> v;
-    v.assign({100, 200});
-    EXPECT_EQ(v.size(), 2U);
-    EXPECT_EQ(v[0], 100);
-    EXPECT_EQ(v[1], 200);
-}
-
-// ---------------------------------------------------------------------------
-// 13. push_back
-// ---------------------------------------------------------------------------
-TEST_CASE(push_back_copy_and_move) {
-    small_vector<std::string, 2> v;
-    std::string s = "hello";
-    v.push_back(s);
-    EXPECT_EQ(v[0], std::string("hello"));
-    EXPECT_EQ(s, std::string("hello"));  // original preserved
-
-    v.push_back(std::string("world"));
-    EXPECT_EQ(v[1], std::string("world"));
-    EXPECT_TRUE(v.inlined());
-
-    v.push_back(std::string("!"));
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_FALSE(v.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 14. emplace_back
-// ---------------------------------------------------------------------------
-TEST_CASE(emplace_back_various) {
-    small_vector<std::string, 2> v;
-    v.emplace_back(3, 'x');
-    EXPECT_EQ(v[0], std::string("xxx"));
-
-    v.emplace_back("test");
-    EXPECT_EQ(v[1], std::string("test"));
-
-    auto& ref = v.emplace_back("more");
-    EXPECT_EQ(ref, std::string("more"));
-}
-
-// ---------------------------------------------------------------------------
-// 15. pop_back
-// ---------------------------------------------------------------------------
-TEST_CASE(pop_back) {
-    small_vector<int, 4> v = {1, 2, 3};
-    v.pop_back();
-    EXPECT_EQ(v.size(), 2U);
-    EXPECT_EQ(v.back(), 2);
-
-    v.pop_back();
-    v.pop_back();
-    EXPECT_TRUE(v.empty());
-}
-
-// ---------------------------------------------------------------------------
-// 16. insert
-// ---------------------------------------------------------------------------
-TEST_CASE(insert_single_copy) {
-    small_vector<int, 4> v = {1, 3};
-    int val = 2;
-    auto it = v.insert(v.begin() + 1, val);
-    EXPECT_EQ(*it, 2);
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 2, 3}));
-}
-
-TEST_CASE(insert_single_move) {
-    small_vector<std::string, 4> v = {std::string("a"), std::string("c")};
-    auto it = v.insert(v.begin() + 1, std::string("b"));
-    EXPECT_EQ(*it, std::string("b"));
-    EXPECT_EQ(v.size(), 3U);
-}
-
-TEST_CASE(insert_count_value) {
-    small_vector<int, 2> v = {1, 5};
-    v.insert(v.begin() + 1, 3, 9);
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_EQ(v[1], 9);
-    EXPECT_EQ(v[3], 9);
-    EXPECT_EQ(v[4], 5);
-}
-
-TEST_CASE(insert_range_forward) {
-    small_vector<int, 4> v = {1, 5};
-    std::array<int, 3> arr = {2, 3, 4};
-    v.insert(v.begin() + 1, arr.begin(), arr.end());
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 2, 3, 4, 5}));
-}
-
-TEST_CASE(insert_range_input) {
-    small_vector<int, 4> v = {1, 5};
-    int data[] = {2, 3, 4};
-    v.insert(v.begin() + 1, input_iter<int>(data), input_iter<int>(data + 3));
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_EQ(v[1], 2);
-    EXPECT_EQ(v[4], 5);
-}
-
-TEST_CASE(insert_initializer_list) {
-    small_vector<int, 4> v = {1, 5};
-    v.insert(v.begin() + 1, {2, 3, 4});
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 2, 3, 4, 5}));
-}
-
-TEST_CASE(insert_at_beginning) {
-    small_vector<int, 4> v = {2, 3};
-    v.insert(v.begin(), 1);
-    EXPECT_EQ(v[0], 1);
-}
-
-TEST_CASE(insert_at_end) {
-    small_vector<int, 4> v = {1, 2};
-    v.insert(v.end(), 3);
-    EXPECT_EQ(v.back(), 3);
-}
-
-// ---------------------------------------------------------------------------
-// 17. emplace
-// ---------------------------------------------------------------------------
-TEST_CASE(emplace_at_positions) {
-    small_vector<std::string, 4> v;
-    v.emplace(v.begin(), "first");
-    v.emplace(v.end(), "last");
-    v.emplace(v.begin() + 1, 3, 'x');
-    EXPECT_EQ(v[0], std::string("first"));
-    EXPECT_EQ(v[1], std::string("xxx"));
-    EXPECT_EQ(v[2], std::string("last"));
-}
-
-// ---------------------------------------------------------------------------
-// 18. erase
-// ---------------------------------------------------------------------------
-TEST_CASE(erase_single) {
-    small_vector<int, 4> v = {1, 2, 3, 4};
-    auto it = v.erase(v.begin() + 1);
-    EXPECT_EQ(*it, 3);
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 3, 4}));
-}
-
-TEST_CASE(erase_range) {
-    small_vector<int, 4> v = {1, 2, 3, 4, 5};
-    auto it = v.erase(v.begin() + 1, v.begin() + 4);
-    EXPECT_EQ(*it, 5);
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 5}));
-}
-
-TEST_CASE(erase_first) {
-    small_vector<int, 4> v = {1, 2, 3};
-    v.erase(v.begin());
-    EXPECT_EQ(v, (small_vector<int, 4>{2, 3}));
-}
-
-TEST_CASE(erase_last) {
-    small_vector<int, 4> v = {1, 2, 3};
-    v.erase(v.end() - 1);
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 2}));
-}
-
-TEST_CASE(erase_all_range) {
-    small_vector<int, 4> v = {1, 2, 3};
-    v.erase(v.begin(), v.end());
-    EXPECT_TRUE(v.empty());
-}
-
-// ---------------------------------------------------------------------------
-// 19. clear
-// ---------------------------------------------------------------------------
-TEST_CASE(clear) {
-    small_vector<int, 3> v = {1, 2, 3, 4};
-    auto cap = v.capacity();
-    v.clear();
-    EXPECT_TRUE(v.empty());
-    EXPECT_EQ(v.capacity(), cap);  // capacity preserved
-
-    v.push_back(9);
-    EXPECT_EQ(v[0], 9);
-}
-
-// ---------------------------------------------------------------------------
-// 20. resize
-// ---------------------------------------------------------------------------
-TEST_CASE(resize_grow_default) {
-    small_vector<int, 4> v = {1, 2};
-    v.resize(5);
-    EXPECT_EQ(v.size(), 5U);
-    EXPECT_EQ(v[0], 1);
-    EXPECT_EQ(v[1], 2);
-    EXPECT_EQ(v[2], 0);
-    EXPECT_EQ(v[4], 0);
-}
-
-TEST_CASE(resize_grow_value) {
-    small_vector<int, 4> v = {1};
-    v.resize(4, 77);
-    EXPECT_EQ(v.size(), 4U);
-    EXPECT_EQ(v[0], 1);
-    EXPECT_EQ(v[3], 77);
-}
-
-TEST_CASE(resize_shrink) {
-    small_vector<int, 4> v = {1, 2, 3, 4, 5};
-    v.resize(2);
-    EXPECT_EQ(v.size(), 2U);
-    EXPECT_EQ(v[1], 2);
-}
-
-// ---------------------------------------------------------------------------
-// 21. reserve
-// ---------------------------------------------------------------------------
-TEST_CASE(reserve_grow) {
-    small_vector<int, 4> v;
-    v.reserve(100);
-    EXPECT_GE(v.capacity(), 100U);
-    EXPECT_FALSE(v.inlined());
-    EXPECT_TRUE(v.empty());
-}
-
-TEST_CASE(reserve_noop) {
-    small_vector<int, 4> v = {1, 2};
-    auto cap = v.capacity();
-    v.reserve(2);
-    EXPECT_EQ(v.capacity(), cap);
-}
-
-// ---------------------------------------------------------------------------
-// 22. shrink_to_fit
-// ---------------------------------------------------------------------------
-TEST_CASE(shrink_to_fit_back_to_inline) {
-    small_vector<int, 4> v = {1, 2, 3};
-    v.reserve(16);
-    EXPECT_FALSE(v.inlined());
-
-    v.shrink_to_fit();
-    EXPECT_TRUE(v.inlined());
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[2], 3);
-}
-
-TEST_CASE(shrink_to_fit_reduce_heap) {
-    small_vector<int, 2> v;
-    for(int i = 0; i < 100; ++i)
-        v.push_back(i);
-    v.resize(5);
-    auto old_cap = v.capacity();
-    v.shrink_to_fit();
-    EXPECT_LE(v.capacity(), old_cap);
-    EXPECT_EQ(v.size(), 5U);
-}
-
-// ---------------------------------------------------------------------------
-// 23. swap
-// ---------------------------------------------------------------------------
-TEST_CASE(swap_inline_inline) {
-    small_vector<int, 4> a = {1, 2};
-    small_vector<int, 4> b = {3, 4, 5};
-    a.swap(b);
-    EXPECT_EQ(a, (small_vector<int, 4>{3, 4, 5}));
-    EXPECT_EQ(b, (small_vector<int, 4>{1, 2}));
-}
-
-TEST_CASE(swap_inline_heap) {
-    small_vector<int, 2> a = {1, 2};
-    small_vector<int, 2> b = {3, 4, 5, 6};
-    EXPECT_TRUE(a.inlined());
-    EXPECT_FALSE(b.inlined());
-
-    a.swap(b);
-    EXPECT_EQ(a.size(), 4U);
-    EXPECT_EQ(b.size(), 2U);
-    EXPECT_EQ(a[0], 3);
-    EXPECT_EQ(b[0], 1);
-}
-
-TEST_CASE(swap_heap_heap) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 2> b = {4, 5, 6, 7};
-    a.swap(b);
-    EXPECT_EQ(a.size(), 4U);
-    EXPECT_EQ(b.size(), 3U);
-    EXPECT_EQ(a[0], 4);
-    EXPECT_EQ(b[0], 1);
-}
-
-TEST_CASE(swap_cross_capacity) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 6> b = {7, 8};
-    a.swap(b);
-    EXPECT_EQ(a, (small_vector<int, 2>{7, 8}));
-    EXPECT_EQ(b, (small_vector<int, 6>{1, 2, 3}));
-    EXPECT_TRUE(a.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 24. at
-// ---------------------------------------------------------------------------
-TEST_CASE(at_valid) {
-    small_vector<int, 4> v = {10, 20, 30};
-    EXPECT_EQ(v.at(0), 10);
-    EXPECT_EQ(v.at(2), 30);
-
-    const auto& cv = v;
-    EXPECT_EQ(cv.at(1), 20);
-}
-
-// ---------------------------------------------------------------------------
-// 25. operator[]
-// ---------------------------------------------------------------------------
-TEST_CASE(subscript_operator) {
-    small_vector<int, 4> v = {5, 10, 15};
-    EXPECT_EQ(v[0], 5);
-    EXPECT_EQ(v[2], 15);
-
-    v[1] = 99;
-    EXPECT_EQ(v[1], 99);
-}
-
-// ---------------------------------------------------------------------------
-// 26. front/back
-// ---------------------------------------------------------------------------
-TEST_CASE(front_back) {
-    small_vector<int, 4> v = {1, 2, 3};
-    EXPECT_EQ(v.front(), 1);
-    EXPECT_EQ(v.back(), 3);
-
-    v.front() = 10;
-    v.back() = 30;
-    EXPECT_EQ(v[0], 10);
-    EXPECT_EQ(v[2], 30);
-
-    const auto& cv = v;
-    EXPECT_EQ(cv.front(), 10);
-    EXPECT_EQ(cv.back(), 30);
-}
-
-// ---------------------------------------------------------------------------
-// 27. data
-// ---------------------------------------------------------------------------
-TEST_CASE(data_pointer) {
-    small_vector<int, 4> v = {1, 2, 3};
-    int* p = v.data();
-    EXPECT_EQ(p[0], 1);
-    EXPECT_EQ(p[2], 3);
-
-    const auto& cv = v;
-    const int* cp = cv.data();
-    EXPECT_EQ(cp[1], 2);
-}
-
-// ---------------------------------------------------------------------------
-// 28. size/empty/capacity/max_size
-// ---------------------------------------------------------------------------
-TEST_CASE(size_empty_capacity_max_size) {
-    small_vector<int, 4> v;
-    EXPECT_TRUE(v.empty());
-    EXPECT_EQ(v.size(), 0U);
-    EXPECT_EQ(v.capacity(), 4U);
-    EXPECT_TRUE(v.max_size() > 0U);
-
-    v.push_back(1);
-    EXPECT_FALSE(v.empty());
-    EXPECT_EQ(v.size(), 1U);
-}
-
-// ---------------------------------------------------------------------------
-// 29. inlined/inlinable/inline_capacity
-// ---------------------------------------------------------------------------
-TEST_CASE(inlined_inlinable_inline_capacity) {
-    small_vector<int, 3> v;
-    EXPECT_TRUE(v.inlined());
-    EXPECT_TRUE(v.inlinable());
-    EXPECT_EQ(v.inline_capacity(), 3U);
-
-    v = {1, 2, 3};
-    EXPECT_TRUE(v.inlined());
-    EXPECT_TRUE(v.inlinable());
-
-    v.push_back(4);
-    EXPECT_FALSE(v.inlined());
-    EXPECT_FALSE(v.inlinable());  // size > inline_capacity
-
-    v.resize(2);
-    EXPECT_FALSE(v.inlined());   // still on heap (not yet shrunk)
-    EXPECT_TRUE(v.inlinable());  // but could fit inline
-
-    v.shrink_to_fit();
-    EXPECT_TRUE(v.inlined());
-}
-
-// ---------------------------------------------------------------------------
-// 30. iterators
-// ---------------------------------------------------------------------------
-TEST_CASE(iterators_begin_end) {
-    small_vector<int, 4> v = {1, 2, 3, 4};
-    int sum = 0;
-    for(auto it = v.begin(); it != v.end(); ++it)
-        sum += *it;
-    EXPECT_EQ(sum, 10);
-}
-
-TEST_CASE(iterators_const) {
-    const small_vector<int, 4> v = {1, 2, 3};
-    int sum = 0;
-    for(auto it = v.cbegin(); it != v.cend(); ++it)
-        sum += *it;
-    EXPECT_EQ(sum, 6);
-}
-
-TEST_CASE(iterators_reverse) {
-    small_vector<int, 4> v = {1, 2, 3};
-    small_vector<int, 4> reversed;
-    for(auto it = v.rbegin(); it != v.rend(); ++it)
-        reversed.push_back(*it);
-    EXPECT_EQ(reversed, (small_vector<int, 4>{3, 2, 1}));
-}
-
-TEST_CASE(iterators_const_reverse) {
-    const small_vector<int, 4> v = {10, 20, 30};
-    auto it = v.crbegin();
-    EXPECT_EQ(*it, 30);
-    ++it;
-    EXPECT_EQ(*it, 20);
-    ++it;
-    EXPECT_EQ(*it, 10);
-    ++it;
-    EXPECT_TRUE(it == v.crend());
-}
-
-TEST_CASE(iterators_range_for) {
-    small_vector<int, 4> v = {1, 2, 3};
-    int product = 1;
-    for(auto x: v)
-        product *= x;
-    EXPECT_EQ(product, 6);
-}
-
-// ---------------------------------------------------------------------------
-// 31. Comparison operators
-// ---------------------------------------------------------------------------
-TEST_CASE(comparison_equal) {
-    small_vector<int, 4> a = {1, 2, 3};
-    small_vector<int, 4> b = {1, 2, 3};
-    EXPECT_TRUE(a == b);
-    EXPECT_FALSE(a != b);
-}
-
-TEST_CASE(comparison_not_equal_values) {
-    small_vector<int, 4> a = {1, 2, 3};
-    small_vector<int, 4> b = {1, 2, 4};
-    EXPECT_FALSE(a == b);
-    EXPECT_TRUE(a != b);
-}
-
-TEST_CASE(comparison_not_equal_sizes) {
-    small_vector<int, 4> a = {1, 2};
-    small_vector<int, 4> b = {1, 2, 3};
-    EXPECT_FALSE(a == b);
-}
-
-TEST_CASE(comparison_spaceship) {
-    small_vector<int, 4> a = {1, 2, 3};
-    small_vector<int, 4> b = {1, 2, 4};
-    small_vector<int, 4> c = {1, 2, 3};
-    small_vector<int, 4> d = {1, 2};
-
-    EXPECT_TRUE(a < b);
-    EXPECT_TRUE(b > a);
-    EXPECT_TRUE(a <= c);
-    EXPECT_TRUE(a >= c);
-    EXPECT_TRUE(d < a);  // shorter prefix is less
-}
-
-TEST_CASE(comparison_cross_capacity) {
-    small_vector<int, 2> a = {1, 2, 3};
-    small_vector<int, 8> b = {1, 2, 3};
-    EXPECT_TRUE(a == b);
-
-    small_vector<int, 8> c = {1, 2, 4};
-    EXPECT_TRUE(a < c);
-}
-
-// ---------------------------------------------------------------------------
-// 32. Non-member swap
-// ---------------------------------------------------------------------------
-TEST_CASE(non_member_swap) {
-    small_vector<int, 4> a = {1, 2};
-    small_vector<int, 4> b = {3, 4, 5};
-    swap(a, b);
-    EXPECT_EQ(a.size(), 3U);
-    EXPECT_EQ(b.size(), 2U);
-    EXPECT_EQ(a[0], 3);
-    EXPECT_EQ(b[0], 1);
-}
-
-// ---------------------------------------------------------------------------
-// 33. Non-member erase/erase_if
-// ---------------------------------------------------------------------------
-TEST_CASE(non_member_erase) {
-    small_vector<int, 4> v = {1, 2, 2, 3, 2, 4};
-    auto removed = erase(v, 2);
-    EXPECT_EQ(removed, 3U);
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 3, 4}));
-}
-
-TEST_CASE(non_member_erase_if) {
-    small_vector<int, 4> v = {1, 2, 3, 4, 5, 6};
-    auto removed = erase_if(v, [](int x) { return x % 2 == 0; });
-    EXPECT_EQ(removed, 3U);
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 3, 5}));
-}
-
-// ---------------------------------------------------------------------------
-// 34. Non-member begin/end/size/ssize/empty/data
-// ---------------------------------------------------------------------------
-TEST_CASE(non_member_accessors) {
-    small_vector<int, 4> v = {10, 20, 30};
-
-    EXPECT_EQ(*begin(v), 10);
-    EXPECT_EQ(*(end(v) - 1), 30);
-    EXPECT_EQ(*cbegin(v), 10);
-
-    EXPECT_EQ(size(v), 3U);
-    EXPECT_EQ(ssize(v), 3);
-    EXPECT_FALSE(empty(v));
-    EXPECT_EQ(data(v)[1], 20);
-
-    auto rit = rbegin(v);
-    EXPECT_EQ(*rit, 30);
-    auto crit = crbegin(v);
-    EXPECT_EQ(*crit, 30);
-
-    const auto& cv = v;
-    EXPECT_EQ(*begin(cv), 10);
-    EXPECT_EQ(*rbegin(cv), 30);
-    EXPECT_EQ(data(cv)[0], 10);
-
-    small_vector<int, 4> ev;
-    EXPECT_TRUE(empty(ev));
-}
-
-// ---------------------------------------------------------------------------
-// 35. CTAD
-// ---------------------------------------------------------------------------
-TEST_CASE(ctad_from_iterators) {
-    std::array<int, 4> arr = {1, 2, 3, 4};
-    small_vector sv(arr.begin(), arr.end());
-    EXPECT_EQ(sv.size(), 4U);
-    EXPECT_EQ(sv[0], 1);
-    EXPECT_EQ(sv[3], 4);
-    // Type should be small_vector<int, N> for some default N.
-    static_assert(std::is_same_v<decltype(sv)::value_type, int>);
-}
-
-// ---------------------------------------------------------------------------
-// 36. Move-only types
-// ---------------------------------------------------------------------------
-TEST_CASE(move_only_push_emplace) {
-    small_vector<move_only, 2> v;
-    v.emplace_back(1);
-    v.emplace_back(2);
-    v.push_back(move_only{3});
-
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0].value, 1);
-    EXPECT_EQ(v[1].value, 2);
-    EXPECT_EQ(v[2].value, 3);
-}
-
-TEST_CASE(move_only_move_constructor) {
-    small_vector<move_only, 2> a;
-    a.emplace_back(10);
-    a.emplace_back(20);
-
-    small_vector<move_only, 2> b(std::move(a));
-    EXPECT_EQ(b.size(), 2U);
-    EXPECT_EQ(b[0].value, 10);
-    EXPECT_EQ(b[1].value, 20);
-}
-
-TEST_CASE(move_only_move_assignment) {
-    small_vector<move_only, 2> a;
-    a.emplace_back(5);
-    a.emplace_back(6);
-
-    small_vector<move_only, 2> b;
-    b.emplace_back(99);
-    b = std::move(a);
-
-    EXPECT_EQ(b.size(), 2U);
-    EXPECT_EQ(b[0].value, 5);
-    EXPECT_EQ(b[1].value, 6);
-}
-
-// ---------------------------------------------------------------------------
-// 37. Exception safety
-// ---------------------------------------------------------------------------
 #ifdef __cpp_exceptions
 
 struct throwing_copy {
@@ -1009,10 +1053,12 @@ struct throwing_copy {
     explicit throwing_copy(int v) : value(v) {}
 
     throwing_copy(const throwing_copy& other) : value(other.value) {
-        if(throw_after == 0)
+        if(throw_after == 0) {
             throw std::runtime_error("copy failed");
-        if(throw_after > 0)
+        }
+        if(throw_after > 0) {
             --throw_after;
+        }
     }
 
     throwing_copy(throwing_copy&& other) noexcept : value(other.value) {
@@ -1027,232 +1073,49 @@ struct throwing_copy {
     }
 };
 
-TEST_CASE(at_throws_out_of_range) {
-    small_vector<int, 2> v = {1};
-    EXPECT_EQ(v.at(0), 1);
-    EXPECT_THROWS(v.at(1));
-    EXPECT_THROWS(v.at(100));
-}
+TEST_CASE(exception_safety) {
+    // Throwing accessors and modifiers should preserve existing state.
+    {
+        small_vector<int, 2> values = {1};
+        EXPECT_EQ(values.at(0), 1);
+        EXPECT_THROWS(values.at(1));
+        EXPECT_THROWS(values.at(100));
+    }
+    {
+        small_vector<throwing_copy, 2> values;
+        values.push_back(throwing_copy{1});
+        values.push_back(throwing_copy{2});
 
-TEST_CASE(push_back_exception_strong_guarantee) {
-    small_vector<throwing_copy, 2> v;
-    v.push_back(throwing_copy{1});
-    v.push_back(throwing_copy{2});
+        const int before0 = values[0].value;
+        const int before1 = values[1].value;
 
-    const int before0 = v[0].value;
-    const int before1 = v[1].value;
+        throwing_copy::throw_after = 0;
+        EXPECT_THROWS(values.push_back(values[0]));
+        throwing_copy::throw_after = -1;
 
-    throwing_copy::throw_after = 0;
-    EXPECT_THROWS(v.push_back(v[0]));
-    throwing_copy::throw_after = -1;
+        EXPECT_EQ(values.size(), 2U);
+        EXPECT_EQ(values[0].value, before0);
+        EXPECT_EQ(values[1].value, before1);
+    }
+    {
+        small_vector<throwing_copy, 4> values;
+        values.push_back(throwing_copy{1});
+        values.push_back(throwing_copy{2});
+        values.push_back(throwing_copy{3});
 
-    EXPECT_EQ(v.size(), 2U);
-    EXPECT_EQ(v[0].value, before0);
-    EXPECT_EQ(v[1].value, before1);
-}
+        const auto size_before = values.size();
+        throwing_copy candidate{99};
+        throwing_copy::throw_after = 0;
+        EXPECT_THROWS(values.insert(values.begin() + 1, candidate));
+        throwing_copy::throw_after = -1;
 
-TEST_CASE(insert_exception_safety) {
-    small_vector<throwing_copy, 4> v;
-    v.push_back(throwing_copy{1});
-    v.push_back(throwing_copy{2});
-    v.push_back(throwing_copy{3});
-
-    const auto size_before = v.size();
-
-    throwing_copy val{99};
-    throwing_copy::throw_after = 0;
-    EXPECT_THROWS(v.insert(v.begin() + 1, val));
-    throwing_copy::throw_after = -1;
-
-    // After exception, size should not have increased beyond what it was
-    EXPECT_LE(v.size(), size_before + 1);
+        EXPECT_LE(values.size(), size_before + 1);
+    }
 }
 
 #endif  // __cpp_exceptions
 
-// ---------------------------------------------------------------------------
-// 38. append
-// ---------------------------------------------------------------------------
-TEST_CASE(append_range) {
-    small_vector<int, 3> v = {1, 2, 3};
-    std::array<int, 3> tail = {4, 5, 6};
-    v.append(tail.begin(), tail.end());
-    EXPECT_EQ(v, (small_vector<int, 3>{1, 2, 3, 4, 5, 6}));
-}
-
-TEST_CASE(append_initializer_list) {
-    small_vector<int, 4> v = {1, 2};
-    v.append({3, 4, 5});
-    EXPECT_EQ(v, (small_vector<int, 4>{1, 2, 3, 4, 5}));
-}
-
-TEST_CASE(append_from_small_vector_copy) {
-    small_vector<int, 4> src = {4, 5};
-    small_vector<int, 4> dst = {1, 2, 3};
-    dst.append(src);
-    EXPECT_EQ(dst, (small_vector<int, 4>{1, 2, 3, 4, 5}));
-    EXPECT_EQ(src.size(), 2U);  // source preserved
-}
-
-TEST_CASE(append_from_small_vector_move) {
-    small_vector<int, 4> src = {4, 5};
-    small_vector<int, 4> dst = {1, 2, 3};
-    dst.append(std::move(src));
-    EXPECT_EQ(dst, (small_vector<int, 4>{1, 2, 3, 4, 5}));
-    EXPECT_TRUE(src.empty());  // source cleared after move
-}
-
-// ---------------------------------------------------------------------------
-// 39. Trivially copyable types (verify correctness under memcpy optimization)
-// ---------------------------------------------------------------------------
-TEST_CASE(trivially_copyable_types) {
-    static_assert(std::is_trivially_copyable_v<int>);
-
-    small_vector<int, 4> v = {1, 2, 3, 4};
-    small_vector<int, 4> copy = v;
-    EXPECT_EQ(v, copy);
-
-    small_vector<int, 4> moved = std::move(copy);
-    EXPECT_EQ(moved, v);
-
-    // insert in the middle triggers memmove-like paths
-    moved.insert(moved.begin() + 2, 99);
-    EXPECT_EQ(moved[2], 99);
-    EXPECT_EQ(moved[3], 3);
-}
-
-// ---------------------------------------------------------------------------
-// 40. Non-trivial types (verify proper construction/destruction)
-// ---------------------------------------------------------------------------
-TEST_CASE(nontrivial_type_lifecycle) {
-    nontrivial_alive = 0;
-    {
-        small_vector<nontrivial, 2> v;
-        v.emplace_back(1);
-        v.emplace_back(2);
-        EXPECT_EQ(nontrivial_alive, 2);
-
-        v.emplace_back(3);  // triggers reallocation
-        EXPECT_EQ(nontrivial_alive, 3);
-        EXPECT_EQ(v[0].value, 1);
-        EXPECT_EQ(v[2].value, 3);
-
-        v.erase(v.begin());
-        EXPECT_EQ(nontrivial_alive, 2);
-
-        v.clear();
-        EXPECT_EQ(nontrivial_alive, 0);
-    }
-    EXPECT_EQ(nontrivial_alive, 0);
-}
-
-TEST_CASE(nontrivial_copy_and_assign) {
-    nontrivial_alive = 0;
-    {
-        small_vector<nontrivial, 2> a;
-        a.emplace_back(10);
-        a.emplace_back(20);
-
-        small_vector<nontrivial, 2> b(a);
-        EXPECT_EQ(nontrivial_alive, 4);
-        EXPECT_EQ(b[0].value, 10);
-
-        small_vector<nontrivial, 2> c;
-        c = a;
-        EXPECT_EQ(nontrivial_alive, 6);
-    }
-    EXPECT_EQ(nontrivial_alive, 0);
-}
-
-// ---------------------------------------------------------------------------
-// 41. Large number of elements: growth beyond inline capacity multiple times
-// ---------------------------------------------------------------------------
-TEST_CASE(large_growth) {
-    small_vector<int, 4> v;
-    constexpr int N = 1000;
-    for(int i = 0; i < N; ++i)
-        v.push_back(i);
-
-    EXPECT_EQ(v.size(), static_cast<std::size_t>(N));
-    EXPECT_FALSE(v.inlined());
-
-    for(int i = 0; i < N; ++i)
-        EXPECT_EQ(v[static_cast<std::size_t>(i)], i);
-}
-
-TEST_CASE(large_growth_with_iota) {
-    small_vector<int, 2> v(500);
-    std::iota(v.begin(), v.end(), 0);
-    EXPECT_EQ(v.size(), 500U);
-    EXPECT_EQ(v[0], 0);
-    EXPECT_EQ(v[499], 499);
-}
-
-// ---------------------------------------------------------------------------
-// 42. Empty vector operations
-// ---------------------------------------------------------------------------
-TEST_CASE(empty_erase_range) {
-    small_vector<int, 4> v;
-    auto it = v.erase(v.begin(), v.end());
-    EXPECT_TRUE(it == v.end());
-    EXPECT_TRUE(v.empty());
-}
-
-TEST_CASE(empty_insert_at_begin) {
-    small_vector<int, 4> v;
-    v.insert(v.begin(), 42);
-    EXPECT_EQ(v.size(), 1U);
-    EXPECT_EQ(v[0], 42);
-}
-
-TEST_CASE(empty_insert_range_at_begin) {
-    small_vector<int, 4> v;
-    std::array<int, 3> arr = {1, 2, 3};
-    v.insert(v.begin(), arr.begin(), arr.end());
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0], 1);
-}
-
-TEST_CASE(empty_insert_count_at_begin) {
-    small_vector<int, 4> v;
-    v.insert(v.begin(), 3, 7);
-    EXPECT_EQ(v.size(), 3U);
-    EXPECT_EQ(v[0], 7);
-    EXPECT_EQ(v[2], 7);
-}
-
-TEST_CASE(empty_swap) {
-    small_vector<int, 4> a;
-    small_vector<int, 4> b = {1, 2, 3};
-    a.swap(b);
-    EXPECT_EQ(a.size(), 3U);
-    EXPECT_TRUE(b.empty());
-}
-
-TEST_CASE(empty_reserve_and_push) {
-    small_vector<int, 4> v;
-    v.reserve(10);
-    EXPECT_TRUE(v.empty());
-    EXPECT_GE(v.capacity(), 10U);
-    v.push_back(1);
-    EXPECT_EQ(v.size(), 1U);
-}
-
-TEST_CASE(zero_inline_capacity) {
-    small_vector<int, 0> v;
-    EXPECT_TRUE(v.empty());
-    EXPECT_EQ(v.inline_capacity(), 0U);
-    EXPECT_TRUE(v.inlined());  // no allocation yet
-
-    v.push_back(1);
-    v.push_back(2);
-    EXPECT_EQ(v.size(), 2U);
-    EXPECT_FALSE(v.inlined());
-    EXPECT_EQ(v[0], 1);
-    EXPECT_EQ(v[1], 2);
-}
-
-};  // TEST_SUITE(common_small_vector)
+};  // TEST_SUITE(small_vector)
 
 }  // namespace
 
