@@ -122,6 +122,7 @@ public:
     /// Search for the first character satisfying the predicate.
     template <typename F>
     [[nodiscard]] constexpr std::size_t find_if(F f, std::size_t from = 0) const {
+        from = std::min(from, size());
         string_ref s = drop_front(from);
         while(!s.empty()) {
             if(f(s.front())) {
@@ -147,6 +148,7 @@ public:
     /// Search for the first occurrence of a string, ignoring case.
     [[nodiscard]] constexpr std::size_t find_insensitive(string_ref str,
                                                          std::size_t from = 0) const {
+        from = std::min(from, size());
         string_ref s = drop_front(from);
         while(s.size() >= str.size()) {
             if(s.starts_with_insensitive(str)) {
@@ -160,9 +162,11 @@ public:
 
     /// Search for the last character, ignoring case.
     [[nodiscard]] constexpr std::size_t rfind_insensitive(char c, std::size_t from = npos) const {
-        from = std::min(from, size());
-        std::size_t i = from;
-        while(i != 0) {
+        if(empty()) {
+            return npos;
+        }
+        from = std::min(from, size() - 1);
+        for(std::size_t i = from + 1; i != 0;) {
             --i;
             if(to_lower(data()[i]) == to_lower(c)) {
                 return i;
@@ -188,7 +192,11 @@ public:
 
     /// Find the last character in the string that is not c, or npos if not found.
     [[nodiscard]] constexpr std::size_t find_last_not_of(char c, std::size_t from = npos) const {
-        for(std::size_t i = std::min(from, size()); i != 0;) {
+        if(empty()) {
+            return npos;
+        }
+        from = std::min(from, size() - 1);
+        for(std::size_t i = from + 1; i != 0;) {
             --i;
             if(data()[i] != c) {
                 return i;
@@ -425,11 +433,16 @@ public:
 
     /// Split into substrings around occurrences of a separator string.
     /// Calls callback(string_ref) for each part.
+    /// If separator is empty, calls callback once with the entire string.
     template <typename Callback>
     constexpr void split(Callback callback,
                          string_ref separator,
                          int max_split = -1,
                          bool keep_empty = true) const {
+        if(separator.empty()) {
+            callback(*this);
+            return;
+        }
         string_ref s = *this;
         while(max_split-- != 0) {
             std::size_t idx = s.find(separator);

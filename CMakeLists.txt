@@ -70,8 +70,20 @@ if(EVENTIDE_ENABLE_TEST)
     if(MSVC)
         add_compile_options("/Zc:preprocessor")
     else()
-        add_compile_options("-fsanitize=address" "-g")
-        add_link_options("-fsanitize=address" "-g")
+        add_compile_options(
+            "$<$<CONFIG:Debug>:-fsanitize=address>"
+            "$<$<CONFIG:Debug>:-g>"
+            "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+            "$<$<CONFIG:Release>:-g1>"
+            "$<$<CONFIG:MinSizeRel>:-g1>"
+        )
+        add_link_options(
+            "$<$<CONFIG:Debug>:-fsanitize=address>"
+            "$<$<CONFIG:Debug>:-g>"
+            "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+            "$<$<CONFIG:Release>:-g1>"
+            "$<$<CONFIG:MinSizeRel>:-g1>"
+        )
     endif()
 endif()
 
