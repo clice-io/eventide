@@ -139,7 +139,7 @@ struct Peer<CodecT>::Self {
             auto written = co_await transport->write_message(payload);
             if(!written) {
                 outgoing_queue.clear();
-                fail_pending_requests("transport write failed");
+                fail_pending_requests(written.error().message);
                 break;
             }
         }
@@ -230,7 +230,7 @@ struct Peer<CodecT>::Self {
                        RequestCallback callback,
                        std::string params,
                        cancellation_token token) {
-        auto guarded_result = co_await with_token(token, callback(id, params, token));
+        auto guarded_result = co_await with_token(callback(id, params, token), token);
         incoming_requests.erase(id);
 
         if(!guarded_result.has_value()) {
@@ -380,28 +380,30 @@ template <typename CodecT>
 task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view method,
                                                            std::string params,
                                                            request_options opts) {
-    // Handle timeout by creating an effective cancellation token.
+    // Handle timeout by creating a separate timeout token.
     std::shared_ptr<cancellation_source> timeout_source;
-    cancellation_token effective_token = std::move(opts.token);
+    cancellation_token user_token = std::move(opts.token);
+    cancellation_token timeout_token;
 
     if(opts.timeout.has_value()) {
         if(*opts.timeout <= std::chrono::milliseconds::zero()) {
             co_return std::unexpected(
                 RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
         }
+
         timeout_source = std::make_shared<cancellation_source>();
         if(self) {
             self->loop.schedule(
                 detail::cancel_after_timeout(*opts.timeout, timeout_source, self->loop));
         }
-        effective_token = timeout_source->token();
+        timeout_token = timeout_source->token();
     }
 
     if(!self || !self->transport) {
         co_return std::unexpected("transport is null");
     }
 
-    if(effective_token.cancelled()) {
+    if(user_token.cancelled()) {
         co_return std::unexpected(
             RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
     }
@@ -422,7 +424,8 @@ task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view metho
     auto wait_pending = [](const std::shared_ptr<typename Self::PendingRequest>& state) -> task<> {
         co_await state->ready.wait();
     };
-    auto wait_result = co_await with_token(effective_token, wait_pending(pending));
+    auto wait_result =
+        co_await with_token(wait_pending(pending), user_token, timeout_token);
     if(!wait_result.has_value()) {
         if(auto it = self->pending_requests.find(request_id);
            it != self->pending_requests.end()) {
@@ -438,12 +441,14 @@ task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view metho
             }
         }
 
-        if(timeout_source && timeout_source->cancelled()) {
+        // Determine whether the user token or the timeout caused cancellation.
+        // Check user token first: if the user explicitly cancelled, report that.
+        if(user_token.cancelled()) {
             co_return std::unexpected(
-                RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
+                RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
         }
         co_return std::unexpected(
-            RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+            RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
     }
 
     if(!pending->response.has_value()) {

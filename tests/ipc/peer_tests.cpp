@@ -97,9 +97,9 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<bool> write_message(std::string_view payload) override {
+    task<Result<void>> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
-        co_return true;
+        co_return Result<void>{};
     }
 
     const std::vector<std::string>& outgoing() const {
@@ -136,12 +136,12 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<bool> write_message(std::string_view payload) override {
+    task<Result<void>> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return true;
+        co_return Result<void>{};
     }
 
     void push_incoming(std::string payload) {

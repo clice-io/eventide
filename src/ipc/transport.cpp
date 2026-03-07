@@ -9,6 +9,8 @@
 #include <string_view>
 #include <utility>
 
+#include "eventide/ipc/codec.h"
+
 namespace eventide::ipc {
 
 namespace {
@@ -88,19 +90,19 @@ std::string to_error_text(error err) {
     return std::string(err.message());
 }
 
-std::expected<stream, std::string> to_stream(result<tcp_socket> socket) {
+Result<stream> to_stream(result<tcp_socket> socket) {
     if(!socket) {
-        return std::unexpected(to_error_text(socket.error()));
+        return std::unexpected(RPCError(to_error_text(socket.error())));
     }
     return stream(std::move(*socket));
 }
 
-std::expected<stream, std::string> open_stdio_stream(int fd, bool readable, event_loop& loop) {
+Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
     switch(guess_handle(fd)) {
         case handle_type::tty: {
             auto opened = console::open(fd, console::options{readable}, loop);
             if(!opened) {
-                return std::unexpected(to_error_text(opened.error()));
+                return std::unexpected(RPCError(to_error_text(opened.error())));
             }
             return stream(std::move(*opened));
         }
@@ -110,7 +112,7 @@ std::expected<stream, std::string> open_stdio_stream(int fd, bool readable, even
         case handle_type::unknown: {
             auto opened = pipe::open(fd, pipe::options{}, loop);
             if(!opened) {
-                return std::unexpected(to_error_text(opened.error()));
+                return std::unexpected(RPCError(to_error_text(opened.error())));
             }
             return stream(std::move(*opened));
         }
@@ -118,19 +120,19 @@ std::expected<stream, std::string> open_stdio_stream(int fd, bool readable, even
         case handle_type::tcp: {
             auto opened = tcp_socket::open(fd, loop);
             if(!opened) {
-                return std::unexpected(to_error_text(opened.error()));
+                return std::unexpected(RPCError(to_error_text(opened.error())));
             }
             return stream(std::move(*opened));
         }
 
-        default: return std::unexpected("unsupported stdio handle type");
+        default: return std::unexpected(RPCError("unsupported stdio handle type"));
     }
 }
 
 }  // namespace
 
-std::expected<void, std::string> Transport::close_output() {
-    return std::unexpected("transport does not support closing output");
+Result<void> Transport::close_output() {
+    return std::unexpected(RPCError("transport does not support closing output"));
 }
 
 StreamTransport::StreamTransport(stream input, stream output) :
@@ -139,8 +141,7 @@ StreamTransport::StreamTransport(stream input, stream output) :
 StreamTransport::StreamTransport(stream stream) :
     read_stream(std::move(stream)), shared_stream(true) {}
 
-std::expected<std::unique_ptr<StreamTransport>, std::string>
-    StreamTransport::open_stdio(event_loop& loop) {
+Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop& loop) {
     auto input = open_stdio_stream(0, true, loop);
     if(!input) {
         return std::unexpected(input.error());
@@ -154,8 +155,9 @@ std::expected<std::unique_ptr<StreamTransport>, std::string>
     return std::make_unique<StreamTransport>(std::move(*input), std::move(*output));
 }
 
-task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
-    StreamTransport::connect_tcp(std::string_view host, int port, event_loop& loop) {
+task<Result<std::unique_ptr<StreamTransport>>> StreamTransport::connect_tcp(std::string_view host,
+                                                                            int port,
+                                                                            event_loop& loop) {
     auto connected = co_await tcp_socket::connect(host, port, loop);
     auto channel = to_stream(std::move(connected));
     if(!channel) {
@@ -165,8 +167,7 @@ task<std::expected<std::unique_ptr<StreamTransport>, std::string>>
     co_return std::make_unique<StreamTransport>(std::move(*channel));
 }
 
-std::expected<std::unique_ptr<StreamTransport>, std::string>
-    StreamTransport::open_tcp(int fd, event_loop& loop) {
+Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event_loop& loop) {
     auto channel = to_stream(tcp_socket::open(fd, loop));
     if(!channel) {
         return std::unexpected(channel.error());
@@ -229,7 +230,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
     co_return payload;
 }
 
-task<bool> StreamTransport::write_message(std::string_view payload) {
+task<Result<void>> StreamTransport::write_message(std::string_view payload) {
     std::string framed;
     framed.reserve(32 + payload.size());
     framed.append("Content-Length: ");
@@ -239,10 +240,13 @@ task<bool> StreamTransport::write_message(std::string_view payload) {
 
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
-    co_return !status.has_error();
+    if(status.has_error()) {
+        co_return std::unexpected(RPCError(std::string(status.message())));
+    }
+    co_return Result<void>{};
 }
 
-std::expected<void, std::string> StreamTransport::close_output() {
+Result<void> StreamTransport::close_output() {
     if(shared_stream) {
         read_stream = stream{};
         return {};

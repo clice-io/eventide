@@ -29,7 +29,7 @@ int main() {
     et::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
-        std::println(stderr, "failed to open stdio transport: {}", transport.error());
+        std::println(stderr, "failed to open stdio transport: {}", transport.error().message);
         return 1;
     }
 

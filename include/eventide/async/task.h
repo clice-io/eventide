@@ -127,6 +127,9 @@ public:
 
         promise_type() {
             this->address = handle().address();
+            if constexpr(is_cancellation_t<T>) {
+                this->policy = InterceptCancel;
+            }
         }
     };
 

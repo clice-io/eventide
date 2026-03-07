@@ -196,7 +196,7 @@ void example_cancellation() {
         };
 
         // with_token wraps a task so it can be cancelled externally.
-        auto guarded = with_token(source.token(), slow_work());
+        auto guarded = with_token(slow_work(), source.token());
 
         auto canceler = [&]() -> task<> {
             co_await sleep(10ms, loop);
@@ -320,7 +320,7 @@ void example_combined() {
         co_return completed_pairs;
     };
 
-    auto guarded = with_token(source.token(), driver());
+    auto guarded = with_token(driver(), source.token());
 
     // Cancel after 12ms — some pairs will finish, others won't.
     auto canceler = [&]() -> task<> {

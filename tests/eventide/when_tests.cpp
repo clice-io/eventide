@@ -311,7 +311,7 @@ TEST_CASE(when_all_token_cancel) {
         co_return a + b;
     };
 
-    auto guarded = with_token(source.token(), combined());
+    auto guarded = with_token(combined(), source.token());
 
     auto canceler = [&]() -> task<> {
         co_await sleep(std::chrono::milliseconds{1}, loop);
@@ -350,7 +350,7 @@ TEST_CASE(when_any_token_cancel) {
         co_return idx;
     };
 
-    auto guarded = with_token(source.token(), combined());
+    auto guarded = with_token(combined(), source.token());
 
     auto canceler = [&]() -> task<> {
         co_await sleep(std::chrono::milliseconds{1}, loop);
@@ -630,7 +630,7 @@ TEST_CASE(scope_token_cancel) {
         co_return 1;
     };
 
-    auto guarded = with_token(source.token(), driver());
+    auto guarded = with_token(driver(), source.token());
 
     auto canceler = [&]() -> task<> {
         co_await sleep(std::chrono::milliseconds{1}, loop);

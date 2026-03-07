@@ -152,7 +152,7 @@ task<> branch_cancel(event_loop& loop) {
     cancellation_source source;
 
     auto target = [&]() -> task<> {
-        co_await with_token(source.token(), slow_work(loop));
+        co_await with_token(slow_work(loop), source.token());
     };
 
     auto canceler = [&]() -> task<> {
