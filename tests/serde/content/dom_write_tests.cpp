@@ -4,7 +4,7 @@
 #include <string_view>
 
 #include "eventide/zest/zest.h"
-#include "eventide/serde/json/dom.h"
+#include "eventide/serde/json/json.h"
 
 namespace eventide::serde::json {
 

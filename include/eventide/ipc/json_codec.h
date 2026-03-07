@@ -10,11 +10,11 @@ namespace eventide::serde {
 
 // JSON serialization: integer → int, absent/null → null
 template <typename Config>
-struct serialize_traits<json::simd::Serializer<Config>, eventide::ipc::protocol::RequestID> {
-    using value_type = typename json::simd::Serializer<Config>::value_type;
-    using error_type = typename json::simd::Serializer<Config>::error_type;
+struct serialize_traits<json::Serializer<Config>, eventide::ipc::protocol::RequestID> {
+    using value_type = typename json::Serializer<Config>::value_type;
+    using error_type = typename json::Serializer<Config>::error_type;
 
-    static auto serialize(json::simd::Serializer<Config>& serializer,
+    static auto serialize(json::Serializer<Config>& serializer,
                           const eventide::ipc::protocol::RequestID& id)
         -> std::expected<value_type, error_type> {
         if(id.has_value()) {
@@ -27,10 +27,10 @@ struct serialize_traits<json::simd::Serializer<Config>, eventide::ipc::protocol:
 // JSON deserialization: three-state (absent kept by struct skip, null/integer deserialized)
 // Uses peek_type to dispatch: null → null state, number → integer state, else → error.
 template <typename Config>
-struct deserialize_traits<json::simd::Deserializer<Config>, eventide::ipc::protocol::RequestID> {
-    using error_type = typename json::simd::Deserializer<Config>::error_type;
+struct deserialize_traits<json::Deserializer<Config>, eventide::ipc::protocol::RequestID> {
+    using error_type = typename json::Deserializer<Config>::error_type;
 
-    static auto deserialize(json::simd::Deserializer<Config>& deserializer,
+    static auto deserialize(json::Deserializer<Config>& deserializer,
                             eventide::ipc::protocol::RequestID& id)
         -> std::expected<void, error_type> {
         auto type = deserializer.peek_type();

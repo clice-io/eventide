@@ -2,15 +2,15 @@
 
 #include "../roundtrip_suite.h"
 #include "eventide/zest/zest.h"
-#include "eventide/serde/json/simd_deserializer.h"
-#include "eventide/serde/json/simd_serializer.h"
+#include "eventide/serde/json/deserializer.h"
+#include "eventide/serde/json/serializer.h"
 
 namespace eventide::serde {
 
 namespace {
 
-using json::simd::from_json;
-using json::simd::to_json;
+using json::from_json;
+using json::to_json;
 
 auto rt = []<typename T>(const T& input) -> std::expected<T, json::error_kind> {
     auto encoded = to_json(input);

@@ -7,8 +7,8 @@
 #include <string_view>
 
 #include "eventide/serde/bincode/bincode.h"
-#include "eventide/serde/json/simd_deserializer.h"
-#include "eventide/serde/json/simd_serializer.h"
+#include "eventide/serde/json/deserializer.h"
+#include "eventide/serde/json/serializer.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde {
@@ -24,11 +24,11 @@ struct RawValue {
 // --- JSON serialization: inline raw JSON text ---
 
 template <typename Config>
-struct serialize_traits<json::simd::Serializer<Config>, RawValue> {
-    using value_type = typename json::simd::Serializer<Config>::value_type;
-    using error_type = typename json::simd::Serializer<Config>::error_type;
+struct serialize_traits<json::Serializer<Config>, RawValue> {
+    using value_type = typename json::Serializer<Config>::value_type;
+    using error_type = typename json::Serializer<Config>::error_type;
 
-    static auto serialize(json::simd::Serializer<Config>& serializer, const RawValue& value)
+    static auto serialize(json::Serializer<Config>& serializer, const RawValue& value)
         -> std::expected<value_type, error_type> {
         if(value.empty()) {
             return serializer.serialize_null();
@@ -40,10 +40,10 @@ struct serialize_traits<json::simd::Serializer<Config>, RawValue> {
 // --- JSON deserialization: capture raw JSON view ---
 
 template <typename Config>
-struct deserialize_traits<json::simd::Deserializer<Config>, RawValue> {
-    using error_type = typename json::simd::Deserializer<Config>::error_type;
+struct deserialize_traits<json::Deserializer<Config>, RawValue> {
+    using error_type = typename json::Deserializer<Config>::error_type;
 
-    static auto deserialize(json::simd::Deserializer<Config>& deserializer, RawValue& value)
+    static auto deserialize(json::Deserializer<Config>& deserializer, RawValue& value)
         -> std::expected<void, error_type> {
         auto raw = deserializer.deserialize_raw_json_view();
         if(!raw) {

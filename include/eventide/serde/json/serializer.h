@@ -18,7 +18,7 @@
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
 
-namespace eventide::serde::json::simd {
+namespace eventide::serde::json {
 
 template <typename Config = config::default_config>
 class Serializer {
@@ -410,4 +410,4 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
 
 static_assert(serde::serializer_like<Serializer<>>);
 
-}  // namespace eventide::serde::json::simd
+}  // namespace eventide::serde::json

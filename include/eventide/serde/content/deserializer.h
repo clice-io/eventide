@@ -14,20 +14,20 @@
 #include <vector>
 
 #include "eventide/serde/config.h"
+#include "eventide/serde/content/dom.h"
+#include "eventide/serde/content/error.h"
 #include "eventide/serde/detail/deserialize_helpers.h"
 #include "eventide/serde/detail/narrow.h"
-#include "eventide/serde/json/dom.h"
-#include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
 #include "eventide/serde/variant.h"
 
-namespace eventide::serde::json::yy {
+namespace eventide::serde::content {
 
 template <typename Config = config::default_config>
 class Deserializer {
 public:
     using config_type = Config;
-    using error_type = json::error_kind;
+    using error_type = content::error_kind;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -35,23 +35,24 @@ public:
     using status_t = result_t<void>;
 
     class DeserializeArray :
-        public serde::detail::IndexedArrayDeserializer<Deserializer, json::ArrayRef> {
-        using Base = serde::detail::IndexedArrayDeserializer<Deserializer, json::ArrayRef>;
+        public serde::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef> {
+        using Base = serde::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
         friend class Deserializer;
 
         DeserializeArray(Deserializer& deserializer,
-                         json::ArrayRef array,
+                         content::ArrayRef array,
                          std::size_t expectedLength,
                          bool isStrictLength) :
             Base(deserializer, array, array.size(), expectedLength, isStrictLength) {}
     };
 
     class DeserializeObject :
-        public serde::detail::IndexedObjectDeserializer<Deserializer, json::ValueRef> {
-        using Base = serde::detail::IndexedObjectDeserializer<Deserializer, json::ValueRef>;
+        public serde::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef> {
+        using Base = serde::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
         friend class Deserializer;
 
-        DeserializeObject(Deserializer& deserializer, json::ObjectRef object) : Base(deserializer) {
+        DeserializeObject(Deserializer& deserializer, content::ObjectRef object) :
+            Base(deserializer) {
             auto collected = deserializer.collect_object_entries(object);
             if(!collected) {
                 deserializer.mark_invalid(collected.error());
@@ -66,13 +67,13 @@ public:
     using DeserializeMap = DeserializeObject;
     using DeserializeStruct = DeserializeObject;
 
-    explicit Deserializer(const json::Value& value) : root_value(value.as_ref()) {
+    explicit Deserializer(const content::Value& value) : root_value(value.as_ref()) {
         if(!root_value.valid()) {
             mark_invalid();
         }
     }
 
-    explicit Deserializer(json::ValueRef value) : root_value(value) {
+    explicit Deserializer(content::ValueRef value) : root_value(value) {
         if(!root_value.valid()) {
             mark_invalid();
         }
@@ -138,7 +139,7 @@ public:
     }
 
     status_t deserialize_bool(bool& value) {
-        return read_scalar(value, [](json::ValueRef ref) -> result_t<bool> {
+        return read_scalar(value, [](content::ValueRef ref) -> result_t<bool> {
             auto parsed = ref.get_bool();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -150,7 +151,7 @@ public:
     template <serde::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](json::ValueRef ref) -> result_t<std::int64_t> {
+        auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<std::int64_t> {
             auto parsed = ref.get_int();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -174,7 +175,7 @@ public:
     template <serde::uint_like T>
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
-        auto status = read_scalar(parsed, [](json::ValueRef ref) -> result_t<std::uint64_t> {
+        auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<std::uint64_t> {
             auto parsed = ref.get_uint();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -198,7 +199,7 @@ public:
     template <serde::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
-        auto status = read_scalar(parsed, [](json::ValueRef ref) -> result_t<double> {
+        auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<double> {
             auto parsed = ref.get_double();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -221,7 +222,7 @@ public:
 
     status_t deserialize_char(char& value) {
         std::string_view text;
-        auto status = read_scalar(text, [](json::ValueRef ref) -> result_t<std::string_view> {
+        auto status = read_scalar(text, [](content::ValueRef ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -244,7 +245,7 @@ public:
 
     status_t deserialize_str(std::string& value) {
         std::string_view text;
-        auto status = read_scalar(text, [](json::ValueRef ref) -> result_t<std::string_view> {
+        auto status = read_scalar(text, [](content::ValueRef ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -307,12 +308,12 @@ public:
         return structure;
     }
 
-    result_t<json::Value> capture_dom_value() {
+    result_t<content::Value> capture_dom_value() {
         auto source = consume_value_ref();
         if(!source) {
             return std::unexpected(source.error());
         } else {
-            auto copied = json::Value::copy_of(*source);
+            auto copied = content::Value::copy_of(*source);
             if(!copied.has_value()) {
                 mark_invalid(copied.error());
                 return std::unexpected(current_error());
@@ -323,8 +324,8 @@ public:
     }
 
 private:
-    friend class serde::detail::IndexedArrayDeserializer<Deserializer, json::ArrayRef>;
-    friend class serde::detail::IndexedObjectDeserializer<Deserializer, json::ValueRef>;
+    friend class serde::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
+    friend class serde::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
 
     enum class value_kind : std::uint8_t {
         null,
@@ -360,9 +361,9 @@ private:
     }
 
     template <typename T>
-    status_t deserialize_from_value_ref(json::ValueRef input, T& out) {
+    status_t deserialize_from_value_ref(content::ValueRef input, T& out) {
         struct value_scope {
-            value_scope(Deserializer& deserializer, json::ValueRef input) :
+            value_scope(Deserializer& deserializer, content::ValueRef input) :
                 deserializer(deserializer),
                 previous_has_current_value(deserializer.has_current_value),
                 previous_current_value(deserializer.current_value) {
@@ -377,21 +378,20 @@ private:
 
             Deserializer& deserializer;
             bool previous_has_current_value;
-            json::ValueRef previous_current_value;
+            content::ValueRef previous_current_value;
         };
 
         value_scope scope(*this, input);
         return serde::deserialize(*this, out);
     }
 
-    /// Bridge methods for shared deserialize helpers.
     template <typename T>
-    status_t deserialize_element_value(json::ArrayRef array, std::size_t index, T& out) {
+    status_t deserialize_element_value(content::ArrayRef array, std::size_t index, T& out) {
         return deserialize_from_value_ref(array[index], out);
     }
 
     template <typename T>
-    status_t deserialize_entry_value(json::ValueRef value, T& out) {
+    status_t deserialize_entry_value(content::ValueRef value, T& out) {
         return deserialize_from_value_ref(value, out);
     }
 
@@ -437,7 +437,7 @@ private:
     }
 
     result_t<std::vector<typename DeserializeObject::entry>>
-        collect_object_entries(json::ObjectRef object) {
+        collect_object_entries(content::ObjectRef object) {
         std::vector<typename DeserializeObject::entry> entries;
         entries.reserve(object.size());
 
@@ -451,7 +451,7 @@ private:
         return entries;
     }
 
-    result_t<json::ValueRef> access_value_ref(bool consume) {
+    result_t<content::ValueRef> access_value_ref(bool consume) {
         if(!is_valid) {
             return std::unexpected(current_error());
         }
@@ -468,15 +468,15 @@ private:
         return root_value;
     }
 
-    result_t<json::ValueRef> peek_value_ref() {
+    result_t<content::ValueRef> peek_value_ref() {
         return access_value_ref(false);
     }
 
-    result_t<json::ValueRef> consume_value_ref() {
+    result_t<content::ValueRef> consume_value_ref() {
         return access_value_ref(true);
     }
 
-    result_t<json::ArrayRef> open_array() {
+    result_t<content::ArrayRef> open_array() {
         auto ref = consume_value_ref();
         if(!ref) {
             return std::unexpected(ref.error());
@@ -490,7 +490,7 @@ private:
         return *array;
     }
 
-    result_t<json::ObjectRef> open_object() {
+    result_t<content::ObjectRef> open_object() {
         auto ref = consume_value_ref();
         if(!ref) {
             return std::unexpected(ref.error());
@@ -519,11 +519,13 @@ private:
     bool is_valid = true;
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
-    json::ValueRef root_value{};
+    content::ValueRef root_value{};
     bool has_current_value = false;
-    json::ValueRef current_value{};
+    content::ValueRef current_value{};
 };
 
 static_assert(serde::deserializer_like<Deserializer<>>);
 
-}  // namespace eventide::serde::json::yy
+}  // namespace eventide::serde::content
+
+#include "eventide/serde/internally_tagged.h"

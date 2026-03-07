@@ -2,16 +2,16 @@
 #include <variant>
 
 #include "eventide/zest/zest.h"
-#include "eventide/serde/json/simd_deserializer.h"
-#include "eventide/serde/json/simd_serializer.h"
+#include "eventide/serde/json/deserializer.h"
+#include "eventide/serde/json/serializer.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde {
 
 namespace {
 
-using json::simd::from_json;
-using json::simd::to_json;
+using json::from_json;
+using json::to_json;
 
 struct Basic {
     bool is_valid{};
@@ -23,7 +23,7 @@ struct Basic {
 // ── Externally tagged ──────────────────────────────────────────────
 
 using ExtVariant = annotation<std::variant<int, std::string, Basic>,
-                              schema::externally_tagged<"integer", "text", "basic">>;
+                              schema::externally_tagged::names<"integer", "text", "basic">>;
 
 struct ExtTaggedHolder {
     std::string name;
@@ -36,7 +36,7 @@ struct ExtTaggedHolder {
 
 using AdjVariant =
     annotation<std::variant<int, std::string, Basic>,
-               schema::adjacently_tagged<"type", "value", "integer", "text", "basic">>;
+               schema::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
 
 struct AdjTaggedHolder {
     std::string name;
@@ -48,7 +48,32 @@ struct AdjTaggedHolder {
 // ── Variant with monostate ─────────────────────────────────────────
 
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               schema::externally_tagged<"none", "integer", "text">>;
+                               schema::externally_tagged::names<"none", "integer", "text">>;
+
+// ── Internally tagged ─────────────────────────────────────────────
+
+struct ShapeCircle {
+    double radius{};
+
+    auto operator==(const ShapeCircle&) const -> bool = default;
+};
+
+struct ShapeRect {
+    double width{};
+    double height{};
+
+    auto operator==(const ShapeRect&) const -> bool = default;
+};
+
+using IntTagVariant = annotation<std::variant<ShapeCircle, ShapeRect>,
+                                 schema::internally_tagged<"kind">::names<"circle", "rect">>;
+
+struct IntTagHolder {
+    std::string label;
+    IntTagVariant shape;
+
+    auto operator==(const IntTagHolder&) const -> bool = default;
+};
 
 TEST_SUITE(serde_simdjson_tagged_variant) {
 
@@ -189,6 +214,71 @@ TEST_CASE(adjacently_tagged_in_struct) {
 TEST_CASE(adjacently_tagged_unknown_tag_fails) {
     AdjVariant parsed;
     auto status = from_json(R"({"type":"unknown","value":42})", parsed);
+    EXPECT_FALSE(status.has_value());
+}
+
+// ── internally_tagged tests ───────────────────────────────────────
+
+TEST_CASE(internally_tagged_circle_serialize) {
+    IntTagVariant v = ShapeCircle{.radius = 3.14};
+    auto encoded = to_json(v);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"kind":"circle","radius":3.14})");
+}
+
+TEST_CASE(internally_tagged_rect_serialize) {
+    IntTagVariant v = ShapeRect{.width = 10.0, .height = 20.0};
+    auto encoded = to_json(v);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"kind":"rect","width":10.0,"height":20.0})");
+}
+
+TEST_CASE(internally_tagged_circle_roundtrip) {
+    IntTagVariant v = ShapeCircle{.radius = 3.14};
+    auto encoded = to_json(v);
+    ASSERT_TRUE(encoded.has_value());
+
+    IntTagVariant parsed;
+    auto status = from_json(*encoded, parsed);
+    ASSERT_TRUE(status.has_value());
+    auto& circle = std::get<ShapeCircle>(parsed);
+    EXPECT_EQ(circle.radius, 3.14);
+}
+
+TEST_CASE(internally_tagged_rect_roundtrip) {
+    IntTagVariant v = ShapeRect{.width = 10.0, .height = 20.0};
+    auto encoded = to_json(v);
+    ASSERT_TRUE(encoded.has_value());
+
+    IntTagVariant parsed;
+    auto status = from_json(*encoded, parsed);
+    ASSERT_TRUE(status.has_value());
+    auto& rect = std::get<ShapeRect>(parsed);
+    EXPECT_EQ(rect.width, 10.0);
+    EXPECT_EQ(rect.height, 20.0);
+}
+
+TEST_CASE(internally_tagged_in_struct) {
+    IntTagHolder input{.label = "my shape", .shape = ShapeCircle{.radius = 5.0}};
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"label":"my shape","shape":{"kind":"circle","radius":5.0}})");
+
+    IntTagHolder parsed{};
+    auto status = from_json(*encoded, parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed, input);
+}
+
+TEST_CASE(internally_tagged_unknown_tag_fails) {
+    IntTagVariant parsed;
+    auto status = from_json(R"({"kind":"triangle","side":5})", parsed);
+    EXPECT_FALSE(status.has_value());
+}
+
+TEST_CASE(internally_tagged_missing_tag_fails) {
+    IntTagVariant parsed;
+    auto status = from_json(R"({"radius":5})", parsed);
     EXPECT_FALSE(status.has_value());
 }
 

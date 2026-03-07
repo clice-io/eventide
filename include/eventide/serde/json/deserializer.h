@@ -14,12 +14,13 @@
 #include <vector>
 
 #include "eventide/serde/config.h"
+#include "eventide/serde/content/deserializer.h"
 #include "eventide/serde/detail/narrow.h"
 #include "eventide/serde/json/error.h"
 #include "eventide/serde/serde.h"
 #include "eventide/serde/variant.h"
 
-namespace eventide::serde::json::simd {
+namespace eventide::serde::json {
 
 template <typename Config = config::default_config>
 class Deserializer {
@@ -622,6 +623,18 @@ public:
         return s;
     }
 
+    result_t<content::Value> capture_dom_value() {
+        auto raw = consume_raw_json_view();
+        if(!raw) {
+            return std::unexpected(raw.error());
+        }
+        auto parsed = content::Value::parse(std::string_view(raw->data(), raw->size()));
+        if(!parsed) {
+            return std::unexpected(json::make_read_error(parsed.error()));
+        }
+        return std::move(*parsed);
+    }
+
     result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
         return consume_raw_json_view();
     }
@@ -908,4 +921,6 @@ auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind
 
 static_assert(serde::deserializer_like<Deserializer<>>);
 
-}  // namespace eventide::serde::json::simd
+}  // namespace eventide::serde::json
+
+#include "eventide/serde/internally_tagged.h"

@@ -10,6 +10,7 @@
 #include "config.h"
 #include "traits.h"
 #include "detail/backend_utils.h"
+#include "detail/field_lookup.h"
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
@@ -180,8 +181,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
             else {
                 // For tagged variants, preserve annotation so serialize() sees tagging attrs
                 if constexpr(is_specialization_of<std::variant, value_t> &&
-                             (detail::tuple_any_of_v<attrs_t, is_externally_tagged_attr> ||
-                              detail::tuple_any_of_v<attrs_t, is_adjacently_tagged_attr>)) {
+                             detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
                     return s_struct.serialize_field(effective_name, field.value());
                 } else {
                     return s_struct.serialize_field(effective_name, value);
@@ -316,8 +316,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             else {
                 // For tagged variants, preserve annotation so deserialize() sees tagging attrs
                 if constexpr(is_specialization_of<std::variant, value_t> &&
-                             (detail::tuple_any_of_v<attrs_t, is_externally_tagged_attr> ||
-                              detail::tuple_any_of_v<attrs_t, is_adjacently_tagged_attr>)) {
+                             detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
                     auto result = d_struct.deserialize_value(field.value());
                     if(!result) {
                         return std::unexpected(result.error());
@@ -340,15 +339,14 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    static_assert(TagAttr::names.size() == sizeof...(Ts),
-                  "externally_tagged: number of names must match variant alternatives");
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
     auto s_struct = s.serialize_struct("", 1);
     if(!s_struct) {
         return std::unexpected(s_struct.error());
     }
 
-    auto name = TagAttr::names[value.index()];
+    auto name = names[value.index()];
     std::expected<void, E> field_result{};
     std::visit([&](const auto& item) { field_result = s_struct->serialize_field(name, item); },
                value);
@@ -362,16 +360,15 @@ constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& valu
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    static_assert(TagAttr::names.size() == sizeof...(Ts),
-                  "adjacently_tagged: number of names must match variant alternatives");
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
     auto s_struct = s.serialize_struct("", 2);
     if(!s_struct) {
         return std::unexpected(s_struct.error());
     }
 
-    auto name = TagAttr::names[value.index()];
-    auto tag_result = s_struct->serialize_field(TagAttr::tag, name);
+    auto name = names[value.index()];
+    auto tag_result = s_struct->serialize_field(TagAttr::field_names[0], name);
     if(!tag_result) {
         return std::unexpected(tag_result.error());
     }
@@ -379,7 +376,7 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
     std::expected<void, E> content_result{};
     std::visit(
         [&](const auto& item) {
-            content_result = s_struct->serialize_field(TagAttr::content, item);
+            content_result = s_struct->serialize_field(TagAttr::field_names[1], item);
         },
         value);
 
@@ -392,8 +389,7 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    static_assert(TagAttr::names.size() == sizeof...(Ts),
-                  "externally_tagged: number of names must match variant alternatives");
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
     auto d_struct = d.deserialize_struct("", 1);
     if(!d_struct) {
@@ -417,7 +413,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
              if(matched) {
                  return;
              }
-             if(TagAttr::names[I] != key_name) {
+             if(names[I] != key_name) {
                  return;
              }
              matched = true;
@@ -458,8 +454,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    static_assert(TagAttr::names.size() == sizeof...(Ts),
-                  "adjacently_tagged: number of names must match variant alternatives");
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
 
     auto d_struct = d.deserialize_struct("", 2);
     if(!d_struct) {
@@ -471,7 +466,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     if(!tag_key) {
         return std::unexpected(tag_key.error());
     }
-    if(!tag_key->has_value() || **tag_key != TagAttr::tag) {
+    if(!tag_key->has_value() || **tag_key != TagAttr::field_names[0]) {
         return std::unexpected(E::type_mismatch);
     }
 
@@ -486,7 +481,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     if(!content_key) {
         return std::unexpected(content_key.error());
     }
-    if(!content_key->has_value() || **content_key != TagAttr::content) {
+    if(!content_key->has_value() || **content_key != TagAttr::field_names[1]) {
         return std::unexpected(E::type_mismatch);
     }
 
@@ -499,7 +494,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
              if(matched) {
                  return;
              }
-             if(TagAttr::names[I] != tag_value) {
+             if(names[I] != tag_value) {
                  return;
              }
              matched = true;
@@ -537,6 +532,103 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     return d_struct->end();
 }
 
+template <typename E, typename S, typename... Ts, typename TagAttr>
+constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
+    -> std::expected<typename S::value_type, E> {
+    constexpr auto names = resolve_tag_names<TagAttr, Ts...>();
+    constexpr std::string_view tag_field = TagAttr::field_names[0];
+
+    return std::visit(
+        [&](const auto& item) -> std::expected<typename S::value_type, E> {
+            using alt_t = std::remove_cvref_t<decltype(item)>;
+            static_assert(refl::reflectable_class<alt_t>,
+                          "internally_tagged requires struct alternatives");
+
+            using config_t = config::config_of<S>;
+            auto s_struct = s.serialize_struct("", refl::field_count<alt_t>() + 1);
+            if(!s_struct) {
+                return std::unexpected(s_struct.error());
+            }
+
+            // tag field first
+            auto tag_name = names[value.index()];
+            auto tag_status = s_struct->serialize_field(tag_field, tag_name);
+            if(!tag_status) {
+                return std::unexpected(tag_status.error());
+            }
+
+            // struct fields
+            std::expected<void, E> field_result;
+            refl::for_each(item, [&](auto field) {
+                auto r = serialize_struct_field<config_t, E>(*s_struct, field);
+                if(!r) {
+                    field_result = std::unexpected(r.error());
+                    return false;
+                }
+                return true;
+            });
+            if(!field_result) {
+                return std::unexpected(field_result.error());
+            }
+            return s_struct->end();
+        },
+        value);
+}
+
+template <typename E, typename D, typename... Ts, typename TagAttr>
+constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
+    -> std::expected<void, E>;
+
+// Implementation in eventide/serde/internally_tagged.h (requires content/deserializer.h)
+
+// ── Flatten field fallback (needs deserialize_struct_field above) ──
+
+/// Check if struct T has any flatten fields.
+template <typename T>
+consteval bool has_flatten_fields() {
+    return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        return (schema::is_field_flattened<T, Is>() || ...);
+    }(std::make_index_sequence<refl::field_count<T>()>{});
+}
+
+/// Try to match a key against flatten fields. Returns true if matched.
+template <typename T, typename Config, typename E, typename DeserializeStruct>
+auto try_flatten_fields(std::string_view key_name, DeserializeStruct& d_struct, T& value)
+    -> std::expected<bool, E> {
+    bool matched = false;
+    std::expected<void, E> nested_error;
+
+    refl::for_each(value, [&](auto field) {
+        if(matched) {
+            return false;
+        }
+
+        using field_t = typename std::remove_cvref_t<decltype(field)>::type;
+        if constexpr(!annotated_type<field_t>) {
+            return true;
+        } else {
+            using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
+            if constexpr(tuple_has_v<attrs_t, schema::flatten>) {
+                auto status = deserialize_struct_field<Config, E>(d_struct, key_name, field);
+                if(!status) {
+                    nested_error = std::unexpected(status.error());
+                    return false;
+                }
+                if(*status) {
+                    matched = true;
+                    return false;
+                }
+            }
+            return true;
+        }
+    });
+
+    if(!nested_error) {
+        return std::unexpected(nested_error.error());
+    }
+    return matched;
+}
+
 }  // namespace detail
 
 template <serializer_like S,
@@ -561,13 +653,16 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
         // Tagged variant dispatch
         if constexpr(is_specialization_of<std::variant, value_t> &&
-                     detail::tuple_any_of_v<attrs_t, is_externally_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_externally_tagged_attr>;
-            return detail::serialize_externally_tagged<E>(s, value, tag_attr{});
-        } else if constexpr(is_specialization_of<std::variant, value_t> &&
-                            detail::tuple_any_of_v<attrs_t, is_adjacently_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_adjacently_tagged_attr>;
-            return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
+                     detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
+            using tag_attr = detail::tuple_find_t<attrs_t, is_tagged_attr>;
+            constexpr auto strategy = tagged_strategy_of<tag_attr>;
+            if constexpr(strategy == tagged_strategy::external) {
+                return detail::serialize_externally_tagged<E>(s, value, tag_attr{});
+            } else if constexpr(strategy == tagged_strategy::internal) {
+                return detail::serialize_internally_tagged<E>(s, value, tag_attr{});
+            } else {
+                return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
+            }
         }
         // Behavior: enum_string — serialize enum as string
         else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
@@ -735,13 +830,16 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
 
         // Tagged variant dispatch
         if constexpr(is_specialization_of<std::variant, value_t> &&
-                     detail::tuple_any_of_v<attrs_t, is_externally_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_externally_tagged_attr>;
-            return detail::deserialize_externally_tagged<E>(d, value, tag_attr{});
-        } else if constexpr(is_specialization_of<std::variant, value_t> &&
-                            detail::tuple_any_of_v<attrs_t, is_adjacently_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_adjacently_tagged_attr>;
-            return detail::deserialize_adjacently_tagged<E>(d, value, tag_attr{});
+                     detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
+            using tag_attr = detail::tuple_find_t<attrs_t, is_tagged_attr>;
+            constexpr auto strategy = tagged_strategy_of<tag_attr>;
+            if constexpr(strategy == tagged_strategy::external) {
+                return detail::deserialize_externally_tagged<E>(d, value, tag_attr{});
+            } else if constexpr(strategy == tagged_strategy::internal) {
+                return detail::deserialize_internally_tagged<E>(d, value, tag_attr{});
+            } else {
+                return detail::deserialize_adjacently_tagged<E>(d, value, tag_attr{});
+            }
         }
         // Behavior: enum_string — deserialize string then map to enum
         else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
@@ -1040,30 +1138,35 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             }
 
             std::string_view key_name = **key;
-            bool matched = false;
-            std::expected<void, E> field_result;
 
-            refl::for_each(v, [&](auto field) {
-                auto status =
-                    detail::deserialize_struct_field<config_t, E>(*d_struct, key_name, field);
+            // O(1) lookup by field name (linear scan over compile-time table, O(N) worst case)
+            auto idx = detail::lookup_field<V, config_t>(key_name);
+            if(idx) {
+                auto status = detail::dispatch_field_by_index<V, config_t, E>(*idx, *d_struct, v);
                 if(!status) {
-                    field_result = std::unexpected(status.error());
-                    return false;
+                    return std::unexpected(status.error());
                 }
-                if(*status) {
-                    matched = true;
-                }
-                return !matched;
-            });
-
-            if(!field_result) {
-                return std::unexpected(field_result.error());
-            }
-
-            if(!matched) {
-                auto skipped = d_struct->skip_value();
-                if(!skipped) {
-                    return std::unexpected(skipped.error());
+            } else {
+                // Fallback: check flatten fields (if any)
+                if constexpr(detail::has_flatten_fields<V>()) {
+                    auto flatten_status =
+                        detail::try_flatten_fields<V, config_t, E>(key_name, *d_struct, v);
+                    if(!flatten_status) {
+                        return std::unexpected(flatten_status.error());
+                    }
+                    if(!*flatten_status) {
+                        // No flatten field matched either — skip unknown
+                        auto skipped = d_struct->skip_value();
+                        if(!skipped) {
+                            return std::unexpected(skipped.error());
+                        }
+                    }
+                } else {
+                    // No flatten fields — skip unknown
+                    auto skipped = d_struct->skip_value();
+                    if(!skipped) {
+                        return std::unexpected(skipped.error());
+                    }
                 }
             }
         }

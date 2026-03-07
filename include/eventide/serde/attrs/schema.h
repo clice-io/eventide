@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -142,27 +143,38 @@ struct rename_all {
 /// Reject unknown fields during deserialization.
 struct deny_unknown_fields {};
 
-/// Enum representation strategies (for variant / tagged-union types).
-template <fixed_string... Names>
-struct externally_tagged {
-    constexpr static std::array<std::string_view, sizeof...(Names)> names = {
-        std::string_view(Names)...};
+/// Unified tagged variant representation.
+/// - tagged<>             = externally tagged  (key is tag name, value is content)
+/// - tagged<Tag>          = internally tagged  (tag field embedded in struct)
+/// - tagged<Tag, Content> = adjacently tagged  (separate tag and content fields)
+///
+/// Use ::names<...> to provide custom tag names for each alternative.
+/// Without ::names, defaults to refl::type_name<Alt>() for each alternative.
+template <fixed_string... FieldNames>
+struct tagged {
+    static_assert(sizeof...(FieldNames) <= 2, "tagged: 0=external, 1=internal, 2=adjacent");
+
+    constexpr static auto field_names =
+        std::array<std::string_view, sizeof...(FieldNames)>{FieldNames...};
+    constexpr static bool has_custom_names = false;
+
+    template <fixed_string... Names>
+    struct names {
+        constexpr static auto field_names =
+            std::array<std::string_view, sizeof...(FieldNames)>{FieldNames...};
+        constexpr static auto tag_names = std::array<std::string_view, sizeof...(Names)>{Names...};
+        constexpr static bool has_custom_names = true;
+    };
 };
+
+/// Semantic aliases for backward compatibility.
+using externally_tagged = tagged<>;
 
 template <fixed_string Tag>
-struct internally_tagged {
-    constexpr inline static std::string_view tag = Tag;
-};
+using internally_tagged = tagged<Tag>;
 
-template <fixed_string Tag, fixed_string Content, fixed_string... Names>
-struct adjacently_tagged {
-    constexpr inline static std::string_view tag = Tag;
-    constexpr inline static std::string_view content = Content;
-    constexpr static std::array<std::string_view, sizeof...(Names)> names = {
-        std::string_view(Names)...};
-};
-
-struct untagged {};
+template <fixed_string Tag, fixed_string Content>
+using adjacently_tagged = tagged<Tag, Content>;
 
 }  // namespace schema
 
@@ -198,35 +210,35 @@ struct is_literal_attr<schema::literal<N>> {
     constexpr static bool value = true;
 };
 
+/// Unified predicate for all tagged attrs (tagged<...> and tagged<...>::names<...>).
 template <typename T>
-struct is_internally_tagged_attr {
-    constexpr static bool value = false;
+struct is_tagged_attr {
+    constexpr static bool value = requires {
+        { T::field_names } -> std::convertible_to<std::span<const std::string_view>>;
+        { T::has_custom_names } -> std::same_as<const bool&>;
+    };
 };
 
-template <fixed_string Tag>
-struct is_internally_tagged_attr<schema::internally_tagged<Tag>> {
-    constexpr static bool value = true;
-};
+/// Strategy dispatch based on field_names count.
+enum class tagged_strategy { external = 0, internal = 1, adjacent = 2 };
 
-template <typename T>
-struct is_externally_tagged_attr {
-    constexpr static bool value = false;
-};
+template <typename TagAttr>
+constexpr tagged_strategy tagged_strategy_of =
+    static_cast<tagged_strategy>(TagAttr::field_names.size());
 
-template <fixed_string... Names>
-struct is_externally_tagged_attr<schema::externally_tagged<Names...>> {
-    constexpr static bool value = true;
-};
-
-template <typename T>
-struct is_adjacently_tagged_attr {
-    constexpr static bool value = false;
-};
-
-template <fixed_string Tag, fixed_string Content, fixed_string... Names>
-struct is_adjacently_tagged_attr<schema::adjacently_tagged<Tag, Content, Names...>> {
-    constexpr static bool value = true;
-};
+/// Resolve tag names for variant alternatives.
+/// With ::names, uses the user-provided names (static_assert on count match).
+/// Without ::names, uses refl::type_name<Alt>() for each alternative.
+template <typename TagAttr, typename... Ts>
+constexpr auto resolve_tag_names() {
+    if constexpr(TagAttr::has_custom_names) {
+        static_assert(TagAttr::tag_names.size() == sizeof...(Ts),
+                      "tagged: number of custom names must match variant alternatives");
+        return TagAttr::tag_names;
+    } else {
+        return std::array<std::string_view, sizeof...(Ts)>{refl::type_name<Ts>()...};
+    }
+}
 
 // ── Composite trait ────────────────────────────────────────────────
 
@@ -236,8 +248,7 @@ constexpr bool is_schema_attr_v =
     std::is_same_v<T, schema::skip> || std::is_same_v<T, schema::flatten> ||
     is_rename_attr<T>::value || is_alias_attr<T>::value || is_literal_attr<T>::value ||
     is_specialization_of<schema::rename_all, T> || std::is_same_v<T, schema::deny_unknown_fields> ||
-    is_externally_tagged_attr<T>::value || is_internally_tagged_attr<T>::value ||
-    is_adjacently_tagged_attr<T>::value || std::is_same_v<T, schema::untagged>;
+    is_tagged_attr<T>::value;
 
 // ── Annotation detection ──────────────────────────────────────────
 

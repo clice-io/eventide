@@ -22,9 +22,9 @@
 #error "yyjson.h not found. Enable EVENTIDE_SERDE_ENABLE_YYJSON or add yyjson include paths."
 #endif
 
-#include "eventide/serde/json/error.h"
+#include "eventide/serde/content/error.h"
 
-namespace eventide::serde::json {
+namespace eventide::serde::content {
 
 class ValueRef;
 class ArrayRef;
@@ -32,7 +32,7 @@ class ObjectRef;
 class Value;
 class Array;
 class Object;
-class Builder;
+class Document;
 
 enum class ValueKind : std::uint8_t {
     invalid = 0,
@@ -386,6 +386,8 @@ public:
     using OwnedDoc::use_count;
     using OwnedDoc::mutable_doc;
 
+    [[nodiscard]] Document doc() const noexcept;
+
     [[nodiscard]] std::optional<Array> get_array() const noexcept;
 
     [[nodiscard]] std::optional<Object> get_object() const noexcept;
@@ -410,6 +412,11 @@ private:
     static auto make_mut_value(yyjson_mut_doc* doc, T&& value)
         -> std::expected<yyjson_mut_val*, error_kind>;
 
+    template <typename T>
+        requires dom_writable_value<T>
+    static auto make_mut_value(yyjson_mut_doc* doc, T&& value, yyjson_mut_doc* source_doc)
+        -> std::expected<yyjson_mut_val*, error_kind>;
+
     Value(std::uintptr_t tagged_value_handle,
           std::uintptr_t tagged_doc_handle,
           int* ref_count,
@@ -418,7 +425,7 @@ private:
 private:
     friend class Array;
     friend class Object;
-    friend class Builder;
+    friend class Document;
 };
 
 class Array : public ArrayRef, private OwnedDoc {
@@ -447,6 +454,8 @@ public:
     using OwnedDoc::use_count;
     using OwnedDoc::mutable_doc;
 
+    [[nodiscard]] Document doc() const noexcept;
+
     [[nodiscard]] Value as_value() const noexcept;
 
     template <typename T>
@@ -467,6 +476,7 @@ private:
 
 private:
     friend class Value;
+    friend class Document;
 };
 
 class Object : public ObjectRef, private OwnedDoc {
@@ -495,6 +505,8 @@ public:
     using OwnedDoc::use_count;
     using OwnedDoc::mutable_doc;
 
+    [[nodiscard]] Document doc() const noexcept;
+
     [[nodiscard]] Value as_value() const noexcept;
 
     template <typename T>
@@ -515,65 +527,60 @@ private:
 
 private:
     friend class Value;
+    friend class Document;
 };
 
-class Builder {
+class Document {
 public:
     using status_t = std::expected<void, error_kind>;
 
-    Builder() noexcept;
+    Document() noexcept;
 
     [[nodiscard]] bool valid() const noexcept;
 
-    [[nodiscard]] error_kind error() const noexcept;
+    [[nodiscard]] yyjson_mut_doc* raw() const noexcept;
 
-    [[nodiscard]] bool complete() const noexcept;
+    [[nodiscard]] Array make_array();
 
-    auto begin_object() -> status_t;
+    [[nodiscard]] Object make_object();
 
-    auto end_object() -> status_t;
+    // --- Unchecked internal API (for Serializer and other internal code) ---
 
-    auto begin_array() -> status_t;
+    [[nodiscard]] yyjson_mut_val* unchecked_make_array() noexcept;
 
-    auto end_array() -> status_t;
+    [[nodiscard]] yyjson_mut_val* unchecked_make_object() noexcept;
 
-    auto key(std::string_view key_name) -> status_t;
+    [[nodiscard]] yyjson_mut_val* unchecked_make_null() noexcept;
 
-    template <typename T>
-        requires dom_writable_value<T>
-    auto value(T&& value) -> status_t;
+    [[nodiscard]] yyjson_mut_val* unchecked_make_bool(bool value) noexcept;
 
-    auto value_ref(ValueRef value) -> status_t;
+    [[nodiscard]] yyjson_mut_val* unchecked_make_int(std::int64_t value) noexcept;
+
+    [[nodiscard]] yyjson_mut_val* unchecked_make_uint(std::uint64_t value) noexcept;
+
+    [[nodiscard]] yyjson_mut_val* unchecked_make_real(double value) noexcept;
+
+    [[nodiscard]] yyjson_mut_val* unchecked_make_str(std::string_view value) noexcept;
+
+    void unchecked_set_root(yyjson_mut_val* root) noexcept;
+
+    static bool unchecked_arr_add_val(yyjson_mut_val* arr, yyjson_mut_val* val) noexcept;
+
+    static bool unchecked_obj_add(yyjson_mut_val* obj,
+                                  yyjson_mut_val* key,
+                                  yyjson_mut_val* val) noexcept;
 
     [[nodiscard]] auto dom_value() const -> std::expected<Value, error_kind>;
 
     [[nodiscard]] auto to_json_string() const -> std::expected<std::string, error_kind>;
 
 private:
-    enum class container_kind : std::uint8_t { array, object };
-
-    struct container_frame {
-        container_kind kind;
-        yyjson_mut_val* value = nullptr;
-        bool expect_key = true;
-        std::string pending_key;
-    };
-
-    auto append_mut_value(yyjson_mut_val* value) -> status_t;
-
-    void mark_invalid(error_kind error = error_kind::invalid_state) noexcept;
-
-private:
-    bool is_valid = true;
-    bool root_is_written = false;
-    error_kind last_error = error_kind::invalid_state;
-    std::vector<container_frame> stack;
     std::shared_ptr<yyjson_mut_doc> doc;
 };
 
-}  // namespace eventide::serde::json
+}  // namespace eventide::serde::content
 
-#ifndef EVENTIDE_SERDE_JSON_DOM_INL_INCLUDED
-#define EVENTIDE_SERDE_JSON_DOM_INL_INCLUDED 1
-#include "eventide/serde/json/dom.inl"
+#ifndef EVENTIDE_SERDE_CONTENT_DOM_INL_INCLUDED
+#define EVENTIDE_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#include "eventide/serde/content/dom.inl"
 #endif

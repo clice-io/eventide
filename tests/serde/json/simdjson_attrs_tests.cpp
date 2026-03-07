@@ -2,16 +2,16 @@
 #include <string>
 
 #include "eventide/zest/zest.h"
-#include "eventide/serde/json/simd_deserializer.h"
-#include "eventide/serde/json/simd_serializer.h"
+#include "eventide/serde/json/deserializer.h"
+#include "eventide/serde/json/serializer.h"
 #include "eventide/serde/serde.h"
 
 namespace eventide::serde {
 
 namespace {
 
-using json::simd::from_json;
-using json::simd::to_json;
+using json::from_json;
+using json::to_json;
 
 enum class access_level {
     admin,
