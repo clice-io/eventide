@@ -6,6 +6,7 @@
 #include <string_view>
 #include <utility>
 
+#include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
 
@@ -200,13 +201,11 @@ auto dispatch_field_by_index(std::size_t index, DeserializeStruct& d_struct, T& 
     -> std::expected<void, E> {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> std::expected<void, E> {
         std::expected<void, E> result;
-        bool dispatched = false;
-        ((Is == index ? (result = deserialize_field_at<T, Config, Is, E>(d_struct, value),
-                         dispatched = true,
-                         true)
-                      : false) ||
-         ...);
-        if(!dispatched) {
+        const bool matched =
+            ((Is == index &&
+              (result = deserialize_field_at<T, Config, Is, E>(d_struct, value), true)) ||
+             ...);
+        if(!matched) {
             return std::unexpected(E::type_mismatch);
         }
         return result;

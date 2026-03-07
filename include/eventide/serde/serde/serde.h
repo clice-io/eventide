@@ -168,6 +168,15 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
                     typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
                 return Adapter::serialize_field(s_struct, effective_name, value);
             }
+            // Behavior: as<Target> — type conversion before serialization
+            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
+                using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
+                static_assert(
+                    std::is_constructible_v<Target, const value_t&>,
+                    "behavior::as<Target> requires Target to be constructible from the field type");
+                Target converted(value);
+                return s_struct.serialize_field(effective_name, converted);
+            }
             // Behavior: enum_string — serialize enum as string
             else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
                 using Policy =
@@ -291,6 +300,20 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 if(!result) {
                     return std::unexpected(result.error());
                 }
+                return true;
+            }
+            // Behavior: as<Target> — deserialize as Target, then convert back
+            else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
+                using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
+                static_assert(
+                    std::is_constructible_v<value_t, Target&&>,
+                    "behavior::as<Target> requires the field type to be constructible from Target");
+                Target temp{};
+                auto result = d_struct.deserialize_value(temp);
+                if(!result) {
+                    return std::unexpected(result.error());
+                }
+                value = value_t(std::move(temp));
                 return true;
             }
             // Behavior: enum_string — deserialize string then map to enum
@@ -425,7 +448,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
                  if(!result) {
                      status = std::unexpected(result.error());
                  } else {
-                     value = std::monostate{};
+                     value.template emplace<I>();
                  }
              } else if constexpr(std::default_initializable<alt_t>) {
                  alt_t alt{};
@@ -506,7 +529,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
                  if(!result) {
                      status = std::unexpected(result.error());
                  } else {
-                     value = std::monostate{};
+                     value.template emplace<I>();
                  }
              } else if constexpr(std::default_initializable<alt_t>) {
                  alt_t alt{};
@@ -676,6 +699,15 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
             using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
             return Adapter::serialize(s, value);
+        }
+        // Behavior: as<Target> — type conversion before serialization
+        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
+            using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
+            static_assert(
+                std::is_constructible_v<Target, const value_t&>,
+                "behavior::as<Target> requires Target to be constructible from the value type");
+            Target converted(value);
+            return serialize(s, converted);
         }
         // Default: serialize the underlying value
         else {
@@ -863,6 +895,20 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
             using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
             return Adapter::deserialize(d, value);
+        }
+        // Behavior: as<Target> — deserialize as Target, then convert back
+        else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::as>) {
+            using Target = typename detail::tuple_find_spec_t<attrs_t, behavior::as>::target;
+            static_assert(
+                std::is_constructible_v<value_t, Target&&>,
+                "behavior::as<Target> requires the value type to be constructible from Target");
+            Target temp{};
+            auto status = deserialize(d, temp);
+            if(!status) {
+                return std::unexpected(status.error());
+            }
+            value = value_t(std::move(temp));
+            return {};
         }
         // Default: deserialize the underlying value
         else {
