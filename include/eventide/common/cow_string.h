@@ -210,8 +210,8 @@ private:
 
     constexpr static char* alloc_copy(const char* src, std::size_t len, std::size_t cap) {
         char* buf = mem::allocate<char>(cap);
-        for(std::size_t i = 0; i < len; ++i) {
-            buf[i] = src[i];
+        if(len > 0) {
+            mem::uninitialized_copy(std::ranges::subrange(src, src + len), buf);
         }
         return buf;
     }
