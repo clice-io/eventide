@@ -8,8 +8,8 @@
 #include "annotation.h"
 #include "attrs.h"
 #include "config.h"
-#include "detail/backend_utils.h"
 #include "traits.h"
+#include "detail/backend_utils.h"
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
@@ -173,8 +173,7 @@ constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
                     typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
                 static_assert(std::is_enum_v<value_t>,
                               "behavior::enum_string requires an enum field type");
-                auto enum_text =
-                    spelling::map_enum_to_string<value_t, Policy>(value);
+                auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
                 return s_struct.serialize_field(effective_name, enum_text);
             }
             // Default: serialize field with its value
@@ -220,8 +219,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
             bool matched = false;
             std::expected<void, E> nested_error;
             refl::for_each(value, [&](auto nested_field) {
-                auto status =
-                    deserialize_struct_field<E>(d_struct, key_name, nested_field);
+                auto status = deserialize_struct_field<E>(d_struct, key_name, nested_field);
                 if(!status) {
                     nested_error = std::unexpected(status.error());
                     return false;
@@ -244,8 +242,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 using rename_attr = detail::tuple_find_t<attrs_t, is_rename_attr>;
                 effective_name = rename_attr::name;
             } else {
-                effective_name =
-                    config::apply_field_rename(true, field.name(), scratch);
+                effective_name = config::apply_field_rename(true, field.name(), scratch);
             }
 
             // Check name match: canonical name + aliases
@@ -300,8 +297,7 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
                 if(!result) {
                     return std::unexpected(result.error());
                 }
-                auto parsed =
-                    spelling::map_string_to_enum<value_t, Policy>(enum_text);
+                auto parsed = spelling::map_string_to_enum<value_t, Policy>(enum_text);
                 if(parsed.has_value()) {
                     value = *parsed;
                     return true;
@@ -347,16 +343,13 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
             using Policy =
                 typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<value_t>,
-                          "behavior::enum_string requires an enum type");
-            auto enum_text =
-                spelling::map_enum_to_string<value_t, Policy>(value);
+            static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
+            auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
             return s.serialize_str(enum_text);
         }
         // Behavior: with<Adapter> — adapter-based serialization
         else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
-            using Adapter =
-                typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+            using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
             return Adapter::serialize(s, value);
         }
         // Default: serialize the underlying value
@@ -513,8 +506,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::enum_string>) {
             using Policy =
                 typename detail::tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<value_t>,
-                          "behavior::enum_string requires an enum type");
+            static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
             std::string enum_text;
             auto parsed = d.deserialize_str(enum_text);
             if(!parsed) {
@@ -530,8 +522,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         }
         // Behavior: with<Adapter> — adapter-based deserialization
         else if constexpr(detail::tuple_has_spec_v<attrs_t, behavior::with>) {
-            using Adapter =
-                typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+            using Adapter = typename detail::tuple_find_spec_t<attrs_t, behavior::with>::adapter;
             return Adapter::deserialize(d, value);
         }
         // Default: deserialize the underlying value

@@ -26,8 +26,7 @@ struct annotation;
 
 template <wrap_type T, typename... Attrs>
 struct annotation<T, Attrs...> {
-    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(),
-                  "Invalid attribute combination");
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
 
     T value;
 
@@ -59,8 +58,7 @@ struct annotation<T, Attrs...> {
 
 template <inherit_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
-    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(),
-                  "Invalid attribute combination");
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
 
     using annotated_type = T;
     using attrs = std::tuple<Attrs...>;
@@ -68,8 +66,7 @@ struct annotation<T, Attrs...> : T {
 
 template <inherit_use_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
-    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(),
-                  "Invalid attribute combination");
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
 
     using T::T;
     using annotated_type = T;

@@ -34,9 +34,9 @@ struct find_hint_impl {
 
 template <typename BackendTag, typename First, typename... Rest>
 struct find_hint_impl<BackendTag, First, Rest...> {
-    using type =
-        std::conditional_t<hint_matches_v<BackendTag, First>, First,
-                           typename find_hint_impl<BackendTag, Rest...>::type>;
+    using type = std::conditional_t<hint_matches_v<BackendTag, First>,
+                                    First,
+                                    typename find_hint_impl<BackendTag, Rest...>::type>;
 };
 
 }  // namespace detail
@@ -47,8 +47,7 @@ template <typename BackendTag, typename AttrsTuple>
 struct get_hint;
 
 template <typename BackendTag, typename... Attrs>
-struct get_hint<BackendTag, std::tuple<Attrs...>>
-    : detail::find_hint_impl<BackendTag, Attrs...> {};
+struct get_hint<BackendTag, std::tuple<Attrs...>> : detail::find_hint_impl<BackendTag, Attrs...> {};
 
 template <typename BackendTag, typename AttrsTuple>
 using get_hint_t = typename get_hint<BackendTag, AttrsTuple>::type;

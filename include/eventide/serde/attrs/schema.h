@@ -68,8 +68,8 @@ struct find_first_impl {
 
 template <template <typename> class Pred, typename First, typename... Rest>
 struct find_first_impl<Pred, First, Rest...> {
-    using type = std::conditional_t<Pred<First>::value, First,
-                                    typename find_first_impl<Pred, Rest...>::type>;
+    using type = std::
+        conditional_t<Pred<First>::value, First, typename find_first_impl<Pred, Rest...>::type>;
 };
 
 /// Find the first element in Tuple that satisfies Pred. Returns void if none.
@@ -90,7 +90,8 @@ struct find_first_spec_impl {
 
 template <template <typename...> typename HKT, typename First, typename... Rest>
 struct find_first_spec_impl<HKT, First, Rest...> {
-    using type = std::conditional_t<is_specialization_of<HKT, First>, First,
+    using type = std::conditional_t<is_specialization_of<HKT, First>,
+                                    First,
                                     typename find_first_spec_impl<HKT, Rest...>::type>;
 };
 
@@ -162,29 +163,54 @@ struct untagged {};
 // ── Schema attribute predicates (NTTP — require struct form) ───────
 
 template <typename T>
-struct is_rename_attr { static constexpr bool value = false; };
+struct is_rename_attr {
+    constexpr static bool value = false;
+};
+
 template <fixed_string N>
-struct is_rename_attr<schema::rename<N>> { static constexpr bool value = true; };
+struct is_rename_attr<schema::rename<N>> {
+    constexpr static bool value = true;
+};
 
 template <typename T>
-struct is_alias_attr { static constexpr bool value = false; };
+struct is_alias_attr {
+    constexpr static bool value = false;
+};
+
 template <fixed_string... Ns>
-struct is_alias_attr<schema::alias<Ns...>> { static constexpr bool value = true; };
+struct is_alias_attr<schema::alias<Ns...>> {
+    constexpr static bool value = true;
+};
 
 template <typename T>
-struct is_literal_attr { static constexpr bool value = false; };
+struct is_literal_attr {
+    constexpr static bool value = false;
+};
+
 template <fixed_string N>
-struct is_literal_attr<schema::literal<N>> { static constexpr bool value = true; };
+struct is_literal_attr<schema::literal<N>> {
+    constexpr static bool value = true;
+};
 
 template <typename T>
-struct is_internally_tagged_attr { static constexpr bool value = false; };
+struct is_internally_tagged_attr {
+    constexpr static bool value = false;
+};
+
 template <fixed_string Tag>
-struct is_internally_tagged_attr<schema::internally_tagged<Tag>> { static constexpr bool value = true; };
+struct is_internally_tagged_attr<schema::internally_tagged<Tag>> {
+    constexpr static bool value = true;
+};
 
 template <typename T>
-struct is_adjacently_tagged_attr { static constexpr bool value = false; };
+struct is_adjacently_tagged_attr {
+    constexpr static bool value = false;
+};
+
 template <fixed_string Tag, fixed_string Content>
-struct is_adjacently_tagged_attr<schema::adjacently_tagged<Tag, Content>> { static constexpr bool value = true; };
+struct is_adjacently_tagged_attr<schema::adjacently_tagged<Tag, Content>> {
+    constexpr static bool value = true;
+};
 
 // ── Composite trait ────────────────────────────────────────────────
 
@@ -300,15 +326,16 @@ consteval bool validate_field_schema() {
     constexpr std::size_t N = refl::field_count<T>();
 
     return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        std::array<std::string_view, sizeof...(Is)> names = {
-            canonical_field_name<T, Is>()...};
+        std::array<std::string_view, sizeof...(Is)> names = {canonical_field_name<T, Is>()...};
         std::array<bool, sizeof...(Is)> excluded = {is_field_excluded<T, Is>()...};
 
         // Check: no two non-excluded fields share the same canonical name
         for(std::size_t i = 0; i < sizeof...(Is); ++i) {
-            if(excluded[i]) continue;
+            if(excluded[i])
+                continue;
             for(std::size_t j = i + 1; j < sizeof...(Is); ++j) {
-                if(excluded[j]) continue;
+                if(excluded[j])
+                    continue;
                 if(names[i] == names[j]) {
                     return false;
                 }
@@ -317,7 +344,8 @@ consteval bool validate_field_schema() {
 
         // Check: no alias collides with another field's canonical name
         auto verify_field_aliases = [&]<std::size_t I>() consteval {
-            if(excluded[I]) return true;
+            if(excluded[I])
+                return true;
             if constexpr(!detail::field_has_alias<T, I>()) {
                 return true;
             } else {
@@ -326,7 +354,8 @@ consteval bool validate_field_schema() {
                 using alias_attr = serde::detail::tuple_find_t<attrs_t, is_alias_attr>;
                 for(auto alias_name: alias_attr::names) {
                     for(std::size_t j = 0; j < sizeof...(Is); ++j) {
-                        if(j == I || excluded[j]) continue;
+                        if(j == I || excluded[j])
+                            continue;
                         if(alias_name == names[j]) {
                             return false;
                         }

@@ -111,7 +111,7 @@ constexpr bool is_behavior_attr_v =
 /// True for behavior providers (with/as/enum_string) — at most one per field.
 template <typename T>
 struct is_behavior_provider {
-    static constexpr bool value = is_specialization_of<behavior::with, T> ||
+    constexpr static bool value = is_specialization_of<behavior::with, T> ||
                                   is_specialization_of<behavior::as, T> ||
                                   is_specialization_of<behavior::enum_string, T>;
 };
