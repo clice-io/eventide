@@ -65,13 +65,13 @@ endif()
 
 if(EVENTIDE_SERDE_ENABLE_YYJSON)
     set(TEST_SERDE_YYJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_YYJSON_SOURCES INCLUDE REGEX "^tests/serde/json/(dom_tests|dom_write_tests|yyjson_.*)\\.cpp$")
+    list(FILTER TEST_SERDE_YYJSON_SOURCES INCLUDE REGEX "^tests/serde/content/.*\\.cpp$")
     list(TRANSFORM TEST_SERDE_YYJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_SERDE_YYJSON_SOURCES}
     )
 else()
-    message(STATUS "EVENTIDE_SERDE_ENABLE_YYJSON=OFF: skipping tests/serde/json/*")
+    message(STATUS "EVENTIDE_SERDE_ENABLE_YYJSON=OFF: skipping tests/serde/content/*")
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)

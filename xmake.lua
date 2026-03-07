@@ -13,6 +13,7 @@ option("deco", { default = true })
 option("serde_simdjson", { default = false })
 option("serde_yyjson", { default = false })
 option("serde_flatbuffers", { default = false })
+option("serde_toml", { default = false })
 
 if has_config("serde_yyjson") and not has_config("serde_simdjson") then
 	raise("serde_yyjson requires serde_simdjson")
@@ -72,6 +73,9 @@ end
 if has_config("serde") and has_config("serde_flatbuffers") then
 	add_requires("flatbuffers v25.2.10")
 end
+if has_config("serde") and has_config("serde_toml") then
+	add_requires("toml++ v3.4.0")
+end
 if has_config("test") and is_plat("windows") then
 	add_requires("unistd_h")
 end
@@ -93,7 +97,13 @@ if has_config("serde") and has_config("serde_simdjson") then
 	target("serde_json", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/json/*)")
+		add_headerfiles(
+			"include/(eventide/serde/json.h)",
+			"include/(eventide/serde/json/**.h)",
+			"include/(eventide/serde/content.h)",
+			"include/(eventide/serde/content/**.h)",
+			"include/(eventide/serde/content/**.inl)"
+		)
 		add_deps("reflection")
 		add_packages("simdjson", { public = true })
 		add_packages("yyjson", { public = true })
@@ -102,16 +112,21 @@ end
 
 if has_config("serde") and has_config("serde_flatbuffers") then
 	target("serde_flatbuffers", function()
-		set_kind("$(kind)")
-		add_files("src/serde/flatbuffers/flex/*.cpp")
+		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles(
-			"include/(eventide/serde/flatbuffers/*)",
-			"include/(eventide/serde/flatbuffers/flex/*)",
-			"include/(eventide/serde/flatbuffers/schema/*)"
-		)
+		add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
 		add_deps("reflection")
 		add_packages("flatbuffers", { public = true })
+	end)
+end
+
+if has_config("serde") and has_config("serde_toml") then
+	target("serde_toml", function()
+		set_kind("headeronly")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
+		add_deps("reflection")
+		add_packages("toml++", { public = true })
 	end)
 end
 
@@ -119,13 +134,29 @@ if has_config("serde") then
 	target("serde", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/serde/*)", "include/(eventide/serde/attrs/*)")
+		add_headerfiles(
+			"include/(eventide/serde/bincode.h)",
+			"include/(eventide/serde/bincode/**.h)",
+			"include/(eventide/serde/serde/**.h)"
+		)
 		add_deps("common", "reflection")
 		if has_config("serde_simdjson") then
+			add_headerfiles(
+				"include/(eventide/serde/json.h)",
+				"include/(eventide/serde/json/**.h)",
+				"include/(eventide/serde/content.h)",
+				"include/(eventide/serde/content/**.h)",
+				"include/(eventide/serde/content/**.inl)"
+			)
 			add_deps("serde_json")
 		end
 		if has_config("serde_flatbuffers") then
+			add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
 			add_deps("serde_flatbuffers")
+		end
+		if has_config("serde_toml") then
+			add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
+			add_deps("serde_toml")
 		end
 	end)
 end
@@ -210,10 +241,16 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/serde/json/simdjson_*.cpp")
 		end
 		if has_config("serde") and has_config("serde_yyjson") then
-			add_files("tests/serde/json/dom_tests.cpp", "tests/serde/json/yyjson_*.cpp")
+			add_files("tests/serde/content/**.cpp")
 		end
 		if has_config("serde") and has_config("serde_flatbuffers") then
 			add_files("tests/serde/flatbuffers/**.cpp")
+		end
+		if has_config("serde") and has_config("serde_toml") then
+			add_files("tests/serde/toml/**.cpp")
+		end
+		if has_config("serde") then
+			add_files("tests/serde/bincode/**.cpp")
 		end
 		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 			add_files("tests/ipc/**.cpp")
@@ -238,6 +275,9 @@ if has_config("test") and has_config("ztest") then
 			end
 			if has_config("serde_flatbuffers") then
 				add_deps("serde_flatbuffers")
+			end
+			if has_config("serde_toml") then
+				add_deps("serde_toml")
 			end
 		end
 		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
