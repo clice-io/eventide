@@ -6,16 +6,19 @@
 #include <utility>
 
 #include "frame.h"
+#include "task.h"
 
 namespace eventide {
 
 namespace detail {
 
+/// Extracts the async_node pointer from a task (for aggregate bookkeeping).
 template <typename Task>
 async_node* node_from(Task& task) {
     return task.operator->();
 }
 
+/// Moves the result out of a task (used by when_all::collect).
 template <typename Task>
 auto take_result(Task& task) {
     return std::move(task).result();
@@ -23,6 +26,9 @@ auto take_result(Task& task) {
 
 }  // namespace detail
 
+/// Awaits all tasks concurrently. Returns a std::tuple of their results.
+/// If any child cancels (without InterceptCancel), all siblings are cancelled
+/// and cancellation propagates to the awaiting task.
 template <typename... Tasks>
 class when_all : public aggregate_op {
 public:
@@ -38,6 +44,8 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> awaiter_handle,
                       std::source_location location = std::source_location::current()) noexcept {
+        this->location = location;
+
         auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
         if(awaiter_node->kind == async_node::NodeKind::Task) {
             static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
@@ -78,7 +86,7 @@ public:
                 return awaiter->final_transition();
             }
 
-            return static_cast<stable_node*>(awaiter)->handle();
+            return static_cast<standard_task*>(awaiter)->handle();
         }
 
         return std::noop_coroutine();
@@ -102,6 +110,9 @@ private:
     std::tuple<Tasks...> tasks_;
 };
 
+/// Awaits the first task to complete. Returns the 0-based index of the winner.
+/// All other tasks are cancelled. Does not collect results — access the
+/// individual task objects to retrieve them.
 template <typename... Tasks>
 class when_any : public aggregate_op {
 public:
@@ -117,6 +128,8 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> awaiter_handle,
                       std::source_location location = std::source_location::current()) noexcept {
+        this->location = location;
+
         auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
         if(awaiter_node->kind == async_node::NodeKind::Task) {
             static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
@@ -157,7 +170,7 @@ public:
                 return awaiter->final_transition();
             }
 
-            return static_cast<stable_node*>(awaiter)->handle();
+            return static_cast<standard_task*>(awaiter)->handle();
         }
 
         return std::noop_coroutine();
@@ -181,5 +194,90 @@ when_all(Tasks&&...) -> when_all<std::decay_t<Tasks>...>;
 
 template <typename... Tasks>
 when_any(Tasks&&...) -> when_any<std::decay_t<Tasks>...>;
+
+/// Dynamic structured concurrency: spawn N tasks at runtime, then
+/// co_await the scope to wait for all of them. Unlike when_all (compile-time
+/// variadic), scope uses a dynamic vector and takes ownership of spawned
+/// tasks via task::release().
+///
+/// The scope destructor destroys all owned coroutine frames, so it is safe
+/// to let the scope go out of scope without awaiting (no leak, no crash).
+/// However, spawned tasks will NOT have been executed in that case.
+class async_scope : public aggregate_op {
+public:
+    async_scope() : aggregate_op(async_node::NodeKind::Scope) {}
+
+    async_scope(const async_scope&) = delete;
+    async_scope& operator=(const async_scope&) = delete;
+
+    ~async_scope() {
+        for(auto* child: awaitees) {
+            if(child) {
+                static_cast<standard_task*>(child)->handle().destroy();
+            }
+        }
+    }
+
+    template <typename T>
+    void spawn(task<T>&& t) {
+        auto* node = detail::node_from(t);
+        t.release();
+        awaitees.push_back(node);
+        total += 1;
+    }
+
+    bool await_ready() const noexcept {
+        return total == 0;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> awaiter_handle,
+                      std::source_location location = std::source_location::current()) noexcept {
+        this->location = location;
+
+        auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
+        if(awaiter_node->kind == async_node::NodeKind::Task) {
+            static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
+        }
+
+        awaiter = awaiter_node;
+        completed = 0;
+        winner = npos;
+        done = false;
+        pending_resume = false;
+        pending_cancel = false;
+        arming = true;
+
+        for(auto* child: awaitees) {
+            if(child) {
+                child->link_continuation(this, location);
+            }
+        }
+
+        for(auto* child: awaitees) {
+            if(child) {
+                child->resume();
+                if(pending_cancel) {
+                    break;
+                }
+            }
+        }
+
+        arming = false;
+        if(pending_resume && awaiter) {
+            if(pending_cancel) {
+                awaiter->state = Cancelled;
+                return awaiter->final_transition();
+            }
+
+            return static_cast<standard_task*>(awaiter)->handle();
+        }
+
+        return std::noop_coroutine();
+    }
+
+    void await_resume() noexcept {}
+};
 
 }  // namespace eventide
