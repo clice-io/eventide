@@ -567,6 +567,97 @@ TEST_CASE(token_reuse_after_cancel) {
     EXPECT_TRUE(source.cancelled());
 }
 
+TEST_CASE(multi_token_cancel_first) {
+    event_loop loop;
+    cancellation_source source1;
+    cancellation_source source2;
+    event gate;
+    bool finished = false;
+
+    auto worker = [&]() -> task<int> {
+        co_await gate.wait();
+        finished = true;
+        co_return 42;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        source1.cancel();
+    };
+
+    auto guarded = with_token(worker(), source1.token(), source2.token());
+    auto cancel_task = canceler();
+
+    loop.schedule(guarded);
+    loop.schedule(cancel_task);
+    loop.run();
+
+    EXPECT_FALSE(finished);
+    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT_TRUE(source1.cancelled());
+    EXPECT_FALSE(source2.cancelled());
+}
+
+TEST_CASE(multi_token_cancel_second) {
+    event_loop loop;
+    cancellation_source source1;
+    cancellation_source source2;
+    event gate;
+    bool finished = false;
+
+    auto worker = [&]() -> task<int> {
+        co_await gate.wait();
+        finished = true;
+        co_return 42;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        source2.cancel();
+    };
+
+    auto guarded = with_token(worker(), source1.token(), source2.token());
+    auto cancel_task = canceler();
+
+    loop.schedule(guarded);
+    loop.schedule(cancel_task);
+    loop.run();
+
+    EXPECT_FALSE(finished);
+    EXPECT_FALSE(guarded.value().has_value());
+    EXPECT_FALSE(source1.cancelled());
+    EXPECT_TRUE(source2.cancelled());
+}
+
+TEST_CASE(multi_token_pre_cancel) {
+    cancellation_source source1;
+    cancellation_source source2;
+    source2.cancel();
+
+    int started = 0;
+    auto worker = [&]() -> task<int> {
+        started += 1;
+        co_return 1;
+    };
+
+    auto [result] = run(with_token(worker(), source1.token(), source2.token()));
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(started, 0);
+}
+
+TEST_CASE(multi_token_pass_through) {
+    cancellation_source source1;
+    cancellation_source source2;
+
+    auto worker = []() -> task<int> {
+        co_return 99;
+    };
+
+    auto [result] = run(with_token(worker(), source1.token(), source2.token()));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 99);
+}
+
 };  // TEST_SUITE(cancellation)
 
 }  // namespace
