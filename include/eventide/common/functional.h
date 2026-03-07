@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <new>
@@ -140,8 +141,18 @@ public:
 
     using Deleter = void(function*);
 
-    constexpr static std::size_t sbo_size = 16;
-    constexpr static std::size_t sbo_align = alignof(std::max_align_t);
+    constexpr static size_t sbo_size = 16;
+    constexpr static size_t sbo_align = alignof(std::max_align_t);
+    constexpr static uint64_t sbo_magic = 0x0721'BEEF'CAFE;
+
+    using SBOStorage = union {
+        alignas(sbo_align) std::byte data[sbo_size];
+
+        struct {
+            uint64_t magic;
+            Deleter* deleter;
+        };
+    };
 
     template <typename T>
     constexpr static bool sbo_eligible =
@@ -152,8 +163,7 @@ public:
     function(function&& other) noexcept {
         this->proxy = std::exchange(other.proxy, nullptr);
         this->erased = std::exchange(other.erased, Erased{});
-        this->deleter = std::exchange(other.deleter, nullptr);
-        std::memcpy(this->storage, other.storage, sizeof(this->storage));
+        std::memcpy(this->storage.data, other.storage.data, sizeof(this->storage.data));
     }
 
     function& operator=(const function&) = delete;
@@ -167,17 +177,17 @@ public:
     }
 
     ~function() {
-        if(this->deleter) {
-            this->deleter(this);
+        if(this->storage.magic == sbo_magic) {
+            this->storage.deleter(this);
         }
     }
 
 private:
     constexpr function(R (*proxy)(const function*, Args&...), Erased ctx) noexcept :
-        proxy(proxy), erased(ctx), deleter(nullptr), storage() {}
+        proxy(proxy), erased(ctx), storage() {}
 
     constexpr function(R (*proxy)(const function*, Args&...), Erased ctx, Deleter* deleter) noexcept
-        : proxy(proxy), erased(ctx), deleter(deleter), storage() {}
+        : proxy(proxy), erased(ctx), storage({.magic = sbo_magic, .deleter = deleter}) {}
 
     template <typename Class>
         requires std::is_invocable_r_v<R, Class, Args...>
@@ -199,7 +209,7 @@ private:
             },
             Erased{},
             [](function* self) { std::destroy_at(self->storage_as<ClassType>()); }) {
-        std::construct_at(reinterpret_cast<ClassType*>(this->storage),
+        std::construct_at(reinterpret_cast<ClassType*>(this->storage.data),
                           std::forward<Class>(invokable));
     }
 
@@ -242,18 +252,17 @@ public:
 private:
     template <typename Class>
     const Class* storage_as() const {
-        return std::launder(reinterpret_cast<const Class*>(this->storage));
+        return std::launder(reinterpret_cast<const Class*>(this->storage.data));
     }
 
     template <typename Class>
     Class* storage_as() {
-        return std::launder(reinterpret_cast<Class*>(this->storage));
+        return std::launder(reinterpret_cast<Class*>(this->storage.data));
     }
 
-    alignas(sbo_align) std::byte storage[sbo_size];
+    SBOStorage storage;
     R (*proxy)(const function*, Args&...);
     Erased erased;
-    Deleter* deleter;
 };
 
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
