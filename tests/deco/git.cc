@@ -10,20 +10,23 @@
 namespace {
 
 struct GitCommitOpt {
-    DecoFlag(names = {"-a", "--all"}; help = "Stage all modified/deleted files";
-             required = false;) all;
+    DecoFlag(names = {"-a", "--all"}; help = "Stage all modified/deleted files"; required = false;)
+    all;
 
     DecoKV(names = {"-m", "--message"}; meta_var = "MSG";
            help = "Use the given message as the commit message";
-           required = true;)<std::string> message;
+           required = true;)
+    <std::string> message;
 };
 
 struct GitCloneOpt {
-    DecoInput(meta_var = "REPO"; help = "Repository URL"; required = true;)<std::string> repo;
+    DecoInput(meta_var = "REPO"; help = "Repository URL"; required = true;)
+    <std::string> repo;
 
     DecoKV(names = {"-b", "--branch"}; meta_var = "BRANCH";
            help = "Checkout BRANCH instead of HEAD";
-           required = false;)<std::string> branch;
+           required = false;)
+    <std::string> branch;
 };
 
 struct GitTagOpt {
@@ -37,7 +40,8 @@ struct GitTagOpt {
     };
 
     DecoFlag(names = {"-l", "--list"}; help = "List tags"; required = false;
-             category = Cate::mode_category;) list;
+             category = Cate::mode_category;)
+    list;
 };
 
 template <typename... Args>
