@@ -1,33 +1,14 @@
 #pragma once
 
 #include <source_location>
-#include <string_view>
 #include <type_traits>
+
+#include "../common/string_ref.h"
 
 namespace eventide::refl::detail {
 
-constexpr std::string_view ltrim(std::string_view sv, std::string_view chars = " \t\n\v\f\r") {
-    auto pos = sv.find_first_not_of(chars);
-    if(pos == std::string_view::npos) {
-        return {};
-    }
-    return sv.substr(pos);
-}
-
-constexpr std::string_view rtrim(std::string_view sv, std::string_view chars = " \t\n\v\f\r") {
-    auto pos = sv.find_last_not_of(chars);
-    if(pos == std::string_view::npos) {
-        return {};
-    }
-    return sv.substr(0, pos + 1);
-}
-
-constexpr std::string_view trim(std::string_view sv, std::string_view chars = " \t\n\v\f\r") {
-    return rtrim(ltrim(sv, chars), chars);
-}
-
-constexpr std::size_t find_last_top_level_scope(std::string_view sv) {
-    std::size_t pos = std::string_view::npos;
+constexpr std::size_t find_last_top_level_scope(string_ref sv) {
+    std::size_t pos = string_ref::npos;
     int angle = 0;
     int paren = 0;
     int bracket = 0;
@@ -72,35 +53,34 @@ constexpr std::size_t find_last_top_level_scope(std::string_view sv) {
     return pos;
 }
 
-constexpr std::string_view unqualify_type_name(std::string_view sv) {
-    if(auto pos = find_last_top_level_scope(sv); pos != std::string_view::npos) {
+constexpr string_ref unqualify_type_name(string_ref sv) {
+    if(auto pos = find_last_top_level_scope(sv); pos != string_ref::npos) {
         return sv.substr(pos + 2);
     }
     return sv;
 }
 
-constexpr std::string_view unwrap_wrapper_value(std::string_view sv) {
+constexpr string_ref unwrap_wrapper_value(string_ref sv) {
     auto open = sv.rfind('{');
     auto close = sv.rfind('}');
-    if(open != std::string_view::npos && close != std::string_view::npos && open < close) {
+    if(open != string_ref::npos && close != string_ref::npos && open < close) {
         sv = sv.substr(open + 1, close - open - 1);
     }
-    return trim(sv);
+    return sv.trim();
 }
 
-constexpr std::string_view extract_identifier(std::string_view expression) {
-    expression = trim(expression);
+constexpr string_ref extract_identifier(string_ref expression) {
+    expression = expression.trim();
     while(true) {
         bool changed = false;
         while(!expression.empty() && expression.front() == '&') {
-            expression.remove_prefix(1);
-            expression = trim(expression);
+            expression = expression.drop_front();
+            expression = expression.trim();
             changed = true;
         }
         if(expression.size() >= 2 && expression.front() == '(' && expression.back() == ')') {
-            expression.remove_prefix(1);
-            expression.remove_suffix(1);
-            expression = trim(expression);
+            expression = expression.drop_front().drop_back();
+            expression = expression.trim();
             changed = true;
         }
         if(!changed) {
@@ -110,33 +90,33 @@ constexpr std::string_view extract_identifier(std::string_view expression) {
 
     while(!expression.empty() && (expression.back() == ')' || expression.back() == ']' ||
                                   expression.back() == '}' || expression.back() == ';')) {
-        expression.remove_suffix(1);
-        expression = trim(expression);
+        expression = expression.drop_back();
+        expression = expression.trim();
     }
 
     if(expression.starts_with("::")) {
-        expression.remove_prefix(2);
+        expression = expression.drop_front(2);
     }
-    if(auto pos = expression.rfind("::"); pos != std::string_view::npos) {
+    if(auto pos = expression.rfind("::"); pos != string_ref::npos) {
         expression = expression.substr(pos + 2);
-    } else if(auto pos = expression.rfind(':'); pos != std::string_view::npos) {
+    } else if(auto pos = expression.rfind(':'); pos != string_ref::npos) {
         // MSVC may format pointer NTTPs like `int*:symbol`.
         expression = expression.substr(pos + 1);
     }
-    if(auto pos = expression.rfind("->"); pos != std::string_view::npos) {
+    if(auto pos = expression.rfind("->"); pos != string_ref::npos) {
         expression = expression.substr(pos + 2);
     }
-    if(auto pos = expression.rfind('.'); pos != std::string_view::npos) {
+    if(auto pos = expression.rfind('.'); pos != string_ref::npos) {
         expression = expression.substr(pos + 1);
     }
-    if(auto pos = expression.find('<'); pos != std::string_view::npos) {
+    if(auto pos = expression.find('<'); pos != string_ref::npos) {
         expression = expression.substr(0, pos);
     }
-    if(auto pos = expression.find('('); pos != std::string_view::npos) {
+    if(auto pos = expression.find('('); pos != string_ref::npos) {
         expression = expression.substr(0, pos);
     }
 
-    return trim(expression);
+    return expression.trim();
 }
 
 /// workaround for msvc, if no such wrapper, msvc cannot print the member name.
@@ -153,20 +133,18 @@ namespace eventide::refl {
 
 template <typename T>
 consteval auto type_name(bool qualified = false) {
-    std::string_view name = std::source_location::current().function_name();
+    string_ref name = std::source_location::current().function_name();
 #if __GNUC__ || __clang__
     std::size_t start = name.rfind("T =") + 3;
     std::size_t end = name.rfind("]");
-    end = end == std::string_view::npos ? name.size() : end;
-    name = detail::trim(name.substr(start, end - start));
+    end = end == string_ref::npos ? name.size() : end;
+    name = name.substr(start, end - start).trim();
 #elif _MSC_VER
     std::size_t start = name.find("type_name<") + 10;
     std::size_t end = name.rfind(">(");
-    name = std::string_view{name.data() + start, end - start};
+    name = name.slice(start, end);
     start = name.find(' ');
-    name = start == std::string_view::npos
-               ? name
-               : std::string_view(name.data() + start + 1, name.size() - start - 1);
+    name = start == string_ref::npos ? name : name.drop_front(start + 1);
 #endif
     if(!qualified) {
         name = detail::unqualify_type_name(name);
@@ -177,7 +155,7 @@ consteval auto type_name(bool qualified = false) {
 template <auto value>
     requires std::is_enum_v<decltype(value)>
 consteval auto enum_name() {
-    std::string_view name = std::source_location::current().function_name();
+    string_ref name = std::source_location::current().function_name();
 #if __GNUC__ || __clang__
     std::size_t start = name.find('=') + 2;
     std::size_t end = name.size() - 1;
@@ -187,15 +165,15 @@ consteval auto enum_name() {
 #else
     static_assert(false, "Not supported compiler");
 #endif
-    name = detail::trim(name.substr(start, end - start));
-    start = name.rfind("::");
-    return start == std::string_view::npos ? name : name.substr(start + 2);
+    name = name.substr(start, end - start).trim();
+    auto pos = name.rfind("::");
+    return pos == string_ref::npos ? name : name.substr(pos + 2);
 }
 
 template <detail::wrapper ptr>
     requires std::is_pointer_v<decltype(ptr.value)>
 consteval auto pointer_name() {
-    std::string_view name = std::source_location::current().function_name();
+    string_ref name = std::source_location::current().function_name();
     name = detail::unwrap_wrapper_value(name);
     return detail::extract_identifier(name);
 }
@@ -203,7 +181,7 @@ consteval auto pointer_name() {
 template <detail::wrapper ptr>
     requires std::is_member_pointer_v<decltype(ptr.value)>
 consteval auto member_name() {
-    std::string_view name = std::source_location::current().function_name();
+    string_ref name = std::source_location::current().function_name();
     name = detail::unwrap_wrapper_value(name);
     return detail::extract_identifier(name);
 }
