@@ -170,6 +170,13 @@ TEST_CASE(array_roundtrip) {
     EXPECT_EQ(std::get<1>(mixed_out), true);
     EXPECT_EQ(std::get<2>(mixed_out), "ok");
     EXPECT_EQ(std::get<3>(mixed_out), 1.25);
+
+    std::array<int, 3> fixed{4, 5, 6};
+    ASSERT_EQ(to_json(fixed), R"([4,5,6])");
+
+    std::array<int, 3> fixed_out{};
+    ASSERT_TRUE(from_json(R"([4,5,6])", fixed_out).has_value());
+    EXPECT_EQ(fixed_out, fixed);
 }
 
 TEST_CASE(array_errors) {
@@ -186,6 +193,16 @@ TEST_CASE(array_errors) {
 
     auto tuple_type_error = from_json(R"([1,2])", pair);
     EXPECT_FALSE(tuple_type_error.has_value());
+
+    std::array<int, 2> fixed{};
+    auto fixed_short = from_json(R"([1])", fixed);
+    EXPECT_FALSE(fixed_short.has_value());
+
+    auto fixed_long = from_json(R"([1,2,3])", fixed);
+    EXPECT_FALSE(fixed_long.has_value());
+
+    auto fixed_type = from_json(R"([1,"x"])", fixed);
+    EXPECT_FALSE(fixed_type.has_value());
 }
 
 TEST_CASE(object_roundtrip) {

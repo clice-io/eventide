@@ -65,6 +65,24 @@ constexpr inline bool is_pair_v = is_specialization_of<std::pair, T>;
 template <typename T>
 constexpr inline bool is_tuple_v = is_specialization_of<std::tuple, T>;
 
+namespace detail {
+
+template <typename T, std::size_t... Is>
+consteval bool tuple_gettable_impl(std::index_sequence<Is...>) {
+    return (requires(T& value) { std::get<Is>(value); } && ...);
+}
+
+template <typename T>
+consteval bool tuple_gettable() {
+    return tuple_gettable_impl<T>(std::make_index_sequence<std::tuple_size_v<T>>{});
+}
+
+}  // namespace detail
+
+template <typename T>
+concept tuple_like = requires { typename std::tuple_size<std::remove_cvref_t<T>>::type; } &&
+                     detail::tuple_gettable<std::remove_cvref_t<T>>();
+
 template <typename A, typename T, typename E>
 concept result_as = std::same_as<A, std::expected<T, E>>;
 

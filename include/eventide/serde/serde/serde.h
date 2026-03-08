@@ -40,51 +40,6 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
 template <deserializer_like D, typename V, typename E = typename D::error_type>
 constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
 
-template <typename S, typename T, std::size_t N>
-struct serialize_traits<S, std::array<T, N>> {
-    using value_type = typename S::value_type;
-    using error_type = typename S::error_type;
-
-    static auto serialize(S& serializer, const std::array<T, N>& value)
-        -> std::expected<value_type, error_type> {
-        auto tuple = serializer.serialize_tuple(N);
-        if(!tuple) {
-            return std::unexpected(tuple.error());
-        }
-
-        for(const auto& element: value) {
-            auto status = tuple->serialize_element(element);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-        }
-
-        return tuple->end();
-    }
-};
-
-template <typename D, typename T, std::size_t N>
-struct deserialize_traits<D, std::array<T, N>> {
-    using error_type = typename D::error_type;
-
-    static auto deserialize(D& deserializer, std::array<T, N>& value)
-        -> std::expected<void, error_type> {
-        auto tuple = deserializer.deserialize_tuple(N);
-        if(!tuple) {
-            return std::unexpected(tuple.error());
-        }
-
-        for(auto& element: value) {
-            auto status = tuple->deserialize_element(element);
-            if(!status) {
-                return std::unexpected(status.error());
-            }
-        }
-
-        return tuple->end();
-    }
-};
-
 namespace detail {
 
 template <typename D, typename = void>
@@ -1005,6 +960,27 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_null();
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return s.serialize_variant(v);
+    } else if constexpr(tuple_like<V>) {
+        auto s_tuple = s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>);
+        if(!s_tuple) {
+            return std::unexpected(s_tuple.error());
+        }
+
+        std::expected<void, E> element_result;
+        auto for_each = [&](const auto& element) -> bool {
+            auto result = s_tuple->serialize_element(element);
+            if(!result) {
+                element_result = std::unexpected(result.error());
+                return false;
+            }
+            return true;
+        };
+        std::apply([&](const auto&... elements) { return (for_each(elements) && ...); }, v);
+        if(!element_result) {
+            return std::unexpected(element_result.error());
+        }
+
+        return s_tuple->end();
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
@@ -1048,27 +1024,6 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         } else {
             static_assert(dependent_false<V>, "cannot auto serialize the input range");
         }
-    } else if constexpr(is_pair_v<V> || is_tuple_v<V>) {
-        auto s_tuple = s.serialize_tuple(std::tuple_size_v<V>);
-        if(!s_tuple) {
-            return std::unexpected(s_tuple.error());
-        }
-
-        std::expected<void, E> element_result;
-        auto for_each = [&](const auto& element) -> bool {
-            auto result = s_tuple->serialize_element(element);
-            if(!result) {
-                element_result = std::unexpected(result.error());
-                return false;
-            }
-            return true;
-        };
-        std::apply([&](const auto&... elements) { return (for_each(elements) && ...); }, v);
-        if(!element_result) {
-            return std::unexpected(element_result.error());
-        }
-
-        return s_tuple->end();
     } else if constexpr(refl::reflectable_class<V>) {
         using config_t = config::config_of<S>;
         return detail::serialize_reflectable<config_t, E>(s, v);
@@ -1300,6 +1255,27 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return {};
     } else if constexpr(is_specialization_of<std::variant, V>) {
         return d.deserialize_variant(v);
+    } else if constexpr(tuple_like<V>) {
+        auto d_tuple = d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>);
+        if(!d_tuple) {
+            return std::unexpected(d_tuple.error());
+        }
+
+        std::expected<void, E> element_result;
+        auto read_element = [&](auto& element) -> bool {
+            auto result = d_tuple->deserialize_element(element);
+            if(!result) {
+                element_result = std::unexpected(result.error());
+                return false;
+            }
+            return true;
+        };
+        std::apply([&](auto&... elements) { return (read_element(elements) && ...); }, v);
+        if(!element_result) {
+            return std::unexpected(element_result.error());
+        }
+
+        return d_tuple->end();
     } else if constexpr(std::ranges::input_range<V>) {
         constexpr auto kind = format_kind<V>;
         if constexpr(kind == range_format::sequence || kind == range_format::set) {
@@ -1397,27 +1373,6 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         } else {
             static_assert(dependent_false<V>, "cannot auto deserialize the input range");
         }
-    } else if constexpr(is_pair_v<V> || is_tuple_v<V>) {
-        auto d_tuple = d.deserialize_tuple(std::tuple_size_v<V>);
-        if(!d_tuple) {
-            return std::unexpected(d_tuple.error());
-        }
-
-        std::expected<void, E> element_result;
-        auto read_element = [&](auto& element) -> bool {
-            auto result = d_tuple->deserialize_element(element);
-            if(!result) {
-                element_result = std::unexpected(result.error());
-                return false;
-            }
-            return true;
-        };
-        std::apply([&](auto&... elements) { return (read_element(elements) && ...); }, v);
-        if(!element_result) {
-            return std::unexpected(element_result.error());
-        }
-
-        return d_tuple->end();
     } else if constexpr(refl::reflectable_class<V>) {
         using config_t = config::config_of<D>;
         return detail::deserialize_reflectable<config_t, E, false>(d, v);
