@@ -50,6 +50,19 @@ struct LargeCallable {
 
 static_assert(!function<int(int)>::sbo_eligible<LargeCallable>);
 
+struct NonTrivialCallable {
+    std::unique_ptr<int> val;
+
+    NonTrivialCallable(int val) : val(std::make_unique<int>(val)) {}
+
+    int operator()(int x) const {
+        return *val + x;
+    }
+};
+
+static_assert(!std::is_trivially_copyable_v<NonTrivialCallable>);
+static_assert(function<int(int)>::sbo_eligible<NonTrivialCallable>);
+
 // --- Tests ---
 
 TEST_SUITE(functional) {
@@ -99,9 +112,8 @@ TEST_CASE(function_ref_from_const_mem_fn) {
     EXPECT_EQ(fn(8), 50);
 };
 
-TEST_CASE(function_ref_from_lvalue_ref_and_mem_fn) {
+TEST_CASE(function_ref_bind_ref_non_const) {
     Adder adder{7};
-    // This uses the (Class&& invokable, MemFn) overload with lvalue ref
     auto fn = bind_ref<&Adder::add>(adder);
     EXPECT_EQ(fn(3), 10);
 };
@@ -259,6 +271,33 @@ TEST_CASE(function_move_chain) {
     function<int(int)> fn2(std::move(fn1));
     function<int(int)> fn3(std::move(fn2));
     EXPECT_EQ(fn3(6), 42);
+};
+
+TEST_CASE(function_from_non_trivial_sbo) {
+    // Non-trivially-copyable object that fits in SBO
+    NonTrivialCallable nc{10};
+    function<int(int)> fn(std::move(nc));
+    EXPECT_EQ(fn(5), 15);
+    EXPECT_EQ(fn(-10), 0);
+};
+
+TEST_CASE(function_move_non_trivial_sbo) {
+    NonTrivialCallable nc{20};
+    function<int(int)> fn1(std::move(nc));
+    EXPECT_EQ(fn1(5), 25);
+    function<int(int)> fn2(std::move(fn1));
+    EXPECT_EQ(fn2(5), 25);
+};
+
+TEST_CASE(function_move_assign_non_trivial_sbo) {
+    NonTrivialCallable nc1{1};
+    NonTrivialCallable nc2{2};
+    function<int(int)> fn1(std::move(nc1));
+    function<int(int)> fn2(std::move(nc2));
+    EXPECT_EQ(fn1(10), 11);
+    EXPECT_EQ(fn2(10), 12);
+    fn2 = std::move(fn1);
+    EXPECT_EQ(fn2(10), 11);
 };
 
 // ===== mem_fn tests =====

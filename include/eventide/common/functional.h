@@ -102,7 +102,7 @@ private:
 
 public:
     template <auto MemFnPointer, typename Class, typename Mem>
-    friend function_ref<typename Mem::FunctionType> bind_ref(Class&& obj);
+    friend constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj);
 
     constexpr function_ref(Sign* invokable) noexcept : function_ref(make(invokable)) {}
 
@@ -156,19 +156,18 @@ public:
     };
 
     template <typename T>
-    constexpr static bool sbo_eligible =
-        sizeof(T) <= sbo_size && alignof(T) <= sbo_align;
+    constexpr static bool sbo_eligible = sizeof(T) <= sbo_size && alignof(T) <= sbo_align;
 
     function(const function&) = delete;
 
-    function(function&& other) noexcept {
+    constexpr function(function&& other) noexcept {
         this->vptr = std::exchange(other.vptr, nullptr);
         this->storage = std::exchange(other.storage, Storage{});
     }
 
     function& operator=(const function&) = delete;
 
-    function& operator=(function&& other) noexcept {
+    constexpr function& operator=(function&& other) noexcept {
         if(this == &other) {
             return *this;
         }
@@ -176,7 +175,7 @@ public:
         return *new (this) function(std::move(other));
     }
 
-    ~function() {
+    constexpr ~function() {
         if(vptr && vptr->deleter) {
             vptr->deleter(this);
         }
@@ -184,7 +183,7 @@ public:
 
 private:
     constexpr function(const vtable* vptr, Storage storage = {}) noexcept :
-        vptr{vptr}, storage{storage} {}
+        storage{storage}, vptr{vptr} {}
 
     constexpr static function make(Sign* invokable) noexcept {
         constexpr static vtable vt = {
@@ -200,17 +199,31 @@ private:
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
         requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn>
     constexpr static function make(Class&& invokable, MemFn) noexcept {
-        constexpr static vtable vt = {
-            [](const function* self, Args&... args) -> R {
-                return (self->storage_as<ClassType>()->*MemFn::get())(static_cast<Args>(args)...);
-            },
-            [](function* self){
-                self->storage_as<ClassType>()->~ClassType();
-            }
-        };
-        Storage storage{};
-        new (storage.sbo) ClassType(std::forward<Class>(invokable));
-        return function(&vt, storage);
+        if consteval {
+            constexpr static vtable vt = {
+                [](const function* self, Args&... args) -> R {
+                    return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
+                        static_cast<Args>(args)...);
+                },
+                [](function* self) {
+                    delete static_cast<ClassType*>(self->storage.erased.ctx);
+                }};
+
+            return function(
+                &vt,
+                Storage{.erased = Erased{.ctx = new ClassType(std::forward<Class>(invokable))}});
+        } else {
+            constexpr static vtable vt = {[](const function* self, Args&... args) -> R {
+                                              return (self->storage_as<ClassType>()->*MemFn::get())(
+                                                  static_cast<Args>(args)...);
+                                          },
+                                          [](function* self) {
+                                              self->storage_as<ClassType>()->~ClassType();
+                                          }};
+            Storage storage{};
+            new (storage.sbo) ClassType(std::forward<Class>(invokable));
+            return function(&vt, storage);
+        }
     }
 
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
@@ -242,7 +255,7 @@ private:
 
 public:
     template <auto MemFnPointer, typename Class, typename Mem>
-    friend function<typename Mem::FunctionType> bind(Class&& obj);
+    friend constexpr function<typename Mem::FunctionType> bind(Class&& obj);
 
     template <typename Class>
         requires (!std::is_same_v<std::remove_cvref_t<Class>, function>) &&
@@ -270,17 +283,17 @@ private:
         return std::launder(reinterpret_cast<Class*>(this->storage.sbo));
     }
 
-    const vtable* vptr;
     Storage storage;
+    const vtable* vptr;
 };
 
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
-function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
+constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
     return function_ref<typename Mem::FunctionType>::make(std::forward<Class>(obj), Mem{});
 }
 
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
-function<typename Mem::FunctionType> bind(Class&& obj) {
+constexpr function<typename Mem::FunctionType> bind(Class&& obj) {
     return function<typename Mem::FunctionType>::make(std::forward<Class>(obj), Mem{});
 }
 
