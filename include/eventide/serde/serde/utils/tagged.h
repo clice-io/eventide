@@ -154,8 +154,6 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     }
 
     std::string tag_value;
-    bool has_tag = false;
-    bool has_content = false;
 
     auto deserialize_content_for_tag = [&](auto&& read_content_alt) -> std::expected<void, E> {
         bool matched = false;
@@ -201,9 +199,32 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         return {};
     };
 
+    // Read content directly from the struct deserializer
+    auto read_content_direct = [&](auto& alt) -> std::expected<void, E> {
+        auto result = d_struct->deserialize_value(alt);
+        if(!result) {
+            return std::unexpected(result.error());
+        }
+        return {};
+    };
+
+    // Expect the next key to match a specific field name
+    auto expect_next_key = [&](std::string_view expected) -> std::expected<void, E> {
+        auto key = d_struct->next_key();
+        if(!key) {
+            return std::unexpected(key.error());
+        }
+        if(!key->has_value() || **key != expected) {
+            return std::unexpected(E::type_mismatch);
+        }
+        return {};
+    };
+
     if constexpr(detail::can_buffer_adjacently_tagged_v<D>) {
         using captured_t = detail::captured_dom_value_t<D>;
         std::optional<captured_t> buffered_content;
+        bool has_tag = false;
+        bool has_content = false;
 
         while(true) {
             auto key = d_struct->next_key();
@@ -230,14 +251,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
                 has_content = true;
 
                 if(has_tag) {
-                    auto content_status =
-                        deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
-                            auto result = d_struct->deserialize_value(alt);
-                            if(!result) {
-                                return std::unexpected(result.error());
-                            }
-                            return {};
-                        });
+                    auto content_status = deserialize_content_for_tag(read_content_direct);
                     if(!content_status) {
                         return std::unexpected(content_status.error());
                     }
@@ -283,36 +297,22 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
 
         return d_struct->end();
     } else {
-        // Fallback for backends that cannot buffer an unresolved field payload.
-        auto tag_key = d_struct->next_key();
-        if(!tag_key) {
-            return std::unexpected(tag_key.error());
-        }
-        if(!tag_key->has_value() || **tag_key != TagAttr::field_names[0]) {
-            return std::unexpected(E::type_mismatch);
+        auto tag_key_status = expect_next_key(TagAttr::field_names[0]);
+        if(!tag_key_status) {
+            return std::unexpected(tag_key_status.error());
         }
 
         auto tag_status = d_struct->deserialize_value(tag_value);
         if(!tag_status) {
             return std::unexpected(tag_status.error());
         }
-        has_tag = true;
 
-        auto content_key = d_struct->next_key();
-        if(!content_key) {
-            return std::unexpected(content_key.error());
-        }
-        if(!content_key->has_value() || **content_key != TagAttr::field_names[1]) {
-            return std::unexpected(E::type_mismatch);
+        auto content_key_status = expect_next_key(TagAttr::field_names[1]);
+        if(!content_key_status) {
+            return std::unexpected(content_key_status.error());
         }
 
-        auto content_status = deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
-            auto result = d_struct->deserialize_value(alt);
-            if(!result) {
-                return std::unexpected(result.error());
-            }
-            return {};
-        });
+        auto content_status = deserialize_content_for_tag(read_content_direct);
         if(!content_status) {
             return std::unexpected(content_status.error());
         }
