@@ -37,7 +37,7 @@ struct deserialize_traits;
 template <serializer_like S, typename V, typename T, typename E>
 constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
 
-template <deserializer_like D, typename V, typename E>
+template <deserializer_like D, typename V, typename E = typename D::error_type>
 constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
 
 template <typename S, typename T, std::size_t N>
@@ -641,7 +641,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
                 deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
                     content::Deserializer<typename D::config_type> buffered_deserializer(
                         *buffered_content);
-                    auto result = deserialize(buffered_deserializer, alt);
+                    auto result = serde::deserialize(buffered_deserializer, alt);
                     if(!result) {
                         return std::unexpected(result.error());
                     }
@@ -1078,7 +1078,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
     }
 }
 
-template <deserializer_like D, typename V, typename E = typename D::error_type>
+template <deserializer_like D, typename V, typename E>
 constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
     using Deserde = deserialize_traits<D, V>;
 
