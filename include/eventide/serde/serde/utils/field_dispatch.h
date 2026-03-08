@@ -13,18 +13,10 @@
 #include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/spelling.h"
-#include "eventide/serde/serde/traits.h"
 #include "eventide/serde/serde/utils/common.h"
+#include "eventide/serde/serde/utils/fwd.h"
 
-namespace eventide::serde {
-
-template <serializer_like S, typename V, typename T, typename E>
-constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
-
-template <deserializer_like D, typename V, typename E>
-constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
-
-namespace detail {
+namespace eventide::serde::detail {
 
 template <typename Config, typename E, typename SerializeStruct, typename Field>
 constexpr auto serialize_struct_field(SerializeStruct& s_struct, Field field)
@@ -271,6 +263,4 @@ constexpr auto deserialize_struct_field(DeserializeStruct& d_struct,
     }
 }
 
-}  // namespace detail
-
-}  // namespace eventide::serde
+}  // namespace eventide::serde::detail

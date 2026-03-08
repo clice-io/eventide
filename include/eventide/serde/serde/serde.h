@@ -15,28 +15,9 @@
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/serde/attrs/behavior.h"
 #include "eventide/serde/serde/attrs/schema.h"
-
-namespace eventide::serde {
-
-template <typename S, typename T>
-struct serialize_traits;
-
-template <typename D, typename T>
-struct deserialize_traits;
-
-template <serializer_like S,
-          typename V,
-          typename T = typename S::value_type,
-          typename E = S::error_type>
-constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
-
-template <deserializer_like D, typename V, typename E = typename D::error_type>
-constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
-
-}  // namespace eventide::serde
-
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
+#include "eventide/serde/serde/utils/fwd.h"
 #include "eventide/serde/serde/utils/reflectable.h"
 #include "eventide/serde/serde/utils/tagged.h"
 
@@ -127,9 +108,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_str(v);
     } else if constexpr(bytes_like<V>) {
         return s.serialize_bytes(v);
-    } else if constexpr(std::same_as<V, std::nullptr_t>) {
-        return s.serialize_null();
-    } else if constexpr(std::same_as<V, std::monostate>) {
+    } else if constexpr(null_like<V>) {
         return s.serialize_null();
     } else if constexpr(is_specialization_of<std::optional, V>) {
         if(v.has_value()) {
@@ -344,23 +323,13 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         }
         v = std::move(*captured);
         return {};
-    } else if constexpr(std::same_as<V, std::nullptr_t>) {
+    } else if constexpr(null_like<V>) {
         auto is_none = d.deserialize_none();
         if(!is_none) {
             return std::unexpected(is_none.error());
         }
         if(*is_none) {
-            v = nullptr;
-            return {};
-        }
-        return std::unexpected(E::type_mismatch);
-    } else if constexpr(std::same_as<V, std::monostate>) {
-        auto is_none = d.deserialize_none();
-        if(!is_none) {
-            return std::unexpected(is_none.error());
-        }
-        if(*is_none) {
-            v = std::monostate{};
+            v = V{};
             return {};
         }
         return std::unexpected(E::type_mismatch);

@@ -14,19 +14,11 @@
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/traits.h"
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
+#include "eventide/serde/serde/utils/fwd.h"
 
-namespace eventide::serde {
-
-template <serializer_like S, typename V, typename T, typename E>
-constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
-
-template <deserializer_like D, typename V, typename E>
-constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
-
-namespace detail {
+namespace eventide::serde::detail {
 
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
@@ -447,7 +439,9 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     return status;
 }
 
-}  // namespace detail
+}  // namespace eventide::serde::detail
+
+namespace eventide::serde {
 
 /// Bitmask of data-model type categories.
 /// Backends map their format-specific "kind" enums to these bits;
@@ -476,13 +470,11 @@ template <typename T>
 constexpr type_hint expected_type_hints() {
     using U = std::remove_cvref_t<T>;
 
-    if constexpr(annotated_type<U>) {
+    if constexpr(eventide::serde::annotated_type<U>) {
         return expected_type_hints<typename U::annotated_type>();
-    } else if constexpr(is_specialization_of<std::optional, U>) {
+    } else if constexpr(eventide::is_specialization_of<std::optional, U>) {
         return type_hint::null_like | expected_type_hints<typename U::value_type>();
-    } else if constexpr(std::same_as<U, std::nullptr_t>) {
-        return type_hint::null_like;
-    } else if constexpr(std::same_as<U, std::monostate>) {
+    } else if constexpr(null_like<U>) {
         return type_hint::null_like;
     } else if constexpr(bool_like<U>) {
         return type_hint::boolean;

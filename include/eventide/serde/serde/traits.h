@@ -21,6 +21,9 @@
 namespace eventide::serde {
 
 template <typename T>
+concept null_like = is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>;
+
+template <typename T>
 concept bool_like = std::same_as<T, bool>;
 
 template <typename T>

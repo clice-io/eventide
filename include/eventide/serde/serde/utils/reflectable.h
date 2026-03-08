@@ -16,18 +16,10 @@
 #include "eventide/serde/serde/attrs/behavior.h"
 #include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/traits.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
+#include "eventide/serde/serde/utils/fwd.h"
 
-namespace eventide::serde {
-
-template <serializer_like S, typename V, typename T, typename E>
-constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
-
-template <deserializer_like D, typename V, typename E>
-constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
-
-namespace detail {
+namespace eventide::serde::detail {
 
 struct field_entry {
     std::string_view name;
@@ -401,6 +393,4 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
     return d_struct->end();
 }
 
-}  // namespace detail
-
-}  // namespace eventide::serde
+}  // namespace eventide::serde::detail
