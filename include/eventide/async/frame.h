@@ -336,6 +336,7 @@ protected:
 
         arming = false;
         if(pending_resume && awaiter) {
+            assert(awaiter->is_standard_task() && "aggregate awaiter must be a task");
             awaiter->clear_awaitee();
             if(pending_cancel) {
                 awaiter->state = Cancelled;

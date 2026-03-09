@@ -295,6 +295,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    assert(self->awaiter->is_standard_task() && "aggregate awaiter must be a task");
                     self->awaiter->clear_awaitee();
                     return static_cast<standard_task*>(self->awaiter)->handle();
                 }
@@ -311,6 +312,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
 
                 if(self->awaiter) {
+                    assert(self->awaiter->is_standard_task() && "aggregate awaiter must be a task");
                     self->awaiter->clear_awaitee();
                     return static_cast<standard_task*>(self->awaiter)->handle();
                 }
