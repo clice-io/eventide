@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <expected>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -18,8 +19,7 @@ class cancellation_token;
 namespace detail {
 
 template <typename T>
-task<std::expected<T, cancellation>> with_token_impl(cancellation_token token,
-                                                     task<std::expected<T, cancellation>> child);
+using cancel_result_t = std::conditional_t<is_cancellation_t<T>, T, std::expected<T, cancellation>>;
 
 struct cancellation_watch_flag {
     bool cancelled = false;
@@ -188,10 +188,9 @@ public:
     }
 
 private:
-    template <typename T>
-    friend task<std::expected<T, cancellation>>
-        detail::with_token_impl(cancellation_token token,
-                                task<std::expected<T, cancellation>> child);
+    template <typename U, std::same_as<cancellation_token>... Ts>
+        requires (sizeof...(Ts) > 0)
+    friend task<detail::cancel_result_t<U>> with_token(task<U>, Ts...);
 
     registration register_task(async_node* node) const {
         auto flag = std::make_shared<detail::cancellation_watch_flag>();
@@ -254,50 +253,37 @@ private:
     std::shared_ptr<detail::cancellation_state> state;
 };
 
-namespace detail {
+/// with_token: cancel a task when any of the given tokens fire.
+template <typename T, std::same_as<cancellation_token>... Tokens>
+    requires (sizeof...(Tokens) > 0)
+task<detail::cancel_result_t<T>> with_token(task<T> task, Tokens... tokens) {
+    auto child = [&] {
+        if constexpr(is_cancellation_t<T>) {
+            return std::move(task);
+        } else {
+            return std::move(task).catch_cancel();
+        }
+    }();
 
-template <typename T>
-task<std::expected<T, cancellation>> with_token_impl(cancellation_token token,
-                                                     task<std::expected<T, cancellation>> child) {
-    if(token.cancelled()) {
+    if((tokens.cancelled() || ...)) {
         co_await cancel();
         std::abort();
     }
 
-    child->policy = async_node::InterceptCancel;
-    auto registration = token.register_task(child.operator->());
+    auto registrations = std::tuple{tokens.register_task(child.operator->())...};
     auto result = co_await std::move(child);
-    registration.unregister();
+    std::apply([](auto&... regs) { (regs.unregister(), ...); }, registrations);
 
     if(!result.has_value()) {
         co_await cancel();
         std::abort();
     }
 
-    if constexpr(std::is_void_v<T>) {
+    if constexpr(std::is_void_v<decltype(*result)>) {
         co_return;
     } else {
         co_return std::move(*result);
     }
-}
-
-}  // namespace detail
-
-template <typename T>
-    requires (!is_cancellation_t<T>)
-task<std::expected<T, cancellation>> with_token(cancellation_token token, task<T>&& task) {
-    auto child = std::move(task).catch_cancel();
-    auto wrapped = detail::with_token_impl<T>(std::move(token), std::move(child));
-    wrapped->policy = async_node::InterceptCancel;
-    return wrapped;
-}
-
-template <typename T>
-task<std::expected<T, cancellation>> with_token(cancellation_token token,
-                                                task<std::expected<T, cancellation>>&& task) {
-    auto wrapped = detail::with_token_impl<T>(std::move(token), std::move(task));
-    wrapped->policy = async_node::InterceptCancel;
-    return wrapped;
 }
 
 }  // namespace eventide

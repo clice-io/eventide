@@ -84,8 +84,6 @@ if(EVENTIDE_SERDE_ENABLE_SIMDJSON)
 endif()
 
 if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
-    # flexbuffers::Reference parsing depends on symbols from flatbuffers util.cpp.
-    # Build the core flatbuffers static library, skip tools/tests.
     set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "" FORCE)
     set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "" FORCE)
@@ -100,24 +98,50 @@ if(EVENTIDE_SERDE_ENABLE_FLATBUFFERS)
     )
     FetchContent_MakeAvailable(flatbuffers)
 
-    add_library(eventide_serde_flatbuffers STATIC)
+    add_library(eventide_serde_flatbuffers INTERFACE)
     add_library(eventide::serde::flatbuffers ALIAS eventide_serde_flatbuffers)
 
-    target_sources(eventide_serde_flatbuffers PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/flatbuffers/flex/serializer.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/flatbuffers/flex/deserializer.cpp"
-    )
-
-    target_include_directories(eventide_serde_flatbuffers PUBLIC
+    target_include_directories(eventide_serde_flatbuffers INTERFACE
         "${PROJECT_SOURCE_DIR}/include"
     )
 
-    target_link_libraries(eventide_serde_flatbuffers PUBLIC
+    target_link_libraries(eventide_serde_flatbuffers INTERFACE
         eventide::reflection
         flatbuffers
     )
 
     target_link_libraries(eventide_serde INTERFACE
         eventide::serde::flatbuffers
+    )
+endif()
+
+if(EVENTIDE_SERDE_ENABLE_TOML)
+    set(TOMLPLUSPLUS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_BUILD_MODULES OFF CACHE BOOL "" FORCE)
+    set(TOMLPLUSPLUS_INSTALL OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        tomlplusplus
+        GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+        GIT_TAG v3.4.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(tomlplusplus)
+
+    add_library(eventide_serde_toml INTERFACE)
+    add_library(eventide::serde::toml ALIAS eventide_serde_toml)
+
+    target_include_directories(eventide_serde_toml INTERFACE
+        "${PROJECT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(eventide_serde_toml INTERFACE
+        eventide::reflection
+        tomlplusplus::tomlplusplus
+    )
+
+    target_link_libraries(eventide_serde INTERFACE
+        eventide::serde::toml
     )
 endif()

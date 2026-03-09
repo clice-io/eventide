@@ -16,6 +16,7 @@ option(EVENTIDE_ENABLE_ZEST "Build zest test framework target" OFF)
 option(EVENTIDE_SERDE_ENABLE_SIMDJSON "Enable simdjson dependency for eventide::serde" OFF)
 option(EVENTIDE_SERDE_ENABLE_YYJSON "Enable yyjson dependency for eventide::serde" OFF)
 option(EVENTIDE_SERDE_ENABLE_FLATBUFFERS "Enable flatbuffers dependency for eventide::serde" OFF)
+option(EVENTIDE_SERDE_ENABLE_TOML "Enable tomlplusplus dependency for eventide::serde" OFF)
 option(EVENTIDE_BUILD_ALL_TESTS "Enable all optional test suites for CI" OFF)
 
 if(EVENTIDE_BUILD_ALL_TESTS)
@@ -53,6 +54,11 @@ if(EVENTIDE_BUILD_ALL_TESTS)
         message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_SERDE_ENABLE_FLATBUFFERS")
         set(EVENTIDE_SERDE_ENABLE_FLATBUFFERS ON CACHE BOOL "Enable flatbuffers dependency for eventide::serde" FORCE)
     endif()
+
+    if(NOT EVENTIDE_SERDE_ENABLE_TOML)
+        message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_SERDE_ENABLE_TOML")
+        set(EVENTIDE_SERDE_ENABLE_TOML ON CACHE BOOL "Enable tomlplusplus dependency for eventide::serde" FORCE)
+    endif()
 endif()
 
 if(EVENTIDE_ENABLE_TEST)
@@ -64,8 +70,20 @@ if(EVENTIDE_ENABLE_TEST)
     if(MSVC)
         add_compile_options("/Zc:preprocessor")
     else()
-        add_compile_options("-fsanitize=address" "-g")
-        add_link_options("-fsanitize=address" "-g")
+        add_compile_options(
+            "$<$<CONFIG:Debug>:-fsanitize=address>"
+            "$<$<CONFIG:Debug>:-g>"
+            "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+            "$<$<CONFIG:Release>:-g1>"
+            "$<$<CONFIG:MinSizeRel>:-g1>"
+        )
+        add_link_options(
+            "$<$<CONFIG:Debug>:-fsanitize=address>"
+            "$<$<CONFIG:Debug>:-g>"
+            "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+            "$<$<CONFIG:Release>:-g1>"
+            "$<$<CONFIG:MinSizeRel>:-g1>"
+        )
     endif()
 endif()
 
@@ -88,7 +106,7 @@ if(EVENTIDE_ENABLE_ASYNC)
 endif()
 
 if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
-    add_subdirectory(src/jsonrpc)
+    add_subdirectory(src/ipc)
     add_subdirectory(src/language)
 endif()
 

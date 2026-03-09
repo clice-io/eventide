@@ -17,7 +17,6 @@
 #include "eventide/deco/backend.h"
 #include "eventide/deco/decl.h"
 #include "eventide/deco/descriptor.h"
-#include "eventide/deco/trait.h"
 
 namespace deco::util {
 
@@ -64,8 +63,54 @@ struct SubCommandError {
 };
 
 template <typename T>
+std::string check_valid(const T& options,
+                        const std::set<const decl::Category*>& matched_categories) {
+    const auto& storage = detail::build_storage<T>();
+    std::string err = "";
+    // check required options
+    storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
+        if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
+           !field.value.has_value()) {
+            err = std::format("required option {} is missing",
+                              desc::from_deco_option(cfg, false, name));
+            return false;
+        }
+        return true;
+    });
+    if(!err.empty()) {
+        return err;
+    }
+
+    // check category requirements
+    const auto& c_map = storage.category_map();
+    std::set<const decl::Category*> required_categories;
+    // 0 is dummy
+    for(std::size_t i = 1; i < c_map.size(); ++i) {
+        const auto* category = c_map[i];
+        if(category != nullptr && category->required) {
+            required_categories.insert(category);
+        }
+    }
+    for(const auto* category: required_categories) {
+        if(!matched_categories.contains(category)) {
+            err = std::format("required {} is missing", desc::detail::category_desc(*category));
+            return err;
+        }
+    }
+    // check category exclusiveness
+    for(auto category: matched_categories) {
+        if(category->exclusive && matched_categories.size() > 1) {
+            err = std::format("options in {} are exclusive, but multiple categories are matched",
+                              desc::detail::category_desc(*category));
+            return err;
+        }
+    }
+    return {};
+}
+
+template <typename T>
 std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
-    constexpr auto& storage = detail::build_storage<T>();
+    const auto& storage = detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
     ParsedResult<T> res{};
     ParseError err;
@@ -87,13 +132,13 @@ std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
 
         // check input and trailing input
         if(storage.is_input_argument(raw_parg)) {
-            if constexpr(!storage.has_input_option()) {
+            if(!storage.has_input_option()) {
                 err = {ParseError::Type::DecoParsing,
                        std::format("unexpected input argument {}", raw_parg.get_spelling_view())};
                 return false;
             }
         } else if(storage.is_trailing_argument(raw_parg)) {
-            if constexpr(!storage.has_trailing_option()) {
+            if(!storage.has_trailing_option()) {
                 err = {
                     ParseError::Type::DecoParsing,
                     std::format("unexpected trailing argument {}", raw_parg.get_spelling_view())};
@@ -148,30 +193,10 @@ std::expected<ParsedResult<T>, ParseError> parse(std::span<std::string> argv) {
     }
 
     // check category requirements
-    const auto& c_map = storage.category_map();
-    std::set<const decl::Category*> required_categories;
-    // 0 is dummy
-    for(std::size_t i = 1; i < c_map.size(); ++i) {
-        const auto* category = c_map[i];
-        if(category != nullptr && category->required) {
-            required_categories.insert(category);
-        }
-    }
-    for(const auto* category: required_categories) {
-        if(!res.matched_categories.contains(category)) {
-            err = {ParseError::Type::DecoParsing,
-                   std::format("required {} is missing", desc::detail::category_desc(*category))};
-            return std::unexpected(std::move(err));
-        }
-    }
-    // check category exclusiveness
-    for(auto category: res.matched_categories) {
-        if(category->exclusive && res.matched_categories.size() > 1) {
-            err = {ParseError::Type::DecoParsing,
-                   std::format("options in {} are exclusive, but multiple categories are matched",
-                               desc::detail::category_desc(*category))};
-            return std::unexpected(std::move(err));
-        }
+    const std::string check_err = check_valid(res.options, res.matched_categories);
+    if(!check_err.empty()) {
+        err = {ParseError::Type::DecoParsing, std::move(check_err)};
+        return std::unexpected(std::move(err));
     }
     return res;
 }
@@ -217,7 +242,7 @@ public:
 
     template <typename Os>
     void usage(Os& os, bool include_help = true) const {
-        constexpr auto& storage = detail::build_storage<T>();
+        const auto& storage = detail::build_storage<T>();
         std::map<const decl::Category*, std::vector<std::string>> category_usage_map;
         auto on_option = [&](auto, const auto& opt_fields, std::string_view field_name, auto) {
             category_usage_map[opt_fields.category.ptr()].push_back(

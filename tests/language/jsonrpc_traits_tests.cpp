@@ -7,16 +7,16 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/jsonrpc/peer.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
 #include "eventide/async/sync.h"
-#include "eventide/serde/json/simd_deserializer.h"
+#include "eventide/serde/json/deserializer.h"
 #include "eventide/language/protocol.h"
 
 namespace eventide::language {
 
-namespace jsonrpc = eventide::jsonrpc;
+namespace ipc = eventide::ipc;
 
 struct AddParams {
     std::int64_t a = 0;
@@ -59,7 +59,7 @@ struct RPCNotification {
     NoteParams params;
 };
 
-class FakeTransport final : public jsonrpc::Transport {
+class FakeTransport final : public ipc::Transport {
 public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
@@ -71,9 +71,9 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<bool> write_message(std::string_view payload) override {
+    task<ipc::Result<void>> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
-        co_return true;
+        co_return ipc::Result<void>{};
     }
 
     const std::vector<std::string>& outgoing() const {
@@ -86,7 +86,7 @@ private:
     std::size_t read_index = 0;
 };
 
-class ScriptedTransport final : public jsonrpc::Transport {
+class ScriptedTransport final : public ipc::Transport {
 public:
     using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
 
@@ -110,12 +110,12 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<bool> write_message(std::string_view payload) override {
+    task<ipc::Result<void>> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return true;
+        co_return ipc::Result<void>{};
     }
 
     void push_incoming(std::string payload) {
@@ -143,7 +143,7 @@ private:
 
 }  // namespace eventide::language
 
-namespace eventide::jsonrpc::protocol {
+namespace eventide::ipc::protocol {
 
 template <>
 struct RequestTraits<eventide::language::AddParams> {
@@ -156,7 +156,7 @@ struct NotificationTraits<eventide::language::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-}  // namespace eventide::jsonrpc::protocol
+}  // namespace eventide::ipc::protocol
 
 namespace eventide::language {
 
@@ -177,13 +177,13 @@ TEST_CASE(traits_dispatch_order) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::JsonPeer peer(loop, std::move(transport));
     std::vector<std::string> order;
     bool second_saw_first = false;
     bool first_seen = false;
 
-    peer.on_request([&](jsonrpc::RequestContext&,
-                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
+    peer.on_request([&](ipc::JsonPeer::RequestContext&,
+                        const AddParams& params) -> ipc::RequestResult<AddParams> {
         order.emplace_back("request");
         co_return AddResult{.sum = params.a + params.b};
     });
@@ -210,7 +210,7 @@ TEST_CASE(traits_dispatch_order) {
     EXPECT_TRUE(second_saw_first);
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::simd::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->jsonrpc, "2.0");
     EXPECT_EQ(response->id.value, 1);
@@ -230,13 +230,13 @@ TEST_CASE(explicit_method) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     std::vector<std::string> notifications;
 
     peer.on_request("custom/add",
-                    [&](jsonrpc::RequestContext& context,
-                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
+                    [&](ipc::JsonPeer::RequestContext& context,
+                        const AddParams& params) -> ipc::RequestResult<AddParams> {
                         request_method = std::string(context.method);
                         co_return AddResult{.sum = params.a + params.b};
                     });
@@ -252,7 +252,7 @@ TEST_CASE(explicit_method) {
     EXPECT_EQ(notifications.front(), "hello");
 
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
-    auto response = serde::json::simd::from_json<RPCResponse>(transport_ptr->outgoing().front());
+    auto response = serde::json::from_json<RPCResponse>(transport_ptr->outgoing().front());
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->id.value, 2);
     ASSERT_TRUE(response->result.has_value());
@@ -287,12 +287,12 @@ TEST_CASE(request_notify_apis) {
     auto* transport_ptr = transport.get();
 
     eventide::event_loop loop;
-    jsonrpc::Peer peer(loop, std::move(transport));
+    ipc::JsonPeer peer(loop, std::move(transport));
     std::string request_method;
     protocol::integer request_id = 0;
 
-    peer.on_request([&](jsonrpc::RequestContext& context,
-                        const AddParams& params) -> jsonrpc::RequestResult<AddParams> {
+    peer.on_request([&](ipc::JsonPeer::RequestContext& context,
+                        const AddParams& params) -> ipc::RequestResult<AddParams> {
         request_method = std::string(context.method);
         request_id = static_cast<protocol::integer>(context.id.value);
 
@@ -334,19 +334,19 @@ TEST_CASE(request_notify_apis) {
     const auto& outgoing = transport_ptr->outgoing();
     ASSERT_EQ(outgoing.size(), 5U);
 
-    auto note_from_context = serde::json::simd::from_json<RPCNotification>(outgoing[0]);
+    auto note_from_context = serde::json::from_json<RPCNotification>(outgoing[0]);
     ASSERT_TRUE(note_from_context.has_value());
     EXPECT_EQ(note_from_context->jsonrpc, "2.0");
     EXPECT_EQ(note_from_context->method, "client/note/context");
     EXPECT_EQ(note_from_context->params.text, "context");
 
-    auto note_from_server = serde::json::simd::from_json<RPCNotification>(outgoing[1]);
+    auto note_from_server = serde::json::from_json<RPCNotification>(outgoing[1]);
     ASSERT_TRUE(note_from_server.has_value());
     EXPECT_EQ(note_from_server->jsonrpc, "2.0");
     EXPECT_EQ(note_from_server->method, "client/note/server");
     EXPECT_EQ(note_from_server->params.text, "server");
 
-    auto request_from_context = serde::json::simd::from_json<RPCRequest>(outgoing[2]);
+    auto request_from_context = serde::json::from_json<RPCRequest>(outgoing[2]);
     ASSERT_TRUE(request_from_context.has_value());
     EXPECT_EQ(request_from_context->jsonrpc, "2.0");
     EXPECT_EQ(request_from_context->id.value, 1);
@@ -354,7 +354,7 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(request_from_context->params.a, 2);
     EXPECT_EQ(request_from_context->params.b, 3);
 
-    auto request_from_server = serde::json::simd::from_json<RPCRequest>(outgoing[3]);
+    auto request_from_server = serde::json::from_json<RPCRequest>(outgoing[3]);
     ASSERT_TRUE(request_from_server.has_value());
     EXPECT_EQ(request_from_server->jsonrpc, "2.0");
     EXPECT_EQ(request_from_server->id.value, 2);
@@ -362,7 +362,7 @@ TEST_CASE(request_notify_apis) {
     EXPECT_EQ(request_from_server->params.a, 3);
     EXPECT_EQ(request_from_server->params.b, 1);
 
-    auto final_response = serde::json::simd::from_json<RPCResponse>(outgoing[4]);
+    auto final_response = serde::json::from_json<RPCResponse>(outgoing[4]);
     ASSERT_TRUE(final_response.has_value());
     EXPECT_EQ(final_response->jsonrpc, "2.0");
     EXPECT_EQ(final_response->id.value, 7);

@@ -55,28 +55,24 @@ struct DeclOpt {
         help = "flag";
         required = false;
         category = verboseCategory;
-    }) verbose = true;
+    })
+    verbose = true;
 
     DECO_CFG(required = true);
-    DecoInput(help = "input")<int> input = 42;
+    DecoInput(help = "input")
+    <int> input = 42;
 
-    DecoPack(help = "pack";
-             category = packCategory;)<std::vector<std::string>> pack = std::vector<std::string> {
-        "a",
-        "b"
-    };
+    DecoPack(help = "pack"; category = packCategory;)
+    <std::vector<std::string>> pack = std::vector<std::string>{"a", "b"};
 
-    DecoKVStyled(deco::decl::KVStyle::Joined, help = "joined-kv";)<int> joined = 7;
-    DecoKV(help = "separate-kv";)<std::string> path = "entry.js";
-    DecoComma(help = "comma";
-              names = {"-T"};)<std::vector<std::string>> tags = std::vector<std::string> {
-        "x",
-        "y"
-    };
-    DecoMulti(2, help = "multi"; names = {"-P"};)<std::vector<int>> pair = std::vector<int> {
-        1,
-        2
-    };
+    DecoKVStyled(deco::decl::KVStyle::Joined, help = "joined-kv";)
+    <int> joined = 7;
+    DecoKV(help = "separate-kv";)
+    <std::string> path = "entry.js";
+    DecoComma(help = "comma"; names = {"-T"};)
+    <std::vector<std::string>> tags = std::vector<std::string>{"x", "y"};
+    DecoMulti(2, help = "multi"; names = {"-P"};)
+    <std::vector<int>> pair = std::vector<int>{1, 2};
 };
 
 static_assert(std::is_same_v<decltype(DeclOpt{}.pack)::result_type, std::vector<std::string>>);
@@ -87,7 +83,7 @@ TEST_SUITE(deco_decl) {
 TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     DeclOpt opt{};
 
-    using VerboseCfg = typename decltype(opt.verbose)::__cfg_ty;
+    using VerboseCfg = typename decltype(opt.verbose)::__deco_field_ty;
     VerboseCfg verbose_cfg{};
     EXPECT_TRUE(verbose_cfg.names.empty());
     EXPECT_TRUE(verbose_cfg.required == false);
@@ -104,7 +100,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     opt.input = 64;
     EXPECT_TRUE(opt.input.value.value() == 64);
 
-    using PackCfg = typename decltype(opt.pack)::__cfg_ty;
+    using PackCfg = typename decltype(opt.pack)::__deco_field_ty;
     PackCfg pack_cfg{};
     EXPECT_TRUE(opt.pack.value.has_value());
     EXPECT_TRUE(opt.pack.value.value().size() == 2);
@@ -115,7 +111,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     EXPECT_TRUE(opt.pack.value.value().size() == 1);
     EXPECT_TRUE(opt.pack.value.value()[0] == "tail");
 
-    using JoinedCfg = typename decltype(opt.joined)::__cfg_ty;
+    using JoinedCfg = typename decltype(opt.joined)::__deco_field_ty;
     JoinedCfg joined_cfg{};
     EXPECT_TRUE(joined_cfg.style == deco::decl::KVStyle::Joined);
     EXPECT_TRUE(opt.joined.value.has_value());
@@ -123,7 +119,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     opt.joined = 11;
     EXPECT_TRUE(opt.joined.value.value() == 11);
 
-    using PathCfg = typename decltype(opt.path)::__cfg_ty;
+    using PathCfg = typename decltype(opt.path)::__deco_field_ty;
     PathCfg path_cfg{};
     EXPECT_TRUE(path_cfg.style == deco::decl::KVStyle::Separate);
     EXPECT_TRUE(opt.path.value.has_value());
@@ -131,7 +127,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     opt.path = std::string("run.js");
     EXPECT_TRUE(opt.path.value.value() == "run.js");
 
-    using TagsCfg = typename decltype(opt.tags)::__cfg_ty;
+    using TagsCfg = typename decltype(opt.tags)::__deco_field_ty;
     TagsCfg tags_cfg{};
     EXPECT_TRUE(tags_cfg.names.size() == 1);
     EXPECT_TRUE(tags_cfg.names[0] == "-T");
@@ -143,7 +139,7 @@ TEST_CASE(option_declaration_has_expected_shape_and_default_assignment) {
     EXPECT_TRUE(opt.tags.value.value().size() == 1);
     EXPECT_TRUE(opt.tags.value.value()[0] == "only");
 
-    using PairCfg = typename decltype(opt.pair)::__cfg_ty;
+    using PairCfg = typename decltype(opt.pair)::__deco_field_ty;
     PairCfg pair_cfg{};
     EXPECT_TRUE(pair_cfg.arg_num == 2);
     EXPECT_TRUE(pair_cfg.names.size() == 1);
