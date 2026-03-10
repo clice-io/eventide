@@ -2,12 +2,83 @@
 
 #include <cassert>
 #include <cstddef>
+#include <expected>
 #include <source_location>
 
 #include "frame.h"
 #include "task.h"
 
 namespace eventide {
+
+/// Shared base for synchronization resources. These are not awaitable runtime
+/// nodes; waiter_link sub-objects bridge tasks into the wait queue.
+class sync_primitive {
+public:
+    enum class Kind : std::uint8_t {
+        Mutex,
+        Event,
+        Semaphore,
+        ConditionVariable,
+    };
+
+    friend class async_node;
+
+    explicit sync_primitive(Kind k) : kind(k) {}
+
+    const Kind kind;
+
+    std::source_location location;
+
+    /// Appends a waiter to the end of the wait queue.
+    void insert(waiter_link* link);
+
+    /// Removes a waiter from the wait queue.
+    void remove(waiter_link* link);
+
+protected:
+    bool has_waiters() const noexcept {
+        return head != nullptr;
+    }
+
+    waiter_link* pop_waiter() noexcept {
+        auto* link = head;
+        if(link) {
+            remove(link);
+        }
+        return link;
+    }
+
+    template <typename Fn>
+    void drain_waiters(Fn&& fn) {
+        auto* cur = head;
+        while(cur) {
+            auto* next = cur->next;
+            remove(cur);
+            fn(cur);
+            cur = next;
+        }
+    }
+
+    bool resume_waiter(waiter_link* link) noexcept {
+        if(!link) {
+            return false;
+        }
+        auto* awaiting = link->awaiter;
+        link->awaiter = nullptr;
+        if(!awaiting || awaiting->is_cancelled()) {
+            return false;
+        }
+        awaiting->resume();
+        return true;
+    }
+
+    bool cancel_waiter(waiter_link* link) noexcept;
+
+private:
+    /// Head and tail of the intrusive doubly-linked waiter queue.
+    waiter_link* head = nullptr;
+    waiter_link* tail = nullptr;
+};
 
 class mutex : public sync_primitive {
 public:
@@ -163,14 +234,25 @@ public:
             return link_continuation(&awaiter.promise(), location);
         }
 
-        void await_resume() noexcept {}
+        std::expected<void, cancellation> await_resume() noexcept {
+            if(this->state == async_node::Cancelled) {
+                return std::unexpected(cancellation{});
+            }
+
+            return {};
+        }
 
     private:
         event* owner = nullptr;
     };
 
-    wait_awaiter wait() noexcept {
-        return wait_awaiter(*this);
+    /// Waits until the event is set. If the current wait queue is interrupted,
+    /// cancellation is propagated through the returned task.
+    task<> wait() {
+        auto result = co_await wait_awaiter(*this);
+        if(!result.has_value()) {
+            co_await cancel();
+        }
     }
 
     void set() noexcept {
@@ -180,6 +262,11 @@ public:
 
     void reset() noexcept {
         signaled = false;
+    }
+
+    /// Interrupts the current wait queue without changing the signaled state.
+    void interrupt() noexcept {
+        drain_waiters([this](waiter_link* waiter) { cancel_waiter(waiter); });
     }
 
     bool is_set() const noexcept {

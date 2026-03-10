@@ -5,6 +5,7 @@
 
 #include "libuv.h"
 #include "eventide/async/loop.h"
+#include "eventide/async/sync.h"
 
 namespace eventide {
 
@@ -302,44 +303,6 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             std::abort();
         }
     }
-}
-
-void sync_primitive::insert(waiter_link* link) {
-    assert(link && "insert: null waiter_link");
-    assert(link->resource == nullptr && "insert: waiter_link already linked");
-    assert(link->prev == nullptr && link->next == nullptr && "insert: waiter_link has links");
-
-    link->resource = this;
-
-    if(tail) {
-        tail->next = link;
-        link->prev = tail;
-        tail = link;
-    } else {
-        head = link;
-        tail = link;
-    }
-}
-
-void sync_primitive::remove(waiter_link* link) {
-    assert(link && "remove: null waiter_link");
-    assert(link->resource == this && "remove: waiter_link not owned by resource");
-
-    if(link->prev) {
-        link->prev->next = link->next;
-    } else {
-        head = link->next;
-    }
-
-    if(link->next) {
-        link->next->prev = link->prev;
-    } else {
-        tail = link->prev;
-    }
-
-    link->prev = nullptr;
-    link->next = nullptr;
-    link->resource = nullptr;
 }
 
 }  // namespace eventide

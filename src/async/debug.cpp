@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "eventide/async/frame.h"
+#include "eventide/async/sync.h"
 
 namespace eventide {
 
