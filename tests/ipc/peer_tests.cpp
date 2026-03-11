@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "test_transport.h"
+#include "../common/fd_helpers.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
@@ -16,9 +18,6 @@
 #include "eventide/async/sync.h"
 #include "eventide/async/watcher.h"
 #include "eventide/serde/json/deserializer.h"
-
-#include "../common/fd_helpers.h"
-#include "test_transport.h"
 
 namespace eventide::ipc {
 

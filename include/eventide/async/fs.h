@@ -129,14 +129,13 @@ task<void, error> mkdir(std::string_view path, int mode, event_loop& loop = even
 task<file_stats, error> stat(std::string_view path, event_loop& loop = event_loop::current());
 
 task<void, error> copyfile(std::string_view path,
-                     std::string_view new_path,
-                     copyfile_options options = copyfile_options{},
-                     event_loop& loop = event_loop::current());
+                           std::string_view new_path,
+                           copyfile_options options = copyfile_options{},
+                           event_loop& loop = event_loop::current());
 
 task<std::string, error> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
-task<mkstemp_result, error> mkstemp(std::string_view tpl,
-                                    event_loop& loop = event_loop::current());
+task<mkstemp_result, error> mkstemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
 task<void, error> rmdir(std::string_view path, event_loop& loop = event_loop::current());
 
@@ -154,8 +153,8 @@ task<file_stats, error> fstat(int fd, event_loop& loop = event_loop::current());
 task<file_stats, error> lstat(std::string_view path, event_loop& loop = event_loop::current());
 
 task<void, error> rename(std::string_view path,
-                   std::string_view new_path,
-                   event_loop& loop = event_loop::current());
+                         std::string_view new_path,
+                         event_loop& loop = event_loop::current());
 
 task<void, error> fsync(int fd, event_loop& loop = event_loop::current());
 
@@ -174,20 +173,21 @@ task<void, error> access(std::string_view path, int mode, event_loop& loop = eve
 task<void, error> chmod(std::string_view path, int mode, event_loop& loop = event_loop::current());
 
 task<void, error> utime(std::string_view path,
-                  double atime,
-                  double mtime,
-                  event_loop& loop = event_loop::current());
+                        double atime,
+                        double mtime,
+                        event_loop& loop = event_loop::current());
 
-task<void, error> futime(int fd, double atime, double mtime, event_loop& loop = event_loop::current());
+task<void, error>
+    futime(int fd, double atime, double mtime, event_loop& loop = event_loop::current());
 
 task<void, error> lutime(std::string_view path,
-                   double atime,
-                   double mtime,
-                   event_loop& loop = event_loop::current());
+                         double atime,
+                         double mtime,
+                         event_loop& loop = event_loop::current());
 
 task<void, error> link(std::string_view path,
-                 std::string_view new_path,
-                 event_loop& loop = event_loop::current());
+                       std::string_view new_path,
+                       event_loop& loop = event_loop::current());
 
 }  // namespace fs
 

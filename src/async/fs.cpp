@@ -310,9 +310,9 @@ static task<Result, error> run_fs(Submit submit,
 
 template <typename Submit>
 static task<void, error> run_void_fs(Submit submit, event_loop& loop) {
-    auto res = co_await run_fs<int>(
-        std::move(submit), [](uv_fs_t&) { return 0; }, loop);
-    if(!res) co_return outcome_error(res.error());
+    auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop);
+    if(!res)
+        co_return outcome_error(res.error());
     co_return outcome_value();
 }
 
@@ -404,12 +404,14 @@ task<void, error> fs::rmdir(std::string_view path, event_loop& loop) {
 
 task<void, error> fs::fsync(int fd, event_loop& loop) {
     co_return co_await run_void_fs(
-        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fsync(loop, req, fd, cb); }, loop);
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fsync(loop, req, fd, cb); },
+        loop);
 }
 
 task<void, error> fs::fdatasync(int fd, event_loop& loop) {
     co_return co_await run_void_fs(
-        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fdatasync(loop, req, fd, cb); }, loop);
+        [&](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_fdatasync(loop, req, fd, cb); },
+        loop);
 }
 
 task<void, error> fs::ftruncate(int fd, std::int64_t offset, event_loop& loop) {
@@ -457,9 +459,9 @@ task<void, error> fs::lutime(std::string_view path, double atime, double mtime, 
 }
 
 task<void, error> fs::copyfile(std::string_view path,
-                         std::string_view new_path,
-                         fs::copyfile_options options,
-                         event_loop& loop) {
+                               std::string_view new_path,
+                               fs::copyfile_options options,
+                               event_loop& loop) {
     auto uv_flags = to_uv_copyfile_flags(options);
     if(!uv_flags) {
         co_return outcome_error(uv_flags.error());
@@ -505,7 +507,8 @@ task<void, error> fs::closedir(fs::dir_handle& dir, event_loop& loop) {
         },
         loop);
 
-    if(!res) co_return outcome_error(res.error());
+    if(!res)
+        co_return outcome_error(res.error());
     dir.reset();
     co_return outcome_value();
 }
@@ -579,9 +582,7 @@ task<std::int64_t, error> fs::sendfile(int out_fd,
 task<std::vector<fs::dirent>, error> fs::scandir(std::string_view path, event_loop& loop) {
     std::string p(path);
     co_return co_await run_fs<std::vector<fs::dirent>>(
-        [&, p](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_scandir(loop, req, p.c_str(), 0, cb);
-        },
+        [&, p](uv_fs_t& req, uv_fs_cb cb) { return uv::fs_scandir(loop, req, p.c_str(), 0, cb); },
         [](uv_fs_t& req) {
             std::vector<fs::dirent> out;
             uv_dirent_t ent;

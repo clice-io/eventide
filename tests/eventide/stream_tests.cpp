@@ -16,12 +16,11 @@
 #include <sys/socket.h>
 #endif
 
+#include "../common/fd_helpers.h"
 #include "eventide/zest/zest.h"
 #include "eventide/async/loop.h"
 #include "eventide/async/stream.h"
 #include "eventide/async/watcher.h"
-
-#include "../common/fd_helpers.h"
 
 namespace eventide {
 
