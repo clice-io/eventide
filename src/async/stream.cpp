@@ -56,7 +56,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
-        auto s = static_cast<eventide::stream::Self*>(handle->data);
+        auto s = static_cast<stream::Self*>(handle->data);
         assert(s != nullptr && "on_alloc requires stream state in handle->data");
 
         auto [dst, writable] = s->buffer.get_write_ptr();
@@ -71,7 +71,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
     // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
-        auto s = static_cast<eventide::stream::Self*>(stream->data);
+        auto s = static_cast<stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
         auto err = uv::status_to_error(nread);
         if(err) {
@@ -129,14 +129,14 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
 struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     using await_base = uv::await_op<stream_read_some_await>;
-    using promise_t = task<result<std::size_t>>::promise_type;
+    using promise_t = task<std::size_t, error>::promise_type;
 
     // Stream self that owns the active read waiter.
     stream::Self* self;
     // Destination buffer provided by the caller.
     std::span<char> dst;
     // Final read result observed by await_resume().
-    result<std::size_t> out = std::unexpected(error());
+    result<std::size_t> out = outcome_error(error());
 
     stream_read_some_await(stream::Self* self, std::span<char> buffer) : self(self), dst(buffer) {}
 
@@ -153,7 +153,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     }
 
     static void on_alloc(uv_handle_t* handle, size_t, uv_buf_t* buf) {
-        auto s = static_cast<eventide::stream::Self*>(handle->data);
+        auto s = static_cast<stream::Self*>(handle->data);
         assert(s != nullptr && "on_alloc requires stream state in handle->data");
 
         auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
@@ -170,7 +170,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
 
     // When nread=0, it means no data was read but the stream is still alive (e.g., EAGAIN).
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
-        auto s = static_cast<eventide::stream::Self*>(stream->data);
+        auto s = static_cast<stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
 
         auto* aw = static_cast<stream_read_some_await*>(s->reader.waiter);
@@ -179,7 +179,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
         if(nread == UV_EOF) {
             aw->out = std::size_t{0};
         } else if(auto err = uv::status_to_error(nread)) {
-            aw->out = std::unexpected(err);
+            aw->out = outcome_error(err);
             aw->mark_cancelled_if(nread);
         } else if(nread > 0) {
             aw->out = static_cast<std::size_t>(nread);
@@ -209,7 +209,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
 
         self->reader.arm(*this);
         if(auto err = ensure_reading(self, stream::Self::read_mode::direct, on_alloc, on_read)) {
-            out = std::unexpected(err);
+            out = outcome_error(err);
             self->reader.disarm();
             return waiting;
         }
@@ -334,14 +334,14 @@ handle_type guess_handle(int fd) {
     }
 }
 
-task<result<std::string>> stream::read() {
+task<std::string, error> stream::read() {
     if(!self) {
-        co_return std::unexpected(error::invalid_argument);
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
-            co_return std::unexpected(err);
+            co_return outcome_error(err);
         }
     }
 
@@ -351,9 +351,9 @@ task<result<std::string>> stream::read() {
     co_return out;
 }
 
-task<result<std::size_t>> stream::read_some(std::span<char> dst) {
+task<std::size_t, error> stream::read_some(std::span<char> dst) {
     if(!self) {
-        co_return std::unexpected(error::invalid_argument);
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(dst.empty()) {
@@ -370,15 +370,15 @@ task<result<std::size_t>> stream::read_some(std::span<char> dst) {
     co_return co_await stream_read_some_await{self.get(), dst};
 }
 
-task<result<stream::chunk>> stream::read_chunk() {
+task<stream::chunk, error> stream::read_chunk() {
     chunk out{};
     if(!self) {
-        co_return std::unexpected(error::invalid_argument);
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
-            co_return std::unexpected(err);
+            co_return outcome_error(err);
         }
     }
 
@@ -410,7 +410,7 @@ task<error> stream::write(std::span<const char> data) {
 
 result<std::size_t> stream::try_write(std::span<const char> data) {
     if(!self || !self->initialized()) {
-        return std::unexpected(error::invalid_argument);
+        return outcome_error(error::invalid_argument);
     }
 
     if(data.empty()) {
@@ -418,13 +418,13 @@ result<std::size_t> stream::try_write(std::span<const char> data) {
     }
 
     if(data.size() > static_cast<std::size_t>(std::numeric_limits<unsigned>::max())) {
-        return std::unexpected(error::value_too_large_for_defined_data_type);
+        return outcome_error(error::value_too_large_for_defined_data_type);
     }
 
     uv_buf_t buf = uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned>(data.size()));
     auto res = uv::try_write(self->stream, std::span<const uv_buf_t>{&buf, 1});
     if(!res) {
-        return std::unexpected(res.error());
+        return outcome_error(res.error());
     }
 
     return *res;

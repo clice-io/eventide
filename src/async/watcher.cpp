@@ -242,7 +242,7 @@ result<signal> signal::create(event_loop& loop) {
     auto self = Self::make();
     auto& handle = self->handle;
     if(auto err = uv::signal_init(loop, handle)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return signal(std::move(self));

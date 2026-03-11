@@ -28,21 +28,21 @@ task<process::wait_result> wait_for_exit(process& proc, int& done, int target) {
 
 task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p) {
     auto first = co_await p.read_chunk();
-    result<std::string> first_out = std::unexpected(error::invalid_argument);
+    result<std::string> first_out = outcome_error(error::invalid_argument);
     if(first) {
         first_out = std::string(first->data(), first->size());
         p.consume(first->size());
     } else {
-        first_out = std::unexpected(first.error());
+        first_out = outcome_error(first.error());
     }
 
     auto second = co_await p.read_chunk();
-    result<std::string> second_out = std::unexpected(error::invalid_argument);
+    result<std::string> second_out = outcome_error(error::invalid_argument);
     if(second) {
         second_out = std::string(second->data(), second->size());
         p.consume(second->size());
     } else {
-        second_out = std::unexpected(second.error());
+        second_out = outcome_error(second.error());
     }
 
     event_loop::current().stop();

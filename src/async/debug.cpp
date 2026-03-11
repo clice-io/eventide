@@ -27,6 +27,7 @@ static std::string_view state_name(async_node::State s) {
         case async_node::Running: return "Running";
         case async_node::Cancelled: return "Cancelled";
         case async_node::Finished: return "Finished";
+        case async_node::Failed: return "Failed";
     }
     return "Unknown";
 }

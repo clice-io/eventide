@@ -24,8 +24,6 @@ struct result {
     std::string aux_path;
 };
 
-using op_result = ::eventide::result<fs::result>;
-
 struct dirent {
     enum class type {
         unknown,      // type not known
@@ -73,74 +71,80 @@ private:
     void* dir = nullptr;
 };
 
-task<op_result> unlink(std::string_view path, event_loop& loop = event_loop::current());
+task<result, error> unlink(std::string_view path, event_loop& loop = event_loop::current());
 
-task<op_result> mkdir(std::string_view path, int mode, event_loop& loop = event_loop::current());
+task<result, error> mkdir(std::string_view path,
+                          int mode,
+                          event_loop& loop = event_loop::current());
 
-task<op_result> stat(std::string_view path, event_loop& loop = event_loop::current());
+task<result, error> stat(std::string_view path, event_loop& loop = event_loop::current());
 
-task<op_result> copyfile(std::string_view path,
-                         std::string_view new_path,
-                         copyfile_options options = copyfile_options{},
-                         event_loop& loop = event_loop::current());
+task<result, error> copyfile(std::string_view path,
+                             std::string_view new_path,
+                             copyfile_options options = copyfile_options{},
+                             event_loop& loop = event_loop::current());
 
-task<op_result> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
+task<result, error> mkdtemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
-task<op_result> mkstemp(std::string_view tpl, event_loop& loop = event_loop::current());
+task<result, error> mkstemp(std::string_view tpl, event_loop& loop = event_loop::current());
 
-task<op_result> rmdir(std::string_view path, event_loop& loop = event_loop::current());
+task<result, error> rmdir(std::string_view path, event_loop& loop = event_loop::current());
 
-task<::eventide::result<std::vector<dirent>>> scandir(std::string_view path,
-                                                      event_loop& loop = event_loop::current());
+task<std::vector<dirent>, error> scandir(std::string_view path,
+                                         event_loop& loop = event_loop::current());
 
-task<::eventide::result<dir_handle>> opendir(std::string_view path,
-                                             event_loop& loop = event_loop::current());
+task<dir_handle, error> opendir(std::string_view path, event_loop& loop = event_loop::current());
 
-task<::eventide::result<std::vector<dirent>>> readdir(dir_handle& dir,
-                                                      event_loop& loop = event_loop::current());
+task<std::vector<dirent>, error> readdir(dir_handle& dir, event_loop& loop = event_loop::current());
 
 task<error> closedir(dir_handle& dir, event_loop& loop = event_loop::current());
 
-task<op_result> fstat(int fd, event_loop& loop = event_loop::current());
+task<result, error> fstat(int fd, event_loop& loop = event_loop::current());
 
-task<op_result> lstat(std::string_view path, event_loop& loop = event_loop::current());
+task<result, error> lstat(std::string_view path, event_loop& loop = event_loop::current());
 
-task<op_result> rename(std::string_view path,
-                       std::string_view new_path,
-                       event_loop& loop = event_loop::current());
+task<result, error> rename(std::string_view path,
+                           std::string_view new_path,
+                           event_loop& loop = event_loop::current());
 
-task<op_result> fsync(int fd, event_loop& loop = event_loop::current());
+task<result, error> fsync(int fd, event_loop& loop = event_loop::current());
 
-task<op_result> fdatasync(int fd, event_loop& loop = event_loop::current());
+task<result, error> fdatasync(int fd, event_loop& loop = event_loop::current());
 
-task<op_result> ftruncate(int fd, std::int64_t offset, event_loop& loop = event_loop::current());
+task<result, error> ftruncate(int fd,
+                              std::int64_t offset,
+                              event_loop& loop = event_loop::current());
 
-task<op_result> sendfile(int out_fd,
-                         int in_fd,
-                         std::int64_t in_offset,
-                         std::size_t length,
-                         event_loop& loop = event_loop::current());
+task<result, error> sendfile(int out_fd,
+                             int in_fd,
+                             std::int64_t in_offset,
+                             std::size_t length,
+                             event_loop& loop = event_loop::current());
 
-task<op_result> access(std::string_view path, int mode, event_loop& loop = event_loop::current());
+task<result, error> access(std::string_view path,
+                           int mode,
+                           event_loop& loop = event_loop::current());
 
-task<op_result> chmod(std::string_view path, int mode, event_loop& loop = event_loop::current());
+task<result, error> chmod(std::string_view path,
+                          int mode,
+                          event_loop& loop = event_loop::current());
 
-task<op_result> utime(std::string_view path,
-                      double atime,
-                      double mtime,
-                      event_loop& loop = event_loop::current());
+task<result, error> utime(std::string_view path,
+                          double atime,
+                          double mtime,
+                          event_loop& loop = event_loop::current());
 
-task<op_result>
+task<result, error>
     futime(int fd, double atime, double mtime, event_loop& loop = event_loop::current());
 
-task<op_result> lutime(std::string_view path,
-                       double atime,
-                       double mtime,
-                       event_loop& loop = event_loop::current());
+task<result, error> lutime(std::string_view path,
+                           double atime,
+                           double mtime,
+                           event_loop& loop = event_loop::current());
 
-task<op_result> link(std::string_view path,
-                     std::string_view new_path,
-                     event_loop& loop = event_loop::current());
+task<result, error> link(std::string_view path,
+                         std::string_view new_path,
+                         event_loop& loop = event_loop::current());
 
 }  // namespace fs
 
@@ -199,7 +203,7 @@ public:
     error stop();
 
     /// Await a change event; delivers one pending change at a time.
-    task<result<change>> wait();
+    task<change, error> wait();
 
 private:
     explicit fs_event(unique_handle<Self> self) noexcept;

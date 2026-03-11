@@ -123,18 +123,18 @@ bool bump_and_stop(int& done, int target) {
     return false;
 }
 
-task<result<std::string>> read_from_pipe(pipe p) {
+task<std::string, error> read_from_pipe(pipe p) {
     auto out = co_await p.read();
     event_loop::current().stop();
     co_return out;
 }
 
-task<result<std::string>> read_some_from_pipe(pipe p) {
+task<std::string, error> read_some_from_pipe(pipe p) {
     std::array<char, 64> buf{};
     auto n = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
     event_loop::current().stop();
     if(!n.has_value()) {
-        co_return std::unexpected(n.error());
+        co_return outcome_error(n.error());
     }
     co_return std::string(buf.data(), *n);
 }
@@ -159,21 +159,21 @@ task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
 
 task<std::pair<result<std::string>, result<std::string>>> read_chunk_then_some(pipe p) {
     auto first = co_await p.read_chunk();
-    result<std::string> first_out = std::unexpected(error::invalid_argument);
+    result<std::string> first_out = outcome_error(error::invalid_argument);
     if(first) {
         first_out = std::string(first->data(), first->size());
         p.consume(first->size());
     } else {
-        first_out = std::unexpected(first.error());
+        first_out = outcome_error(first.error());
     }
 
     std::array<char, 64> buf{};
     auto second = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
-    result<std::string> second_out = std::unexpected(error::invalid_argument);
+    result<std::string> second_out = outcome_error(error::invalid_argument);
     if(second) {
         second_out = std::string(buf.data(), *second);
     } else {
-        second_out = std::unexpected(second.error());
+        second_out = outcome_error(second.error());
     }
 
     event_loop::current().stop();
@@ -195,23 +195,23 @@ task<> write_two_pipe_chunks(int fd, event_loop& loop) {
     close_fd(fd);
 }
 
-task<result<pipe>> connect_pipe(std::string_view name, int& done, int target = 2) {
+task<pipe, error> connect_pipe(std::string_view name, int& done, int target = 2) {
     auto result = co_await pipe::connect(name);
     bump_and_stop(done, target);
     co_return result;
 }
 
-task<result<pipe>> accept_pipe_once(pipe::acceptor acc, int& done) {
+task<pipe, error> accept_pipe_once(pipe::acceptor acc, int& done) {
     auto result = co_await acc.accept();
     bump_and_stop(done, 2);
     co_return result;
 }
 
-task<result<std::string>> accept_and_read_pipe(pipe::acceptor acc, int& done) {
+task<std::string, error> accept_and_read_pipe(pipe::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return std::unexpected(conn_res.error());
+        co_return outcome_error(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -236,11 +236,11 @@ task<error> connect_and_write_pipe(std::string_view name, std::string_view paylo
     co_return err;
 }
 
-task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
+task<std::string, error> accept_and_read(tcp_socket::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current().stop();
-        co_return std::unexpected(conn_res.error());
+        co_return outcome_error(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -250,11 +250,11 @@ task<result<std::string>> accept_and_read(tcp_socket::acceptor acc) {
     co_return data;
 }
 
-task<result<std::size_t>> accept_and_read_some(tcp_socket::acceptor acc) {
+task<std::size_t, error> accept_and_read_some(tcp_socket::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current().stop();
-        co_return std::unexpected(conn_res.error());
+        co_return outcome_error(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -265,11 +265,11 @@ task<result<std::size_t>> accept_and_read_some(tcp_socket::acceptor acc) {
     co_return data;
 }
 
-task<result<std::string>> accept_and_read_once(tcp_socket::acceptor acc, int& done) {
+task<std::string, error> accept_and_read_once(tcp_socket::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return std::unexpected(conn_res.error());
+        co_return outcome_error(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -294,7 +294,7 @@ task<error> connect_and_send(std::string_view host, int port, std::string_view p
     co_return err;
 }
 
-task<result<tcp_socket>> accept_once(tcp_socket::acceptor& acc, int& done) {
+task<tcp_socket, error> accept_once(tcp_socket::acceptor& acc, int& done) {
     auto res = co_await acc.accept();
     bump_and_stop(done, 2);
     co_return res;
@@ -495,7 +495,7 @@ TEST_CASE(stop) {
     auto err = acc->stop();
     EXPECT_FALSE(err.has_error());
 
-    auto task1 = [](acceptor<pipe>& acc) -> eventide::task<result<pipe>> {
+    auto task1 = [](acceptor<pipe>& acc) -> eventide::task<pipe, error> {
         auto res = co_await acc.accept();
         event_loop::current().stop();
         co_return res;
@@ -507,7 +507,7 @@ TEST_CASE(stop) {
     auto res1 = task1.value().value();
     EXPECT_TRUE(!res1.has_value() && res1.error() == error::operation_aborted);
 
-    auto task2 = [](acceptor<pipe>& acc) -> eventide::task<result<pipe>> {
+    auto task2 = [](acceptor<pipe>& acc) -> eventide::task<pipe, error> {
         event_loop::current().stop();
         auto res = co_await acc.accept();
         co_return res;

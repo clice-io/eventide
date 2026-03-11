@@ -377,7 +377,7 @@ ALWAYS_INLINE result<std::size_t> try_write(S& stream, std::span<const uv_buf_t>
     assert(!bufs.empty() && "uv::try_write requires a non-empty buffer span");
     int rc = ::uv_try_write(as_stream(stream), bufs.data(), static_cast<unsigned>(bufs.size()));
     if(rc < 0) {
-        return std::unexpected(error(rc));
+        return outcome_error(error(rc));
     }
     return static_cast<std::size_t>(rc);
 }
@@ -406,7 +406,7 @@ ALWAYS_INLINE result<tty_winsize> tty_get_winsize(uv_tty_t& handle) noexcept {
     tty_winsize out{};
     int rc = ::uv_tty_get_winsize(&handle, &out.width, &out.height);
     if(rc != 0) {
-        return std::unexpected(error(rc));
+        return outcome_error(error(rc));
     }
     return out;
 }
@@ -419,7 +419,7 @@ ALWAYS_INLINE result<uv_tty_vtermstate_t> tty_get_vterm_state() noexcept {
     uv_tty_vtermstate_t out = UV_TTY_UNSUPPORTED;
     int rc = ::uv_tty_get_vterm_state(&out);
     if(rc != 0) {
-        return std::unexpected(error(rc));
+        return outcome_error(error(rc));
     }
     return out;
 }
@@ -474,7 +474,7 @@ ALWAYS_INLINE result<std::size_t> udp_try_send(uv_udp_t& handle,
     assert(!bufs.empty() && "uv::udp_try_send requires a non-empty buffer span");
     int rc = ::uv_udp_try_send(&handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr);
     if(rc < 0) {
-        return std::unexpected(error(rc));
+        return outcome_error(error(rc));
     }
     return static_cast<std::size_t>(rc);
 }
@@ -791,7 +791,7 @@ inline result<resolved_addr> resolve_addr(std::string_view host, int port) {
         return out;
     }
 
-    return std::unexpected(error::invalid_argument);
+    return outcome_error(error::invalid_argument);
 }
 
 }  // namespace uv

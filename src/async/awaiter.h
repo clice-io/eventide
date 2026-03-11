@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <concepts>
 #include <deque>
 #include <optional>
 #include <utility>
@@ -9,6 +10,7 @@
 #include "ringbuffer.h"
 #include "eventide/async/error.h"
 #include "eventide/async/frame.h"
+#include "eventide/async/outcome.h"
 #include "eventide/async/stream.h"
 
 namespace eventide::uv {
@@ -121,9 +123,9 @@ struct queued_delivery : waiter_binding<ResultT> {
     }
 
     void deliver(error err)
-        requires requires { ResultT(std::unexpected(err)); }
+        requires (!std::same_as<ResultT, error>)
     {
-        deliver(ResultT(std::unexpected(err)));
+        deliver(ResultT(outcome_error(err)));
     }
 };
 
@@ -149,9 +151,9 @@ struct stored_delivery : waiter_binding<ResultT> {
     }
 
     void deliver(error err)
-        requires requires { ResultT(std::unexpected(err)); }
+        requires (!std::same_as<ResultT, error>)
     {
-        deliver(ResultT(std::unexpected(err)));
+        deliver(ResultT(outcome_error(err)));
     }
 };
 
@@ -174,9 +176,9 @@ struct latched_delivery : waiter_binding<ResultT> {
     }
 
     void deliver(error err)
-        requires requires { ResultT(std::unexpected(err)); }
+        requires (!std::same_as<ResultT, error>)
     {
-        deliver(ResultT(std::unexpected(err)));
+        deliver(ResultT(outcome_error(err)));
     }
 };
 
@@ -204,8 +206,10 @@ struct latest_value_delivery : waiter_binding<result<ValueT>> {
         pending = std::move(value);
     }
 
-    void deliver(error err) {
-        deliver(result<ValueT>(std::unexpected(err)));
+    void deliver(error err)
+        requires (!std::same_as<ValueT, void>)
+    {
+        deliver(result<ValueT>(outcome_error(err)));
     }
 };
 

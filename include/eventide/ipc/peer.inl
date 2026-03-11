@@ -154,7 +154,7 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    void complete_pending_request(const protocol::RequestID& id, Result<std::string> response) {
+    void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
             return;
@@ -179,7 +179,7 @@ struct Peer<CodecT>::Self {
         pending_requests.clear();
 
         for(auto& state: pending) {
-            state->response = std::unexpected(RPCError(message));
+            state->response = outcome_error(RPCError(message));
             state->ready.set();
         }
     }
@@ -233,19 +233,18 @@ struct Peer<CodecT>::Self {
         auto guarded_result = co_await with_token(callback(id, params, token), token);
         incoming_requests.erase(id);
 
-        if(!guarded_result.has_value()) {
+        if(guarded_result.is_cancelled()) {
             send_error(id,
                        RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
             co_return;
         }
 
-        auto result_payload = std::move(*guarded_result);
-        if(!result_payload) {
-            send_error(id, result_payload.error());
+        if(guarded_result.has_error()) {
+            send_error(id, guarded_result.error());
             co_return;
         }
 
-        auto response = codec.encode_success_response(id, *result_payload);
+        auto response = codec.encode_success_response(id, *guarded_result);
         if(!response) {
             send_error(id,
                        RPCError(protocol::ErrorCode::InternalError, response.error().message));
@@ -257,18 +256,18 @@ struct Peer<CodecT>::Self {
 
     void dispatch_response(const protocol::RequestID& id, const IncomingMessage& msg) {
         if(msg.error.has_value()) {
-            complete_pending_request(id, std::unexpected(*msg.error));
+            complete_pending_request(id, outcome_error(*msg.error));
             return;
         }
 
         if(msg.result.empty()) {
             complete_pending_request(id,
-                                     std::unexpected(RPCError(protocol::ErrorCode::InvalidRequest,
-                                                              "response is missing result")));
+                                     outcome_error(RPCError(protocol::ErrorCode::InvalidRequest,
+                                                            "response is missing result")));
             return;
         }
 
-        complete_pending_request(id, std::string(msg.result));
+        complete_pending_request(id, Result<std::string>(std::string(msg.result)));
     }
 
     void dispatch_incoming_message(std::string_view payload) {
@@ -276,7 +275,7 @@ struct Peer<CodecT>::Self {
 
         if(msg.parse_error.has_value()) {
             if(!msg.method.has_value() && msg.id.has_value()) {
-                complete_pending_request(msg.id, std::unexpected(*msg.parse_error));
+                complete_pending_request(msg.id, outcome_error(*msg.parse_error));
                 return;
             }
 
@@ -302,7 +301,7 @@ struct Peer<CodecT>::Self {
             if(!msg.result.empty() == msg.error.has_value()) {
                 complete_pending_request(
                     msg.id,
-                    std::unexpected(
+                    outcome_error(
                         RPCError(protocol::ErrorCode::InvalidRequest,
                                  "response must contain exactly one of result or error")));
                 return;
@@ -359,7 +358,7 @@ task<> Peer<CodecT>::run() {
 template <typename CodecT>
 Result<void> Peer<CodecT>::close_output() {
     if(!self || !self->transport) {
-        return std::unexpected("transport is null");
+        return outcome_error(RPCError("transport is null"));
     }
 
     return self->transport->close_output();
@@ -377,17 +376,16 @@ void Peer<CodecT>::register_notification_callback(std::string_view method,
 }
 
 template <typename CodecT>
-task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view method,
-                                                           std::string params,
-                                                           request_options opts) {
-    // Handle timeout by creating a separate timeout token.
+task<std::string, RPCError> Peer<CodecT>::send_request_impl(std::string_view method,
+                                                             std::string params,
+                                                             request_options opts) {
     std::shared_ptr<cancellation_source> timeout_source;
     cancellation_token user_token = std::move(opts.token);
     cancellation_token timeout_token;
 
     if(opts.timeout.has_value()) {
         if(*opts.timeout <= std::chrono::milliseconds::zero()) {
-            co_return std::unexpected(
+            co_return outcome_error(
                 RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
         }
 
@@ -400,11 +398,11 @@ task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view metho
     }
 
     if(!self || !self->transport) {
-        co_return std::unexpected("transport is null");
+        co_return outcome_error(RPCError("transport is null"));
     }
 
     if(user_token.cancelled()) {
-        co_return std::unexpected(
+        co_return outcome_error(
             RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
     }
 
@@ -416,7 +414,7 @@ task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view metho
     auto request_encoded = self->codec.encode_request(request_id, method, params);
     if(!request_encoded) {
         self->pending_requests.erase(request_id);
-        co_return std::unexpected(request_encoded.error());
+        co_return outcome_error(request_encoded.error());
     }
 
     self->enqueue_outgoing(std::move(*request_encoded));
@@ -441,32 +439,35 @@ task<Result<std::string>> Peer<CodecT>::send_request_impl(std::string_view metho
             }
         }
 
-        // Determine whether the user token or the timeout caused cancellation.
-        // Check user token first: if the user explicitly cancelled, report that.
         if(user_token.cancelled()) {
-            co_return std::unexpected(
+            co_return outcome_error(
                 RPCError(protocol::ErrorCode::RequestCancelled, "request cancelled"));
         }
-        co_return std::unexpected(
+        co_return outcome_error(
             RPCError(protocol::ErrorCode::RequestCancelled, "request timed out"));
     }
 
     if(!pending->response.has_value()) {
-        co_return std::unexpected("request was not completed");
+        co_return outcome_error(RPCError("request was not completed"));
     }
 
-    co_return std::move(*pending->response);
+    auto& response = *pending->response;
+    if(!response) {
+        co_return outcome_error(std::move(response).error());
+    }
+
+    co_return std::move(*response);
 }
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
     if(!self || !self->transport) {
-        return std::unexpected("transport is null");
+        return outcome_error(RPCError("transport is null"));
     }
 
     auto notification_encoded = self->codec.encode_notification(method, params);
     if(!notification_encoded) {
-        return std::unexpected(notification_encoded.error());
+        return outcome_error(notification_encoded.error());
     }
 
     self->enqueue_outgoing(std::move(*notification_encoded));
@@ -486,19 +487,19 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
 
     auto serialized_params = self->codec.serialize_value(params);
     if(!serialized_params) {
-        co_return std::unexpected(serialized_params.error());
+        co_return outcome_error(serialized_params.error());
     }
 
     auto raw_result =
         co_await send_request_impl(Traits::method, std::move(*serialized_params), std::move(opts));
     if(!raw_result) {
-        co_return std::unexpected(raw_result.error());
+        co_return outcome_error(raw_result.error());
     }
 
     auto parsed_result =
         self->codec.template deserialize_value<typename Traits::Result>(*raw_result);
     if(!parsed_result) {
-        co_return std::unexpected(parsed_result.error());
+        co_return outcome_error(parsed_result.error());
     }
 
     co_return std::move(*parsed_result);
@@ -506,23 +507,23 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
 
 template <typename CodecT>
 template <typename ResultT, typename Params>
-task<Result<ResultT>> Peer<CodecT>::send_request(std::string_view method,
-                                                  const Params& params,
-                                                  request_options opts) {
+task<ResultT, RPCError> Peer<CodecT>::send_request(std::string_view method,
+                                                    const Params& params,
+                                                    request_options opts) {
     auto serialized_params = self->codec.serialize_value(params);
     if(!serialized_params) {
-        co_return std::unexpected(serialized_params.error());
+        co_return outcome_error(serialized_params.error());
     }
 
     auto raw_result =
         co_await send_request_impl(method, std::move(*serialized_params), std::move(opts));
     if(!raw_result) {
-        co_return std::unexpected(raw_result.error());
+        co_return outcome_error(raw_result.error());
     }
 
     auto parsed_result = self->codec.template deserialize_value<ResultT>(*raw_result);
     if(!parsed_result) {
-        co_return std::unexpected(parsed_result.error());
+        co_return outcome_error(parsed_result.error());
     }
 
     co_return std::move(*parsed_result);
@@ -537,7 +538,7 @@ Result<void> Peer<CodecT>::send_notification(const Params& params) {
 
     auto serialized_params = self->codec.serialize_value(params);
     if(!serialized_params) {
-        return std::unexpected(serialized_params.error());
+        return outcome_error(serialized_params.error());
     }
     return send_notification_impl(Traits::method, std::move(*serialized_params));
 }
@@ -547,7 +548,7 @@ template <typename Params>
 Result<void> Peer<CodecT>::send_notification(std::string_view method, const Params& params) {
     auto serialized_params = self->codec.serialize_value(params);
     if(!serialized_params) {
-        return std::unexpected(serialized_params.error());
+        return outcome_error(serialized_params.error());
     }
     return send_notification_impl(method, std::move(*serialized_params));
 }
@@ -608,11 +609,11 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
                     peer = this](const protocol::RequestID& request_id,
                                  std::string_view params_raw,
                                  cancellation_token token)
-        -> task<Result<std::string>> {
+        -> task<std::string, RPCError> {
         auto parsed_params = peer->self->codec.template deserialize_value<Params>(
             params_raw, protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
-            co_return std::unexpected(parsed_params.error());
+            co_return outcome_error(parsed_params.error());
         }
 
         typename Peer::RequestContext context(*peer, request_id, std::move(token));
@@ -620,13 +621,13 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
 
         auto result = co_await std::invoke(cb, context, *parsed_params);
         if(!result) {
-            co_return std::unexpected(result.error());
+            co_return outcome_error(result.error());
         }
 
         auto serialized =
             peer->self->codec.serialize_value(*result);
         if(!serialized) {
-            co_return std::unexpected(
+            co_return outcome_error(
                 RPCError(protocol::ErrorCode::InternalError, serialized.error().message));
         }
 

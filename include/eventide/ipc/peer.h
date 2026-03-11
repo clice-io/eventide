@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -48,7 +47,7 @@ struct basic_request_context {
 };
 
 template <typename Params, typename ResultT = typename protocol::RequestTraits<Params>::Result>
-using RequestResult = task<Result<ResultT>>;
+using RequestResult = task<ResultT, RPCError>;
 
 struct request_options {
     cancellation_token token = {};
@@ -77,9 +76,9 @@ public:
     RequestResult<Params> send_request(const Params& params, request_options opts = {});
 
     template <typename ResultT, typename Params>
-    task<Result<ResultT>> send_request(std::string_view method,
-                                       const Params& params,
-                                       request_options opts = {});
+    task<ResultT, RPCError> send_request(std::string_view method,
+                                         const Params& params,
+                                         request_options opts = {});
 
     template <typename Params>
     Result<void> send_notification(const Params& params);
@@ -106,18 +105,18 @@ private:
     template <typename Params, typename Callback>
     void bind_notification_callback(std::string_view method, Callback&& callback);
 
-    using RequestCallback = std::function<task<Result<std::string>>(const protocol::RequestID&,
-                                                                    std::string_view,
-                                                                    cancellation_token)>;
+    using RequestCallback = std::function<task<std::string, RPCError>(const protocol::RequestID&,
+                                                                      std::string_view,
+                                                                      cancellation_token)>;
     using NotificationCallback = std::function<void(std::string_view)>;
 
     void register_request_callback(std::string_view method, RequestCallback callback);
 
     void register_notification_callback(std::string_view method, NotificationCallback callback);
 
-    task<Result<std::string>> send_request_impl(std::string_view method,
-                                                std::string params,
-                                                request_options opts);
+    task<std::string, RPCError> send_request_impl(std::string_view method,
+                                                  std::string params,
+                                                  request_options opts);
 
     Result<void> send_notification_impl(std::string_view method, std::string params);
 
@@ -127,9 +126,6 @@ private:
 
 using JsonPeer = Peer<JsonCodec>;
 using BincodePeer = Peer<BincodeCodec>;
-
-using JsonRequestContext = JsonPeer::RequestContext;
-using BincodeRequestContext = BincodePeer::RequestContext;
 
 }  // namespace eventide::ipc
 

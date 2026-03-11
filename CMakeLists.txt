@@ -19,6 +19,8 @@ option(EVENTIDE_SERDE_ENABLE_FLATBUFFERS "Enable flatbuffers dependency for even
 option(EVENTIDE_SERDE_ENABLE_TOML "Enable tomlplusplus dependency for eventide::serde" OFF)
 option(EVENTIDE_BUILD_ALL_TESTS "Enable all optional test suites for CI" OFF)
 
+add_compile_options("-D_LIBCPP_DISABLE_AVAILABILITY")
+
 if(EVENTIDE_BUILD_ALL_TESTS)
     if(NOT EVENTIDE_ENABLE_TEST)
         message(STATUS "EVENTIDE_BUILD_ALL_TESTS=ON: enabling EVENTIDE_ENABLE_TEST")

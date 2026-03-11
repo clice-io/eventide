@@ -86,7 +86,7 @@ public:
     Result<std::string> serialize_value(const T& value) {
         auto serialized = serde::json::to_string(value);
         if(!serialized) {
-            return std::unexpected(
+            return outcome_error(
                 RPCError(protocol::ErrorCode::InternalError,
                          std::string(serde::json::error_message(serialized.error()))));
         }
@@ -105,7 +105,7 @@ public:
         }
         auto parsed = serde::json::parse<T>(raw);
         if(!parsed) {
-            return std::unexpected(
+            return outcome_error(
                 RPCError(code, std::string(serde::json::error_message(parsed.error()))));
         }
         return std::move(*parsed);

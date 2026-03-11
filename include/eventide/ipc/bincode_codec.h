@@ -65,7 +65,7 @@ public:
     Result<std::string> serialize_value(const T& value) {
         auto bytes = serde::bincode::to_bytes(value);
         if(!bytes) {
-            return std::unexpected(
+            return outcome_error(
                 RPCError(protocol::ErrorCode::InternalError,
                          std::string(serde::bincode::error_message(bytes.error()))));
         }
@@ -79,7 +79,7 @@ public:
             if constexpr(std::default_initializable<T>) {
                 return T{};
             } else {
-                return std::unexpected(RPCError(code, "empty params"));
+                return outcome_error(RPCError(code, "empty params"));
             }
         }
         auto bytes_span =
@@ -87,7 +87,7 @@ public:
         T value{};
         auto status = serde::bincode::from_bytes(bytes_span, value);
         if(!status) {
-            return std::unexpected(
+            return outcome_error(
                 RPCError(code, std::string(serde::bincode::error_message(status.error()))));
         }
         return value;

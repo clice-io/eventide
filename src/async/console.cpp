@@ -8,7 +8,7 @@ namespace eventide {
 result<console> console::open(int fd, console::options opts, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::tty_init(loop, self->tty, fd, opts.readable)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return console(std::move(self));
@@ -43,12 +43,12 @@ error console::reset_mode() {
 
 result<console::winsize> console::get_winsize() const {
     if(!self || !self->initialized()) {
-        return std::unexpected(error::invalid_argument);
+        return outcome_error(error::invalid_argument);
     }
 
     auto out = uv::tty_get_winsize(self->tty);
     if(!out) {
-        return std::unexpected(out.error());
+        return outcome_error(out.error());
     }
 
     return winsize{out->width, out->height};
@@ -62,7 +62,7 @@ void console::set_vterm_state(vterm_state state) {
 result<console::vterm_state> console::get_vterm_state() {
     auto out = uv::tty_get_vterm_state();
     if(!out) {
-        return std::unexpected(out.error());
+        return outcome_error(out.error());
     }
 
     return *out == UV_TTY_SUPPORTED ? vterm_state::supported : vterm_state::unsupported;

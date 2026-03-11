@@ -1,6 +1,5 @@
 #pragma once
 
-#include <deque>
 #include <memory>
 #include <optional>
 #include <span>
@@ -140,7 +139,7 @@ public:
 
     error stop_recv();
 
-    task<result<recv_result>> recv();
+    task<recv_result, error> recv();
 
 private:
     explicit udp(unique_handle<Self> self) noexcept;

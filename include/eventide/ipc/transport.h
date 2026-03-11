@@ -1,6 +1,5 @@
 #pragma once
 
-#include <expected>
 #include <memory>
 #include <optional>
 #include <string>
@@ -18,7 +17,7 @@ public:
 
     virtual task<std::optional<std::string>> read_message() = 0;
 
-    virtual task<Result<void>> write_message(std::string_view payload) = 0;
+    virtual task<void, RPCError> write_message(std::string_view payload) = 0;
 
     virtual Result<void> close_output();
 };
@@ -30,15 +29,15 @@ public:
 
     static Result<std::unique_ptr<StreamTransport>> open_stdio(event_loop& loop);
 
-    static task<Result<std::unique_ptr<StreamTransport>>> connect_tcp(std::string_view host,
-                                                                      int port,
-                                                                      event_loop& loop);
+    static task<std::unique_ptr<StreamTransport>, RPCError> connect_tcp(std::string_view host,
+                                                                        int port,
+                                                                        event_loop& loop);
 
     static Result<std::unique_ptr<StreamTransport>> open_tcp(int fd, event_loop& loop);
 
     task<std::optional<std::string>> read_message() override;
 
-    task<Result<void>> write_message(std::string_view payload) override;
+    task<void, RPCError> write_message(std::string_view payload) override;
 
     Result<void> close_output() override;
 

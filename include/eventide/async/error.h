@@ -1,10 +1,10 @@
 #pragma once
 
-#include <expected>
-#include <limits>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+
+#include "outcome.h"
 
 namespace eventide {
 
@@ -30,6 +30,11 @@ public:
 
     constexpr explicit operator bool() const noexcept {
         return has_error();
+    }
+
+    /// structured_error protocol: all non-zero errors propagate by default.
+    constexpr bool should_propagate() const noexcept {
+        return code != 0;
     }
 
     std::string_view message() const;
@@ -129,92 +134,37 @@ private:
     int code = 0;
 };
 
-struct cancellation {};
+struct cancellation {
+    enum class reason : std::uint8_t {
+        unspecified = 0,
+        self,
+        timeout,
+        token,
+        parent,
+        scope_exit,
+    };
 
-class status {
-public:
-    constexpr status() noexcept = default;
+    reason why = reason::unspecified;
 
-    constexpr explicit status(error err) noexcept : err(err) {}
+    constexpr cancellation() noexcept = default;
 
-    constexpr static int cancelled_code = (std::numeric_limits<int>::min)();
+    constexpr explicit cancellation(reason r) noexcept : why(r) {}
 
-    constexpr status(cancellation) noexcept : err(error(cancelled_code)) {}
-
-    constexpr bool cancelled() const noexcept {
-        return err.value() == cancelled_code;
+    /// structured_cancel protocol
+    constexpr std::string_view reason() const noexcept {
+        switch(why) {
+            case cancellation::reason::self: return "self";
+            case cancellation::reason::timeout: return "timeout";
+            case cancellation::reason::token: return "token";
+            case cancellation::reason::parent: return "parent";
+            case cancellation::reason::scope_exit: return "scope_exit";
+            default: return "unspecified";
+        }
     }
-
-    constexpr bool has_error() const noexcept {
-        return err.has_error() && !cancelled();
-    }
-
-    constexpr explicit operator bool() const noexcept {
-        return err.has_error();
-    }
-
-    constexpr const error& as_error() const noexcept {
-        return err;
-    }
-
-    constexpr int value() const noexcept {
-        return err.value();
-    }
-
-    std::string_view message() const noexcept {
-        return cancelled() ? std::string_view("canceled") : err.message();
-    }
-
-    friend constexpr bool operator==(const status& lhs, const status& rhs) noexcept = default;
-
-private:
-    error err = {};
 };
 
+/// result<T>: value-or-error (no cancel channel). I/O functions use this.
 template <typename T>
-using result = std::expected<T, error>;
-
-template <typename T>
-using cancellation_result = std::expected<T, cancellation>;
-
-template <typename T>
-using status_result = std::expected<T, status>;
-
-template <typename T>
-constexpr bool is_cancellation_t = false;
-
-template <typename T>
-constexpr bool is_cancellation_t<std::expected<T, cancellation>> = true;
-
-template <typename T>
-constexpr bool is_status_t = false;
-
-template <typename T>
-constexpr bool is_status_t<std::expected<T, status>> = true;
-
-template <typename T>
-constexpr std::expected<T, status>
-    zip_expected(std::expected<std::expected<T, error>, cancellation> value) {
-    if(!value.has_value()) {
-        return std::unexpected(status(cancellation{}));
-    }
-
-    auto inner = std::move(*value);
-    if(!inner.has_value()) {
-        return std::unexpected(status(inner.error()));
-    }
-
-    if constexpr(std::is_void_v<T>) {
-        return {};
-    } else {
-        return std::move(*inner);
-    }
-}
-
-template <typename T>
-class task;
-
-template <typename T>
-using ctask = task<std::expected<T, cancellation>>;
+using result = outcome<T, error, void>;
 
 }  // namespace eventide

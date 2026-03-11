@@ -172,7 +172,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
             case stdio::kind::pipe: {
                 auto pipe = pipe::create(pipe::options{}, loop);
                 if(!pipe) {
-                    return std::unexpected(pipe.error());
+                    return outcome_error(pipe.error());
                 }
 
                 dst.flags = UV_CREATE_PIPE;
@@ -217,12 +217,12 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
     auto* self = out.proc.self.get();
     if(self == nullptr) {
-        return std::unexpected(error::invalid_argument);
+        return outcome_error(error::invalid_argument);
     }
 
     auto& proc_handle = self->handle;
     if(auto err = uv::spawn(loop, proc_handle, uv_opts)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     out.stdin_pipe = std::move(created_pipes[0]);
@@ -234,7 +234,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
 task<process::wait_result> process::wait() {
     if(!self) {
-        co_return std::unexpected(error::invalid_argument);
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(self->has_pending()) {
@@ -242,7 +242,7 @@ task<process::wait_result> process::wait() {
     }
 
     if(self->has_waiter()) {
-        co_return std::unexpected(error::connection_already_in_progress);
+        co_return outcome_error(error::connection_already_in_progress);
     }
 
     co_return co_await process_await{self.get()};

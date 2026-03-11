@@ -71,9 +71,9 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<ipc::Result<void>> write_message(std::string_view payload) override {
+    task<void, ipc::RPCError> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
-        co_return ipc::Result<void>{};
+        co_return outcome_value();
     }
 
     const std::vector<std::string>& outgoing() const {
@@ -110,12 +110,12 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    task<ipc::Result<void>> write_message(std::string_view payload) override {
+    task<void, ipc::RPCError> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return ipc::Result<void>{};
+        co_return outcome_value();
     }
 
     void push_incoming(std::string payload) {
@@ -299,27 +299,27 @@ TEST_CASE(request_notify_apis) {
         auto notify_from_context =
             context->send_notification("client/note/context", CustomNoteParams{.text = "context"});
         if(!notify_from_context) {
-            co_return std::unexpected(notify_from_context.error());
+            co_return outcome_error(notify_from_context.error());
         }
 
         auto notify_from_server =
             peer.send_notification("client/note/server", CustomNoteParams{.text = "server"});
         if(!notify_from_server) {
-            co_return std::unexpected(notify_from_server.error());
+            co_return outcome_error(notify_from_server.error());
         }
 
         auto context_result = co_await context->send_request<AddResult>(
             "client/add/context",
             CustomAddParams{.a = params.a, .b = params.b});
         if(!context_result) {
-            co_return std::unexpected(context_result.error());
+            co_return outcome_error(context_result.error());
         }
 
         auto server_result =
             co_await peer.send_request<AddResult>("client/add/server",
                                                   CustomAddParams{.a = params.b, .b = 1});
         if(!server_result) {
-            co_return std::unexpected(server_result.error());
+            co_return outcome_error(server_result.error());
         }
 
         co_return AddResult{.sum = context_result->sum + server_result->sum};

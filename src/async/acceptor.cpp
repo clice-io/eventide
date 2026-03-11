@@ -21,7 +21,7 @@ result<unsigned int> to_uv_pipe_flags(const pipe::options& opts) {
     }
 #else
     if(opts.no_truncate) {
-        return std::unexpected(error::function_not_implemented);
+        return outcome_error(error::function_not_implemented);
     }
 #endif
     return out;
@@ -39,7 +39,7 @@ result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::options& opts) {
     }
 #else
     if(opts.ipv6_only) {
-        return std::unexpected(error::function_not_implemented);
+        return outcome_error(error::function_not_implemented);
     }
 #endif
 #ifdef UV_TCP_REUSEPORT
@@ -48,7 +48,7 @@ result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::options& opts) {
     }
 #else
     if(opts.reuse_port) {
-        return std::unexpected(error::function_not_implemented);
+        return outcome_error(error::function_not_implemented);
     }
 #endif
     return out;
@@ -57,13 +57,13 @@ result<unsigned int> to_uv_tcp_bind_flags(const tcp_socket::options& opts) {
 template <typename Stream>
 struct accept_await : uv::await_op<accept_await<Stream>> {
     using await_base = uv::await_op<accept_await<Stream>>;
-    using promise_t = task<result<Stream>>::promise_type;
+    using promise_t = task<Stream, error>::promise_type;
     using self_t = typename acceptor<Stream>::Self;
 
     // Acceptor self used for waiter registration and pending queueing.
     self_t* self;
     // Result slot populated by connection callbacks.
-    result<Stream> outcome = std::unexpected(error());
+    result<Stream> outcome = outcome_error(error());
 
     explicit accept_await(self_t* acceptor) : self(acceptor) {}
 
@@ -134,7 +134,7 @@ void on_connection(uv_stream_t* server, int status) {
 template <typename Stream>
 struct connect_await : uv::await_op<connect_await<Stream>> {
     using await_base = uv::await_op<connect_await<Stream>>;
-    using promise_t = task<result<Stream>>::promise_type;
+    using promise_t = task<Stream, error>::promise_type;
     using self_ptr = stream::Self::pointer;
 
     // Candidate stream self; reset on cancel to close the handle.
@@ -148,7 +148,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
     // Resolved peer address for uv_tcp_connect().
     sockaddr_storage addr{};
     // Result slot returned from await_resume().
-    result<Stream> outcome = std::unexpected(error());
+    result<Stream> outcome = outcome_error(error());
     // Constructor-level validation flag.
     bool ready = true;
 
@@ -157,14 +157,14 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
         if constexpr(std::is_same_v<Stream, pipe>) {
             if(this->name.empty()) {
                 ready = false;
-                outcome = std::unexpected(error::invalid_argument);
+                outcome = outcome_error(error::invalid_argument);
                 return;
             }
 
             auto uv_flags = to_uv_pipe_connect_flags(opts);
             if(!uv_flags) {
                 ready = false;
-                outcome = std::unexpected(uv_flags.error());
+                outcome = outcome_error(uv_flags.error());
                 return;
             }
             flags = uv_flags.value();
@@ -178,7 +178,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
             auto resolved = uv::resolve_addr(host, port);
             if(!resolved) {
                 ready = false;
-                outcome = std::unexpected(resolved.error());
+                outcome = outcome_error(resolved.error());
                 return;
             }
             addr = resolved->storage;
@@ -203,7 +203,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
 
         auto err = uv::status_to_error(status);
         if(err) {
-            aw->outcome = std::unexpected(err);
+            aw->outcome = outcome_error(err);
         } else if(aw->self) {
             if constexpr(std::is_same_v<Stream, pipe>) {
                 aw->outcome = pipe(std::move(aw->self));
@@ -213,7 +213,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
                 static_assert(always_false_v<Stream>, "unsupported connect stream type");
             }
         } else {
-            aw->outcome = std::unexpected(error::invalid_argument);
+            aw->outcome = outcome_error(error::invalid_argument);
         }
 
         aw->complete();
@@ -245,7 +245,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
         }
 
         if(err) {
-            outcome = std::unexpected(err);
+            outcome = outcome_error(err);
             return waiting;
         }
 
@@ -277,9 +277,9 @@ typename acceptor<Stream>::Self* acceptor<Stream>::operator->() noexcept {
 }
 
 template <typename Stream>
-task<result<Stream>> acceptor<Stream>::accept() {
+task<Stream, error> acceptor<Stream>::accept() {
     if(!self) {
-        co_return std::unexpected(error::invalid_argument);
+        co_return outcome_error(error::invalid_argument);
     }
 
     if(self->has_pending()) {
@@ -287,7 +287,7 @@ task<result<Stream>> acceptor<Stream>::accept() {
     }
 
     if(self->has_waiter()) {
-        co_return std::unexpected(error::connection_already_in_progress);
+        co_return outcome_error(error::connection_already_in_progress);
     }
 
     co_return co_await accept_await<Stream>{self.get()};
@@ -313,12 +313,12 @@ template class acceptor<tcp_socket>;
 result<pipe> pipe::open(int fd, pipe::options opts, event_loop& loop) {
     auto pipe_res = create(opts, loop);
     if(!pipe_res) {
-        return std::unexpected(pipe_res.error());
+        return outcome_error(pipe_res.error());
     }
 
     auto& handle = pipe_res->self->pipe;
     if(auto err = uv::pipe_open(handle, fd)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return std::move(*pipe_res);
@@ -327,7 +327,7 @@ result<pipe> pipe::open(int fd, pipe::options opts, event_loop& loop) {
 result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, event_loop& loop) {
     auto self = pipe::acceptor::Self::make();
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     auto& acc = *self;
@@ -336,19 +336,19 @@ result<pipe::acceptor> pipe::listen(std::string_view name, pipe::options opts, e
 
     auto uv_flags = to_uv_pipe_flags(opts);
     if(!uv_flags) {
-        return std::unexpected(uv_flags.error());
+        return outcome_error(uv_flags.error());
     }
 
     if(name.empty()) {
-        return std::unexpected(error::invalid_argument);
+        return outcome_error(error::invalid_argument);
     }
 
     if(auto err = uv::pipe_bind2(handle, name.data(), name.size(), uv_flags.value())) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     if(auto err = uv::listen(handle, opts.backlog, on_connection<pipe>)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return pipe::acceptor(std::move(self));
@@ -359,16 +359,16 @@ pipe::pipe(unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return pipe(std::move(self));
 }
 
-task<result<pipe>> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
+task<pipe, error> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
-        co_return std::unexpected(err);
+        co_return outcome_error(err);
     }
 
     co_return co_await connect_await<pipe>{std::move(self), name, opts};
@@ -379,20 +379,20 @@ tcp_socket::tcp_socket(unique_handle<Self> self) noexcept : stream(std::move(sel
 result<tcp_socket> tcp_socket::open(int fd, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::tcp_init(loop, self->tcp)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     if(auto err = uv::tcp_open(self->tcp, fd)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return tcp_socket(std::move(self));
 }
 
-task<result<tcp_socket>> tcp_socket::connect(std::string_view host, int port, event_loop& loop) {
+task<tcp_socket, error> tcp_socket::connect(std::string_view host, int port, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::tcp_init(loop, self->tcp)) {
-        co_return std::unexpected(err);
+        co_return outcome_error(err);
     }
 
     co_return co_await connect_await<tcp_socket>{std::move(self), host, port};
@@ -404,7 +404,7 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
                                                 event_loop& loop) {
     auto self = tcp_socket::acceptor::Self::make();
     if(auto err = uv::tcp_init(loop, self->tcp)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     auto& acc = *self;
@@ -412,22 +412,22 @@ result<tcp_socket::acceptor> tcp_socket::listen(std::string_view host,
 
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
-        return std::unexpected(resolved.error());
+        return outcome_error(resolved.error());
     }
 
     ::sockaddr* addr_ptr = reinterpret_cast<sockaddr*>(&resolved->storage);
 
     auto uv_flags = to_uv_tcp_bind_flags(opts);
     if(!uv_flags) {
-        return std::unexpected(uv_flags.error());
+        return outcome_error(uv_flags.error());
     }
 
     if(auto err = uv::tcp_bind(handle, addr_ptr, uv_flags.value())) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     if(auto err = uv::listen(handle, opts.backlog, on_connection<tcp_socket>)) {
-        return std::unexpected(err);
+        return outcome_error(err);
     }
 
     return tcp_socket::acceptor(std::move(self));

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <expected>
 #include <optional>
 #include <string>
 #include <string_view>
 
 #include "eventide/ipc/protocol.h"
+#include "eventide/async/outcome.h"
 
 namespace eventide::ipc {
 
@@ -32,7 +32,7 @@ struct RPCError {
 };
 
 template <typename T>
-using Result = std::expected<T, RPCError>;
+using Result = outcome<T, RPCError>;
 
 /// Parsed incoming message envelope (codec-agnostic).
 struct IncomingMessage {

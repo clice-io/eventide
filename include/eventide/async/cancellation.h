@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdlib>
-#include <expected>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -16,9 +15,6 @@ namespace eventide {
 class cancellation_token;
 
 namespace detail {
-
-template <typename T>
-using cancel_result_t = std::conditional_t<is_cancellation_t<T>, T, std::expected<T, cancellation>>;
 
 struct cancellation_watch_flag {
     bool cancelled = false;
@@ -184,9 +180,9 @@ public:
     }
 
 private:
-    template <typename U, std::same_as<cancellation_token>... Ts>
+    template <typename U, typename UE, typename UC, std::same_as<cancellation_token>... Ts>
         requires (sizeof...(Ts) > 0)
-    friend task<detail::cancel_result_t<U>> with_token(task<U>, Ts...);
+    friend task<U, UE, cancellation> with_token(task<U, UE, UC>, Ts...);
 
     registration register_task(async_node* node) const {
         auto flag = std::make_shared<detail::cancellation_watch_flag>();
@@ -250,33 +246,44 @@ private:
 };
 
 /// with_token: cancel a task when any of the given tokens fire.
-template <typename T, std::same_as<cancellation_token>... Tokens>
+/// Adds or re-uses the cancellation channel.
+template <typename T, typename E, typename C, std::same_as<cancellation_token>... Tokens>
     requires (sizeof...(Tokens) > 0)
-task<detail::cancel_result_t<T>> with_token(task<T> task, Tokens... tokens) {
-    auto child = [&] {
-        if constexpr(is_cancellation_t<T>) {
-            return std::move(task);
-        } else {
-            return std::move(task).catch_cancel();
-        }
-    }();
-
+task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) {
     if((tokens.cancelled() || ...)) {
         co_await cancel();
         std::abort();
     }
 
+    task<T, E, cancellation> child = [&]() {
+        if constexpr(std::is_void_v<C>) {
+            return std::move(inner_task).catch_cancel();
+        } else {
+            return std::move(inner_task);
+        }
+    }();
+
     auto registrations = std::tuple{tokens.register_task(child.operator->())...};
     auto result = co_await std::move(child);
     std::apply([](auto&... regs) { (regs.unregister(), ...); }, registrations);
 
-    if(!result.has_value()) {
+    if(result.is_cancelled()) {
         co_await cancel();
         std::abort();
     }
 
-    if constexpr(std::is_void_v<decltype(*result)>) {
-        co_return;
+    if constexpr(!std::is_void_v<E>) {
+        if(result.has_error()) {
+            co_return outcome_error(std::move(result).error());
+        }
+    }
+
+    if constexpr(std::is_void_v<T>) {
+        if constexpr(std::is_void_v<E>) {
+            co_return;
+        } else {
+            co_return outcome_value();
+        }
     } else {
         co_return std::move(*result);
     }

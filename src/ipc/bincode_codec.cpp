@@ -6,8 +6,6 @@
 #include <string_view>
 #include <variant>
 
-#include "eventide/serde/serde/raw_value.h"
-
 namespace eventide::ipc {
 
 namespace {
@@ -92,8 +90,8 @@ Result<std::string> BincodeCodec::encode_request(const protocol::RequestID& id,
         bincode_request{id, std::string(method), serde::RawValue{std::string(params)}};
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return std::unexpected(RPCError(protocol::ErrorCode::InternalError,
-                                        std::string(serde::bincode::error_message(bytes.error()))));
+        return outcome_error(RPCError(protocol::ErrorCode::InternalError,
+                                      std::string(serde::bincode::error_message(bytes.error()))));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
@@ -104,8 +102,8 @@ Result<std::string> BincodeCodec::encode_notification(std::string_view method,
         bincode_notification{std::string(method), serde::RawValue{std::string(params)}};
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return std::unexpected(RPCError(protocol::ErrorCode::InternalError,
-                                        std::string(serde::bincode::error_message(bytes.error()))));
+        return outcome_error(RPCError(protocol::ErrorCode::InternalError,
+                                      std::string(serde::bincode::error_message(bytes.error()))));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
@@ -115,8 +113,8 @@ Result<std::string> BincodeCodec::encode_success_response(const protocol::Reques
     bincode_envelope envelope = bincode_success{id, serde::RawValue{std::string(result)}};
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return std::unexpected(RPCError(protocol::ErrorCode::InternalError,
-                                        std::string(serde::bincode::error_message(bytes.error()))));
+        return outcome_error(RPCError(protocol::ErrorCode::InternalError,
+                                      std::string(serde::bincode::error_message(bytes.error()))));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
@@ -135,8 +133,8 @@ Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestI
     };
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return std::unexpected(RPCError(protocol::ErrorCode::InternalError,
-                                        std::string(serde::bincode::error_message(bytes.error()))));
+        return outcome_error(RPCError(protocol::ErrorCode::InternalError,
+                                      std::string(serde::bincode::error_message(bytes.error()))));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }

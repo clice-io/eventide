@@ -18,7 +18,7 @@ bool bump_and_stop(int& done, int target) {
     return false;
 }
 
-task<result<udp::recv_result>> recv_once(udp& sock, int& done) {
+task<udp::recv_result, error> recv_once(udp& sock, int& done) {
     auto res = co_await sock.recv();
     bump_and_stop(done, 2);
     co_return res;

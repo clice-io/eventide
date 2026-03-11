@@ -5,12 +5,33 @@
 
 #include "libuv.h"
 #include "eventide/async/loop.h"
+#include "eventide/async/outcome.h"
 #include "eventide/async/sync.h"
 
 namespace eventide {
 
-/// Tracks the most recently resumed task (used for debugging/profiling).
-static thread_local async_node* current_node = nullptr;
+async_node::~async_node() {
+    clear_outcome();
+}
+
+erased_outcome& async_node::ensure_outcome() {
+    if(!outcome_) {
+        outcome_ = new erased_outcome();
+    }
+    return *outcome_;
+}
+
+void async_node::clear_outcome() noexcept {
+    delete outcome_;
+    outcome_ = nullptr;
+}
+
+/// Moves the erased_outcome ownership from one node to another.
+static void transfer_outcome(async_node* from, async_node* to) {
+    if(from->has_outcome()) {
+        to->ensure_outcome() = std::move(*from->get_outcome());
+    }
+}
 
 void async_node::clear_awaitee() noexcept {
     if(kind == NodeKind::Task) {
@@ -19,9 +40,9 @@ void async_node::clear_awaitee() noexcept {
 }
 
 /// Recursively cancels this node and all of its descendants.
-/// Idempotent: re-cancelling an already-cancelled node is a no-op.
+/// Idempotent: re-cancelling an already-cancelled or failed node is a no-op.
 void async_node::cancel() {
-    if(state == Cancelled) {
+    if(state == Cancelled || state == Failed) {
         return;
     }
     state = Cancelled;
@@ -87,7 +108,7 @@ void async_node::cancel() {
 /// Resumes a standard task's coroutine, unless it has been cancelled.
 void async_node::resume() {
     if(is_standard_task()) {
-        if(!is_cancelled()) {
+        if(!is_cancelled() && !is_failed()) {
             static_cast<standard_task*>(this)->handle().resume();
         }
     }
@@ -149,7 +170,7 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
     std::abort();
 }
 
-/// Called when a task reaches final_suspend (Finished or Cancelled).
+/// Called when a task reaches final_suspend (Finished, Cancelled, or Failed).
 /// For root tasks with no awaiter, destroys the coroutine frame.
 /// Otherwise, notifies the parent via handle_subtask_result.
 std::coroutine_handle<> async_node::final_transition() {
@@ -179,9 +200,10 @@ std::coroutine_handle<> async_node::final_transition() {
 
 /// Dispatches a child's completion to its parent node.
 ///
-/// For Task parents: resumes the coroutine, or propagates cancellation upward.
+/// For Task parents: resumes the coroutine, or propagates cancellation/error upward.
 /// For Aggregate parents (when_all/when_any/scope):
 ///   - Cancellation: cancels all siblings, propagates upward.
+///   - Error (Failed): cancels all siblings, propagates upward.
 ///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
 ///   - WhenAll/Scope completion: increments counter, resumes awaiter when all done.
 std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
@@ -193,22 +215,42 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
 
             if(child->state == Finished) {
                 self->awaitee = nullptr;
-                current_node = self;
                 return self->handle();
             }
 
             if(child->state == Cancelled) {
-                /// InterceptCancel: the parent handles cancellation explicitly
-                /// (e.g., catch_cancel() or with_token()). Resume as normal.
                 if(child->policy & InterceptCancel) {
                     self->awaitee = nullptr;
-                    current_node = self;
+                    transfer_outcome(child, self);
                     return self->handle();
                 }
 
                 self->awaitee = nullptr;
                 self->state = Cancelled;
+                transfer_outcome(child, self);
                 return self->final_transition();
+            }
+
+            if(child->state == Failed) {
+                if(child->policy & InterceptError) {
+                    self->awaitee = nullptr;
+                    transfer_outcome(child, self);
+                    return self->handle();
+                }
+
+                bool propagate = !child->has_outcome() || child->get_outcome()->should_propagate();
+
+                if(propagate) {
+                    self->awaitee = nullptr;
+                    self->state = Failed;
+                    transfer_outcome(child, self);
+                    return self->final_transition();
+                }
+
+                // should_propagate() returned false — treat as normal completion
+                self->awaitee = nullptr;
+                transfer_outcome(child, self);
+                return self->handle();
             }
 
             std::abort();
@@ -223,9 +265,20 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             }
 
             const bool cancelled = child->state == Cancelled && !(child->policy & InterceptCancel);
-            if(cancelled) {
+
+            const bool failed = child->state == Failed && !(child->policy & InterceptError) &&
+                                (!child->has_outcome() || child->get_outcome()->should_propagate());
+
+            if(cancelled || failed) {
                 self->done = true;
-                self->pending_cancel = true;
+                if(cancelled) {
+                    self->pending_cancel = true;
+                }
+                if(failed) {
+                    self->pending_error = true;
+                }
+
+                transfer_outcome(child, self);
 
                 for(auto* other: self->awaitees) {
                     if(other && other != child) {
@@ -240,7 +293,8 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
 
                 if(self->awaiter) {
                     self->awaiter->clear_awaitee();
-                    self->awaiter->state = Cancelled;
+                    self->awaiter->state = failed ? Failed : Cancelled;
+                    transfer_outcome(self, self->awaiter);
                     return self->awaiter->final_transition();
                 }
 

@@ -13,6 +13,7 @@
 
 namespace eventide {
 
+class erased_outcome;
 class sync_primitive;
 
 /// Type-erased base for all coroutine-related nodes in the task tree.
@@ -47,6 +48,10 @@ public:
         /// The parent resumes normally and can inspect the cancelled state.
         /// Used by catch_cancel() and with_token().
         InterceptCancel = 1 << 1,
+        /// When set, error (Failed state) of this node does NOT propagate upward.
+        /// The parent resumes normally and can inspect the error value.
+        /// Used by catch_error() and catch_all().
+        InterceptError = 1 << 2,
     };
 
     enum State : uint8_t {
@@ -54,6 +59,7 @@ public:
         Running,
         Cancelled,
         Finished,
+        Failed,
     };
 
     const NodeKind kind;
@@ -86,6 +92,10 @@ public:
         return state == Cancelled;
     }
 
+    bool is_failed() const noexcept {
+        return state == Failed;
+    }
+
     /// If this node is a task, clear its awaitee pointer.
     void clear_awaitee() noexcept;
 
@@ -102,6 +112,24 @@ public:
     /// Dump the async graph reachable from this node as a DOT (graphviz) graph.
     std::string dump_dot() const;
 
+    // --- erased_outcome support (on-demand allocation) ---
+
+    bool has_outcome() const noexcept {
+        return outcome_ != nullptr;
+    }
+
+    erased_outcome* get_outcome() noexcept {
+        return outcome_;
+    }
+
+    const erased_outcome* get_outcome() const noexcept {
+        return outcome_;
+    }
+
+    erased_outcome& ensure_outcome();
+
+    void clear_outcome() noexcept;
+
 private:
     const static async_node* get_awaiter(const async_node* node);
     const static sync_primitive* get_resource_parent(const async_node* node);
@@ -115,6 +143,10 @@ private:
 
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
+
+    ~async_node();
+
+    erased_outcome* outcome_ = nullptr;
 };
 
 class standard_task : public async_node {
@@ -232,6 +264,9 @@ protected:
     /// A child was cancelled while arming was in progress.
     bool pending_cancel = false;
 
+    /// A child failed (error propagation) while arming was in progress.
+    bool pending_error = false;
+
     /// Common await_suspend logic for all aggregate operations.
     /// The caller must populate `awaitees` and set `total` before calling.
     /// `should_break` is called after each child resume to decide early exit.
@@ -252,6 +287,7 @@ protected:
         done = false;
         pending_resume = false;
         pending_cancel = false;
+        pending_error = false;
         arming = true;
 
         for(auto* child: awaitees) {
@@ -275,6 +311,10 @@ protected:
             awaiter->clear_awaitee();
             if(pending_cancel) {
                 awaiter->state = Cancelled;
+                return awaiter->final_transition();
+            }
+            if(pending_error) {
+                awaiter->state = Failed;
                 return awaiter->final_transition();
             }
             return static_cast<standard_task*>(awaiter)->handle();

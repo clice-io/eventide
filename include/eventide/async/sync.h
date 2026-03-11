@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cstddef>
-#include <expected>
 #include <source_location>
 
 #include "frame.h"
@@ -235,9 +234,9 @@ public:
             return link_continuation(&awaiter.promise(), location);
         }
 
-        std::expected<void, cancellation> await_resume() noexcept {
+        outcome<void, void, cancellation> await_resume() noexcept {
             if(this->state == async_node::Cancelled) {
-                return std::unexpected(cancellation{});
+                return outcome_cancelled(cancellation{});
             }
 
             return {};
@@ -251,7 +250,7 @@ public:
     /// cancellation is propagated through the returned task.
     task<> wait() {
         auto result = co_await wait_awaiter(*this);
-        if(!result.has_value()) {
+        if(result.is_cancelled()) {
             co_await cancel();
         }
     }

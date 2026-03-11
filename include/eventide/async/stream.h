@@ -1,8 +1,6 @@
 #pragma once
 
-#include <coroutine>
 #include <cstddef>
-#include <deque>
 #include <memory>
 #include <span>
 #include <string>
@@ -49,15 +47,15 @@ public:
     const void* handle() const noexcept;
 
     /// Read available data into a std::string; waits for at least one read if empty.
-    task<result<std::string>> read();
+    task<std::string, error> read();
 
     /// Read up to dst.size() bytes into dst; returns bytes read, 0 on EOF, or an error.
-    task<result<std::size_t>> read_some(std::span<char> dst);
+    task<std::size_t, error> read_some(std::span<char> dst);
 
     using chunk = std::span<const char>;
 
     /// Read a chunk view into the internal buffer; call consume() after processing.
-    task<result<chunk>> read_chunk();
+    task<chunk, error> read_chunk();
 
     /// Consume bytes from the internal buffer.
     void consume(std::size_t n);
@@ -101,7 +99,7 @@ public:
     Self* operator->() noexcept;
 
     /// Accept one connection; only one pending accept is allowed at a time.
-    task<result<Stream>> accept();
+    task<Stream, error> accept();
 
     /// Stop pending accept which will complete with error::operation_aborted. If no accept is
     /// pending, the next accept() will complete with error instead.
@@ -143,9 +141,9 @@ public:
                              event_loop& loop = event_loop::current());
 
     /// Connect to a named pipe.
-    static task<result<pipe>> connect(std::string_view name,
-                                      options opts = options(),
-                                      event_loop& loop = event_loop::current());
+    static task<pipe, error> connect(std::string_view name,
+                                     options opts = options(),
+                                     event_loop& loop = event_loop::current());
 
     /// Listen on a named pipe.
     static result<acceptor> listen(std::string_view name,
@@ -187,9 +185,9 @@ public:
     static result<tcp_socket> open(int fd, event_loop& loop = event_loop::current());
 
     /// Connect to a TCP host/port.
-    static task<result<tcp_socket>> connect(std::string_view host,
-                                            int port,
-                                            event_loop& loop = event_loop::current());
+    static task<tcp_socket, error> connect(std::string_view host,
+                                           int port,
+                                           event_loop& loop = event_loop::current());
 
     /// Listen on a TCP host/port.
     static result<acceptor> listen(std::string_view host,
