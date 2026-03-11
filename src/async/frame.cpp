@@ -44,8 +44,7 @@ std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     awaiter->clear_awaitee();
 
     switch(deferred) {
-        case Deferred::Resume:
-            return static_cast<standard_task*>(awaiter)->handle();
+        case Deferred::Resume: return static_cast<standard_task*>(awaiter)->handle();
 
         case Deferred::Cancel:
             awaiter->state = Cancelled;
