@@ -69,7 +69,7 @@ void rethrow_if_failed(Task& task) {
     auto* node = node_from(task);
     if(!node->is_failed())
         return;
-    (void)take_result(task);
+    [[maybe_unused]] auto ignored = take_result(task);
     throw std::runtime_error("when_all: child task returned propagating error");
 }
 

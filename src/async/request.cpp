@@ -69,8 +69,7 @@ task<error> queue(work_fn fn, event_loop& loop) {
     op.result.clear();
     op.req.data = &op;
 
-    auto err = uv::queue_work(loop, op.req, work_cb, after_cb);
-    if(err) {
+    if(auto err = uv::queue_work(loop, op.req, work_cb, after_cb)) {
         co_return err;
     }
 

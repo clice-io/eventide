@@ -105,13 +105,13 @@ void on_connection(uv_stream_t* server, int status) {
     auto* listener = static_cast<self_t*>(server->data);
     assert(listener != nullptr && "on_connection requires listener state in server->data");
 
-    auto err = uv::status_to_error(status);
-    if(err) {
+    if(auto err = uv::status_to_error(status)) {
         listener->deliver(err);
         return;
     }
 
     auto self = stream::Self::make();
+    error err{};
     if constexpr(std::is_same_v<Stream, pipe>) {
         err = uv::pipe_init(*server->loop, self->pipe, listener->pipe_ipc);
     } else if constexpr(std::is_same_v<Stream, tcp_socket>) {
@@ -201,8 +201,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
 
         aw->mark_cancelled_if(status);
 
-        auto err = uv::status_to_error(status);
-        if(err) {
+        if(auto err = uv::status_to_error(status)) {
             aw->outcome = outcome_error(err);
         } else if(aw->self) {
             if constexpr(std::is_same_v<Stream, pipe>) {

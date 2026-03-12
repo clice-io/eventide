@@ -85,8 +85,7 @@ struct fs_event_await : uv::await_op<fs_event_await> {
         auto* watcher = static_cast<fs_event::Self*>(handle->data);
         assert(watcher != nullptr && "on_change requires watcher state in handle->data");
 
-        auto err = uv::status_to_error(status);
-        if(err) {
+        if(auto err = uv::status_to_error(status)) {
             watcher->deliver(err);
             return;
         }
@@ -310,9 +309,10 @@ static task<Result, error> run_fs(Submit submit,
 
 template <typename Submit>
 static task<void, error> run_void_fs(Submit submit, event_loop& loop) {
-    auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop);
-    if(!res)
+    if(auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop);
+       !res) {
         co_return outcome_error(res.error());
+    }
     co_return outcome_value();
 }
 
@@ -501,14 +501,14 @@ task<void, error> fs::closedir(fs::dir_handle& dir, event_loop& loop) {
         co_return outcome_error(error::invalid_argument);
     }
 
-    auto res = co_await run_void_fs(
-        [&](uv_fs_t& req, uv_fs_cb cb) {
-            return uv::fs_closedir(loop, req, *static_cast<uv_dir_t*>(dir.native_handle()), cb);
-        },
-        loop);
-
-    if(!res)
+    if(auto res = co_await run_void_fs(
+           [&](uv_fs_t& req, uv_fs_cb cb) {
+               return uv::fs_closedir(loop, req, *static_cast<uv_dir_t*>(dir.native_handle()), cb);
+           },
+           loop);
+       !res) {
         co_return outcome_error(res.error());
+    }
     dir.reset();
     co_return outcome_value();
 }

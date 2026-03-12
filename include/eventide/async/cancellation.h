@@ -36,15 +36,16 @@ public:
     cancellation_token(const cancellation_token&) noexcept = default;
     cancellation_token& operator=(const cancellation_token&) noexcept = default;
 
-    cancellation_token(cancellation_token&& other) noexcept : state_(other.state_) {}
+    cancellation_token(cancellation_token&& other) noexcept :
+        shared_state(std::move(other.shared_state)) {}
 
     cancellation_token& operator=(cancellation_token&& other) noexcept {
-        state_ = other.state_;
+        shared_state = std::move(other.shared_state);
         return *this;
     }
 
     bool cancelled() const noexcept {
-        return state_->is_cancelled();
+        return shared_state->is_cancelled();
     }
 
     /// Returns a task that never succeeds.
@@ -54,25 +55,25 @@ public:
     /// 2. Otherwise it waits until the token's internal event is interrupted,
     ///    then the underlying event wait is cancelled.
     task<> wait() const {
-        if(state_->is_cancelled()) {
+        if(shared_state->is_cancelled()) {
             // Preserve cancellation semantics for already-fired tokens.
             co_await cancel();
         }
         // `cancel_event.interrupt()` cancels this wait; it does not produce a value.
-        co_await state_->cancel_event.wait();
+        co_await shared_state->cancel_event.wait();
     }
 
 private:
     friend class cancellation_source;
 
-    explicit cancellation_token(std::shared_ptr<state> state) : state_(std::move(state)) {}
+    explicit cancellation_token(std::shared_ptr<state> state) : shared_state(std::move(state)) {}
 
-    std::shared_ptr<state> state_;
+    std::shared_ptr<state> shared_state;
 };
 
 class cancellation_source {
 public:
-    cancellation_source() : state_(std::make_shared<cancellation_token::state>()) {}
+    cancellation_source() : shared_state(std::make_shared<cancellation_token::state>()) {}
 
     cancellation_source(const cancellation_source&) = delete;
     cancellation_source& operator=(const cancellation_source&) = delete;
@@ -85,7 +86,7 @@ public:
         }
 
         cancel();
-        state_ = std::move(other.state_);
+        shared_state = std::move(other.shared_state);
         return *this;
     }
 
@@ -94,21 +95,21 @@ public:
     }
 
     void cancel() noexcept {
-        if(auto s = state_) {
-            s->cancel();
+        if(auto state = shared_state) {
+            state->cancel();
         }
     }
 
     bool cancelled() const noexcept {
-        return state_ && state_->is_cancelled();
+        return shared_state && shared_state->is_cancelled();
     }
 
     cancellation_token token() const noexcept {
-        return cancellation_token(state_);
+        return cancellation_token(shared_state);
     }
 
 private:
-    std::shared_ptr<cancellation_token::state> state_;
+    std::shared_ptr<cancellation_token::state> shared_state;
 };
 
 /// with_token: cancel a task when any of the given tokens fire.

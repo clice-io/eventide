@@ -27,8 +27,7 @@ error ensure_reading(stream::Self* self,
         self->active_read_mode = stream::Self::read_mode::none;
     }
 
-    auto err = uv::read_start(self->stream, alloc_cb, read_cb);
-    if(err) {
+    if(auto err = uv::read_start(self->stream, alloc_cb, read_cb)) {
         return err;
     }
 
@@ -73,8 +72,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t*) {
         auto s = static_cast<stream::Self*>(stream->data);
         assert(s != nullptr && "on_read requires stream state in stream->data");
-        auto err = uv::status_to_error(nread);
-        if(err) {
+        if(auto err = uv::status_to_error(nread)) {
             uv::read_stop(*stream);
             s->active_read_mode = stream::Self::read_mode::none;
             if(s->reader.has_waiter()) {
@@ -113,8 +111,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
         // read_chunk()/read() calls can wait for more bytes without tearing the watcher down.
         // If we are already in buffered mode, there is nothing to restart. If another read style
         // was active, switch callbacks by stopping that watcher first.
-        auto err = ensure_reading(self, stream::Self::read_mode::buffered, on_alloc, on_read);
-        if(err) {
+        if(auto err = ensure_reading(self, stream::Self::read_mode::buffered, on_alloc, on_read)) {
             self->error_code = err;
             return waiting;
         }
@@ -256,8 +253,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
 
         aw->mark_cancelled_if(status);
 
-        auto err = uv::status_to_error(status);
-        if(err) {
+        if(auto err = uv::status_to_error(status)) {
             aw->error_code = err;
         }
 

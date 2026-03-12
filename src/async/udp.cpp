@@ -143,8 +143,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
         auto* u = static_cast<udp::Self*>(handle->data);
         assert(u != nullptr && "on_read requires udp state in handle->data");
 
-        auto err = uv::status_to_error(nread);
-        if(err) {
+        if(auto err = uv::status_to_error(nread)) {
             u->recv.mark_cancelled_if(nread);
             u->recv.deliver(err);
             return;
@@ -270,9 +269,11 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         const sockaddr* addr =
             dest.has_value() ? reinterpret_cast<const sockaddr*>(&dest.value()) : nullptr;
 
-        auto err =
-            uv::udp_send(req, self->handle, std::span<const uv_buf_t>{&buf, 1}, addr, on_send);
-        if(err) {
+        if(auto err = uv::udp_send(req,
+                                   self->handle,
+                                   std::span<const uv_buf_t>{&buf, 1},
+                                   addr,
+                                   on_send)) {
             result = err;
             self->send.disarm();
             return waiting;
@@ -434,9 +435,8 @@ task<error> udp::send(std::span<const char> data, std::string_view host, int por
         co_return resolved.error();
     }
 
-    co_return co_await udp_send_await{self.get(),
-                                      data,
-                                      std::optional<sockaddr_storage>(resolved->storage)};
+    co_return co_await
+        udp_send_await{self.get(), data, std::optional<sockaddr_storage>(resolved->storage)};
 }
 
 task<error> udp::send(std::span<const char> data) {
@@ -459,10 +459,10 @@ error udp::try_send(std::span<const char> data, std::string_view host, int port)
 
     uv_buf_t buf =
         uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(data.size()));
-    auto sent = uv::udp_try_send(self->handle,
-                                 std::span<const uv_buf_t>{&buf, 1},
-                                 reinterpret_cast<const sockaddr*>(&resolved->storage));
-    if(!sent) {
+    if(auto sent = uv::udp_try_send(self->handle,
+                                    std::span<const uv_buf_t>{&buf, 1},
+                                    reinterpret_cast<const sockaddr*>(&resolved->storage));
+       !sent) {
         return sent.error();
     }
 
@@ -476,8 +476,8 @@ error udp::try_send(std::span<const char> data) {
 
     uv_buf_t buf =
         uv::buf_init(const_cast<char*>(data.data()), static_cast<unsigned int>(data.size()));
-    auto sent = uv::udp_try_send(self->handle, std::span<const uv_buf_t>{&buf, 1}, nullptr);
-    if(!sent) {
+    if(auto sent = uv::udp_try_send(self->handle, std::span<const uv_buf_t>{&buf, 1}, nullptr);
+       !sent) {
         return sent.error();
     }
 
