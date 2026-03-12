@@ -36,7 +36,7 @@ public:
             event.set();
         }
 
-        event event;
+        class event event;
 
     private:
         bool cancelled = false;
@@ -66,7 +66,7 @@ public:
     /// 2. Otherwise it waits until the token's internal event is set, then
     ///    cancels itself immediately.
     ///
-    /// The `event` itself only wakes the waiter; it does not propagate
+    /// The event itself only wakes the waiter; it does not propagate
     /// cancellation upward. The trailing `co_await cancel();` is therefore
     /// essential: it converts "the cancellation event has fired" into the
     /// coroutine state `Cancelled`, which is what with_token(...) and other

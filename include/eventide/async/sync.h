@@ -67,6 +67,20 @@ protected:
 
     bool cancel_waiter(waiter_link* link) noexcept;
 
+    /// Processes the waiters that were already queued when this call began.
+    ///
+    /// The callback is allowed to synchronously resume user code, so it may
+    /// mutate the same wait queue re-entrantly. Using a generation snapshot
+    /// keeps the walk stable without stashing sibling waiter pointers that may
+    /// become dangling before the next iteration.
+    template <typename Fn>
+    void drain_waiter_snapshot(Fn&& fn) {
+        const auto snapshot = begin_waiter_snapshot();
+        while(front_waiter_matches(snapshot)) {
+            fn(pop_waiter());
+        }
+    }
+
     /// Starts a logical "snapshot" of the current wait queue.
     ///
     /// We do not materialize that snapshot into a temporary container: doing so
@@ -268,10 +282,7 @@ public:
 
     void set() noexcept {
         signaled = true;
-        const auto snapshot = begin_waiter_snapshot();
-        while(front_waiter_matches(snapshot)) {
-            resume_waiter(pop_waiter());
-        }
+        drain_waiter_snapshot([this](waiter_link* waiter) { resume_waiter(waiter); });
     }
 
     void reset() noexcept {
@@ -280,16 +291,10 @@ public:
 
     /// Interrupts the current wait queue without changing the signaled state.
     void interrupt() noexcept {
-        const auto snapshot = begin_waiter_snapshot();
-
-        // cancel_waiter() resumes user code synchronously. That code may call
-        // ev.wait() again before we come back here, so a plain
-        // `while(pop_waiter())` would also drain those newcomers. By stopping
-        // once the front waiter no longer belongs to the snapshot generation,
-        // interrupt() only cancels the queue as it existed at entry.
-        while(front_waiter_matches(snapshot)) {
-            cancel_waiter(pop_waiter());
-        }
+        // cancel_waiter() resumes user code synchronously. New waits may be
+        // linked before we return, but they belong to a newer generation and
+        // are excluded by drain_waiter_snapshot().
+        drain_waiter_snapshot([this](waiter_link* waiter) { cancel_waiter(waiter); });
     }
 
     bool is_set() const noexcept {
@@ -358,10 +363,7 @@ public:
     }
 
     void notify_all() {
-        const auto snapshot = begin_waiter_snapshot();
-        while(front_waiter_matches(snapshot)) {
-            resume_waiter(pop_waiter());
-        }
+        drain_waiter_snapshot([this](waiter_link* waiter) { resume_waiter(waiter); });
     }
 };
 
