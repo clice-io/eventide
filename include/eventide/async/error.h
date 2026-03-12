@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -32,9 +33,10 @@ public:
         return has_error();
     }
 
-    /// structured_error protocol: all non-zero errors propagate by default.
-    constexpr bool should_propagate() const noexcept {
-        return code != 0;
+    /// structured_error protocol: real errors propagate; expected
+    /// completion signals (operation_aborted, end_of_file) do not.
+    bool should_propagate() const noexcept {
+        return has_error() && *this != operation_aborted && *this != end_of_file;
     }
 
     std::string_view message() const;
@@ -135,31 +137,14 @@ private:
 };
 
 struct cancellation {
-    enum class reason : std::uint8_t {
-        unspecified = 0,
-        self,
-        timeout,
-        token,
-        parent,
-        scope_exit,
-    };
+    std::string message;
 
-    reason why = reason::unspecified;
+    cancellation() noexcept = default;
 
-    constexpr cancellation() noexcept = default;
+    explicit cancellation(std::string reason) : message(std::move(reason)) {}
 
-    constexpr explicit cancellation(reason r) noexcept : why(r) {}
-
-    /// structured_cancel protocol
-    constexpr std::string_view reason() const noexcept {
-        switch(why) {
-            case cancellation::reason::self: return "self";
-            case cancellation::reason::timeout: return "timeout";
-            case cancellation::reason::token: return "token";
-            case cancellation::reason::parent: return "parent";
-            case cancellation::reason::scope_exit: return "scope_exit";
-            default: return "unspecified";
-        }
+    std::string_view reason() const noexcept {
+        return message;
     }
 };
 

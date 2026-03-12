@@ -236,7 +236,7 @@ public:
 
         outcome<void, void, cancellation> await_resume() noexcept {
             if(this->state == async_node::Cancelled) {
-                return outcome_cancelled(cancellation{});
+                return detail::cancel_box<cancellation>{cancellation{}};
             }
 
             return {};

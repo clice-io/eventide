@@ -30,6 +30,14 @@ template <typename T, typename E, typename C>
 struct promise_result {
     std::optional<outcome<T, E, void>> value;
 
+    bool has_propagating_error() const noexcept {
+        if constexpr(!std::is_void_v<E> && structured_error<E>) {
+            return value.has_value() && value->has_error() && value->error().should_propagate();
+        } else {
+            return false;
+        }
+    }
+
     template <typename U>
     void return_value(U&& val) noexcept {
         value.emplace(std::forward<U>(val));
@@ -43,17 +51,29 @@ template <>
 struct promise_result<void, void, void> {
     std::optional<outcome<void, void, void>> value;
 
+    bool has_propagating_error() const noexcept {
+        return false;
+    }
+
     void return_void() noexcept {
         value.emplace();
     }
 };
 
 // ============================================================================
-// promise_exception, transition_await, cancel(), fail()
+// promise_exception, transition_await, cancel()
 // ============================================================================
 
 struct promise_exception {
 #ifdef __cpp_exceptions
+    bool has_exception() const noexcept {
+        return exception != nullptr;
+    }
+
+    std::exception_ptr get_exception() const noexcept {
+        return exception;
+    }
+
     void unhandled_exception() noexcept {
         this->exception = std::current_exception();
     }
@@ -67,6 +87,14 @@ struct promise_exception {
 protected:
     std::exception_ptr exception{nullptr};
 #else
+    bool has_exception() const noexcept {
+        return false;
+    }
+
+    std::exception_ptr get_exception() const noexcept {
+        return nullptr;
+    }
+
     void unhandled_exception() {
         std::abort();
     }
@@ -90,10 +118,15 @@ struct transition_await {
                 return promise.final_transition();
             }
             assert(promise.state == async_node::Running && "only running task could finish");
-            promise.state = state;
+            if(promise.has_exception()) {
+                promise.state = async_node::Failed;
+                promise.propagated_exception = promise.get_exception();
+            } else if(promise.has_propagating_error()) {
+                promise.state = async_node::Failed;
+            } else {
+                promise.state = state;
+            }
         } else if(state == async_node::Cancelled) {
-            promise.state = state;
-        } else if(state == async_node::Failed) {
             promise.state = state;
         } else {
             assert(false && "unexpected task state");
@@ -106,10 +139,6 @@ struct transition_await {
 
 inline auto cancel() {
     return transition_await(async_node::Cancelled);
-}
-
-inline auto fail() {
-    return transition_await(async_node::Failed);
 }
 
 // ============================================================================
@@ -147,9 +176,6 @@ public:
             if constexpr(!std::is_void_v<C>) {
                 this->policy = static_cast<Policy>(this->policy | InterceptCancel);
             }
-            if constexpr(!std::is_void_v<E>) {
-                this->policy = static_cast<Policy>(this->policy | InterceptError);
-            }
         }
     };
 
@@ -184,29 +210,18 @@ public:
 
                 if(promise.state == async_node::Cancelled) {
                     if constexpr(!std::is_void_v<C>) {
-                        if(promise.has_outcome() && promise.get_outcome()->is_cancelled()) {
-                            return R(outcome_cancelled(
-                                std::move(*promise.get_outcome()->template as<C>())));
-                        }
-                        return R(outcome_cancelled(C{}));
+                        return R(detail::cancel_box<C>{C{}});
                     } else {
                         std::abort();
                     }
                 }
 
-                if(promise.state == async_node::Failed) {
-                    if constexpr(!std::is_void_v<E>) {
-                        if(promise.has_outcome() && promise.get_outcome()->has_error()) {
-                            return R(
-                                outcome_error(std::move(*promise.get_outcome()->template as<E>())));
-                        }
-                        return R(outcome_error(E{}));
-                    } else {
-                        std::abort();
-                    }
+                if constexpr(std::is_void_v<E>) {
+                    assert(promise.state == async_node::Finished);
+                } else {
+                    assert(promise.state == async_node::Finished ||
+                           promise.state == async_node::Failed);
                 }
-
-                assert(promise.state == async_node::Finished);
                 assert(promise.value.has_value());
 
                 if constexpr(!std::is_void_v<E>) {
@@ -300,12 +315,9 @@ public:
     }
 
     /// Adds cancellation interception via from_address (safe because C never
-    /// changes the promise layout). Defaults to the erased `cancellation` type.
-    /// Idempotent when TargetC matches the existing cancel channel.
-    template <typename TargetC = cancellation>
-        requires (!std::is_void_v<TargetC>)
+    /// changes the promise layout). Idempotent if already intercepting.
     auto catch_cancel() && {
-        if constexpr(std::same_as<C, TargetC>) {
+        if constexpr(std::same_as<C, cancellation>) {
             return std::move(*this);
         } else {
             if constexpr(std::is_void_v<C>) {
@@ -314,66 +326,13 @@ public:
             }
             auto handle = h;
             h = nullptr;
-            using target = task<T, E, TargetC>;
+            using target = task<T, E, cancellation>;
             using target_handle = typename target::coroutine_handle;
             return target(target_handle::from_address(handle.address()));
         }
     }
 
-    /// Adds error interception via a wrapper coroutine (error type changes
-    /// the promise layout). Defaults to the erased `error` type.
-    /// Idempotent when TargetE matches the existing error channel.
-    template <typename TargetE = error>
-        requires (!std::is_void_v<TargetE>)
-    auto catch_error() && {
-        if constexpr(std::same_as<E, TargetE>) {
-            return std::move(*this);
-        } else {
-            static_assert(std::is_void_v<E>, "cannot convert between error types");
-            static_assert(std::is_void_v<C>, "use catch_all() to add both channels");
-            h.promise().policy =
-                static_cast<async_node::Policy>(h.promise().policy | async_node::InterceptError);
-            return catch_error_wrapper<TargetE>(std::move(*this));
-        }
-    }
-
-    /// Adds both interceptions. Defaults to the erased types.
-    /// Idempotent when both channels already match the targets.
-    template <typename TargetE = error, typename TargetC = cancellation>
-        requires (!std::is_void_v<TargetE>) && (!std::is_void_v<TargetC>)
-    auto catch_all() && {
-        if constexpr(std::same_as<E, TargetE> && std::same_as<C, TargetC>) {
-            return std::move(*this);
-        } else {
-            static_assert(std::is_void_v<E> && std::is_void_v<C>,
-                          "already has error or cancel channel");
-            h.promise().policy = static_cast<async_node::Policy>(
-                h.promise().policy | async_node::InterceptError | async_node::InterceptCancel);
-            return catch_all_wrapper<TargetE, TargetC>(std::move(*this));
-        }
-    }
-
 private:
-    template <typename TargetE>
-    static task<T, TargetE, void> catch_error_wrapper(task<T, void, void> inner) {
-        if constexpr(std::is_void_v<T>) {
-            co_await std::move(inner);
-            co_return outcome_value();
-        } else {
-            co_return co_await std::move(inner);
-        }
-    }
-
-    template <typename TargetE, typename TargetC>
-    static task<T, TargetE, TargetC> catch_all_wrapper(task<T, void, void> inner) {
-        if constexpr(std::is_void_v<T>) {
-            co_await std::move(inner);
-            co_return outcome_value();
-        } else {
-            co_return co_await std::move(inner);
-        }
-    }
-
     coroutine_handle h;
 };
 

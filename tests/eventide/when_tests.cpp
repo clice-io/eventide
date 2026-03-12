@@ -1012,6 +1012,551 @@ TEST_CASE(when_all_in_scope) {
 
 };  // TEST_SUITE(async_scope)
 
+// ============================================================================
+// Structured concurrency: exception and error propagation in aggregates
+// ============================================================================
+
+namespace {
+
+task<int, error> return_error(error err) {
+    co_return outcome_error(err);
+}
+
+task<int, error> return_value(int val) {
+    co_return val;
+}
+
+task<int, error> delayed_return_error(event_loop& loop, int ms, error err) {
+    co_await sleep(std::chrono::milliseconds{ms}, loop);
+    co_return outcome_error(err);
+}
+
+task<int, error> delayed_return_value(event_loop& loop, int ms, int val) {
+    co_await sleep(std::chrono::milliseconds{ms}, loop);
+    co_return val;
+}
+
+}  // namespace
+
+#ifdef __cpp_exceptions
+
+TEST_SUITE(structured_concurrency_exceptions) {
+
+TEST_CASE(exception_in_when_all_cancels_siblings) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        throw std::runtime_error("boom");
+        co_return 0;
+    };
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(thrower(), slow());
+        co_return a + b;
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(exception_in_when_all_immediate) {
+    auto thrower = []() -> task<int> {
+        throw std::runtime_error("immediate boom");
+        co_return 0;
+    };
+
+    auto normal = []() -> task<int> {
+        co_return 42;
+    };
+
+    auto combined = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(thrower(), normal());
+        co_return a + b;
+    };
+
+    EXPECT_THROWS(run(combined()));
+}
+
+TEST_CASE(exception_in_when_any_cancels_siblings) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        throw std::runtime_error("boom");
+        co_return 0;
+    };
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<> {
+        co_await when_any(thrower(), slow());
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(exception_in_scope_cancels_siblings) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto thrower = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        throw std::runtime_error("scope boom");
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope scope;
+        scope.spawn(thrower());
+        scope.spawn(slow());
+        co_await scope;
+    };
+
+    auto t = driver();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(exception_in_when_all_range) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        throw std::runtime_error("range boom");
+        co_return 0;
+    };
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<int> {
+        small_vector<task<int>> tasks;
+        tasks.emplace_back(thrower());
+        tasks.emplace_back(slow());
+        auto results = co_await when_all(std::move(tasks));
+        co_return results[0] + results[1];
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(exception_in_when_any_range) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        throw std::runtime_error("range any boom");
+        co_return 0;
+    };
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<> {
+        small_vector<task<int>> tasks;
+        tasks.emplace_back(thrower());
+        tasks.emplace_back(slow());
+        co_await when_any(std::move(tasks));
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(exception_propagates_through_nested_when_all) {
+    event_loop loop;
+
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        throw std::runtime_error("deep boom");
+        co_return 0;
+    };
+
+    auto inner = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(thrower(), delayed_int(loop, 50, 1));
+        co_return a + b;
+    };
+
+    auto outer = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(inner(), delayed_int(loop, 50, 2));
+        co_return a + b;
+    };
+
+    auto t = outer();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+}
+
+TEST_CASE(exception_caught_by_parent_does_not_propagate) {
+    event_loop loop;
+
+    auto thrower = [&]() -> task<int> {
+        throw std::runtime_error("caught boom");
+        co_return 0;
+    };
+
+    auto catcher = [&]() -> task<int> {
+        try {
+            co_return co_await thrower();
+        } catch(const std::runtime_error&) {
+            co_return -1;
+        }
+    };
+
+    auto combined = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(catcher(), delayed_int(loop, 1, 42));
+        co_return a + b;
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(t.result(), 41);
+}
+
+TEST_CASE(exception_in_direct_co_await_rethrows) {
+    auto thrower = []() -> task<int> {
+        throw std::runtime_error("direct boom");
+        co_return 0;
+    };
+
+    auto parent = [&]() -> task<int> {
+        co_return co_await thrower();
+    };
+
+    EXPECT_THROWS(run(parent()));
+}
+
+};  // TEST_SUITE(structured_concurrency_exceptions)
+
+#endif  // __cpp_exceptions
+
+TEST_SUITE(structured_concurrency_errors) {
+
+TEST_CASE(propagating_error_in_when_all_cancels_siblings) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto slow = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+        co_return 42;
+    };
+
+    auto combined = [&]() -> task<> {
+        try {
+            co_await when_all(failing(), slow());
+        } catch(...) {}
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(propagating_error_immediate_when_all) {
+    auto failing = []() -> task<int, error> {
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto normal = []() -> task<int, error> {
+        co_return 42;
+    };
+
+    auto combined = [&]() -> task<> {
+        try {
+            co_await when_all(failing(), normal());
+        } catch(...) {}
+    };
+
+    run(combined());
+}
+
+TEST_CASE(propagating_error_in_direct_co_await_returns_error) {
+    auto failing = []() -> task<int, error> {
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto parent = [&]() -> task<int, error> {
+        co_return co_await failing();
+    };
+
+    auto [res] = run(parent());
+    ASSERT_TRUE(res.has_value());
+    EXPECT_TRUE(res->has_error());
+    EXPECT_EQ(res->error(), error::connection_refused);
+}
+
+TEST_CASE(non_propagating_error_does_not_cancel_siblings) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto aborting = [&]() -> task<int, error> {
+        co_return outcome_error(error::operation_aborted);
+    };
+
+    auto slow = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        slow_done += 1;
+        co_return 42;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto [a, b] = co_await when_all(aborting(), slow());
+        EXPECT_TRUE(a.has_error());
+        EXPECT_EQ(a.error(), error::operation_aborted);
+        EXPECT_TRUE(b.has_value());
+        EXPECT_EQ(*b, 42);
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 1);
+}
+
+TEST_CASE(eof_error_does_not_cancel_siblings) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto eof_task = [&]() -> task<int, error> {
+        co_return outcome_error(error::end_of_file);
+    };
+
+    auto slow = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        slow_done += 1;
+        co_return 99;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto [a, b] = co_await when_all(eof_task(), slow());
+        EXPECT_TRUE(a.has_error());
+        EXPECT_EQ(a.error(), error::end_of_file);
+        EXPECT_TRUE(b.has_value());
+        EXPECT_EQ(*b, 99);
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 1);
+}
+
+TEST_CASE(propagating_error_in_when_any_returns_error_as_winner) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto slow = [&]() -> task<int, error> {
+        co_await sleep(std::chrono::milliseconds{50}, loop);
+        slow_done += 1;
+        co_return 42;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto winner = co_await when_any(failing(), slow());
+        EXPECT_EQ(winner.index(), 0U);
+        auto& res = std::get<0>(winner);
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(propagating_error_in_scope_does_not_cross_type_boundary) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto failing = [&]() -> task<> {
+        auto inner = [&]() -> task<int, error> {
+            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_return outcome_error(error::connection_refused);
+        };
+        auto res = co_await inner();
+        (void)res;
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::milliseconds{5}, loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        async_scope scope;
+        scope.spawn(failing());
+        scope.spawn(slow());
+        co_await scope;
+    };
+
+    auto t = driver();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 1);
+}
+
+TEST_CASE(propagating_error_in_when_all_range) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto combined = [&]() -> task<> {
+        small_vector<task<int, error>> tasks;
+        tasks.emplace_back(delayed_return_error(loop, 1, error::connection_refused));
+        tasks.emplace_back(delayed_return_value(loop, 50, 42));
+        try {
+            co_await when_all(std::move(tasks));
+        } catch(...) {}
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+}
+
+TEST_CASE(propagating_error_in_when_any_range) {
+    event_loop loop;
+    int slow_done = 0;
+
+    auto combined = [&]() -> task<> {
+        small_vector<task<int, error>> tasks;
+        tasks.emplace_back(delayed_return_error(loop, 1, error::connection_refused));
+        tasks.emplace_back(delayed_return_value(loop, 50, 42));
+        auto [idx, res] = co_await when_any(std::move(tasks));
+        EXPECT_EQ(idx, 0U);
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
+    };
+
+    auto t = combined();
+    loop.schedule(t);
+    loop.run();
+
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
+TEST_CASE(successful_task_in_when_all_no_false_failure) {
+    auto a = []() -> task<int, error> {
+        co_return 1;
+    };
+
+    auto b = []() -> task<int, error> {
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto [ra, rb] = co_await when_all(a(), b());
+        EXPECT_TRUE(ra.has_value());
+        EXPECT_EQ(*ra, 1);
+        EXPECT_TRUE(rb.has_value());
+        EXPECT_EQ(*rb, 2);
+    };
+
+    run(combined());
+}
+
+TEST_CASE(mixed_error_and_void_in_when_all) {
+    auto failing = []() -> task<int, error> {
+        co_return outcome_error(error::connection_refused);
+    };
+
+    auto void_task = []() -> task<> {
+        co_return;
+    };
+
+    auto combined = [&]() -> task<> {
+        try {
+            co_await when_all(failing(), void_task());
+        } catch(...) {}
+    };
+
+    run(combined());
+}
+
+};  // TEST_SUITE(structured_concurrency_errors)
+
 }  // namespace
 
 }  // namespace eventide

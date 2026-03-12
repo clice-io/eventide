@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <limits>
 #include <set>
 #include <source_location>
@@ -13,7 +14,6 @@
 
 namespace eventide {
 
-class erased_outcome;
 class sync_primitive;
 
 /// Type-erased base for all coroutine-related nodes in the task tree.
@@ -48,10 +48,6 @@ public:
         /// The parent resumes normally and can inspect the cancelled state.
         /// Used by catch_cancel() and with_token().
         InterceptCancel = 1 << 1,
-        /// When set, error (Failed state) of this node does NOT propagate upward.
-        /// The parent resumes normally and can inspect the error value.
-        /// Used by catch_error() and catch_all().
-        InterceptError = 1 << 2,
     };
 
     enum State : uint8_t {
@@ -112,24 +108,6 @@ public:
     /// Dump the async graph reachable from this node as a DOT (graphviz) graph.
     std::string dump_dot() const;
 
-    // --- erased_outcome support (on-demand allocation) ---
-
-    bool has_outcome() const noexcept {
-        return erased != nullptr;
-    }
-
-    erased_outcome* get_outcome() noexcept {
-        return erased;
-    }
-
-    const erased_outcome* get_outcome() const noexcept {
-        return erased;
-    }
-
-    erased_outcome& ensure_outcome();
-
-    void clear_outcome() noexcept;
-
 private:
     const static async_node* get_awaiter(const async_node* node);
     const static sync_primitive* get_resource_parent(const async_node* node);
@@ -144,9 +122,8 @@ private:
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
 
-    ~async_node();
-
-    erased_outcome* erased = nullptr;
+public:
+    std::exception_ptr propagated_exception;
 };
 
 class standard_task : public async_node {
@@ -315,6 +292,15 @@ protected:
         deferred = Deferred::Error;
     }
 
+    /// Rethrows the propagated exception if one was captured from a failed child.
+    void rethrow_if_propagated() {
+#ifdef __cpp_exceptions
+        if(propagated_exception) {
+            std::rethrow_exception(propagated_exception);
+        }
+#endif
+    }
+
     /// Deliver the latched completion to the aggregate awaiter once it is safe
     /// to resume/propagate out of the current callback stack.
     std::coroutine_handle<> deliver_deferred() noexcept;
@@ -336,6 +322,7 @@ protected:
         winner = npos;
         phase = Phase::Arming;
         deferred = Deferred::None;
+        propagated_exception = nullptr;
 
         for(auto* child: awaitees) {
             if(child) {

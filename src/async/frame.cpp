@@ -5,33 +5,9 @@
 
 #include "libuv.h"
 #include "eventide/async/loop.h"
-#include "eventide/async/outcome.h"
 #include "eventide/async/sync.h"
 
 namespace eventide {
-
-async_node::~async_node() {
-    clear_outcome();
-}
-
-erased_outcome& async_node::ensure_outcome() {
-    if(!erased) {
-        erased = new erased_outcome();
-    }
-    return *erased;
-}
-
-void async_node::clear_outcome() noexcept {
-    delete erased;
-    erased = nullptr;
-}
-
-/// Moves the erased_outcome ownership from one node to another.
-static void transfer_outcome(async_node* from, async_node* to) {
-    if(from->has_outcome()) {
-        to->ensure_outcome() = std::move(*from->get_outcome());
-    }
-}
 
 std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     if(deferred == Deferred::None || !awaiter) {
@@ -46,15 +22,9 @@ std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     switch(deferred) {
         case Deferred::Resume: return static_cast<standard_task*>(awaiter)->handle();
 
-        case Deferred::Cancel:
-            awaiter->state = Cancelled;
-            transfer_outcome(this, awaiter);
-            return awaiter->final_transition();
+        case Deferred::Cancel: awaiter->state = Cancelled; return awaiter->final_transition();
 
-        case Deferred::Error:
-            awaiter->state = Failed;
-            transfer_outcome(this, awaiter);
-            return awaiter->final_transition();
+        case Deferred::Error: return static_cast<standard_task*>(awaiter)->handle();
 
         case Deferred::None: break;
     }
@@ -241,10 +211,11 @@ std::coroutine_handle<> async_node::final_transition() {
 
 /// Dispatches a child's completion to its parent node.
 ///
-/// For Task parents: resumes the coroutine, or propagates cancellation/error upward.
+/// For Task parents: resumes the coroutine normally for Finished/Failed,
+///   or propagates cancellation upward.
 /// For Aggregate parents (when_all/when_any/scope):
 ///   - Cancellation: cancels all siblings, propagates upward.
-///   - Error (Failed): cancels all siblings, propagates upward.
+///   - Failed (exception/propagating error): cancels all siblings, resumes awaiter.
 ///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
 ///   - WhenAll/Scope completion: increments counter, resumes awaiter when all done.
 std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
@@ -254,47 +225,22 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         case NodeKind::Task: {
             auto self = static_cast<standard_task*>(this);
 
-            if(child->state == Finished) {
-                self->awaitee = nullptr;
-                return self->handle();
-            }
-
             if(child->state == Cancelled) {
                 if(child->policy & InterceptCancel) {
                     self->awaitee = nullptr;
-                    transfer_outcome(child, self);
                     return self->handle();
                 }
 
                 self->awaitee = nullptr;
                 self->state = Cancelled;
-                transfer_outcome(child, self);
                 return self->final_transition();
             }
 
-            if(child->state == Failed) {
-                if(child->policy & InterceptError) {
-                    self->awaitee = nullptr;
-                    transfer_outcome(child, self);
-                    return self->handle();
-                }
-
-                bool propagate = !child->has_outcome() || child->get_outcome()->should_propagate();
-
-                if(propagate) {
-                    self->awaitee = nullptr;
-                    self->state = Failed;
-                    transfer_outcome(child, self);
-                    return self->final_transition();
-                }
-
-                // should_propagate() returned false — treat as normal completion
-                self->awaitee = nullptr;
-                transfer_outcome(child, self);
-                return self->handle();
-            }
-
-            std::abort();
+            // Finished or Failed: resume parent normally.
+            // await_resume handles exceptions (rethrow_if_exception)
+            // and errors (explicit return value inspection).
+            self->awaitee = nullptr;
+            return self->handle();
         }
 
         case NodeKind::WhenAll:
@@ -307,8 +253,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
 
             const bool cancelled = child->state == Cancelled && !(child->policy & InterceptCancel);
 
-            const bool failed = child->state == Failed && !(child->policy & InterceptError) &&
-                                (!child->has_outcome() || child->get_outcome()->should_propagate());
+            const bool failed = child->state == Failed;
 
             if(cancelled || failed) {
                 if(cancelled) {
@@ -316,9 +261,18 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                 }
                 if(failed) {
                     self->defer_error();
+                    if(child->propagated_exception) {
+                        self->propagated_exception = child->propagated_exception;
+                    }
+                    if(self->kind == NodeKind::WhenAny && self->winner == aggregate_op::npos) {
+                        for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
+                            if(self->awaitees[i] == child) {
+                                self->winner = i;
+                                break;
+                            }
+                        }
+                    }
                 }
-
-                transfer_outcome(child, self);
 
                 if(self->is_deferring()) {
                     return std::noop_coroutine();

@@ -8,6 +8,10 @@
 #include <utility>
 #include <variant>
 
+#ifdef __cpp_exceptions
+#include <stdexcept>
+#endif
+
 #include "frame.h"
 #include "task.h"
 #include "eventide/common/small_vector.h"
@@ -53,6 +57,23 @@ template <typename Task>
 auto take_result(Task& task) {
     return task.result();
 }
+
+#ifdef __cpp_exceptions
+
+/// Checks if a task is in Failed state and rethrows the cause.
+/// For exceptions: result() calls rethrow_if_exception().
+/// For propagating errors: throws std::runtime_error since the aggregate
+/// cannot represent partial results.
+template <typename Task>
+void rethrow_if_failed(Task& task) {
+    auto* node = node_from(task);
+    if(!node->is_failed())
+        return;
+    (void)take_result(task);
+    throw std::runtime_error("when_all: child task returned propagating error");
+}
+
+#endif
 
 template <typename Task>
 void release_inflight(Task& task) noexcept {
@@ -147,10 +168,21 @@ public:
     }
 
     auto await_resume() {
+        rethrow_if_propagated();
+#ifdef __cpp_exceptions
+        rethrow_failed(std::index_sequence_for<Tasks...>{});
+#endif
         return collect(std::index_sequence_for<Tasks...>{});
     }
 
 private:
+#ifdef __cpp_exceptions
+    template <std::size_t... I>
+    void rethrow_failed(std::index_sequence<I...>) {
+        (detail::rethrow_if_failed(std::get<I>(tasks)), ...);
+    }
+#endif
+
     template <std::size_t... I>
     auto collect(std::index_sequence<I...>) {
         return std::tuple(detail::take_result(std::get<I>(tasks))...);
@@ -188,6 +220,12 @@ public:
     }
 
     auto await_resume() {
+        rethrow_if_propagated();
+#ifdef __cpp_exceptions
+        for(auto& task: tasks) {
+            detail::rethrow_if_failed(task);
+        }
+#endif
         small_vector<detail::task_result_t<Task>> results;
         results.reserve(tasks.size());
         for(auto& task: tasks) {
@@ -231,6 +269,7 @@ public:
     }
 
     auto await_resume() -> std::variant<detail::task_result_t<Tasks>...> {
+        rethrow_if_propagated();
         assert(winner != aggregate_op::npos && "when_any winner not set");
         return collect_winner<>();
     }
@@ -290,6 +329,7 @@ public:
     }
 
     auto await_resume() -> std::pair<std::size_t, detail::task_result_t<Task>> {
+        rethrow_if_propagated();
         assert(winner != aggregate_op::npos && "when_any winner not set");
         return {winner, detail::take_result(tasks[winner])};
     }
@@ -365,7 +405,9 @@ public:
         return arm_and_resume(awaiter_handle, location);
     }
 
-    void await_resume() noexcept {}
+    void await_resume() {
+        rethrow_if_propagated();
+    }
 };
 
 }  // namespace eventide
