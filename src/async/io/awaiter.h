@@ -6,12 +6,12 @@
 #include <optional>
 #include <utility>
 
-#include "libuv.h"
-#include "ringbuffer.h"
-#include "eventide/async/error.h"
-#include "eventide/async/frame.h"
-#include "eventide/async/outcome.h"
-#include "eventide/async/stream.h"
+#include "../libuv.h"
+#include "../vocab/ringbuffer.h"
+#include "eventide/async/io/stream.h"
+#include "eventide/async/runtime/frame.h"
+#include "eventide/async/vocab/error.h"
+#include "eventide/async/vocab/outcome.h"
 
 namespace eventide::uv {
 

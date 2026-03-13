@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <memory>
 
-#include "error.h"
-#include "owned.h"
-#include "task.h"
+#include "eventide/async/runtime/task.h"
+#include "eventide/async/vocab/error.h"
+#include "eventide/async/vocab/owned.h"
 
 namespace eventide {
 

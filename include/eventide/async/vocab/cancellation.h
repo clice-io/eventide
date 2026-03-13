@@ -5,9 +5,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "sync.h"
-#include "task.h"
-#include "when.h"
+#include "eventide/async/runtime/sync.h"
+#include "eventide/async/runtime/task.h"
+#include "eventide/async/runtime/when.h"
 
 namespace eventide {
 

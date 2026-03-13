@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "outcome.h"
+#include "eventide/async/vocab/outcome.h"
 
 namespace eventide {
 

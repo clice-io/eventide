@@ -1,4 +1,4 @@
-#include "eventide/async/udp.h"
+#include "eventide/async/io/udp.h"
 
 #include <cassert>
 #include <cstring>
@@ -7,8 +7,8 @@
 #include <utility>
 
 #include "awaiter.h"
-#include "eventide/async/error.h"
-#include "eventide/async/loop.h"
+#include "eventide/async/io/loop.h"
+#include "eventide/async/vocab/error.h"
 
 namespace eventide {
 

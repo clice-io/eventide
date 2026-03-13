@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "frame.h"
+#include "eventide/async/runtime/frame.h"
 
 namespace eventide::detail {
 

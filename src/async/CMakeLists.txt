@@ -33,20 +33,20 @@ add_library(eventide_async STATIC)
 add_library(eventide::async ALIAS eventide_async)
 
 target_sources(eventide_async PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/debug.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/error.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/frame.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/fs.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/loop.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/process.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/request.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ringbuffer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/acceptor.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/console.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sync.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/stream.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/udp.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/watcher.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/debug.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/frame.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/sync.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vocab/error.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vocab/ringbuffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/acceptor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/console.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/fs.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/loop.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/process.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/request.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/stream.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/udp.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/watcher.cpp"
 )
 
 target_include_directories(eventide_async PUBLIC

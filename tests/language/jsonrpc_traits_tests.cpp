@@ -11,7 +11,7 @@
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
-#include "eventide/async/sync.h"
+#include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/language/protocol.h"
 

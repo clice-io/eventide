@@ -9,12 +9,12 @@
 #include <type_traits>
 #include <utility>
 
-#include "awaitable.h"
-#include "error.h"
-#include "frame.h"
-#include "loop.h"
-#include "outcome.h"
 #include "eventide/common/meta.h"
+#include "eventide/async/io/loop.h"
+#include "eventide/async/runtime/frame.h"
+#include "eventide/async/vocab/awaitable.h"
+#include "eventide/async/vocab/error.h"
+#include "eventide/async/vocab/outcome.h"
 
 namespace eventide {
 

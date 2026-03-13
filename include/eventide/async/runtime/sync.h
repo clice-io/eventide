@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <source_location>
 
-#include "frame.h"
-#include "task.h"
+#include "eventide/async/runtime/frame.h"
+#include "eventide/async/runtime/task.h"
 
 namespace eventide {
 

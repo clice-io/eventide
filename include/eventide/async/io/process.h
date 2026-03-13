@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "error.h"
-#include "owned.h"
-#include "stream.h"
-#include "task.h"
+#include "eventide/async/io/stream.h"
+#include "eventide/async/runtime/task.h"
+#include "eventide/async/vocab/error.h"
+#include "eventide/async/vocab/owned.h"
 
 namespace eventide {
 

@@ -3,8 +3,8 @@
 #include <string>
 #include <string_view>
 
-#include "eventide/async/frame.h"
-#include "eventide/async/sync.h"
+#include "eventide/async/runtime/frame.h"
+#include "eventide/async/runtime/sync.h"
 
 namespace eventide {
 

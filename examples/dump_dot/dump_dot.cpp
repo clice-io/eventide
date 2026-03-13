@@ -17,12 +17,7 @@
 #include <chrono>
 #include <print>
 
-#include "eventide/async/cancellation.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/sync.h"
-#include "eventide/async/task.h"
-#include "eventide/async/watcher.h"
-#include "eventide/async/when.h"
+#include "eventide/async/async.h"
 
 using namespace eventide;
 using namespace std::chrono_literals;

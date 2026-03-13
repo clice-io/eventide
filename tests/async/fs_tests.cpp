@@ -10,9 +10,7 @@
 
 #include "../common/fd_helpers.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/fs.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/task.h"
+#include "eventide/async/async.h"
 
 namespace eventide {
 

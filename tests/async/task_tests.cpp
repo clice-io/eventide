@@ -3,11 +3,7 @@
 #include "eventide/zest/macro.h"
 #include "eventide/zest/zest.h"
 #include "eventide/common/compiler.h"
-#include "eventide/async/cancellation.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/sync.h"
-#include "eventide/async/task.h"
-#include "eventide/async/watcher.h"
+#include "eventide/async/async.h"
 
 namespace eventide {
 

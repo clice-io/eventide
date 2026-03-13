@@ -6,8 +6,7 @@
 #include <string_view>
 
 #include "eventide/ipc/codec.h"
-#include "eventide/async/stream.h"
-#include "eventide/async/task.h"
+#include "eventide/async/async.h"
 
 namespace eventide::ipc {
 

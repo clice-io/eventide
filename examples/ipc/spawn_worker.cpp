@@ -7,8 +7,7 @@
 #include <vector>
 
 #include "eventide/ipc/peer.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/process.h"
+#include "eventide/async/async.h"
 
 namespace et = eventide;
 namespace ipc = et::ipc;

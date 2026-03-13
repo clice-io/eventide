@@ -1,4 +1,4 @@
-#include "eventide/async/sync.h"
+#include "eventide/async/runtime/sync.h"
 
 #include <cassert>
 

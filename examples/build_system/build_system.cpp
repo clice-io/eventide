@@ -2,10 +2,7 @@
 #include <string>
 
 #include "compile_graph.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
-#include "eventide/async/task.h"
-#include "eventide/async/watcher.h"
+#include "eventide/async/async.h"
 
 using namespace eventide;
 using namespace std::chrono_literals;

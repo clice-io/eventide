@@ -1,10 +1,10 @@
-#include "eventide/async/process.h"
+#include "eventide/async/io/process.h"
 
 #include <cassert>
 
 #include "awaiter.h"
-#include "eventide/async/error.h"
-#include "eventide/async/loop.h"
+#include "eventide/async/io/loop.h"
+#include "eventide/async/vocab/error.h"
 
 namespace eventide {
 

@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "awaiter.h"
-#include "eventide/async/loop.h"
+#include "eventide/async/io/loop.h"
 
 namespace eventide {
 

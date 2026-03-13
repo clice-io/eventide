@@ -7,8 +7,7 @@
 #include "../common/fd_helpers.h"
 #include "eventide/ipc/transport.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
+#include "eventide/async/async.h"
 
 namespace eventide::ipc {
 

@@ -1,11 +1,11 @@
-#include "eventide/async/frame.h"
+#include "eventide/async/runtime/frame.h"
 
 #include <cassert>
 #include <utility>
 
-#include "libuv.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/sync.h"
+#include "../libuv.h"
+#include "eventide/async/io/loop.h"
+#include "eventide/async/runtime/sync.h"
 
 namespace eventide {
 

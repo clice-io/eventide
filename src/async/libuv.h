@@ -14,9 +14,9 @@
 #include <utility>
 
 #include "uv.h"
-#include "eventide/async/error.h"
-#include "eventide/async/frame.h"
-#include "eventide/async/owned.h"
+#include "eventide/async/runtime/frame.h"
+#include "eventide/async/vocab/error.h"
+#include "eventide/async/vocab/owned.h"
 
 #ifdef min
 #undef min

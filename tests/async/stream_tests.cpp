@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "eventide/zest/macro.h"
-#include "eventide/async/error.h"
+#include "eventide/async/async.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -18,9 +18,6 @@
 
 #include "../common/fd_helpers.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
-#include "eventide/async/watcher.h"
 
 namespace eventide {
 

@@ -12,9 +12,9 @@
 #include <stdexcept>
 #endif
 
-#include "frame.h"
-#include "task.h"
 #include "eventide/common/small_vector.h"
+#include "eventide/async/runtime/frame.h"
+#include "eventide/async/runtime/task.h"
 
 namespace eventide {
 
