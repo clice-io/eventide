@@ -10,13 +10,13 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "eventide/common/expected_try.h"
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/error.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/schema/match.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/backend_helpers.h"
 #include "eventide/serde/serde/utils/narrow.h"
@@ -123,27 +123,45 @@ public:
         return isNone;
     }
 
-    template <typename... Ts>
-    status_t deserialize_variant(std::variant<Ts...>& value) {
+    result_t<serde::type_hint> peek_type_hint() {
         auto valueKind = peek_value_kind();
         if(!valueKind) {
             return std::unexpected(valueKind.error());
         }
+        return map_to_type_hint(*valueKind);
+    }
 
-        auto source = consume_value_ref();
-        if(!source) {
-            return std::unexpected(source.error());
-        }
+    result_t<content::ValueRef> consume_variant_source() {
+        return consume_value_ref();
+    }
 
-        auto result = serde::try_variant_dispatch<Deserializer>(*source,
-                                                                map_to_type_hint(*valueKind),
-                                                                value,
-                                                                error_type::type_mismatch);
-        if(!result) {
-            mark_invalid(result.error());
-            return std::unexpected(current_error());
+    static result_t<std::vector<serde::schema::incoming_field>>
+        extract_object_keys(content::ValueRef source) {
+        auto obj = source.get_object();
+        if(!obj) {
+            return std::unexpected(error_type::type_mismatch);
         }
-        return {};
+        std::vector<serde::schema::incoming_field> fields;
+        for(auto entry: *obj) {
+            auto kind = serde::schema::type_kind::any;
+            if(auto s = entry.value.get_string()) {
+                kind = serde::schema::type_kind::string;
+            } else if(auto b = entry.value.get_bool()) {
+                kind = serde::schema::type_kind::boolean;
+            } else if(auto i = entry.value.get_int()) {
+                kind = serde::schema::type_kind::integer;
+            } else if(auto d = entry.value.get_double()) {
+                kind = serde::schema::type_kind::floating;
+            } else if(entry.value.get_array()) {
+                kind = serde::schema::type_kind::array;
+            } else if(entry.value.get_object()) {
+                kind = serde::schema::type_kind::object;
+            } else if(entry.value.is_null()) {
+                kind = serde::schema::type_kind::null_like;
+            }
+            fields.push_back({.name = std::string(entry.key), .kind = kind});
+        }
+        return fields;
     }
 
     status_t deserialize_bool(bool& value) {
@@ -517,3 +535,15 @@ private:
 static_assert(serde::deserializer_like<Deserializer<>>);
 
 }  // namespace eventide::serde::content
+
+namespace eventide::serde {
+
+template <typename Config>
+struct variant_support<content::Deserializer<Config>> {
+    static constexpr bool untagged = true;
+    static constexpr bool externally_tagged = true;
+    static constexpr bool internally_tagged = true;
+    static constexpr bool adjacently_tagged = true;
+};
+
+}  // namespace eventide::serde

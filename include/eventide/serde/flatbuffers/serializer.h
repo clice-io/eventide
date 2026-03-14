@@ -255,11 +255,6 @@ public:
         return encode_boxed(value);
     }
 
-    template <typename... Ts>
-    result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
-        return encode_variant(value);
-    }
-
     result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> len) {
         return SerializeSeq(*this, len);
     }
@@ -289,6 +284,11 @@ public:
     template <typename T>
     auto serialize_boxed(const T& value) -> result_t<value_type> {
         return encode_boxed(value);
+    }
+
+    template <typename T>
+    auto serialize_variant(const T& value) -> result_t<value_type> {
+        return encode_variant(value);
     }
 
 private:
@@ -756,6 +756,25 @@ struct serialize_traits<flatbuffers::Serializer<Config>, T> {
         typename serializer_t::template result_t<typename serializer_t::value_type> {
         return serializer.serialize_boxed(value);
     }
+};
+
+template <typename Config, typename T>
+    requires is_specialization_of<std::variant, std::remove_cvref_t<T>>
+struct serialize_traits<flatbuffers::Serializer<Config>, T> {
+    using serializer_t = flatbuffers::Serializer<Config>;
+
+    static auto serialize(serializer_t& serializer, const T& value) ->
+        typename serializer_t::template result_t<typename serializer_t::value_type> {
+        return serializer.serialize_variant(value);
+    }
+};
+
+template <typename Config>
+struct variant_support<flatbuffers::Serializer<Config>> {
+    static constexpr bool untagged = true;
+    static constexpr bool externally_tagged = false;
+    static constexpr bool internally_tagged = false;
+    static constexpr bool adjacently_tagged = false;
 };
 
 }  // namespace eventide::serde

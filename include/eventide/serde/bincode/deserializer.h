@@ -606,4 +606,24 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
     }
 };
 
+template <typename Config, typename T>
+    requires is_specialization_of<std::variant, std::remove_cvref_t<T>>
+struct deserialize_traits<bincode::Deserializer<Config>, T> {
+    using deserializer_t = bincode::Deserializer<Config>;
+    using error_type = typename deserializer_t::error_type;
+
+    static auto deserialize(deserializer_t& deserializer, T& value)
+        -> std::expected<void, error_type> {
+        return deserializer.deserialize_variant(value);
+    }
+};
+
+template <typename Config>
+struct variant_support<bincode::Deserializer<Config>> {
+    static constexpr bool untagged = true;
+    static constexpr bool externally_tagged = false;
+    static constexpr bool internally_tagged = false;
+    static constexpr bool adjacently_tagged = false;
+};
+
 }  // namespace eventide::serde
