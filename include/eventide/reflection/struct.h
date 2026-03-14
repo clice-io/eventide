@@ -118,9 +118,9 @@ consteval const auto& field_names() {
 }
 
 template <typename Object, std::size_t I>
-using field_type = std::remove_pointer_t<std::tuple_element_t<
+using field_type = std::remove_cvref_t<std::remove_pointer_t<std::tuple_element_t<
     I,
-    decltype(reflection<Object>::field_addrs(detail::ext<detail::uninitialized<Object>>.value))>>;
+    decltype(reflection<Object>::field_addrs(detail::ext<detail::uninitialized<Object>>.value))>>>;
 
 template <std::size_t I, typename Object>
 constexpr auto field_addr_of(Object&& object) {
