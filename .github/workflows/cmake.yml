@@ -179,27 +179,31 @@ jobs:
         run: |
           set -euxo pipefail
           ccache --zero-stats || true
-          extra_cmake_args=()
           if [[ "${{ runner.os }}" == "macOS" && "${{ matrix.cc }}" == "clang" ]]; then
             export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
             export CONDA_BUILD_SYSROOT="${SDKROOT}"
-            extra_cmake_args+=(
-              -DCMAKE_OSX_SYSROOT="${SDKROOT}"
-              -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}"
-              -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}"
-              -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
-              -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
-              -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
-            )
+            cmake -S . -B "${BUILD_DIR}" -G Ninja \
+              -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
+              -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
+              -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
+              -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
+              -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}" \
+              -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}" \
+              -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+              -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+              -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+              -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
+              -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
+              ${{ matrix.cmake_args }}
+          else
+            cmake -S . -B "${BUILD_DIR}" -G Ninja \
+              -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
+              -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
+              -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
+              -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
+              -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
+              ${{ matrix.cmake_args }}
           fi
-          cmake -S . -B "${BUILD_DIR}" -G Ninja \
-            -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
-            -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
-            -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
-            -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-            -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
-            "${extra_cmake_args[@]}" \
-            ${{ matrix.cmake_args }}
 
       - name: Build
         shell: bash
