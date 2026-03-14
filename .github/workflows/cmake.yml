@@ -286,12 +286,13 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          runtime_dir="${GITHUB_WORKSPACE}/.pixi/envs/default/Library/bin"
+          runtime_dir="${PWD}/.pixi/envs/default/Library/bin"
           for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
             if [[ -f "${runtime_dir}/${dll}" ]]; then
               cp "${runtime_dir}/${dll}" "${BUILD_DIR}/"
             fi
           done
+          ls -l "${BUILD_DIR}"/*.dll
 
       - name: Test
         shell: bash
