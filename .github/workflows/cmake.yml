@@ -281,6 +281,18 @@ jobs:
         shell: bash
         run: cmake --build "${BUILD_DIR}" --parallel
 
+      - name: Stage MinGW runtime DLLs
+        if: ${{ runner.os == 'Windows' && matrix.cc == 'gcc' }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          runtime_dir="${GITHUB_WORKSPACE}/.pixi/envs/default/Library/bin"
+          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            if [[ -f "${runtime_dir}/${dll}" ]]; then
+              cp "${runtime_dir}/${dll}" "${BUILD_DIR}/"
+            fi
+          done
+
       - name: Test
         shell: bash
         run: ctest --test-dir "${BUILD_DIR}" --output-on-failure
