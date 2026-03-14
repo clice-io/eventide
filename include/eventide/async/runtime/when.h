@@ -174,6 +174,19 @@ void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
     }(std::make_index_sequence<std::tuple_size_v<std::remove_reference_t<Tuple>>>{});
 }
 
+template <typename Return, std::size_t I = 0, typename Tuple, typename F>
+Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
+    if constexpr(I < std::tuple_size_v<std::remove_reference_t<Tuple>>) {
+        if(index == I) {
+            return f(std::integral_constant<std::size_t, I>{}, std::get<I>(tuple));
+        }
+        return tuple_visit_at_return<Return, I + 1>(index, tuple, std::forward<F>(f));
+    } else {
+        assert(false && "tuple_visit_at_return index out of bounds");
+        std::abort();
+    }
+}
+
 [[noreturn]] inline void fail_empty_when_any_range() {
 #if EVENTIDE_ENABLE_EXCEPTIONS
     throw std::invalid_argument("when_any(range) requires a non-empty range");
@@ -288,13 +301,13 @@ private:
             }(std::index_sequence_for<Tasks...>{});
         } else {
             assert(winner != aggregate_op::npos && "when_any winner not set");
-            std::optional<success_type> result;
-            detail::tuple_visit_at(winner, tasks, [&](auto I, auto& task) {
-                result = success_type(std::in_place_index<I.value>,
-                                      detail::take_success_result<capture_cancel>(task));
-            });
-            assert(result);
-            return std::move(*result);
+            return detail::tuple_visit_at_return<success_type>(
+                winner,
+                tasks,
+                [&](auto I, auto& task) {
+                    return success_type(std::in_place_index<I.value>,
+                                        detail::take_success_result<capture_cancel>(task));
+                });
         }
     }
 
