@@ -2,12 +2,44 @@
 
 #include <cassert>
 #include <utility>
+#include <vector>
 
 #include "../libuv.h"
 #include "eventide/async/io/loop.h"
 #include "eventide/async/runtime/sync.h"
 
 namespace eventide {
+
+namespace {
+
+thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
+
+void enqueue_destroy(std::coroutine_handle<> handle) {
+    if(handle) {
+        pending_frame_destroys.push_back(handle);
+    }
+}
+
+void drain_pending_destroys() {
+    while(!pending_frame_destroys.empty()) {
+        auto queued = std::move(pending_frame_destroys);
+        pending_frame_destroys.clear();
+        for(auto handle: queued) {
+            if(handle) {
+                handle.destroy();
+            }
+        }
+    }
+}
+
+void resume_and_drain(std::coroutine_handle<> handle) {
+    if(handle) {
+        handle.resume();
+    }
+    drain_pending_destroys();
+}
+
+}  // namespace
 
 void async_node::intercept_cancel() noexcept {
     policy = static_cast<Policy>(policy | InterceptCancel);
@@ -68,9 +100,7 @@ void async_node::cancel() {
         }
 
         auto next = awaiter->handle_subtask_result(link);
-        if(next) {
-            next.resume();
-        }
+        resume_and_drain(next);
     };
 
     switch(kind) {
@@ -110,9 +140,7 @@ void async_node::cancel() {
             }
 
             auto next = self->deliver_deferred();
-            if(next) {
-                next.resume();
-            }
+            resume_and_drain(next);
             break;
         }
 
@@ -131,6 +159,7 @@ void async_node::resume() {
     if(is_standard_task()) {
         if(!is_cancelled() && !is_failed()) {
             static_cast<standard_task*>(this)->handle().resume();
+            drain_pending_destroys();
         }
     }
 }
@@ -147,9 +176,7 @@ void system_op::complete() noexcept {
         return;
     }
     auto next = parent->handle_subtask_result(this);
-    if(next) {
-        next.resume();
-    }
+    resume_and_drain(next);
 }
 
 /// Wires this node as a child of `awaiter`. For Task nodes, sets state
@@ -200,7 +227,7 @@ std::coroutine_handle<> async_node::final_transition() {
             auto p = static_cast<standard_task*>(this);
             if(!p->awaiter) {
                 if(p->root) {
-                    p->handle().destroy();
+                    enqueue_destroy(p->handle());
                 }
                 return std::noop_coroutine();
             }
