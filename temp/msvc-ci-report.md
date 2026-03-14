@@ -59,6 +59,22 @@
   - [include/eventide/reflection/struct.h](/home/ykiko/C++/eventide2/include/eventide/reflection/struct.h)
   - [include/eventide/reflection/name.h](/home/ykiko/C++/eventide2/include/eventide/reflection/name.h)
 
+### 5. `pipe.read_chunk_then_read_some_fd` 在 Windows MSVC Debug 下存在时序竞态
+
+- 现象:
+  - `cmake / windows | msvc | debug` 编译通过，但 `CTest` 里 `pipe.read_chunk_then_read_some_fd` 失败。
+  - 实际观测到第一段结果变成 `eventide-chunkeventide-read-some`，第二段结果为空。
+- 根因:
+  - 这个测试原本依赖两个 `sleep(1)` 人为拉开写入时序，假设 `read_chunk()` 一定只会先看到第一段写入。
+  - 但当前 `stream::read_chunk()` 的 buffered read 设计允许 libuv 在协程恢复前继续把更多可读数据放进内部缓冲。
+  - Windows MSVC Debug 运行更慢，更容易让第二次写入在 reader `consume()` 之前到达，导致测试把两段数据一次性读走。
+- 修复:
+  - 不改 I/O 实现语义，直接把测试改成显式握手。
+  - writer 写完第一段后等待 `first_chunk_consumed` 事件；reader 在拿到第一段并 `consume()` 后再发信号，随后 writer 才写第二段。
+  - 这样可以稳定验证“先 `read_chunk()`，再 `read_some()`” 的行为，而不是依赖平台调度时机。
+- 相关文件:
+  - [tests/async/stream_tests.cpp](/home/ykiko/C++/eventide2/tests/async/stream_tests.cpp)
+
 ## 总结
 
 本轮 MSVC 问题的共同特征是:
@@ -66,6 +82,7 @@
 - MSVC 对模板未选分支和返回类型推导更保守，容易把本应被 `if constexpr` 排除的路径也实例化出来。
 - MSVC 在协程返回对象和 `std::source_location` 相关常量求值上的行为，与 Clang/GCC 明显不同。
 - `/fsanitize=address` 会进一步放大 NTTP 和常量表达式相关的不兼容。
+- Windows Debug 运行时也更容易把原本隐含的异步测试竞态暴露出来。
 
 因此这类代码后续建议遵循两个原则:
 

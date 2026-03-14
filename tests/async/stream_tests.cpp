@@ -130,12 +130,14 @@ task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
     co_return std::make_pair(out, next->size());
 }
 
-task<std::pair<result<std::string>, result<std::string>>> read_chunk_then_some(pipe p) {
+task<std::pair<result<std::string>, result<std::string>>> read_chunk_then_some(pipe p,
+                                                                               event& first_chunk_consumed) {
     auto first = co_await p.read_chunk();
     result<std::string> first_out = outcome_error(error::invalid_argument);
     if(first) {
         first_out = std::string(first->data(), first->size());
         p.consume(first->size());
+        first_chunk_consumed.set();
     } else {
         first_out = outcome_error(first.error());
     }
@@ -153,7 +155,7 @@ task<std::pair<result<std::string>, result<std::string>>> read_chunk_then_some(p
     co_return std::pair{std::move(first_out), std::move(second_out)};
 }
 
-task<> write_two_pipe_chunks(int fd, event_loop& loop) {
+task<> write_two_pipe_chunks(int fd, event_loop& loop, event& first_chunk_consumed) {
     constexpr std::string_view first = "eventide-chunk";
     constexpr std::string_view second = "eventide-read-some";
 
@@ -163,7 +165,7 @@ task<> write_two_pipe_chunks(int fd, event_loop& loop) {
         co_return;
     }
 
-    co_await sleep(1, loop);
+    co_await first_chunk_consumed.wait();
     (void)write_fd(fd, second.data(), second.size());
     close_fd(fd);
 }
@@ -370,11 +372,12 @@ TEST_CASE(read_chunk_then_read_some_fd) {
     ASSERT_EQ(create_pipe(fds), 0);
 
     event_loop loop;
+    event first_chunk_consumed;
     auto pipe_res = pipe::open(fds[0], {}, loop);
     ASSERT_TRUE(pipe_res.has_value());
 
-    auto reader = read_chunk_then_some(std::move(*pipe_res));
-    auto writer = write_two_pipe_chunks(fds[1], loop);
+    auto reader = read_chunk_then_some(std::move(*pipe_res), first_chunk_consumed);
+    auto writer = write_two_pipe_chunks(fds[1], loop, first_chunk_consumed);
 
     loop.schedule(reader);
     loop.schedule(writer);
