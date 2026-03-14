@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "eventide/ipc/protocol.h"
-#include "eventide/async/outcome.h"
+#include "eventide/async/async.h"
 
 namespace eventide::ipc {
 

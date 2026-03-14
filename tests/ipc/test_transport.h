@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "eventide/ipc/peer.h"
-#include "eventide/async/sync.h"
+#include "eventide/async/async.h"
 
 namespace eventide::ipc {
 

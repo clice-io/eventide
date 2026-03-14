@@ -7,13 +7,7 @@
 #include <vector>
 
 #include "eventide/zest/zest.h"
-#include "eventide/async/cancellation.h"
-#include "eventide/async/fs.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/request.h"
-#include "eventide/async/sync.h"
-#include "eventide/async/watcher.h"
-#include "eventide/async/when.h"
+#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -75,12 +69,12 @@ TEST_CASE(cancel_in_flight) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
     auto releaser = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{2}, loop);
+        co_await sleep(2, loop);
         gate.set();
     };
 
@@ -164,7 +158,7 @@ TEST_CASE(queue_cancel_resume) {
 
     auto canceler = [&]() -> task<> {
         while(blockers_started.load(std::memory_order_acquire) < pool_size) {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
         }
 
         start_target.set();
@@ -178,7 +172,7 @@ TEST_CASE(queue_cancel_resume) {
 
         co_await target_done.wait();
         while(blockers_done.load(std::memory_order_acquire) < blocker_count) {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
         }
 
         loop.stop();
@@ -248,7 +242,7 @@ TEST_CASE(fs_cancel_resume) {
 
     auto canceler = [&]() -> task<> {
         while(blockers_started.load(std::memory_order_acquire) < pool_size) {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
         }
 
         start_target.set();
@@ -262,7 +256,7 @@ TEST_CASE(fs_cancel_resume) {
 
         co_await target_done.wait();
         while(blockers_done.load(std::memory_order_acquire) < blocker_count) {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
         }
 
         loop.stop();
@@ -303,7 +297,7 @@ TEST_CASE(cancel_waiting_on_event) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -356,7 +350,7 @@ TEST_CASE(cancel_waiting_on_mutex) {
 
     auto holder = [&]() -> task<> {
         co_await m.lock();
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         m.unlock();
     };
 
@@ -369,7 +363,7 @@ TEST_CASE(cancel_waiting_on_mutex) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -406,7 +400,7 @@ TEST_CASE(cancel_semaphore_waiter) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -444,7 +438,7 @@ TEST_CASE(cancel_condition_variable_waiter) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -475,7 +469,7 @@ TEST_CASE(cancel_multiple_registered_tasks) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -512,7 +506,7 @@ TEST_CASE(nested_with_token) {
         };
 
         auto canceler = [&]() -> task<> {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
             outer_source.cancel();
         };
 
@@ -539,7 +533,7 @@ TEST_CASE(nested_with_token) {
         };
 
         auto canceler = [&]() -> task<> {
-            co_await sleep(std::chrono::milliseconds{1}, loop);
+            co_await sleep(1, loop);
             inner_source.cancel();
         };
 
@@ -590,7 +584,7 @@ TEST_CASE(multi_token_cancel_first) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source1.cancel();
     };
 
@@ -621,7 +615,7 @@ TEST_CASE(multi_token_cancel_second) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source2.cancel();
     };
 

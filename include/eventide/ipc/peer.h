@@ -12,9 +12,7 @@
 #include "eventide/ipc/codec.h"
 #include "eventide/ipc/json_codec.h"
 #include "eventide/ipc/transport.h"
-#include "eventide/async/cancellation.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/task.h"
+#include "eventide/async/async.h"
 
 namespace eventide::ipc {
 

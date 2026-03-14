@@ -8,11 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "eventide/async/cancellation.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/sync.h"
-#include "eventide/async/task.h"
-#include "eventide/async/watcher.h"
+#include "eventide/async/async.h"
 
 namespace eventide {
 

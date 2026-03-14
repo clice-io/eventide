@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "eventide/zest/macro.h"
-#include "eventide/async/error.h"
+#include "eventide/async/async.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -18,9 +18,6 @@
 
 #include "../common/fd_helpers.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
-#include "eventide/async/watcher.h"
 
 namespace eventide {
 
@@ -160,13 +157,13 @@ task<> write_two_pipe_chunks(int fd, event_loop& loop) {
     constexpr std::string_view first = "eventide-chunk";
     constexpr std::string_view second = "eventide-read-some";
 
-    co_await sleep(std::chrono::milliseconds{1}, loop);
+    co_await sleep(1, loop);
     if(write_fd(fd, first.data(), first.size()) != static_cast<ssize_t>(first.size())) {
         close_fd(fd);
         co_return;
     }
 
-    co_await sleep(std::chrono::milliseconds{1}, loop);
+    co_await sleep(1, loop);
     (void)write_fd(fd, second.data(), second.size());
     close_fd(fd);
 }
@@ -494,7 +491,7 @@ TEST_CASE(stop) {
 
     EXPECT_TRUE(!task2->is_finished());
     acc->stop();
-    EXPECT_TRUE(task2->is_finished());
+    EXPECT_TRUE(task2->is_failed());
 }
 
 };  // TEST_SUITE(pipe)

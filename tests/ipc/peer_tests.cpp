@@ -12,11 +12,8 @@
 #include "../common/fd_helpers.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
-#include "eventide/common/compiler.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/stream.h"
-#include "eventide/async/sync.h"
-#include "eventide/async/watcher.h"
+#include "eventide/common/config.h"
+#include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"
 
 namespace eventide::ipc {
@@ -100,7 +97,7 @@ task<> complete_request(JsonPeer& peer, PendingAddResult& out) {
 }
 
 task<> write_notification_then_response(int fd, event_loop& loop) {
-    co_await sleep(std::chrono::milliseconds{1}, loop);
+    co_await sleep(1, loop);
 
     const auto note = frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})");
     auto note_written = write_fd(fd, note.data(), note.size());
@@ -109,7 +106,7 @@ task<> write_notification_then_response(int fd, event_loop& loop) {
         co_return;
     }
 
-    co_await sleep(std::chrono::milliseconds{1}, loop);
+    co_await sleep(1, loop);
 
     const auto response = frame(R"({"jsonrpc":"2.0","id":1,"result":{"sum":9}})");
     auto response_written = write_fd(fd, response.data(), response.size());
@@ -749,7 +746,7 @@ TEST_CASE(cancel_inflight_request) {
     bool finished = false;
 
     peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
-        co_await sleep(std::chrono::milliseconds{10}, loop);
+        co_await sleep(10, loop);
         finished = true;
         co_return AddResult{.sum = params.a + params.b};
     });
@@ -790,17 +787,17 @@ TEST_CASE(cancel_running_handler) {
     peer.on_request([&](RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
         started = true;
         handler_started.set();
-        co_await sleep(std::chrono::milliseconds{20}, loop);
+        co_await sleep(20, loop);
         completed = true;
         co_return AddResult{.sum = params.a + params.b};
     });
 
     auto canceler = [&]() -> task<> {
         co_await handler_started.wait();
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         transport_ptr->push_incoming(
             R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":22}})");
-        co_await sleep(std::chrono::milliseconds{5}, loop);
+        co_await sleep(5, loop);
         transport_ptr->close();
     };
 
@@ -865,7 +862,7 @@ TEST_CASE(context_token_propagates) {
     });
 
     auto watchdog = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{20}, loop);
+        co_await sleep(20, loop);
         transport_ptr->close();
     };
 
@@ -930,7 +927,7 @@ TEST_CASE(outbound_cancel_request) {
     };
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
@@ -985,7 +982,7 @@ TEST_CASE(outbound_precancel) {
     };
 
     auto closer = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         transport_ptr->close();
     };
 
@@ -1072,7 +1069,7 @@ TEST_CASE(zero_timeout_cancel) {
     };
 
     auto closer = [&]() -> task<> {
-        co_await sleep(std::chrono::milliseconds{1}, loop);
+        co_await sleep(1, loop);
         transport_ptr->close();
     };
 

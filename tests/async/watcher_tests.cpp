@@ -1,8 +1,7 @@
 #include <chrono>
 
 #include "eventide/zest/zest.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/watcher.h"
+#include "eventide/async/async.h"
 
 namespace eventide {
 
@@ -21,7 +20,7 @@ task<> wait_idle(idle& w) {
 }
 
 task<> wait_sleep(event_loop& loop) {
-    co_await sleep(std::chrono::milliseconds{1}, loop);
+    co_await sleep(1, loop);
     event_loop::current().stop();
     co_return;
 }

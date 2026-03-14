@@ -2,10 +2,7 @@
 
 #include "compile_graph.h"
 #include "eventide/zest/zest.h"
-#include "eventide/async/loop.h"
-#include "eventide/async/task.h"
-#include "eventide/async/watcher.h"
-#include "eventide/async/when.h"
+#include "eventide/async/async.h"
 
 namespace eventide {
 

@@ -17,9 +17,6 @@
 #include <vector>
 
 #include "eventide/common/function_traits.h"
-#include "eventide/async/cancellation.h"
-#include "eventide/async/sync.h"
-#include "eventide/async/watcher.h"
 
 namespace eventide::ipc {
 
