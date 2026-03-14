@@ -412,9 +412,6 @@ template <typename T>
 constexpr inline bool is_task_v = is_specialization_of<task, std::remove_cvref_t<T>>;
 
 template <typename T>
-concept owned_awaitable = !std::is_lvalue_reference_v<T> && awaitable<T&&>;
-
-template <typename T>
 using normalized_await_result_t = await_result_t<std::remove_cvref_t<T>&&>;
 
 template <typename T, typename = void>
@@ -439,7 +436,7 @@ task<T, E, C> normalize_task(task<T, E, C>&& t) {
 }
 
 template <typename Awaitable>
-    requires (!is_task_v<Awaitable>) && owned_awaitable<Awaitable>
+    requires (!is_task_v<Awaitable>) && (!std::is_reference_v<Awaitable>) && awaitable<Awaitable>
 auto normalize_task_impl(std::remove_cvref_t<Awaitable> value)
     -> task<normalized_await_result_t<Awaitable>> {
     if constexpr(std::is_void_v<normalized_await_result_t<Awaitable>>) {
@@ -451,7 +448,7 @@ auto normalize_task_impl(std::remove_cvref_t<Awaitable> value)
 }
 
 template <typename Awaitable>
-    requires (!is_task_v<Awaitable>) && owned_awaitable<Awaitable>
+    requires (!is_task_v<Awaitable>) && (!std::is_reference_v<Awaitable>) && awaitable<Awaitable>
 auto normalize_task(Awaitable&& input) -> task<normalized_await_result_t<Awaitable>> {
     return normalize_task_impl<Awaitable>(
         std::remove_cvref_t<Awaitable>(std::forward<Awaitable>(input)));

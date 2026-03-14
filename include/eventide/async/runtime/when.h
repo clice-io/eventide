@@ -162,8 +162,6 @@ inline void destroy_or_detach(async_node* child) noexcept {
     task->handle().destroy();
 }
 
-enum class when_kind { all, any };
-
 template <typename Tuple, typename F>
 void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
     [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -175,9 +173,7 @@ void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
 
 }  // namespace detail
 
-// --- Unified variadic when combinator ---
-
-template <detail::when_kind Kind, typename... Tasks>
+template <bool All, typename... Tasks>
 class when_op : public aggregate_op {
     constexpr static bool capture_cancel =
         !std::is_void_v<detail::aggregated_cancel_t<detail::task_cancel_type_t<Tasks>...>>;
@@ -187,7 +183,7 @@ public:
     using cancel_type = detail::aggregated_cancel_t<detail::task_cancel_type_t<Tasks>...>;
 
     using success_type =
-        std::conditional_t<Kind == detail::when_kind::all,
+        std::conditional_t<All,
                            std::tuple<detail::task_success_t<Tasks, capture_cancel>...>,
                            std::variant<detail::task_success_t<Tasks, capture_cancel>...>>;
 
@@ -195,11 +191,9 @@ public:
 
     template <detail::awaitable... U>
     explicit when_op(U... asyncs) :
-        aggregate_op(Kind == detail::when_kind::all ? async_node::NodeKind::WhenAll
-                                                    : async_node::NodeKind::WhenAny),
+        aggregate_op(All ? async_node::NodeKind::WhenAll : async_node::NodeKind::WhenAny),
         tasks(detail::normalize_task(std::move(asyncs))...) {
-        static_assert(Kind == detail::when_kind::all || sizeof...(Tasks) > 0,
-                      "when_any requires at least one task");
+        static_assert(All || sizeof...(Tasks) > 0, "when_any requires at least one task");
         if constexpr(!std::is_void_v<cancel_type>) {
             this->intercept_cancel();
         }
@@ -210,7 +204,7 @@ public:
     }
 
     bool await_ready() const noexcept {
-        if constexpr(Kind == detail::when_kind::all) {
+        if constexpr(All) {
             return sizeof...(Tasks) == 0;
         } else {
             return false;
@@ -275,7 +269,7 @@ public:
 
 private:
     auto collect_success() -> success_type {
-        if constexpr(Kind == detail::when_kind::all) {
+        if constexpr(All) {
             return [this]<std::size_t... I>(std::index_sequence<I...>) {
                 return success_type(
                     detail::take_success_result<capture_cancel>(std::get<I>(tasks))...);
@@ -295,10 +289,8 @@ private:
     std::tuple<Tasks...> tasks;
 };
 
-// --- Unified range when combinator ---
-
-template <detail::when_kind Kind, typename Task>
-class when_op<Kind, detail::range_tasks<Task>> : public aggregate_op {
+template <bool All, typename Task>
+class when_op<All, detail::range_tasks<Task>> : public aggregate_op {
     constexpr static bool capture_cancel = !std::is_void_v<detail::task_cancel_type_t<Task>>;
 
 public:
@@ -306,7 +298,7 @@ public:
     using cancel_type = detail::task_cancel_type_t<Task>;
 
     using success_type =
-        std::conditional_t<Kind == detail::when_kind::all,
+        std::conditional_t<All,
                            small_vector<detail::task_success_t<Task, capture_cancel>>,
                            std::pair<std::size_t, detail::task_success_t<Task, capture_cancel>>>;
 
@@ -315,15 +307,14 @@ public:
     template <detail::async_range Range>
         requires std::same_as<detail::normalized_range_task_t<Range>, Task>
     explicit when_op(Range range) :
-        aggregate_op(Kind == detail::when_kind::all ? async_node::NodeKind::WhenAll
-                                                    : async_node::NodeKind::WhenAny) {
+        aggregate_op(All ? async_node::NodeKind::WhenAll : async_node::NodeKind::WhenAny) {
         if constexpr(std::ranges::sized_range<Range>) {
             tasks.reserve(std::ranges::size(range));
         }
         for(auto&& async: range) {
             tasks.emplace_back(detail::normalize_task(std::move(async)));
         }
-        if constexpr(Kind == detail::when_kind::any) {
+        if constexpr(!All) {
             assert(!tasks.empty() && "when_any(range) requires a non-empty range");
         }
         if constexpr(!std::is_void_v<cancel_type>) {
@@ -338,7 +329,7 @@ public:
     }
 
     bool await_ready() const noexcept {
-        if constexpr(Kind == detail::when_kind::all) {
+        if constexpr(All) {
             return tasks.empty();
         } else {
             return false;
@@ -393,7 +384,7 @@ public:
 
 private:
     auto collect_success() -> success_type {
-        if constexpr(Kind == detail::when_kind::all) {
+        if constexpr(All) {
             success_type results;
             results.reserve(tasks.size());
             for(auto& task: tasks) {
@@ -409,16 +400,54 @@ private:
     small_vector<Task> tasks;
 };
 
-// --- Public when_all / when_any wrappers ---
-
+/// Awaits all tasks concurrently, collecting results into a tuple.
+///
+/// Variadic overload: accepts heterogeneous awaitables (tasks, semaphore acquires, etc.)
+/// and returns `std::tuple<T...>` where each element is the result of the corresponding task.
+/// Void tasks produce `std::nullopt_t` in the tuple.
+///
+/// Range overload: accepts a range of homogeneous tasks and returns `small_vector<T>`.
+///
+/// If any child task produces a structured error, the first error cancels all siblings
+/// and the combinator returns `outcome<..., E, ...>` carrying that error.
+/// If any child cancels (via `co_await cancel()` or an external token), cancellation
+/// propagates to all siblings and the combinator returns the cancellation.
+/// Errors take priority over cancellations.
+///
+/// When a child has a pending in-flight operation at cancellation time, it is detached
+/// rather than destroyed, and cleaned up once the operation completes (quiescent).
+///
+/// Accepts any awaitable that satisfies the `awaitable` concept, including synchronous
+/// awaiters like `semaphore::acquire_awaiter`.
 template <typename... Tasks>
-class when_all : public when_op<detail::when_kind::all, Tasks...> {
-    using when_op<detail::when_kind::all, Tasks...>::when_op;
+class when_all : public when_op<true, Tasks...> {
+    using when_op<true, Tasks...>::when_op;
 };
 
+/// Awaits multiple tasks concurrently, returning the first to complete.
+///
+/// Variadic overload: accepts heterogeneous awaitables and returns
+/// `std::variant<T...>` where the active alternative corresponds to the winning task.
+/// Void tasks produce `std::nullopt_t` in the variant.
+///
+/// Range overload: accepts a range of homogeneous tasks and returns
+/// `std::pair<std::size_t, T>` where the first element is the index of the winner.
+///
+/// Once a winner is determined, all remaining tasks are cancelled.
+/// If the first-to-complete task produces a structured error, the combinator
+/// returns `outcome<..., E, ...>` carrying that error.
+/// If the first-to-complete task cancels, cancellation propagates to the parent.
+///
+/// Requires at least one task; `when_any<>` is explicitly deleted.
+///
+/// When a cancelled sibling has a pending in-flight operation, it is detached
+/// rather than destroyed, and cleaned up once the operation completes (quiescent).
+///
+/// Accepts any awaitable that satisfies the `awaitable` concept, including synchronous
+/// awaiters like `semaphore::acquire_awaiter`.
 template <typename... Tasks>
-class when_any : public when_op<detail::when_kind::any, Tasks...> {
-    using when_op<detail::when_kind::any, Tasks...>::when_op;
+class when_any : public when_op<false, Tasks...> {
+    using when_op<false, Tasks...>::when_op;
 };
 
 template <>
@@ -427,7 +456,6 @@ public:
     when_any() = delete;
 };
 
-// --- Deduction guides ---
 
 template <detail::awaitable... Tasks>
 when_all(Tasks...) -> when_all<detail::normalized_task_t<Tasks>...>;
