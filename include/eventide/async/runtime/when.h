@@ -456,7 +456,6 @@ public:
     when_any() = delete;
 };
 
-
 template <detail::awaitable... Tasks>
 when_all(Tasks...) -> when_all<detail::normalized_task_t<Tasks>...>;
 
