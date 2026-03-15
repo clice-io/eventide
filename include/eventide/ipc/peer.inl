@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef EVENTIDE_IPC_PEER_INL_FROM_HEADER
+#ifndef ET_IPC_PEER_INL_FROM_HEADER
 #include "eventide/ipc/peer.h"
 #endif
 

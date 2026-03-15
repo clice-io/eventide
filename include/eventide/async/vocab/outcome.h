@@ -264,7 +264,7 @@ public:
     }
 
 private:
-    EVENTIDE_NO_UNIQUE_ADDRESS
+    ET_NO_UNIQUE_ADDRESS
     std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T> data;
 };
 

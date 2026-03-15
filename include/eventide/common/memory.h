@@ -18,20 +18,20 @@
 
 #include "eventide/common/config.h"
 
-#if EVENTIDE_ENABLE_EXCEPTIONS
-#define EVENTIDE_THROW(exception_expr) throw exception_expr
-#define EVENTIDE_TRY try
-#define EVENTIDE_CATCH_ALL() catch(...)
-#define EVENTIDE_RETHROW() throw
+#if ET_ENABLE_EXCEPTIONS
+#define ET_THROW(exception_expr) throw exception_expr
+#define ET_TRY try
+#define ET_CATCH_ALL() catch(...)
+#define ET_RETHROW() throw
 #else
-#define EVENTIDE_THROW(exception_expr)                                                             \
+#define ET_THROW(exception_expr)                                                                   \
     do {                                                                                           \
         static_cast<void>(sizeof(exception_expr));                                                 \
         std::abort();                                                                              \
     } while(false)
-#define EVENTIDE_TRY if(true)
-#define EVENTIDE_CATCH_ALL() else
-#define EVENTIDE_RETHROW() std::abort()
+#define ET_TRY if(true)
+#define ET_CATCH_ALL() else
+#define ET_RETHROW() std::abort()
 #endif
 
 namespace eventide::mem {
@@ -147,7 +147,7 @@ constexpr inline bool is_uninitialized_memcpyable_iterator_v =
 #ifndef NDEBUG
 [[noreturn]]
 inline void throw_range_length_error() {
-    EVENTIDE_THROW(std::length_error("The specified range is too long."));
+    ET_THROW(std::length_error("The specified range is too long."));
 }
 #endif
 
@@ -328,12 +328,12 @@ public:
 
     template <typename... Args>
     constexpr explicit heap_temporary(Args&&... args) : m_data(allocate_storage()) {
-        EVENTIDE_TRY {
+        ET_TRY {
             construct(m_data, std::forward<Args>(args)...);
         }
-        EVENTIDE_CATCH_ALL() {
+        ET_CATCH_ALL() {
             deallocate(m_data, 1);
-            EVENTIDE_RETHROW();
+            ET_RETHROW();
         }
     }
 
@@ -459,16 +459,16 @@ constexpr auto move_range(Iterator first, Iterator last) noexcept {
 template <typename T, std::ranges::input_range Range>
 constexpr T* default_uninitialized_copy(Range&& range, T* d_first) {
     T* d_last = d_first;
-    EVENTIDE_TRY {
+    ET_TRY {
         for(auto&& value: range) {
             construct(d_last, std::forward<decltype(value)>(value));
             ++d_last;
         }
         return d_last;
     }
-    EVENTIDE_CATCH_ALL() {
+    ET_CATCH_ALL() {
         destroy_range(std::ranges::subrange(d_first, d_last));
-        EVENTIDE_RETHROW();
+        ET_RETHROW();
     }
 }
 
@@ -522,15 +522,15 @@ constexpr auto uninitialized_value_construct(std::ranges::contiguous_range auto&
         }
     }
     T* curr = first;
-    EVENTIDE_TRY {
+    ET_TRY {
         for(; !(curr == last); ++curr) {
             construct(curr);
         }
         return curr;
     }
-    EVENTIDE_CATCH_ALL() {
+    ET_CATCH_ALL() {
         destroy_range(std::ranges::subrange(first, curr));
-        EVENTIDE_RETHROW();
+        ET_RETHROW();
     }
 }
 
@@ -545,15 +545,15 @@ constexpr auto uninitialized_default_construct(std::ranges::contiguous_range aut
     }
 
     T* curr = first;
-    EVENTIDE_TRY {
+    ET_TRY {
         for(; !(curr == last); ++curr) {
             default_construct(curr);
         }
         return curr;
     }
-    EVENTIDE_CATCH_ALL() {
+    ET_CATCH_ALL() {
         destroy_range(std::ranges::subrange(first, curr));
-        EVENTIDE_RETHROW();
+        ET_RETHROW();
     }
 }
 
@@ -562,15 +562,15 @@ constexpr auto uninitialized_fill(Range&& range, const T& val) {
     auto* first = std::ranges::data(range);
     auto* last = std::ranges::data(range) + static_cast<std::ptrdiff_t>(std::ranges::size(range));
     T* curr = first;
-    EVENTIDE_TRY {
+    ET_TRY {
         for(; !(curr == last); ++curr) {
             construct(curr, val);
         }
         return curr;
     }
-    EVENTIDE_CATCH_ALL() {
+    ET_CATCH_ALL() {
         destroy_range(std::ranges::subrange(first, curr));
-        EVENTIDE_RETHROW();
+        ET_RETHROW();
     }
 }
 

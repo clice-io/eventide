@@ -31,8 +31,8 @@ jobs:
             builds: |
               debug|Debug|
               relwithdebinfo|RelWithDebInfo|
-              asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
-              ubsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_UNDEFINED=ON
+              asan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON
+              ubsan|RelWithDebInfo|-DET_SANITIZE_UNDEFINED=ON
 
           - name: linux | clang
             os: ubuntu-24.04
@@ -43,9 +43,9 @@ jobs:
             cache_key: linux-clang
             builds: |
               debug|Debug|
-              asan+ubsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
-              tsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_THREAD=ON
-              no-exceptions|RelWithDebInfo|-DEVENTIDE_ENABLE_EXCEPTIONS=OFF
+              asan+ubsan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON
+              tsan|RelWithDebInfo|-DET_SANITIZE_THREAD=ON
+              no-exceptions|RelWithDebInfo|-DET_ENABLE_EXCEPTIONS=OFF
 
           - name: macos | apple-clang
             os: macos-15
@@ -56,7 +56,7 @@ jobs:
             cache_key: macos-appleclang
             builds: |
               debug|Debug|
-              asan+ubsan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
+              asan+ubsan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON
 
           - name: macos | pixi-clang
             os: macos-15
@@ -68,7 +68,7 @@ jobs:
             builds: |
               debug|Debug|
               relwithdebinfo|RelWithDebInfo|
-              no-exceptions+no-rtti|RelWithDebInfo|-DEVENTIDE_ENABLE_EXCEPTIONS=OFF -DEVENTIDE_ENABLE_RTTI=OFF
+              no-exceptions+no-rtti|RelWithDebInfo|-DET_ENABLE_EXCEPTIONS=OFF -DET_ENABLE_RTTI=OFF
 
           - name: windows | msvc
             os: windows-2025
@@ -80,8 +80,8 @@ jobs:
             cache_key: windows-msvc
             builds: |
               debug|Debug|
-              asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
-              no-exceptions|RelWithDebInfo|-DEVENTIDE_ENABLE_EXCEPTIONS=OFF
+              asan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON
+              no-exceptions|RelWithDebInfo|-DET_ENABLE_EXCEPTIONS=OFF
 
           - name: windows | clang-cl
             os: windows-2025
@@ -94,7 +94,7 @@ jobs:
             builds: |
               debug|Debug|
               relwithdebinfo|RelWithDebInfo|
-              asan|RelWithDebInfo|-DEVENTIDE_SANITIZE_ADDRESS=ON
+              asan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON
 
           - name: windows | mingw
             os: windows-2025
@@ -170,18 +170,18 @@ jobs:
                 -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
                 -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
                 -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-                -DEVENTIDE_BUILD_ALL_TESTS=ON \
-                -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-                -DEVENTIDE_ENABLE_CCACHE=ON \
+                -DET_BUILD_ALL_TESTS=ON \
+                -DET_USE_CPM_FOR_TESTS=ON \
+                -DET_ENABLE_CCACHE=ON \
                 ${cmake_args}
             else
               cmake -S . -B "${build_dir}" -G Ninja \
                 -DCMAKE_BUILD_TYPE="${build_type}" \
                 -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
                 -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
-                -DEVENTIDE_BUILD_ALL_TESTS=ON \
-                -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-                -DEVENTIDE_ENABLE_CCACHE=ON \
+                -DET_BUILD_ALL_TESTS=ON \
+                -DET_USE_CPM_FOR_TESTS=ON \
+                -DET_ENABLE_CCACHE=ON \
                 ${cmake_args}
             fi
           }

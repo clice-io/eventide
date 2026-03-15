@@ -17,7 +17,7 @@ function(eventide_apply_cache_options)
 endfunction()
 
 function(eventide_ensure_cpm)
-    if(NOT EVENTIDE_USE_CPM_FOR_TESTS OR NOT EVENTIDE_ENABLE_TEST)
+    if(NOT ET_USE_CPM_FOR_TESTS OR NOT ET_ENABLE_TEST)
         return()
     endif()
 
@@ -25,7 +25,7 @@ function(eventide_ensure_cpm)
         return()
     endif()
 
-    set(cpm_version "0.40.5")
+    set(cpm_version "0.42.1")
     set(cpm_path "${CMAKE_BINARY_DIR}/cmake/CPM_${cpm_version}.cmake")
 
     if(NOT EXISTS "${cpm_path}")
@@ -100,7 +100,7 @@ function(eventide_add_git_dependency name)
         message(FATAL_ERROR "eventide_add_git_dependency(${name}) requires GIT_TAG.")
     endif()
 
-    if(EVENTIDE_USE_CPM_FOR_TESTS AND EVENTIDE_ENABLE_TEST)
+    if(ET_USE_CPM_FOR_TESTS AND ET_ENABLE_TEST)
         eventide_ensure_cpm()
         set(cpm_options "")
         set(option_pairs ${ARG_OPTIONS})

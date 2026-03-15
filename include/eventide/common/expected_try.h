@@ -10,14 +10,14 @@
             return std::unexpected(std::move(_eventide_try_result_).error());                      \
     } while(0)
 
-#define EVENTIDE_CONCAT_IMPL_(a, b) a##b
-#define EVENTIDE_CONCAT_(a, b) EVENTIDE_CONCAT_IMPL_(a, b)
+#define ET_CONCAT_IMPL_(a, b) a##b
+#define ET_CONCAT_(a, b) ET_CONCAT_IMPL_(a, b)
 
 // ET_EXPECTED_TRY_V(decl, expr)
 // For std::expected<T, E> — checks for error, on success declares variable with the value.
 // Usage: ET_EXPECTED_TRY_V(auto val, d.deserialize_seq(len));
 #define ET_EXPECTED_TRY_V(decl, expr)                                                              \
-    auto EVENTIDE_CONCAT_(_eventide_try_tmp_, __LINE__) = (expr);                                  \
-    if(!EVENTIDE_CONCAT_(_eventide_try_tmp_, __LINE__))                                            \
-        return std::unexpected(std::move(EVENTIDE_CONCAT_(_eventide_try_tmp_, __LINE__)).error()); \
-    decl = std::move(*EVENTIDE_CONCAT_(_eventide_try_tmp_, __LINE__))
+    auto ET_CONCAT_(_eventide_try_tmp_, __LINE__) = (expr);                                        \
+    if(!ET_CONCAT_(_eventide_try_tmp_, __LINE__))                                                  \
+        return std::unexpected(std::move(ET_CONCAT_(_eventide_try_tmp_, __LINE__)).error());       \
+    decl = std::move(*ET_CONCAT_(_eventide_try_tmp_, __LINE__))
