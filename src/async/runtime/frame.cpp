@@ -12,15 +12,22 @@ namespace eventide {
 
 namespace {
 
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
+#endif
 
 void enqueue_destroy(std::coroutine_handle<> handle) {
     if(handle) {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
         pending_frame_destroys.push_back(handle);
+#else
+        handle.destroy();
+#endif
     }
 }
 
 void drain_pending_destroys() {
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     while(!pending_frame_destroys.empty()) {
         auto queued = std::move(pending_frame_destroys);
         pending_frame_destroys.clear();
@@ -30,16 +37,19 @@ void drain_pending_destroys() {
             }
         }
     }
-}
-
-void resume_and_drain(std::coroutine_handle<> handle) {
-    if(handle) {
-        handle.resume();
-    }
-    drain_pending_destroys();
+#endif
 }
 
 }  // namespace
+
+void detail::resume_and_drain(std::coroutine_handle<> handle) {
+    if(handle) {
+        handle.resume();
+    }
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    drain_pending_destroys();
+#endif
+}
 
 void async_node::intercept_cancel() noexcept {
     policy = static_cast<Policy>(policy | InterceptCancel);
@@ -100,7 +110,7 @@ void async_node::cancel() {
         }
 
         auto next = awaiter->handle_subtask_result(link);
-        resume_and_drain(next);
+        detail::resume_and_drain(next);
     };
 
     switch(kind) {
@@ -140,7 +150,7 @@ void async_node::cancel() {
             }
 
             auto next = self->deliver_deferred();
-            resume_and_drain(next);
+            detail::resume_and_drain(next);
             break;
         }
 
@@ -159,7 +169,9 @@ void async_node::resume() {
     if(is_standard_task()) {
         if(!is_cancelled() && !is_failed()) {
             static_cast<standard_task*>(this)->handle().resume();
+#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
             drain_pending_destroys();
+#endif
         }
     }
 }
@@ -176,7 +188,7 @@ void system_op::complete() noexcept {
         return;
     }
     auto next = parent->handle_subtask_result(this);
-    resume_and_drain(next);
+    detail::resume_and_drain(next);
 }
 
 /// Wires this node as a child of `awaiter`. For Task nodes, sets state

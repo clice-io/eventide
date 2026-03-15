@@ -134,7 +134,10 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
         throw std::invalid_argument("no arguments provided");
     }
 #else
-    assert(!argv.empty());
+    if(argv.empty()) {
+        option.argv = std::unexpected(std::runtime_error("no arguments provided"));
+        return option;
+    }
 #endif
 
     std::string error;

@@ -1,13 +1,10 @@
-eventide_apply_cache_options(
-    CPPTRACE_DISABLE_CXX_20_MODULES ON
-)
-FetchContent_Declare(
+eventide_add_git_dependency(
     cpptrace
     GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
     GIT_TAG v1.0.4
-    GIT_SHALLOW TRUE
+    OPTIONS
+        CPPTRACE_DISABLE_CXX_20_MODULES ON
 )
-FetchContent_MakeAvailable(cpptrace)
 
 add_library(eventide_zest STATIC)
 add_library(eventide::zest ALIAS eventide_zest)

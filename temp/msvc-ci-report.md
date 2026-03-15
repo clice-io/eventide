@@ -17,7 +17,7 @@
 - 修复:
   - 为 `task_return_object` 增加 `&` 版本的转换运算符。
 - 相关文件:
-  - [include/eventide/async/runtime/task.h](/home/ykiko/C++/eventide2/include/eventide/async/runtime/task.h)
+  - [include/eventide/async/runtime/task.h](../include/eventide/async/runtime/task.h)
 
 ### 2. `with_token()` / `when_any()` 的 `void` 通道在 MSVC 下误实例化成 `optional<void>`
 
@@ -30,7 +30,7 @@
   - 增加 `tuple_visit_at_return(...)`，把 `winner` / `error` / `cancel` 的提取改成直接返回值。
   - 为相关 lambda 加上显式返回类型，避免 MSVC 在 `std::abort()` 分支上把返回类型推成 `void`。
 - 相关文件:
-  - [include/eventide/async/runtime/when.h](/home/ykiko/C++/eventide2/include/eventide/async/runtime/when.h)
+  - [include/eventide/async/runtime/when.h](../include/eventide/async/runtime/when.h)
 
 ### 3. `refl::type_name` / `enum_name` 作为 `consteval` 在 MSVC ASan 下不可用
 
@@ -41,7 +41,7 @@
 - 修复:
   - 将 `type_name()` 和 `enum_name()` 从 `consteval` 放宽为 `constexpr`。
 - 相关文件:
-  - [include/eventide/reflection/name.h](/home/ykiko/C++/eventide2/include/eventide/reflection/name.h)
+  - [include/eventide/reflection/name.h](../include/eventide/reflection/name.h)
 
 ### 4. 反射字段名生成时，MSVC 不接受裸指针 NTTP
 
@@ -56,8 +56,8 @@
 - 修复:
   - 改成 `pointer_name<detail::wrapper{std::get<Is>(addrs)}>()`。
 - 相关文件:
-  - [include/eventide/reflection/struct.h](/home/ykiko/C++/eventide2/include/eventide/reflection/struct.h)
-  - [include/eventide/reflection/name.h](/home/ykiko/C++/eventide2/include/eventide/reflection/name.h)
+  - [include/eventide/reflection/struct.h](../include/eventide/reflection/struct.h)
+  - [include/eventide/reflection/name.h](../include/eventide/reflection/name.h)
 
 ### 5. `pipe.read_chunk_then_read_some_fd` 在 Windows MSVC Debug 下存在时序竞态
 
@@ -73,7 +73,7 @@
   - writer 写完第一段后等待 `first_chunk_consumed` 事件；reader 在拿到第一段并 `consume()` 后再发信号，随后 writer 才写第二段。
   - 这样可以稳定验证“先 `read_chunk()`，再 `read_some()`” 的行为，而不是依赖平台调度时机。
 - 相关文件:
-  - [tests/async/stream_tests.cpp](/home/ykiko/C++/eventide2/tests/async/stream_tests.cpp)
+  - [tests/async/stream_tests.cpp](../tests/async/stream_tests.cpp)
 
 ## 总结
 

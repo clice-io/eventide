@@ -246,12 +246,14 @@ if(EVENTIDE_ENABLE_ASYNC AND EVENTIDE_SERDE_ENABLE_SIMDJSON)
     add_subdirectory(src/language)
 endif()
 
-if(EVENTIDE_ENABLE_ZEST)
+if(EVENTIDE_ENABLE_ZEST AND (NOT EVENTIDE_ENABLE_TEST OR BUILD_TESTING))
     add_subdirectory(src/zest)
 endif()
 
-if(EVENTIDE_ENABLE_TEST)
+if(EVENTIDE_ENABLE_TEST AND BUILD_TESTING)
     add_subdirectory(tests)
+elseif(EVENTIDE_ENABLE_TEST)
+    message(STATUS "BUILD_TESTING=OFF: skipping tests")
 endif()
 
 if(EVENTIDE_ENABLE_EXAMPLES)
