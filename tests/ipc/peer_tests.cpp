@@ -12,7 +12,6 @@
 #include "../common/fd_helpers.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
-#include "eventide/common/config.h"
 #include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"
 
@@ -143,10 +142,6 @@ namespace eventide::ipc {
 TEST_SUITE(ipc_peer) {
 
 TEST_CASE(traits_dispatch_order) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
         R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
@@ -196,10 +191,6 @@ TEST_CASE(traits_dispatch_order) {
 }
 
 TEST_CASE(stream_note_response) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     event_loop loop;
 
     int incoming_fds[2] = {-1, -1};
@@ -239,10 +230,6 @@ TEST_CASE(stream_note_response) {
 }
 
 TEST_CASE(peers_share_loop) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     event_loop loop;
 
     auto transport1 = std::make_unique<FakeTransport>(std::vector<std::string>{
@@ -289,10 +276,6 @@ TEST_CASE(peers_share_loop) {
 }
 
 TEST_CASE(explicit_method) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":2,"method":"custom/add","params":{"a":7,"b":8}})",
         R"({"jsonrpc":"2.0","method":"custom/note","params":{"text":"hello"}})",
@@ -330,10 +313,6 @@ TEST_CASE(explicit_method) {
 }
 
 TEST_CASE(request_notify_apis) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",
@@ -442,10 +421,6 @@ TEST_CASE(request_notify_apis) {
 }
 
 TEST_CASE(request_error_code) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":10,"method":"test/add","params":{"a":2,"b":3}})",
     });
@@ -474,10 +449,6 @@ TEST_CASE(request_error_code) {
 }
 
 TEST_CASE(request_error_data) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":12,"method":"test/add","params":{"a":2,"b":3}})",
     });
@@ -527,10 +498,6 @@ TEST_CASE(request_error_data) {
 }
 
 TEST_CASE(outbound_error_data) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -581,10 +548,6 @@ TEST_CASE(outbound_error_data) {
 }
 
 TEST_CASE(bad_response_silent) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -617,10 +580,6 @@ TEST_CASE(bad_response_silent) {
 }
 
 TEST_CASE(bad_params_invalid) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":11,"method":"test/add","params":"invalid"})",
     });
@@ -651,10 +610,6 @@ TEST_CASE(bad_params_invalid) {
 }
 
 TEST_CASE(malformed_parse_null) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add")",
     });
@@ -677,10 +632,6 @@ TEST_CASE(malformed_parse_null) {
 }
 
 TEST_CASE(invalid_request_null) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({})",
     });
@@ -703,10 +654,6 @@ TEST_CASE(invalid_request_null) {
 }
 
 TEST_CASE(invalid_id_type) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":"11","method":"test/note","params":{"text":"x"}})",
     });
@@ -731,10 +678,6 @@ TEST_CASE(invalid_id_type) {
 }
 
 TEST_CASE(cancel_inflight_request) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":21,"method":"test/add","params":{"a":2,"b":3}})",
         R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":21}})",
@@ -767,10 +710,6 @@ TEST_CASE(cancel_inflight_request) {
 }
 
 TEST_CASE(cancel_running_handler) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":22,"method":"test/add","params":{"a":2,"b":3}})",
@@ -821,10 +760,6 @@ TEST_CASE(cancel_running_handler) {
 }
 
 TEST_CASE(context_token_propagates) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":31,"method":"test/add","params":{"a":4,"b":5}})",
@@ -901,10 +836,6 @@ TEST_CASE(context_token_propagates) {
 }
 
 TEST_CASE(outbound_cancel_request) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -961,10 +892,6 @@ TEST_CASE(outbound_cancel_request) {
 }
 
 TEST_CASE(outbound_precancel) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 
@@ -1001,10 +928,6 @@ TEST_CASE(outbound_precancel) {
 }
 
 TEST_CASE(outbound_timeout_cancel) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {
@@ -1049,10 +972,6 @@ TEST_CASE(outbound_timeout_cancel) {
 }
 
 TEST_CASE(zero_timeout_cancel) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
     auto* transport_ptr = transport.get();
 

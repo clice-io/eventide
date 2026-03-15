@@ -356,14 +356,14 @@ private:
 
     [[nodiscard]] constexpr size_type checked_size(size_type base, size_type extra) const {
         if(extra > max_size() - base) {
-            EVENTIDE_THROW(std::length_error("small_vector capacity overflow"));
+            ET_THROW(std::length_error("small_vector capacity overflow"));
         }
         return base + extra;
     }
 
     [[nodiscard]] constexpr size_type next_capacity(size_type min_capacity) const {
         if(min_capacity > max_size()) {
-            EVENTIDE_THROW(std::length_error("small_vector capacity overflow"));
+            ET_THROW(std::length_error("small_vector capacity overflow"));
         }
 
         size_type grown = this->m_capacity == 0 ? 1 : this->m_capacity * 2;
@@ -505,18 +505,18 @@ private:
         auto* relocated_end = new_begin;
         bool back_constructed = false;
 
-        EVENTIDE_TRY {
+        ET_TRY {
             mem::construct(counted_range(new_begin, old_size).end(), std::forward<Args>(args)...);
             back_constructed = true;
             relocated_end = mem::uninitialized_relocate(elements(), new_begin);
         }
-        EVENTIDE_CATCH_ALL() {
+        ET_CATCH_ALL() {
             mem::destroy_range(std::ranges::subrange(new_begin, relocated_end));
             if(back_constructed) {
                 mem::destroy(counted_range(new_begin, old_size).end());
             }
             mem::deallocate(new_begin, new_capacity);
-            EVENTIDE_RETHROW();
+            ET_RETHROW();
         }
 
         commit_replacement(new_begin, new_size, new_capacity);
@@ -920,14 +920,14 @@ public:
 
     constexpr reference at(size_type idx) {
         if(idx >= size()) {
-            EVENTIDE_THROW(std::out_of_range("small_vector index out of range"));
+            ET_THROW(std::out_of_range("small_vector index out of range"));
         }
         return (*this)[idx];
     }
 
     constexpr const_reference at(size_type idx) const {
         if(idx >= size()) {
-            EVENTIDE_THROW(std::out_of_range("small_vector index out of range"));
+            ET_THROW(std::out_of_range("small_vector index out of range"));
         }
         return (*this)[idx];
     }
@@ -1443,14 +1443,14 @@ public:
         if(!std::is_constant_evaluated() && this->size() <= InlineCapacity) {
             auto* new_begin = this->inline_begin();
             auto* constructed = new_begin;
-            EVENTIDE_TRY {
+            ET_TRY {
                 constructed =
                     mem::uninitialized_relocate(std::ranges::subrange(this->begin(), this->end()),
                                                 new_begin);
             }
-            EVENTIDE_CATCH_ALL() {
+            ET_CATCH_ALL() {
                 mem::destroy_range(std::ranges::subrange(new_begin, constructed));
-                EVENTIDE_RETHROW();
+                ET_RETHROW();
             }
 
             auto old_begin = this->m_begin;

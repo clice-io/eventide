@@ -10,7 +10,6 @@
 #include "../ipc/test_transport.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
-#include "eventide/common/config.h"
 #include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/language/protocol.h"
@@ -81,12 +80,6 @@ namespace eventide::language {
 TEST_SUITE(language_jsonrpc_traits) {
 
 TEST_CASE(traits_dispatch_order) {
-// Visual Studio issue:
-// https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})",
         R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"first"}})",
@@ -137,10 +130,6 @@ TEST_CASE(traits_dispatch_order) {
 }
 
 TEST_CASE(explicit_method) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":2,"method":"custom/add","params":{"a":7,"b":8}})",
         R"({"jsonrpc":"2.0","method":"custom/note","params":{"text":"hello"}})",
@@ -178,10 +167,6 @@ TEST_CASE(explicit_method) {
 }
 
 TEST_CASE(request_notify_apis) {
-#if EVENTIDE_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    skip();
-    return;
-#endif
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":2,"b":3}})",

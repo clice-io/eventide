@@ -1,4 +1,5 @@
 #include <array>
+#include <cassert>
 #include <expected>
 #include <format>
 #include <ranges>
@@ -122,15 +123,22 @@ opt::OptTable make_proxy_opt_table() {
 struct ProxyParsedOption {
     std::string parent_id;
     std::string executable;
-    std::expected<std::vector<std::string>, std::runtime_error> argv = std::vector<std::string>{};
+    std::expected<std::vector<std::string>, std::string> argv = std::vector<std::string>{};
 };
 
 ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_program_name = true) {
     ProxyParsedOption option{};
     auto argv = with_program_name ? argv_span.subspan(1) : argv_span;
+#if ET_ENABLE_EXCEPTIONS
     if(argv.empty()) {
         throw std::invalid_argument("no arguments provided");
     }
+#else
+    if(argv.empty()) {
+        option.argv = std::unexpected(std::string("no arguments provided"));
+        return option;
+    }
+#endif
 
     std::string error;
     auto table = make_proxy_opt_table();
@@ -150,8 +158,8 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
                 if(arg->get_spelling_view() == "--") {
                     option.argv = std::vector<std::string>(arg->values.begin(), arg->values.end());
                 } else {
-                    option.argv = std::unexpected(std::runtime_error(
-                        std::format("error from hook: {}", arg->get_spelling_view())));
+                    option.argv = std::unexpected(
+                        std::format("error from hook: {}", arg->get_spelling_view()));
                 }
                 break;
             default: error = std::format("unknown argument: {}", argv[arg->index]); break;
@@ -159,7 +167,11 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
     });
 
     if(!error.empty()) {
+#if ET_ENABLE_EXCEPTIONS
         throw std::invalid_argument(error);
+#else
+        option.argv = std::unexpected(error);
+#endif
     }
     return option;
 }
@@ -299,7 +311,11 @@ TEST_CASE(proxy_parser_parse_opt_success) {
         EXPECT_TRUE(result.argv.has_value());
         EXPECT_EQ(result.argv.value().size(), 0U);
     };
+#if ET_ENABLE_EXCEPTIONS
     EXPECT_NOTHROWS(f());
+#else
+    f();
+#endif
 }
 
 TEST_CASE(proxy_parser_parse_opt_with_input_args) {
@@ -313,12 +329,22 @@ TEST_CASE(proxy_parser_parse_opt_with_input_args) {
         EXPECT_EQ(result.argv.value()[0], "script.py");
         EXPECT_EQ(result.argv.value()[1], "--verbose");
     };
+#if ET_ENABLE_EXCEPTIONS
     EXPECT_NOTHROWS(f());
+#else
+    f();
+#endif
 }
 
 TEST_CASE(proxy_parser_parse_opt_error_handling) {
     auto argv = split2vec("proxy -p");
+#if ET_ENABLE_EXCEPTIONS
     EXPECT_THROWS((parse_proxy_opt(argv)));
+#else
+    auto result = parse_proxy_opt(argv);
+    EXPECT_FALSE(result.argv.has_value());
+    EXPECT_TRUE(std::string_view(result.argv.error()).contains("missing argument value"));
+#endif
 }
 
 TEST_CASE(proxy_parser_parse_opt_passes_error_payload) {
@@ -327,7 +353,11 @@ TEST_CASE(proxy_parser_parse_opt_passes_error_payload) {
         auto result = parse_proxy_opt(argv);
         EXPECT_FALSE(result.argv.has_value());
     };
+#if ET_ENABLE_EXCEPTIONS
     EXPECT_NOTHROWS(f());
+#else
+    f();
+#endif
 }
 
 };  // TEST_SUITE(option_catter_migration)

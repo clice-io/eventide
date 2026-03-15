@@ -11,6 +11,7 @@
 #include <utility>
 #include <variant>
 
+#include "eventide/common/memory.h"
 #include "eventide/common/meta.h"
 #include "eventide/common/small_vector.h"
 #include "eventide/common/type_list.h"
@@ -164,21 +165,25 @@ inline void destroy_or_detach(async_node* child) noexcept {
     task->handle().destroy();
 }
 
-template <typename Tuple, typename F>
-void tuple_visit_at(std::size_t index, Tuple& tuple, F&& f) {
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (void)((index == I &&
-                (f(std::integral_constant<std::size_t, I>{}, std::get<I>(tuple)), true)) ||
-               ...);
-    }(std::make_index_sequence<std::tuple_size_v<std::remove_reference_t<Tuple>>>{});
+template <typename Return, std::size_t I = 0, typename Tuple, typename F>
+Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
+    if constexpr(I < std::tuple_size_v<std::remove_reference_t<Tuple>>) {
+        if(index == I) {
+            return f(std::integral_constant<std::size_t, I>{}, std::get<I>(tuple));
+        }
+        return tuple_visit_at_return<Return, I + 1>(index, tuple, std::forward<F>(f));
+    } else {
+        assert(false && "tuple_visit_at_return index out of bounds");
+        std::abort();
+    }
 }
 
 [[noreturn]] inline void fail_empty_when_any_range() {
-#if EVENTIDE_ENABLE_EXCEPTIONS
+#if ET_ENABLE_EXCEPTIONS
     throw std::invalid_argument("when_any(range) requires a non-empty range");
 #else
     assert(false && "when_any(range) requires a non-empty range");
-    std::abort();
+    ET_THROW(std::invalid_argument("when_any(range) requires a non-empty range"));
 #endif
 }
 
@@ -238,35 +243,40 @@ public:
 
         if constexpr(!std::is_void_v<cancel_type>) {
             if(this->state == async_node::Cancelled) {
-                std::optional<cancel_type> cancel;
-                detail::tuple_visit_at(first_cancel_child, tasks, [&](auto, auto& task) {
-                    using task_t = std::remove_reference_t<decltype(task)>;
-                    if constexpr(std::is_void_v<detail::task_cancel_type_t<task_t>>) {
-                        cancel.emplace(cancellation{});
-                    } else {
-                        auto result = detail::take_result(task);
-                        assert(result.is_cancelled());
-                        cancel.emplace(std::move(result).cancellation());
-                    }
-                });
-                assert(cancel);
-                return result_type(outcome_cancel(std::move(*cancel)));
+                auto cancel = detail::tuple_visit_at_return<cancel_type>(
+                    first_cancel_child,
+                    tasks,
+                    [&](auto, auto& task) -> cancel_type {
+                        using task_t = std::remove_reference_t<decltype(task)>;
+                        if constexpr(std::is_void_v<detail::task_cancel_type_t<task_t>>) {
+                            return cancel_type(cancellation{});
+                        } else {
+                            auto result = detail::take_result(task);
+                            assert(result.is_cancelled());
+                            return cancel_type(std::move(result).cancellation());
+                        }
+                    });
+                return result_type(outcome_cancel(std::move(cancel)));
             }
         }
 
         if constexpr(!std::is_void_v<error_type>) {
             if(first_error_child != aggregate_op::npos) {
-                std::optional<error_type> error;
-                detail::tuple_visit_at(first_error_child, tasks, [&](auto, auto& task) {
-                    using task_t = std::remove_reference_t<decltype(task)>;
-                    if constexpr(!std::is_void_v<detail::task_error_type_t<task_t>>) {
-                        auto result = detail::take_result(task);
-                        assert(result.has_error());
-                        error.emplace(std::move(result).error());
-                    }
-                });
-                assert(error);
-                return result_type(outcome_error(std::move(*error)));
+                auto error = detail::tuple_visit_at_return<error_type>(
+                    first_error_child,
+                    tasks,
+                    [&](auto, auto& task) -> error_type {
+                        using task_t = std::remove_reference_t<decltype(task)>;
+                        if constexpr(!std::is_void_v<detail::task_error_type_t<task_t>>) {
+                            auto result = detail::take_result(task);
+                            assert(result.has_error());
+                            return error_type(std::move(result).error());
+                        } else {
+                            assert(false && "error child must expose an error channel");
+                            std::abort();
+                        }
+                    });
+                return result_type(outcome_error(std::move(error)));
             }
         }
 
@@ -287,13 +297,13 @@ private:
             }(std::index_sequence_for<Tasks...>{});
         } else {
             assert(winner != aggregate_op::npos && "when_any winner not set");
-            std::optional<success_type> result;
-            detail::tuple_visit_at(winner, tasks, [&](auto I, auto& task) {
-                result = success_type(std::in_place_index<I.value>,
-                                      detail::take_success_result<capture_cancel>(task));
-            });
-            assert(result);
-            return std::move(*result);
+            return detail::tuple_visit_at_return<success_type>(
+                winner,
+                tasks,
+                [&](auto I, auto& task) -> success_type {
+                    return success_type(std::in_place_index<I.value>,
+                                        detail::take_success_result<capture_cancel>(task));
+                });
         }
     }
 

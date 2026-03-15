@@ -18,6 +18,13 @@ namespace eventide {
 
 class sync_primitive;
 
+namespace detail {
+
+/// Resume a coroutine and immediately drain any deferred root-frame destruction.
+void resume_and_drain(std::coroutine_handle<> handle);
+
+}  // namespace detail
+
 /// Type-erased base for all coroutine-related nodes in the task tree.
 ///
 /// This hierarchy models awaitable runtime entities only.
@@ -320,7 +327,7 @@ protected:
 
     /// Rethrows the propagated exception if one was captured from a failed child.
     void rethrow_if_propagated() {
-#if EVENTIDE_ENABLE_EXCEPTIONS
+#if ET_ENABLE_EXCEPTIONS
         if(propagated_exception) {
             std::rethrow_exception(propagated_exception);
         }

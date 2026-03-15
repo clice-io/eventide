@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef EVENTIDE_SERDE_CONTENT_DOM_INL_INCLUDED
-#define EVENTIDE_SERDE_CONTENT_DOM_INL_INCLUDED 1
+#ifndef ET_SERDE_CONTENT_DOM_INL_INCLUDED
+#define ET_SERDE_CONTENT_DOM_INL_INCLUDED 1
 #endif
 
 #include "eventide/serde/content/dom.h"

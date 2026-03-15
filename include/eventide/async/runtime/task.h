@@ -65,7 +65,7 @@ struct promise_result<void, void, void> {
 // ============================================================================
 
 struct promise_exception {
-#if EVENTIDE_ENABLE_EXCEPTIONS
+#if ET_ENABLE_EXCEPTIONS
     bool has_exception() const noexcept {
         return exception != nullptr;
     }
@@ -183,7 +183,11 @@ struct task_return_object {
 
     coroutine_handle handle;
 
+    operator task<T, E, void>() & noexcept;
+
     operator task<T, E, void>() && noexcept;
+
+    operator task<T, E, cancellation>() & noexcept;
 
     operator task<T, E, cancellation>() && noexcept;
 };
@@ -393,8 +397,23 @@ private:
 };
 
 template <typename T, typename E>
+task_return_object<T, E>::operator task<T, E, void>() & noexcept {
+    auto out = task<T, E, void>(handle);
+    handle = nullptr;
+    return out;
+}
+
+template <typename T, typename E>
 task_return_object<T, E>::operator task<T, E, void>() && noexcept {
     auto out = task<T, E, void>(handle);
+    handle = nullptr;
+    return out;
+}
+
+template <typename T, typename E>
+task_return_object<T, E>::operator task<T, E, cancellation>() & noexcept {
+    handle.promise().intercept_cancel();
+    auto out = task<T, E, cancellation>(handle);
     handle = nullptr;
     return out;
 }
