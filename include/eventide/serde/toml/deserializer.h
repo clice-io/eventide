@@ -11,11 +11,11 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "eventide/common/expected_try.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/schema/match.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/backend_helpers.h"
 #include "eventide/serde/serde/utils/common.h"
@@ -153,27 +153,20 @@ public:
         return is_none;
     }
 
+    result_t<const ::toml::node*> consume_variant_source() {
+        return consume_node();
+    }
+
     template <typename... Ts>
-    status_t deserialize_variant(std::variant<Ts...>& value) {
-        auto kind = peek_node_kind();
-        if(!kind) {
-            return std::unexpected(kind.error());
-        }
+    result_t<void> deserialize_variant(std::variant<Ts...>& v) {
+        auto source_result = consume_node();
+        if(!source_result) return std::unexpected(source_result.error());
+        auto source = *source_result;
 
-        auto source = consume_node();
-        if(!source) {
-            return std::unexpected(source.error());
-        }
-
-        auto result = serde::try_variant_dispatch<Deserializer>(*source,
-                                                                map_to_type_hint(*kind),
-                                                                value,
-                                                                error_type::type_mismatch);
-        if(!result) {
-            mark_invalid(result.error());
-            return std::unexpected(current_error());
-        }
-        return {};
+        auto node = to_schema_node(source);
+        using config_t = Config;
+        return serde::schema::untagged_dispatch<Deserializer, config_t, Ts...>(
+            v, node, [&]() -> Deserializer { return Deserializer(source); });
     }
 
     status_t deserialize_bool(bool& value) {
@@ -461,6 +454,27 @@ private:
             case node_kind::table: return serde::type_hint::object;
             default: return serde::type_hint::any;
         }
+    }
+
+    static serde::type_hint node_to_hint(const ::toml::node* n) {
+        if(!n) return serde::type_hint::null_like;
+        return map_to_type_hint(classify_node(n));
+    }
+
+    static serde::schema::schema_node to_schema_node(const ::toml::node* source) {
+        serde::schema::schema_node node;
+        node.hints = node_to_hint(source);
+
+        if(source && source->is_table()) {
+            auto& table = *source->as_table();
+            for(auto& [k, v]: table) {
+                node.fields.push_back({
+                    std::string(k),
+                    node_to_hint(&v),
+                });
+            }
+        }
+        return node;
     }
 
     result_t<const ::toml::node*> access_node(bool consume) {
