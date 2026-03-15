@@ -19,199 +19,88 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: linux | gcc | debug
+          - name: linux | gcc
             os: ubuntu-24.04
+            pixi_env: linux-gcc
             cc: gcc
             cxx: g++
-            build_type: Debug
             enable_ccache: true
             cache_key: linux-gcc
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              ubsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
 
-          - name: linux | gcc | relwithdebinfo
+          - name: linux | clang
             os: ubuntu-24.04
-            cc: gcc
-            cxx: g++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: linux-gcc
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-
-          - name: linux | gcc | ubsan
-            os: ubuntu-24.04
-            cc: gcc
-            cxx: g++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: linux-gcc
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_SANITIZE_UNDEFINED=ON
-
-          - name: linux | clang | debug
-            os: ubuntu-24.04
+            pixi_env: linux-clang
             cc: clang
             cxx: clang++
-            build_type: Debug
             enable_ccache: true
             cache_key: linux-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              asan+ubsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
+              tsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_THREAD=ON
+              no-exceptions|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_ENABLE_EXCEPTIONS=OFF
 
-          - name: linux | clang | asan+ubsan
-            os: ubuntu-24.04
-            cc: clang
-            cxx: clang++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: linux-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_SANITIZE_ADDRESS=ON
-              -DEVENTIDE_SANITIZE_UNDEFINED=ON
-
-          - name: linux | clang | tsan
-            os: ubuntu-24.04
-            cc: clang
-            cxx: clang++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: linux-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_SANITIZE_THREAD=ON
-
-          - name: linux | clang | no-exceptions
-            os: ubuntu-24.04
-            cc: clang
-            cxx: clang++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: linux-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_ENABLE_EXCEPTIONS=OFF
-
-          - name: macos | apple-clang | debug
+          - name: macos | apple-clang
             os: macos-15
+            pixi_env: default
             cc: /usr/bin/clang
             cxx: /usr/bin/clang++
-            build_type: Debug
             enable_ccache: true
             cache_key: macos-appleclang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              asan+ubsan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_ADDRESS=ON -DEVENTIDE_SANITIZE_UNDEFINED=ON
 
-          - name: macos | apple-clang | asan+ubsan
+          - name: macos | pixi-clang
             os: macos-15
-            cc: /usr/bin/clang
-            cxx: /usr/bin/clang++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: macos-appleclang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_SANITIZE_ADDRESS=ON
-              -DEVENTIDE_SANITIZE_UNDEFINED=ON
-
-          - name: macos | pixi-clang | debug
-            os: macos-15
+            pixi_env: macos-clang
             cc: clang
             cxx: clang++
-            build_type: Debug
             enable_ccache: true
             cache_key: macos-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              no-exceptions+no-rtti|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_ENABLE_EXCEPTIONS=OFF -DEVENTIDE_ENABLE_RTTI=OFF
 
-          - name: macos | pixi-clang | relwithdebinfo
-            os: macos-15
-            cc: clang
-            cxx: clang++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: macos-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-
-          - name: macos | pixi-clang | no-exceptions | no-rtti
-            os: macos-15
-            cc: clang
-            cxx: clang++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: macos-clang
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_ENABLE_EXCEPTIONS=OFF
-              -DEVENTIDE_ENABLE_RTTI=OFF
-
-          - name: windows | msvc | debug
+          - name: windows | msvc
             os: windows-2025
+            pixi_env: default
             cc: cl
             cxx: cl
-            build_type: Debug
             enable_ccache: false
             needs_msvc_env: true
             cache_key: windows-msvc
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              asan|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON -DEVENTIDE_SANITIZE_ADDRESS=ON
 
-          - name: windows | msvc | asan
+          - name: windows | clang-cl
             os: windows-2025
-            cc: cl
-            cxx: cl
-            build_type: RelWithDebInfo
-            enable_ccache: false
-            needs_msvc_env: true
-            cache_key: windows-msvc
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-              -DEVENTIDE_SANITIZE_ADDRESS=ON
-
-          - name: windows | clang-cl | debug
-            os: windows-2025
+            pixi_env: windows-llvm
             cc: clang-cl
             cxx: clang-cl
-            build_type: Debug
             enable_ccache: false
             needs_msvc_env: true
             cache_key: windows-clang-cl
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
 
-          - name: windows | clang-cl | relwithdebinfo
+          - name: windows | mingw
             os: windows-2025
-            cc: clang-cl
-            cxx: clang-cl
-            build_type: RelWithDebInfo
-            enable_ccache: false
-            needs_msvc_env: true
-            cache_key: windows-clang-cl
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-
-          - name: windows | mingw | debug
-            os: windows-2025
+            pixi_env: windows-mingw
             cc: gcc
             cxx: g++
-            build_type: Debug
             enable_ccache: true
             cache_key: windows-mingw
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
-
-          - name: windows | mingw | relwithdebinfo
-            os: windows-2025
-            cc: gcc
-            cxx: g++
-            build_type: RelWithDebInfo
-            enable_ccache: true
-            cache_key: windows-mingw
-            cmake_args: >-
-              -DEVENTIDE_BUILD_ALL_TESTS=ON
+            builds: |
+              debug|Debug|-DEVENTIDE_BUILD_ALL_TESTS=ON
+              relwithdebinfo|RelWithDebInfo|-DEVENTIDE_BUILD_ALL_TESTS=ON
 
     steps:
       - name: Checkout repository
@@ -221,6 +110,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: v0.61.0
+          environment: ${{ matrix.pixi_env }}
           activate-environment: true
           cache: true
 
@@ -246,57 +136,71 @@ jobs:
             ccache-${{ runner.os }}-${{ matrix.cache_key }}-
             ccache-${{ runner.os }}-
 
-      - name: Configure
+      - name: Configure, build, and test
         shell: bash
         run: |
           set -euxo pipefail
           ccache --zero-stats || true
-          if [[ "${{ runner.os }}" == "macOS" && "${{ matrix.cc }}" == "clang" ]]; then
-            export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-            export CONDA_BUILD_SYSROOT="${SDKROOT}"
-            cmake -S . -B "${BUILD_DIR}" -G Ninja \
-              -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
-              -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
-              -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
-              -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
-              -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}" \
-              -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}" \
-              -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-              -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
-              ${{ matrix.cmake_args }}
-          else
-            cmake -S . -B "${BUILD_DIR}" -G Ninja \
-              -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
-              -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
-              -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
-              -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
-              -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
-              ${{ matrix.cmake_args }}
-          fi
+          status=0
 
-      - name: Build
-        shell: bash
-        run: cmake --build "${BUILD_DIR}" --parallel
+          configure_build() {
+            local build_dir="$1"
+            local build_type="$2"
+            local cmake_args="$3"
 
-      - name: Stage MinGW runtime DLLs
-        if: ${{ runner.os == 'Windows' && matrix.cc == 'gcc' }}
-        shell: bash
-        run: |
-          set -euxo pipefail
-          runtime_dir="${PWD}/.pixi/envs/default/Library/bin"
-          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
-            if [[ -f "${runtime_dir}/${dll}" ]]; then
-              cp "${runtime_dir}/${dll}" "${BUILD_DIR}/"
+            if [[ "${{ runner.os }}" == "macOS" && "${{ matrix.cc }}" == "clang" ]]; then
+              export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+              export CONDA_BUILD_SYSROOT="${SDKROOT}"
+              cmake -S . -B "${build_dir}" -G Ninja \
+                -DCMAKE_BUILD_TYPE="${build_type}" \
+                -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
+                -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
+                -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
+                -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}" \
+                -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}" \
+                -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+                -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+                -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+                -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
+                -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
+                ${cmake_args}
+            else
+              cmake -S . -B "${build_dir}" -G Ninja \
+                -DCMAKE_BUILD_TYPE="${build_type}" \
+                -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
+                -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
+                -DEVENTIDE_USE_CPM_FOR_TESTS=ON \
+                -DEVENTIDE_ENABLE_CCACHE=${{ matrix.enable_ccache && 'ON' || 'OFF' }} \
+                ${cmake_args}
             fi
-          done
-          ls -l "${BUILD_DIR}"/*.dll
+          }
 
-      - name: Test
-        shell: bash
-        run: ctest --test-dir "${BUILD_DIR}" --output-on-failure
+          while IFS='|' read -r build_name build_type cmake_args; do
+            [[ -n "${build_name}" ]] || continue
+
+            build_dir="${BUILD_DIR}-${build_name}"
+            echo "::group::${{ matrix.name }} | ${build_name}"
+
+            if ! configure_build "${build_dir}" "${build_type}" "${cmake_args}"; then
+              status=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            if ! cmake --build "${build_dir}" --parallel; then
+              status=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            if ! ctest --test-dir "${build_dir}" --output-on-failure; then
+              status=1
+            fi
+
+            echo "::endgroup::"
+          done <<< "${{ matrix.builds }}"
+
+          exit "${status}"
 
       - name: Show ccache stats
         if: ${{ matrix.enable_ccache }}

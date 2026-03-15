@@ -11,42 +11,34 @@ repository = "https://github.com/clice-io/eventide"
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
-[dependencies]
+[environments]
+default = ["build"]
+linux-gcc = ["build", "linux-gcc"]
+linux-clang = ["build", "linux-clang"]
+macos-clang = ["build", "macos-clang"]
+windows-mingw = ["build", "windows-mingw"]
+windows-llvm = ["build", "windows-llvm"]
+format = ["format"]
+
+[feature.build.dependencies]
 python = "*"
 ninja = "*"
 ccache = "*"
 
-[environments]
-default = []
-format = ["format"]
-
-[tasks]
-xmake-test = "xmake test --verbose"
-xmake-build = "xmake --all --verbose --diagnosis"
-
-[tasks.ci-xmake-configure]
-args = ["build_type"]
-cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --toolchain=clang{% endif %}"
-
-[tasks.ci-xmake-build]
-args = ["build_type"]
-depends-on = [
-  { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
-  { task = "xmake-build" },
-  { task = "xmake-test" },
-]
-
-[target.linux-64.dependencies]
+[feature.linux-gcc.target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+
+[feature.linux-clang.target.linux-64.dependencies]
+sysroot_linux-64 = "==2.17"
 clang = "==20.1.8"
 clangxx = "==20.1.8"
 lld = "==20.1.8"
 llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
 
-[target.osx-arm64.dependencies]
+[feature.macos-clang.target.osx-arm64.dependencies]
 clang = "==20.1.8"
 clangxx = "==20.1.8"
 lld = "==20.1.8"
@@ -54,9 +46,14 @@ llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
 libcxx = "==20.1.8"
 
-[target.win-64.dependencies]
+[feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+
+[feature.windows-mingw.target.win-64.activation.env]
+PATH = "%CONDA_PREFIX%\\Library\\bin;%PATH%"
+
+[feature.windows-llvm.target.win-64.dependencies]
 clang = "==20.1.8"
 clangxx = "==20.1.8"
 lld = "==20.1.8"
@@ -96,3 +93,19 @@ format = { depends-on = [
   "format-toml",
   "format-yaml"
 ] }
+
+[tasks]
+xmake-test = "xmake test --verbose"
+xmake-build = "xmake --all --verbose --diagnosis"
+
+[tasks.ci-xmake-configure]
+args = ["build_type"]
+cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --toolchain=clang{% endif %}"
+
+[tasks.ci-xmake-build]
+args = ["build_type"]
+depends-on = [
+  { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
+  { task = "xmake-build" },
+  { task = "xmake-test" },
+]
