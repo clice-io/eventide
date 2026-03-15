@@ -123,7 +123,7 @@ opt::OptTable make_proxy_opt_table() {
 struct ProxyParsedOption {
     std::string parent_id;
     std::string executable;
-    std::expected<std::vector<std::string>, std::runtime_error> argv = std::vector<std::string>{};
+    std::expected<std::vector<std::string>, std::string> argv = std::vector<std::string>{};
 };
 
 ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_program_name = true) {
@@ -135,7 +135,7 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
     }
 #else
     if(argv.empty()) {
-        option.argv = std::unexpected(std::runtime_error("no arguments provided"));
+        option.argv = std::unexpected(std::string("no arguments provided"));
         return option;
     }
 #endif
@@ -158,8 +158,8 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
                 if(arg->get_spelling_view() == "--") {
                     option.argv = std::vector<std::string>(arg->values.begin(), arg->values.end());
                 } else {
-                    option.argv = std::unexpected(std::runtime_error(
-                        std::format("error from hook: {}", arg->get_spelling_view())));
+                    option.argv = std::unexpected(
+                        std::format("error from hook: {}", arg->get_spelling_view()));
                 }
                 break;
             default: error = std::format("unknown argument: {}", argv[arg->index]); break;
@@ -170,7 +170,7 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
 #if ET_ENABLE_EXCEPTIONS
         throw std::invalid_argument(error);
 #else
-        option.argv = std::unexpected(std::runtime_error(error));
+        option.argv = std::unexpected(error);
 #endif
     }
     return option;
@@ -343,7 +343,7 @@ TEST_CASE(proxy_parser_parse_opt_error_handling) {
 #else
     auto result = parse_proxy_opt(argv);
     EXPECT_FALSE(result.argv.has_value());
-    EXPECT_TRUE(std::string_view(result.argv.error().what()).contains("missing argument value"));
+    EXPECT_TRUE(std::string_view(result.argv.error()).contains("missing argument value"));
 #endif
 }
 
