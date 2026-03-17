@@ -58,3 +58,7 @@ __pycache__/
 schema/lsp/schema.json
 scripts/schema.json
 /temp/
+
+.codex/
+.claude/
+openspec/
