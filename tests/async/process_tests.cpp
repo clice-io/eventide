@@ -3,12 +3,6 @@
 #include <string_view>
 #include <utility>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
 #include "eventide/zest/zest.h"
 #include "eventide/async/async.h"
 
@@ -303,12 +297,7 @@ TEST_CASE(wait_twice) {
 
 TEST_CASE(query_info_self) {
     // Query info about our own process (always valid).
-    int self_pid =
-#ifdef _WIN32
-        static_cast<int>(GetCurrentProcessId());
-#else
-        getpid();
-#endif
+    int self_pid = process::current_pid();
 
     auto info = process::query_info(self_pid);
     ASSERT_TRUE(info.has_value());

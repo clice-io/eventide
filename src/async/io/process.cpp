@@ -7,7 +7,6 @@
 #include "eventide/async/io/loop.h"
 #include "eventide/async/vocab/error.h"
 
-// clang-format off
 #if defined(__linux__)
 #include <charconv>
 #include <unistd.h>
@@ -16,10 +15,9 @@
 #include <mach/mach.h>
 #include <sys/resource.h>
 #elif defined(_WIN32)
-#include <windows.h>
+// windows.h is already included via uv.h; only psapi.h is needed additionally.
 #include <psapi.h>
 #endif
-// clang-format on
 
 namespace eventide {
 
@@ -281,6 +279,10 @@ error process::kill(int signum) {
     }
 
     return {};
+}
+
+int process::current_pid() noexcept {
+    return uv_os_getpid();
 }
 
 result<process_info> process::query_info() const {

@@ -148,6 +148,9 @@ public:
     /// Send a signal to the process.
     error kill(int signum);
 
+    /// Retrieve the OS pid of the calling process.
+    static int current_pid() noexcept;
+
     /// Query resource usage for this process.
     result<process_info> query_info() const;
 
