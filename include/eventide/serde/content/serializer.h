@@ -9,7 +9,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "eventide/common/expected_try.h"
@@ -78,13 +77,6 @@ public:
     template <typename T>
     result_t<value_type> serialize_some(const T& value) {
         return serde::serialize(*this, value);
-    }
-
-    template <typename... Ts>
-    result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
-        return std::visit(
-            [&](const auto& item) -> result_t<value_type> { return serde::serialize(*this, item); },
-            value);
     }
 
     result_t<value_type> serialize_bool(bool value) {

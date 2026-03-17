@@ -283,3 +283,19 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, error_kin
 static_assert(serde::serializer_like<Serializer<>>);
 
 }  // namespace eventide::serde::bincode
+
+namespace eventide::serde {
+
+template <typename Config, typename T>
+    requires is_specialization_of<std::variant, std::remove_cvref_t<T>>
+struct serialize_traits<bincode::Serializer<Config>, T> {
+    using serializer_t = bincode::Serializer<Config>;
+    using error_type = typename serializer_t::error_type;
+
+    static auto serialize(serializer_t& s, const T& value)
+        -> std::expected<typename serializer_t::value_type, error_type> {
+        return s.serialize_variant(value);
+    }
+};
+
+}  // namespace eventide::serde

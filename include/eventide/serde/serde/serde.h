@@ -14,8 +14,9 @@
 #include "eventide/common/ranges.h"
 #include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
-#include "eventide/serde/serde/attrs/behavior.h"
-#include "eventide/serde/serde/attrs/schema.h"
+#include "eventide/serde/schema/attrs.h"
+#include "eventide/serde/schema/behavior.h"
+#include "eventide/serde/schema/schema.h"
 #include "eventide/serde/serde/utils/apply_behavior.h"
 #include "eventide/serde/serde/utils/common.h"
 #include "eventide/serde/serde/utils/field_dispatch.h"
@@ -42,18 +43,9 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         static_assert(!detail::tuple_has_v<attrs_t, schema::flatten>,
                       "schema::flatten is only valid for struct fields");
 
-        // Tagged variant dispatch
-        if constexpr(is_specialization_of<std::variant, value_t> &&
-                     detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_tagged_attr>;
-            constexpr auto strategy = tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == tagged_strategy::external) {
-                return detail::serialize_externally_tagged<E>(s, value, tag_attr{});
-            } else if constexpr(strategy == tagged_strategy::internal) {
-                return detail::serialize_internally_tagged<E>(s, value, tag_attr{});
-            } else {
-                return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
-            }
+        // Tagged variant: dispatch via schema tag_mode
+        if constexpr(schema::resolve_tag_mode<V>() != schema::tag_mode::none) {
+            return detail::serialize_tagged<E, V>(s, value);
         }
         // Behavior: with/as/enum_string — delegate to apply_serialize_behavior
         else if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
@@ -113,7 +105,9 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         }
         return s.serialize_null();
     } else if constexpr(is_specialization_of<std::variant, V>) {
-        return s.serialize_variant(v);
+        return detail::visit_variant_alt<E, T>(v, [&](const auto& item) {
+            return serde::serialize(s, item);
+        });
     } else if constexpr(tuple_like<V>) {
         ET_EXPECTED_TRY_V(auto s_tuple,
                           s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
@@ -190,18 +184,9 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         static_assert(!detail::tuple_has_v<attrs_t, schema::flatten>,
                       "schema::flatten is only valid for struct fields");
 
-        // Tagged variant dispatch
-        if constexpr(is_specialization_of<std::variant, value_t> &&
-                     detail::tuple_any_of_v<attrs_t, is_tagged_attr>) {
-            using tag_attr = detail::tuple_find_t<attrs_t, is_tagged_attr>;
-            constexpr auto strategy = tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == tagged_strategy::external) {
-                return detail::deserialize_externally_tagged<E>(d, value, tag_attr{});
-            } else if constexpr(strategy == tagged_strategy::internal) {
-                return detail::deserialize_internally_tagged<E>(d, value, tag_attr{});
-            } else {
-                return detail::deserialize_adjacently_tagged<E>(d, value, tag_attr{});
-            }
+        // Tagged variant: dispatch via schema tag_mode
+        if constexpr(schema::resolve_tag_mode<V>() != schema::tag_mode::none) {
+            return detail::deserialize_tagged<E, V>(d, value);
         }
         // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
         else if constexpr(detail::tuple_count_of_v<attrs_t, is_behavior_provider> > 0) {
@@ -259,10 +244,6 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return d.deserialize_str(static_cast<std::string&>(v));
     } else if constexpr(std::same_as<V, std::vector<std::byte>>) {
         return d.deserialize_bytes(v);
-    } else if constexpr(detail::is_captured_dom_value_v<D, V>) {
-        ET_EXPECTED_TRY_V(auto captured, d.capture_dom_value());
-        v = std::move(captured);
-        return {};
     } else if constexpr(null_like<V>) {
         ET_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
         if(is_none) {
@@ -330,7 +311,13 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         v = std::move(value);
         return {};
     } else if constexpr(is_specialization_of<std::variant, V>) {
-        return d.deserialize_variant(v);
+        if constexpr(requires(D& dd, V& vv) { dd.deserialize_variant(vv); }) {
+            return d.deserialize_variant(v);
+        } else {
+            static_assert(dependent_false<V>,
+                "variant deserialization requires either deserialize_traits "
+                "specialization or a backend providing deserialize_variant()");
+        }
     } else if constexpr(tuple_like<V>) {
         ET_EXPECTED_TRY_V(auto d_tuple,
                           d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));

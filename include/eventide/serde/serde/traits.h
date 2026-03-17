@@ -12,7 +12,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <variant>
+
 #include <vector>
 
 #include "eventide/common/meta.h"
@@ -119,7 +119,6 @@ concept serializer_like =
                                std::span<const std::byte> bytes,
                                std::optional<std::size_t> len,
                                std::size_t tuple_len,
-                               const std::variant<int, std::string>& variant_value,
                                const int& key,
                                const int& value) {
         { s.serialize_bool(b) } -> result_as<T, E>;
@@ -132,7 +131,6 @@ concept serializer_like =
 
         { s.serialize_null() } -> result_as<T, E>;
         { s.serialize_some(i) } -> result_as<T, E>;
-        { s.serialize_variant(variant_value) } -> result_as<T, E>;
 
         { s.serialize_seq(len) } -> result_as<SerializeSeq, E>;
         requires requires(SerializeSeq& s) {
@@ -177,7 +175,6 @@ concept deserializer_like =
                                std::optional<std::size_t> len,
                                std::size_t tuple_len,
                                std::string_view name,
-                               std::variant<int, std::string>& variant_value,
                                int& value) {
         { d.deserialize_bool(b) } -> result_as<void, E>;
         { d.deserialize_int(i64) } -> result_as<void, E>;
@@ -188,7 +185,6 @@ concept deserializer_like =
         { d.deserialize_bytes(bytes) } -> result_as<void, E>;
 
         { d.deserialize_none() } -> result_as<bool, E>;
-        { d.deserialize_variant(variant_value) } -> result_as<void, E>;
 
         { d.deserialize_seq(len) } -> result_as<DeserializeSeq, E>;
         requires requires(DeserializeSeq& s) {

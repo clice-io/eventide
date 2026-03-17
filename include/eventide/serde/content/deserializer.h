@@ -10,13 +10,13 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "eventide/common/expected_try.h"
 #include "eventide/serde/content/dom.h"
 #include "eventide/serde/content/error.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/schema/match.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/backend_helpers.h"
 #include "eventide/serde/serde/utils/narrow.h"
@@ -123,27 +123,20 @@ public:
         return isNone;
     }
 
+    result_t<content::ValueRef> consume_variant_source() {
+        return consume_value_ref();
+    }
+
     template <typename... Ts>
-    status_t deserialize_variant(std::variant<Ts...>& value) {
-        auto valueKind = peek_value_kind();
-        if(!valueKind) {
-            return std::unexpected(valueKind.error());
-        }
+    result_t<void> deserialize_variant(std::variant<Ts...>& v) {
+        auto source_result = consume_value_ref();
+        if(!source_result) return std::unexpected(source_result.error());
+        auto source = *source_result;
 
-        auto source = consume_value_ref();
-        if(!source) {
-            return std::unexpected(source.error());
-        }
-
-        auto result = serde::try_variant_dispatch<Deserializer>(*source,
-                                                                map_to_type_hint(*valueKind),
-                                                                value,
-                                                                error_type::type_mismatch);
-        if(!result) {
-            mark_invalid(result.error());
-            return std::unexpected(current_error());
-        }
-        return {};
+        auto node = to_schema_node(source);
+        using config_t = Config;
+        return serde::schema::untagged_dispatch<Deserializer, config_t, Ts...>(
+            v, node, [&]() -> Deserializer { return Deserializer(source); });
     }
 
     status_t deserialize_bool(bool& value) {
@@ -423,6 +416,32 @@ private:
             case value_kind::object: return serde::type_hint::object;
             default: return serde::type_hint::any;
         }
+    }
+
+    static serde::type_hint value_ref_to_hint(content::ValueRef ref) {
+        if(ref.is_null()) return serde::type_hint::null_like;
+        if(ref.is_bool()) return serde::type_hint::boolean;
+        if(ref.is_number()) return serde::type_hint::integer | serde::type_hint::floating;
+        if(ref.is_string()) return serde::type_hint::string;
+        if(ref.is_array()) return serde::type_hint::array;
+        if(ref.is_object()) return serde::type_hint::object;
+        return serde::type_hint::any;
+    }
+
+    static serde::schema::schema_node to_schema_node(content::ValueRef source) {
+        serde::schema::schema_node node;
+        node.hints = value_ref_to_hint(source);
+
+        auto obj = source.get_object();
+        if(obj) {
+            for(auto entry: *obj) {
+                node.fields.push_back({
+                    std::string(entry.key),
+                    value_ref_to_hint(entry.value),
+                });
+            }
+        }
+        return node;
     }
 
     result_t<std::vector<typename DeserializeObject::entry>>
