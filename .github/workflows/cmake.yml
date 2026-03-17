@@ -9,105 +9,84 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
   SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
   CCACHE_BASEDIR: ${{ github.workspace }}
+  SCCACHE_BASEDIRS: ${{ github.workspace }}
   CCACHE_COMPILERCHECK: content
-  CCACHE_MAXSIZE: 750M
-  SCCACHE_CACHE_SIZE: 750M
+  CCACHE_MAXSIZE: 2G
+  SCCACHE_CACHE_SIZE: 2G
 
 jobs:
   build:
-    name: ${{ matrix.name }}
+    name: ${{ matrix.os_label }} | ${{ matrix.toolchain }} | ${{ matrix.build_name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # prettier-ignore
       matrix:
-        include:
-          - name: linux | gcc
-            os: ubuntu-24.04
-            pixi_env: linux-gcc
-            cc: gcc
-            cxx: g++
-            compiler_cache: ccache
-            cache_key: linux-gcc
-            builds: |
-              debug|Debug|
-              relwithdebinfo|RelWithDebInfo|
-              asan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON
-              ubsan|RelWithDebInfo|-DET_SANITIZE_UNDEFINED=ON
+        include: 
+          # Windows - MSVC
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: debug,                 cmake_args: "" }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: asan,                  cmake_args: "-DET_SANITIZE_ADDRESS=ON" }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: no-exceptions,         cmake_args: "-DET_ENABLE_EXCEPTIONS=OFF" }
 
-          - name: linux | clang
-            os: ubuntu-24.04
-            pixi_env: linux-clang
-            cc: clang
-            cxx: clang++
-            compiler_cache: ccache
-            cache_key: linux-clang
-            builds: |
-              debug|Debug|
-              asan+ubsan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON
-              tsan|RelWithDebInfo|-DET_SANITIZE_THREAD=ON
-              no-exceptions|RelWithDebInfo|-DET_ENABLE_EXCEPTIONS=OFF
+          # Windows - Clang-CL
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: debug,                 cmake_args: "" }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: relwithdebinfo,        cmake_args: "" }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: asan,                  cmake_args: "-DET_SANITIZE_ADDRESS=ON" }
 
-          - name: macos | apple-clang
-            os: macos-15
-            pixi_env: default
-            cc: /usr/bin/clang
-            cxx: /usr/bin/clang++
-            compiler_cache: ccache
-            cache_key: macos-appleclang
-            builds: |
-              debug|Debug|
-              asan+ubsan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON
+          # Windows - MinGW
+          - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: debug,                 cmake_args: "" }
+          - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: relwithdebinfo,        cmake_args: "" }
 
-          - name: macos | pixi-clang
-            os: macos-15
-            pixi_env: macos-clang
-            cc: clang
-            cxx: clang++
-            compiler_cache: ccache
-            cache_key: macos-clang
-            builds: |
-              debug|Debug|
-              relwithdebinfo|RelWithDebInfo|
-              no-exceptions+no-rtti|RelWithDebInfo|-DET_ENABLE_EXCEPTIONS=OFF -DET_ENABLE_RTTI=OFF
+          # Linux - GCC
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: debug,                 cmake_args: "" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: relwithdebinfo,        cmake_args: "" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: asan,                  cmake_args: "-DET_SANITIZE_ADDRESS=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: ubsan,                 cmake_args: "-DET_SANITIZE_UNDEFINED=ON" }
 
-          - name: windows | msvc
-            os: windows-2025
-            pixi_env: windows-msvc
-            cc: cl
-            cxx: cl
-            compiler_cache: sccache
-            needs_msvc_env: true
-            cache_key: windows-msvc
-            builds: |
-              debug|Debug|
-              asan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON
-              no-exceptions|RelWithDebInfo|-DET_ENABLE_EXCEPTIONS=OFF
+          # Linux - Clang
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: debug,                 cmake_args: "" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: asan+ubsan,            cmake_args: "-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: tsan,                  cmake_args: "-DET_SANITIZE_THREAD=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: no-exceptions,         cmake_args: "-DET_ENABLE_EXCEPTIONS=OFF" }
 
-          - name: windows | clang-cl
-            os: windows-2025
-            pixi_env: windows-llvm
-            cc: clang-cl
-            cxx: clang-cl
-            compiler_cache: sccache
-            needs_msvc_env: true
-            cache_key: windows-clang-cl
-            builds: |
-              debug|Debug|
-              relwithdebinfo|RelWithDebInfo|
-              asan|RelWithDebInfo|-DET_SANITIZE_ADDRESS=ON
+          # macOS - Apple Clang
+          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: debug,                 cmake_args: "" }
+          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: asan+ubsan,            cmake_args: "-DET_SANITIZE_ADDRESS=ON -DET_SANITIZE_UNDEFINED=ON" }
 
-          - name: windows | mingw
-            os: windows-2025
-            pixi_env: windows-mingw
-            cc: gcc
-            cxx: g++
-            compiler_cache: sccache
-            cache_key: windows-mingw
-            builds: |
-              debug|Debug|
-              relwithdebinfo|RelWithDebInfo|
+          # macOS - Clang
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: debug,                 cmake_args: "" }
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: relwithdebinfo,        cmake_args: "" }
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: no-exceptions+no-rtti, cmake_args: "-DET_ENABLE_EXCEPTIONS=OFF -DET_ENABLE_RTTI=OFF" }
 
     steps:
+      - name: Derive toolchain variables
+        shell: bash
+        run: |
+          # Build type: debug -> Debug, everything else -> RelWithDebInfo
+          if [[ "${{ matrix.build_name }}" == "debug" ]]; then
+            echo "BUILD_TYPE=Debug" >> "$GITHUB_ENV"
+          else
+            echo "BUILD_TYPE=RelWithDebInfo" >> "$GITHUB_ENV"
+          fi
+
+          # Toolchain-specific: PIXI_ENV, CC, CXX, COMPILER_CACHE, CACHE_KEY, NEEDS_MSVC_ENV
+          case "${{ matrix.os_label }}-${{ matrix.toolchain }}" in
+            linux-gcc)
+              echo "PIXI_ENV=linux-gcc"; echo "CC=gcc"; echo "CXX=g++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=linux-gcc" ;;
+            linux-clang)
+              echo "PIXI_ENV=linux-clang"; echo "CC=clang"; echo "CXX=clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=linux-clang" ;;
+            macos-apple-clang)
+              echo "PIXI_ENV=default"; echo "CC=/usr/bin/clang"; echo "CXX=/usr/bin/clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=macos-appleclang" ;;
+            macos-clang)
+              echo "PIXI_ENV=macos-clang"; echo "CC=clang"; echo "CXX=clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=macos-clang" ;;
+            windows-msvc)
+              echo "PIXI_ENV=windows-msvc"; echo "CC=cl"; echo "CXX=cl"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-msvc"; echo "NEEDS_MSVC_ENV=true" ;;
+            windows-clang-cl)
+              echo "PIXI_ENV=windows-llvm"; echo "CC=clang-cl"; echo "CXX=clang-cl"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-clang-cl"; echo "NEEDS_MSVC_ENV=true" ;;
+            windows-mingw)
+              echo "PIXI_ENV=windows-mingw"; echo "CC=gcc"; echo "CXX=g++"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-mingw" ;;
+          esac >> "$GITHUB_ENV"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -115,12 +94,12 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.9.3
         with:
           pixi-version: v0.61.0
-          environments: ${{ matrix.pixi_env }}
+          environments: ${{ env.PIXI_ENV }}
           activate-environment: true
           cache: true
 
       - name: Setup MSVC environment
-        if: ${{ matrix.needs_msvc_env }}
+        if: env.NEEDS_MSVC_ENV == 'true'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Restore CPM cache
@@ -134,89 +113,60 @@ jobs:
       - name: Restore compiler cache
         uses: actions/cache@v4
         with:
-          path: ${{ matrix.compiler_cache == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ matrix.compiler_cache }}-${{ runner.os }}-${{ matrix.cache_key }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml') }}
+          path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}
           restore-keys: |
-            ${{ matrix.compiler_cache }}-${{ runner.os }}-${{ matrix.cache_key }}-
-            ${{ matrix.compiler_cache }}-${{ runner.os }}-
+            ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}-
+            ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-
+            ${{ env.COMPILER_CACHE }}-${{ runner.os }}-
 
       - name: Configure, build, and test
         shell: bash
         run: |
           set -euxo pipefail
-          if [[ "${{ matrix.compiler_cache }}" == "ccache" ]]; then
+          if [[ "${{ env.COMPILER_CACHE }}" == "ccache" ]]; then
             ccache --zero-stats || true
           else
             sccache --stop-server || true
             sccache --zero-stats || true
           fi
-          status=0
+          build_dir="${BUILD_DIR}-${{ matrix.build_name }}"
 
-          configure_build() {
-            local build_dir="$1"
-            local build_type="$2"
-            local cmake_args="$3"
+          if [[ "${{ runner.os }}" == "macOS" && "${{ env.CC }}" == "clang" ]]; then
+            export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+            export CONDA_BUILD_SYSROOT="${SDKROOT}"
+            cmake -S . -B "${build_dir}" -G Ninja \
+              -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
+              -DCMAKE_C_COMPILER="${{ env.CC }}" \
+              -DCMAKE_CXX_COMPILER="${{ env.CXX }}" \
+              -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
+              -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}" \
+              -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}" \
+              -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+              -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+              -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
+              -DET_BUILD_ALL_TESTS=ON \
+              -DET_USE_CPM_FOR_TESTS=ON \
+              -DET_ENABLE_CCACHE=ON \
+              ${{ matrix.cmake_args }}
+          else
+            cmake -S . -B "${build_dir}" -G Ninja \
+              -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
+              -DCMAKE_C_COMPILER="${{ env.CC }}" \
+              -DCMAKE_CXX_COMPILER="${{ env.CXX }}" \
+              -DET_BUILD_ALL_TESTS=ON \
+              -DET_USE_CPM_FOR_TESTS=ON \
+              -DET_ENABLE_CCACHE=ON \
+              ${{ matrix.cmake_args }}
+          fi
 
-            if [[ "${{ runner.os }}" == "macOS" && "${{ matrix.cc }}" == "clang" ]]; then
-              export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-              export CONDA_BUILD_SYSROOT="${SDKROOT}"
-              cmake -S . -B "${build_dir}" -G Ninja \
-                -DCMAKE_BUILD_TYPE="${build_type}" \
-                -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
-                -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
-                -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
-                -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}" \
-                -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}" \
-                -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-                -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-                -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-                -DET_BUILD_ALL_TESTS=ON \
-                -DET_USE_CPM_FOR_TESTS=ON \
-                -DET_ENABLE_CCACHE=ON \
-                ${cmake_args}
-            else
-              cmake -S . -B "${build_dir}" -G Ninja \
-                -DCMAKE_BUILD_TYPE="${build_type}" \
-                -DCMAKE_C_COMPILER="${{ matrix.cc }}" \
-                -DCMAKE_CXX_COMPILER="${{ matrix.cxx }}" \
-                -DET_BUILD_ALL_TESTS=ON \
-                -DET_USE_CPM_FOR_TESTS=ON \
-                -DET_ENABLE_CCACHE=ON \
-                ${cmake_args}
-            fi
-          }
-
-          while IFS='|' read -r build_name build_type cmake_args; do
-            [[ -n "${build_name}" ]] || continue
-
-            build_dir="${BUILD_DIR}-${build_name}"
-            echo "::group::${{ matrix.name }} | ${build_name}"
-
-            if ! configure_build "${build_dir}" "${build_type}" "${cmake_args}"; then
-              status=1
-              echo "::endgroup::"
-              continue
-            fi
-
-            if ! cmake --build "${build_dir}" --parallel; then
-              status=1
-              echo "::endgroup::"
-              continue
-            fi
-
-            if ! ctest --test-dir "${build_dir}" --output-on-failure; then
-              status=1
-            fi
-
-            echo "::endgroup::"
-          done <<< "${{ matrix.builds }}"
-
-          exit "${status}"
+          cmake --build "${build_dir}" --parallel
+          ctest --test-dir "${build_dir}" --output-on-failure
 
       - name: Show compiler cache stats
         shell: bash
         run: |
-          if [[ "${{ matrix.compiler_cache }}" == "ccache" ]]; then
+          if [[ "${{ env.COMPILER_CACHE }}" == "ccache" ]]; then
             ccache --show-stats --verbose || true
           else
             sccache --show-stats || true
