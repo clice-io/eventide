@@ -654,4 +654,86 @@ task<std::vector<fs::dirent>, error> fs::readdir(fs::dir_handle& dir, event_loop
         loop);
 }
 
+// ============================================================================
+// Synchronous file operations
+// ============================================================================
+
+namespace {
+
+/// Returns the default loop handle for synchronous libuv fs calls.
+/// libuv sync operations (cb = nullptr) don't actually interact with the
+/// event loop, so uv_default_loop() is safe to use from any thread.
+uv_loop_t* sync_loop() noexcept {
+    return uv_default_loop();
+}
+
+}  // namespace
+
+result<int> fs::sync::open(std::string_view path, int flags, int mode) {
+    std::string p(path);
+    uv_fs_t req{};
+    int r = uv_fs_open(sync_loop(), &req, p.c_str(), flags, mode, nullptr);
+    uv_fs_req_cleanup(&req);
+    if(r < 0) {
+        return outcome_error(uv::status_to_error(r));
+    }
+    return r;
+}
+
+result<std::size_t> fs::sync::read(int fd, std::span<char> buf, std::int64_t offset) {
+    uv_buf_t uv_buf = uv_buf_init(buf.data(), static_cast<unsigned int>(buf.size()));
+    uv_fs_t req{};
+    int r = uv_fs_read(sync_loop(), &req, fd, &uv_buf, 1, offset, nullptr);
+    uv_fs_req_cleanup(&req);
+    if(r < 0) {
+        return outcome_error(uv::status_to_error(r));
+    }
+    return static_cast<std::size_t>(r);
+}
+
+result<std::size_t> fs::sync::write(int fd, std::span<const char> buf, std::int64_t offset) {
+    uv_buf_t uv_buf = uv_buf_init(const_cast<char*>(buf.data()), static_cast<unsigned int>(buf.size()));
+    uv_fs_t req{};
+    int r = uv_fs_write(sync_loop(), &req, fd, &uv_buf, 1, offset, nullptr);
+    uv_fs_req_cleanup(&req);
+    if(r < 0) {
+        return outcome_error(uv::status_to_error(r));
+    }
+    return static_cast<std::size_t>(r);
+}
+
+error fs::sync::close(int fd) {
+    uv_fs_t req{};
+    int r = uv_fs_close(sync_loop(), &req, fd, nullptr);
+    uv_fs_req_cleanup(&req);
+    if(r < 0) {
+        return uv::status_to_error(r);
+    }
+    return {};
+}
+
+result<std::string> fs::sync::read_to_string(std::string_view path) {
+    auto fd = open(path, UV_FS_O_RDONLY);
+    if(!fd) {
+        return outcome_error(fd.error());
+    }
+
+    std::string content;
+    char buf[4096];
+    while(true) {
+        auto n = read(*fd, std::span<char>(buf, sizeof(buf)));
+        if(!n) {
+            close(*fd);
+            return outcome_error(n.error());
+        }
+        if(*n == 0) {
+            break;
+        }
+        content.append(buf, *n);
+    }
+
+    close(*fd);
+    return content;
+}
+
 }  // namespace eventide
