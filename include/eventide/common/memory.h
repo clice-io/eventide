@@ -4,7 +4,6 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
-#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <iterator>
@@ -17,22 +16,6 @@
 #include <utility>
 
 #include "eventide/common/config.h"
-
-#if ETD_ENABLE_EXCEPTIONS
-#define ETD_THROW(exception_expr) throw exception_expr
-#define ETD_TRY try
-#define ETD_CATCH_ALL() catch(...)
-#define ETD_RETHROW() throw
-#else
-#define ETD_THROW(exception_expr)                                                                  \
-    do {                                                                                           \
-        static_cast<void>(sizeof(exception_expr));                                                 \
-        std::abort();                                                                              \
-    } while(false)
-#define ETD_TRY if(true)
-#define ETD_CATCH_ALL() else
-#define ETD_RETHROW() std::abort()
-#endif
 
 namespace eventide::mem {
 

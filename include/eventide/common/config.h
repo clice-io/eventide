@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdlib>
+
 // Compiler/workaround feature macros shared by tests and runtime headers.
 
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -43,4 +45,20 @@
 #define ETD_ENABLE_EXCEPTIONS 1
 #else
 #define ETD_ENABLE_EXCEPTIONS 0
+#endif
+
+#if ETD_ENABLE_EXCEPTIONS
+#define ETD_THROW(exception_expr) throw exception_expr
+#define ETD_TRY try
+#define ETD_CATCH_ALL() catch(...)
+#define ETD_RETHROW() throw
+#else
+#define ETD_THROW(exception_expr)                                                                  \
+    do {                                                                                           \
+        static_cast<void>(sizeof(exception_expr));                                                 \
+        std::abort();                                                                              \
+    } while(false)
+#define ETD_TRY if(true)
+#define ETD_CATCH_ALL() else
+#define ETD_RETHROW() std::abort()
 #endif
