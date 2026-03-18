@@ -295,6 +295,59 @@ TEST_CASE(wait_twice) {
     }
 }
 
+TEST_CASE(query_info_self) {
+    // Query info about our own process (always valid).
+    int self_pid = process::current_pid();
+
+    auto info = process::query_info(self_pid);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->pid, self_pid);
+    EXPECT_GT(info->rss, std::size_t{0});
+    EXPECT_GT(info->vsize, std::size_t{0});
+}
+
+TEST_CASE(query_info_child) {
+    event_loop loop;
+
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    // Run a command that takes a moment so we can query it while alive.
+    opts.args = {opts.file, "/c", "ping -n 2 127.0.0.1 >nul"};
+#else
+    opts.file = "/bin/sh";
+    opts.args = {opts.file, "-c", "sleep 0.2"};
+#endif
+    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+
+    auto pid = spawn_res->proc.pid();
+    EXPECT_GT(pid, 0);
+
+    // Query via the instance method.
+    auto info = spawn_res->proc.query_info();
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->pid, pid);
+    EXPECT_GT(info->rss, std::size_t{0});
+
+    // Query via the static overload.
+    auto info2 = process::query_info(pid);
+    ASSERT_TRUE(info2.has_value());
+    EXPECT_EQ(info2->pid, pid);
+
+    auto worker = wait_for_exit(spawn_res->proc);
+    loop.schedule(worker);
+    loop.run();
+}
+
+TEST_CASE(query_info_invalid_pid) {
+    // A very large pid should not correspond to any real process.
+    auto info = process::query_info(999999999);
+    EXPECT_FALSE(info.has_value());
+}
+
 };  // TEST_SUITE(process_io)
 
 }  // namespace eventide

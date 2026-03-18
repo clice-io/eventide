@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -188,6 +189,26 @@ task<void, error> lutime(std::string_view path,
 task<void, error> link(std::string_view path,
                        std::string_view new_path,
                        event_loop& loop = event_loop::current());
+
+namespace sync {
+
+/// Open a file. Returns the fd on success.
+/// flags: UV_FS_O_RDONLY, UV_FS_O_WRONLY, UV_FS_O_RDWR, etc.
+result<int> open(std::string_view path, int flags, int mode = 0);
+
+/// Read up to buf.size() bytes from fd at offset (-1 = current position).
+result<std::size_t> read(int fd, std::span<char> buf, std::int64_t offset = -1);
+
+/// Write buf to fd at offset (-1 = current position).
+result<std::size_t> write(int fd, std::span<const char> buf, std::int64_t offset = -1);
+
+/// Close a file descriptor.
+error close(int fd);
+
+/// Convenience: read entire file into a string.
+result<std::string> read_to_string(std::string_view path);
+
+}  // namespace sync
 
 }  // namespace fs
 
