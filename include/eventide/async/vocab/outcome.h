@@ -119,13 +119,14 @@ public:
     }
 
     auto&& value() &&
-        requires(!std::is_void_v<T>) {
-            assert(has_value());
-            return std::move(std::get<0>(variant));
-        }
+        requires (!std::is_void_v<T>)
+    {
+        assert(has_value());
+        return std::move(std::get<0>(variant));
+    }
 
-        auto& operator*() &
-            requires (!std::is_void_v<T>)
+    auto& operator*() &
+        requires (!std::is_void_v<T>)
     {
         return value();
     }
@@ -136,10 +137,14 @@ public:
         return value();
     }
 
-    auto&& operator*() && requires(!std::is_void_v<T>) { return std::move(*this).value(); }
+    auto&& operator*() &&
+        requires (!std::is_void_v<T>)
+    {
+        return std::move(*this).value();
+    }
 
-                          auto* operator-> ()
-                              requires (!std::is_void_v<T>)
+    auto* operator->()
+        requires (!std::is_void_v<T>)
     {
         return &value();
     }
@@ -165,13 +170,14 @@ public:
     }
 
     auto&& error() &&
-        requires(!std::is_void_v<E>) {
-            assert(has_error());
-            return std::move(std::get<1>(variant));
-        }
+        requires (!std::is_void_v<E>)
+    {
+        assert(has_error());
+        return std::move(std::get<1>(variant));
+    }
 
-        auto& cancellation() &
-            requires (!std::is_void_v<C>)
+    auto& cancellation() &
+        requires (!std::is_void_v<C>)
     {
         assert(is_cancelled());
         return std::get<2>(variant);
@@ -184,13 +190,15 @@ public:
         return std::get<2>(variant);
     }
 
-auto&& cancellation() &&
-    requires(!std::is_void_v<C>) {
+    auto&& cancellation() &&
+        requires (!std::is_void_v<C>)
+    {
         assert(is_cancelled());
         return std::move(std::get<2>(variant));
     }
 
-    private : std::variant<member_t<T>, member_t<E>, member_t<C>> variant;
+private:
+    std::variant<member_t<T>, member_t<E>, member_t<C>> variant;
 };
 
 template <typename T>
@@ -235,10 +243,14 @@ public:
         return data;
     }
 
-    auto&& value() && requires(!std::is_void_v<T>) { return std::move(data); }
+    auto&& value() &&
+        requires (!std::is_void_v<T>)
+    {
+        return std::move(data);
+    }
 
-        auto& operator*() &
-            requires (!std::is_void_v<T>)
+    auto& operator*() &
+        requires (!std::is_void_v<T>)
     {
         return value();
     }
@@ -249,10 +261,14 @@ public:
         return value();
     }
 
-    auto&& operator*() && requires(!std::is_void_v<T>) { return std::move(*this).value(); }
+    auto&& operator*() &&
+        requires (!std::is_void_v<T>)
+    {
+        return std::move(*this).value();
+    }
 
-                          auto* operator-> ()
-                              requires (!std::is_void_v<T>)
+    auto* operator->()
+        requires (!std::is_void_v<T>)
     {
         return &value();
     }
@@ -264,7 +280,7 @@ public:
     }
 
 private:
-    ET_NO_UNIQUE_ADDRESS
+    ETD_NO_UNIQUE_ADDRESS
     std::conditional_t<std::is_void_v<T>, std::type_identity<void>, T> data;
 };
 
