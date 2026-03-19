@@ -928,7 +928,7 @@ TEST_SUITE(ipc_peer_camel_case) {
 
 // Incoming request with camelCase params → handler receives correct values
 // Outgoing response contains camelCase result
-TEST_CASE(request_camel_case_params_and_result) {
+TEST_CASE(request_params_result) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":1,"method":"test/rangeAdd","params":{"firstValue":10,"secondValue":20}})",
     });
@@ -954,7 +954,7 @@ TEST_CASE(request_camel_case_params_and_result) {
 }
 
 // Incoming notification with camelCase params
-TEST_CASE(notification_camel_case_params) {
+TEST_CASE(notification_params) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","method":"test/statusNote","params":{"displayName":"alice","retryCount":3}})",
     });
@@ -977,7 +977,7 @@ TEST_CASE(notification_camel_case_params) {
 }
 
 // Outgoing request serializes params in camelCase
-TEST_CASE(outbound_request_camel_case) {
+TEST_CASE(outbound_request) {
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{},
         [](std::string_view payload, ScriptedTransport& channel) {

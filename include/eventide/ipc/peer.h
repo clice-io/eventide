@@ -11,6 +11,7 @@
 #include "eventide/ipc/bincode_codec.h"
 #include "eventide/ipc/codec.h"
 #include "eventide/ipc/json_codec.h"
+#include "eventide/ipc/logger.h"
 #include "eventide/ipc/transport.h"
 #include "eventide/async/async.h"
 
@@ -67,6 +68,8 @@ public:
     task<> run();
 
     Result<void> close_output();
+
+    void set_logger(LogCallback callback, LogLevel min_level = LogLevel::info);
 
     template <typename Params>
     RequestResult<Params> send_request(const Params& params, request_options opts = {});

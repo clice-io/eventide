@@ -34,7 +34,7 @@ CPP_KEYWORDS = {
 RECURSIVE_ALIASES = ("LSPAny", "LSPArray", "LSPObject")
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-TS_HEADER_INCLUDE = "eventide/language/ts.h"
+TS_HEADER_INCLUDE = "eventide/ipc/lsp/ts.h"
 GENERATED_NAMESPACE = "eventide::ipc::protocol"
 SOURCE_TAG = "scripts/lsp_codegen.py"
 DEFAULT_SCHEMA_PATH = SCRIPT_DIR / "schema.json"
@@ -1447,7 +1447,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=pathlib.Path("include/eventide/language/protocol.h"),
+        default=pathlib.Path("include/eventide/ipc/lsp/protocol.h"),
         help="Path to generated protocol header file (default: %(default)s)",
     )
     return parser.parse_args()

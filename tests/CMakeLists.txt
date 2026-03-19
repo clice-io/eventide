@@ -112,19 +112,10 @@ if(ETD_ENABLE_ASYNC AND ETD_SERDE_ENABLE_SIMDJSON)
     )
     target_link_libraries(unit_tests PRIVATE
         eventide::ipc
-    )
-
-    set(TEST_LANGUAGE_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_LANGUAGE_SOURCES INCLUDE REGEX "^tests/language/.*\\.cpp$")
-    list(TRANSFORM TEST_LANGUAGE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
-    target_sources(unit_tests PRIVATE
-        ${TEST_LANGUAGE_SOURCES}
-    )
-    target_link_libraries(unit_tests PRIVATE
-        eventide::language
+        eventide::ipc::lsp
     )
 else()
-    message(STATUS "ETD_ENABLE_ASYNC=OFF or ETD_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/language/*")
+    message(STATUS "ETD_ENABLE_ASYNC=OFF or ETD_SERDE_ENABLE_SIMDJSON=OFF: skipping tests/ipc/*")
 endif()
 
 target_include_directories(unit_tests PRIVATE

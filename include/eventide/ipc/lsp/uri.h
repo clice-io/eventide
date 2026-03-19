@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 /// Parsed URI value with helpers for LSP-style URI handling.
 ///
@@ -86,4 +86,4 @@ private:
     Segment fragment_segment;
 };
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp

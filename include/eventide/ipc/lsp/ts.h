@@ -89,11 +89,11 @@ struct IncomingMessage {
 
 }  // namespace eventide::ipc::protocol
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 namespace protocol = eventide::ipc::protocol;
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp
 
 namespace eventide::serde {
 

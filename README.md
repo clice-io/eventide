@@ -56,11 +56,12 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - timeout overloads report `RequestCancelled (-32800)` with message `"request timed out"`
   - `RequestContext` delegates via `operator->`; use `context->send_request(..., context.cancellation)` to propagate the inbound handler token explicitly
 
-### `language` (`include/eventide/language/*`)
+### `ipc/lsp` (`include/eventide/ipc/lsp/*`)
 
-- Generated LSP protocol model (`include/eventide/language/protocol.h`).
+- Generated LSP protocol model (`include/eventide/ipc/lsp/protocol.h`).
 - LSP URI and position helpers (`URI`, `PositionMapper`).
 - LSP request/notification traits layered onto `eventide::ipc::protocol`.
+- `ProgressReporter` for `$/progress` work-done notifications.
 
 ### `option` (`include/eventide/option/*`)
 
@@ -102,7 +103,7 @@ include/
     common/      # Shared utilities
     deco/        # Declarative CLI layer built on option + reflection
     ipc/         # IPC protocol, peer, and transport APIs
-    language/    # LSP protocol model and utilities
+    language/    # LSP protocol model and utilities (ipc/lsp)
     option/      # LLVM-compatible option parsing layer
     reflection/  # Compile-time reflection utilities
     serde/       # Generic serde + backend adapters
@@ -114,7 +115,7 @@ src/
   option/        # Option parser implementation
   deco/          # Deco target wiring (header-only APIs)
   serde/         # FlatBuffers/FlexBuffers serde implementation
-  language/      # URI/position implementations
+  ipc/lsp/   # URI/position implementations
   reflection/    # Reflection target wiring (header-only public APIs)
   zest/          # Test runner implementation
 
@@ -125,7 +126,7 @@ tests/
   eventide/      # Runtime/event-loop/IO/process/fs/sync tests
   ipc/           # IPC peer and transport tests
   serde/         # JSON/FlatBuffers serde tests
-  language/      # LSP utility and jsonrpc-trait integration tests
+  ipc/lsp/   # LSP utility, progress, and jsonrpc-trait tests
 
 examples/
   ipc/       # IPC stdio, scripted, and multi-process examples

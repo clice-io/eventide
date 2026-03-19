@@ -40,7 +40,7 @@ struct camel_config {
 
 TEST_SUITE(serde_simdjson_config) {
 
-TEST_CASE(default_field_rename_is_identity) {
+TEST_CASE(default_identity_rename) {
     protocol_payload input{
         .request_id = 7,
         .user_name = "alice",
@@ -60,7 +60,7 @@ TEST_CASE(default_field_rename_is_identity) {
     EXPECT_EQ(parsed.nested_info.some_value, 3);
 }
 
-TEST_CASE(compile_time_lower_camel_field_rename) {
+TEST_CASE(lower_camel_rename) {
     protocol_payload input{
         .request_id = 8,
         .user_name = "bob",
@@ -81,7 +81,7 @@ TEST_CASE(compile_time_lower_camel_field_rename) {
     EXPECT_EQ(parsed.nested_info.some_value, 11);
 }
 
-TEST_CASE(different_configs_in_same_scope) {
+TEST_CASE(mixed_configs) {
     protocol_payload input{
         .request_id = 9,
         .user_name = "carol",
@@ -99,7 +99,7 @@ TEST_CASE(different_configs_in_same_scope) {
               R"({"request_id":9,"user_name":"carol","nested_info":{"some_value":21}})");
 }
 
-TEST_CASE(compile_time_config_with_attr_override) {
+TEST_CASE(config_with_attr_override) {
     rename_override_payload renamed{};
     renamed.user_name = "id-1";
     renamed.request_id = 5;
@@ -114,21 +114,21 @@ TEST_CASE(compile_time_config_with_attr_override) {
     EXPECT_EQ(parsed.request_id, 6);
 }
 
-TEST_CASE(config_renamed_field_collision_fails_fast) {
+TEST_CASE(rename_collision_fails) {
     ambiguous_camel_payload parsed{};
     auto status = from_json<camel_config>(R"({"userId":1})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(status.error(), json::error_kind::invalid_state);
 }
 
-TEST_CASE(convenience_to_string_with_config) {
+TEST_CASE(to_string_with_config) {
     protocol_payload input{.request_id = 5, .user_name = "eve", .nested_info = {.some_value = 1}};
     auto encoded = json::to_string<camel_config>(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"requestId":5,"userName":"eve","nestedInfo":{"someValue":1}})");
 }
 
-TEST_CASE(convenience_parse_with_config) {
+TEST_CASE(parse_with_config) {
     protocol_payload parsed{};
     auto status = json::parse<camel_config>(
         R"({"requestId":3,"userName":"dan","nestedInfo":{"someValue":7}})",
@@ -139,7 +139,7 @@ TEST_CASE(convenience_parse_with_config) {
     EXPECT_EQ(parsed.nested_info.some_value, 7);
 }
 
-TEST_CASE(convenience_parse_returning_value_with_config) {
+TEST_CASE(parse_value_with_config) {
     auto result = json::parse<protocol_payload, camel_config>(
         R"({"requestId":2,"userName":"fay","nestedInfo":{"someValue":9}})");
     ASSERT_TRUE(result.has_value());

@@ -5,6 +5,7 @@
 #endif
 
 #include <deque>
+#include <format>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -18,6 +19,14 @@
 #include <vector>
 
 #include "eventide/common/function_traits.h"
+
+// Lazy log macro: level check happens before std::format is evaluated.
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define ET_IPC_LOG(self_ptr, lvl, fmt, ...)                       \
+    do {                                                          \
+        if((self_ptr)->logger && (lvl) >= (self_ptr)->min_level)  \
+            (self_ptr)->logger((lvl), std::format(fmt, __VA_ARGS__)); \
+    } while(false)
 
 namespace eventide::ipc {
 
@@ -108,10 +117,14 @@ struct Peer<CodecT>::Self {
     bool running = false;
     bool writer_running = false;
 
+    LogCallback logger;
+    LogLevel min_level = LogLevel::info;
+
     explicit Self(event_loop& external_loop, CodecT codec_arg) :
         loop(external_loop), codec(std::move(codec_arg)) {}
 
     void enqueue_outgoing(std::string payload) {
+        ET_IPC_LOG(this, LogLevel::trace, "send: {}", payload);
         outgoing_queue.push_back(std::move(payload));
         if(!writer_running) {
             writer_running = true;
@@ -130,6 +143,8 @@ struct Peer<CodecT>::Self {
 
             auto written = co_await transport->write_message(payload);
             if(!written) {
+                ET_IPC_LOG(this, LogLevel::error,
+                    "transport write failed: {}", written.error().message);
                 outgoing_queue.clear();
                 fail_pending_requests(written.error().message);
                 break;
@@ -140,6 +155,7 @@ struct Peer<CodecT>::Self {
     }
 
     void send_error(const protocol::RequestID& id, const Error& error) {
+        ET_IPC_LOG(this, LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
         if(response) {
             enqueue_outgoing(std::move(*response));
@@ -149,8 +165,11 @@ struct Peer<CodecT>::Self {
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
+            ET_IPC_LOG(this, LogLevel::warn, "orphan response for id={}", id.value);
             return;
         }
+
+        ET_IPC_LOG(this, LogLevel::debug, "response received for id={}", id.value);
 
         auto pending = std::move(it->second);
         pending_requests.erase(it);
@@ -163,6 +182,9 @@ struct Peer<CodecT>::Self {
             return;
         }
 
+        ET_IPC_LOG(this, LogLevel::error,
+            "failing {} pending request(s): {}", pending_requests.size(), message);
+
         auto values = pending_requests | std::views::values;
         std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
         pending_requests.clear();
@@ -174,6 +196,8 @@ struct Peer<CodecT>::Self {
     }
 
     void dispatch_notification(const std::string& method, std::string_view params) {
+        ET_IPC_LOG(this, LogLevel::debug, "notification: {}", method);
+
         if(method == "$/cancelRequest") {
             auto parsed = codec.template deserialize_value<protocol::CancelRequestParams>(params);
             if(parsed) {
@@ -193,12 +217,16 @@ struct Peer<CodecT>::Self {
 
         if(auto it = notification_callbacks.find(method); it != notification_callbacks.end()) {
             it->second(params);
+        } else {
+            ET_IPC_LOG(this, LogLevel::warn, "unhandled notification: {}", method);
         }
     }
 
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
                           std::string_view params) {
+        ET_IPC_LOG(this, LogLevel::debug, "request: {} id={}", method, id.value);
+
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
             return;
@@ -246,6 +274,7 @@ struct Peer<CodecT>::Self {
     }
 
     void dispatch_incoming_message(std::string_view payload) {
+        ET_IPC_LOG(this, LogLevel::trace, "recv: {}", payload);
         auto msg = codec.parse_message(payload);
         std::visit(
             [&](auto& m) {
@@ -286,6 +315,7 @@ task<> Peer<CodecT>::run() {
     }
 
     self->running = true;
+    ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
 
     while(self->transport) {
         auto payload = co_await self->transport->read_message();
@@ -297,6 +327,7 @@ task<> Peer<CodecT>::run() {
         self->dispatch_incoming_message(*payload);
     }
 
+    ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
     self->running = false;
 }
 
@@ -307,6 +338,12 @@ Result<void> Peer<CodecT>::close_output() {
     }
 
     return self->transport->close_output();
+}
+
+template <typename CodecT>
+void Peer<CodecT>::set_logger(LogCallback callback, LogLevel min_level) {
+    self->logger = std::move(callback);
+    self->min_level = min_level;
 }
 
 template <typename CodecT>
@@ -562,6 +599,9 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
             params_raw,
             protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
+            ET_IPC_LOG(peer->self.get(), LogLevel::warn,
+                "request '{}' params deserialization failed: {}",
+                method_name, parsed_params.error().message);
             co_return outcome_error(parsed_params.error());
         }
 
@@ -592,6 +632,9 @@ void Peer<CodecT>::bind_notification_callback(std::string_view method, Callback&
                     peer = this](std::string_view params_raw) {
         auto parsed_params = peer->self->codec.template deserialize_value<Params>(params_raw);
         if(!parsed_params) {
+            ET_IPC_LOG(peer->self.get(), LogLevel::warn,
+                "notification params deserialization failed: {}",
+                parsed_params.error().message);
             return;
         }
         std::invoke(cb, *parsed_params);
@@ -601,3 +644,5 @@ void Peer<CodecT>::bind_notification_callback(std::string_view method, Callback&
 }
 
 }  // namespace eventide::ipc
+
+#undef ET_IPC_LOG

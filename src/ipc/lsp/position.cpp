@@ -1,4 +1,4 @@
-#include "eventide/language/position.h"
+#include "eventide/ipc/lsp/position.h"
 
 #include <algorithm>
 #include <cassert>
@@ -151,7 +151,7 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
 
 }  // namespace
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 PositionEncoding parse_position_encoding(std::string_view encoding) {
     if(encoding == protocol::PositionEncodingKind::utf8) {
@@ -276,4 +276,4 @@ std::uint32_t PositionMapper::to_offset(protocol::Position position) const {
     return end;
 }
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp

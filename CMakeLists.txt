@@ -314,7 +314,6 @@ endif()
 
 if(ETD_ENABLE_ASYNC AND ETD_SERDE_ENABLE_SIMDJSON)
     add_subdirectory(src/ipc)
-    add_subdirectory(src/language)
 endif()
 
 if(ETD_ENABLE_ZEST AND (NOT ETD_ENABLE_TEST OR BUILD_TESTING))

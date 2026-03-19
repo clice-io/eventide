@@ -215,9 +215,9 @@ if has_config("async") and has_config("serde") and has_config("serde_simdjson") 
 
 	target("language", function()
 		set_kind("$(kind)")
-		add_files("src/language/*.cpp")
+		add_files("src/ipc/lsp/*.cpp")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/language/*)")
+		add_headerfiles("include/(eventide/ipc/lsp/*)")
 		add_deps("ipc")
 	end)
 end
@@ -254,7 +254,6 @@ if has_config("test") and has_config("ztest") then
 		end
 		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 			add_files("tests/ipc/**.cpp")
-			add_files("tests/language/**.cpp")
 		end
 
 		add_includedirs("include")

@@ -125,7 +125,7 @@ IncludeCategories:
     Priority: 30
     SortPriority: 44
 
-  - Regex: '^["<](eventide/language)/'
+  - Regex: '^["<](eventide/ipc/lsp)/'
     Priority: 30
     SortPriority: 45
 

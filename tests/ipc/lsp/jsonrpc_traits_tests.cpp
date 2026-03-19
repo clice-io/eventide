@@ -7,14 +7,14 @@
 #include <utility>
 #include <vector>
 
-#include "../ipc/test_transport.h"
+#include "../test_transport.h"
 #include "eventide/ipc/peer.h"
 #include "eventide/zest/zest.h"
 #include "eventide/async/async.h"
 #include "eventide/serde/json/deserializer.h"
-#include "eventide/language/protocol.h"
+#include "eventide/ipc/lsp/protocol.h"
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 namespace ipc = eventide::ipc;
 
@@ -62,20 +62,20 @@ struct Notification {
     NoteParams params;
 };
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp
 
 template <>
-struct eventide::ipc::protocol::RequestTraits<eventide::language::AddParams> {
-    using Result = eventide::language::AddResult;
+struct eventide::ipc::protocol::RequestTraits<eventide::ipc::lsp::AddParams> {
+    using Result = eventide::ipc::lsp::AddResult;
     constexpr inline static std::string_view method = "test/add";
 };
 
 template <>
-struct eventide::ipc::protocol::NotificationTraits<eventide::language::NoteParams> {
+struct eventide::ipc::protocol::NotificationTraits<eventide::ipc::lsp::NoteParams> {
     constexpr inline static std::string_view method = "test/note";
 };
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 TEST_SUITE(language_jsonrpc_traits) {
 
@@ -275,4 +275,4 @@ TEST_CASE(request_notify_apis) {
 
 };  // TEST_SUITE(language_jsonrpc_traits)
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp

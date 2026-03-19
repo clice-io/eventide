@@ -1,9 +1,9 @@
-#include "eventide/language/uri.h"
+#include "eventide/ipc/lsp/uri.h"
 
 #include <algorithm>
 #include <ranges>
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 namespace {
 
@@ -463,4 +463,4 @@ std::expected<std::string, std::string> URI::file_path() const {
     return *decoded_path;
 }
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp

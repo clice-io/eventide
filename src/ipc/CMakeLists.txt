@@ -18,3 +18,5 @@ target_link_libraries(eventide_ipc PUBLIC
 )
 
 eventide_apply_project_options(eventide_ipc)
+
+add_subdirectory(lsp)

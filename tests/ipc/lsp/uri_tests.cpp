@@ -1,7 +1,7 @@
 #include "eventide/zest/zest.h"
-#include "eventide/language/uri.h"
+#include "eventide/ipc/lsp/uri.h"
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 TEST_SUITE(language_uri) {
 
@@ -157,4 +157,4 @@ TEST_CASE(non_file_path_fails) {
 
 };  // TEST_SUITE(language_uri)
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp

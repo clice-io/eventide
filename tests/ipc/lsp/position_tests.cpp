@@ -1,9 +1,9 @@
 #include <cstdint>
 
 #include "eventide/zest/zest.h"
-#include "eventide/language/position.h"
+#include "eventide/ipc/lsp/position.h"
 
-namespace eventide::language {
+namespace eventide::ipc::lsp {
 
 TEST_SUITE(language_position) {
 
@@ -218,4 +218,4 @@ TEST_CASE(strict_utf8_validation) {
 
 };  // TEST_SUITE(language_position)
 
-}  // namespace eventide::language
+}  // namespace eventide::ipc::lsp
