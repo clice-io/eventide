@@ -226,34 +226,34 @@ if has_config("test") and has_config("ztest") then
 	target("unit_tests", function()
 		set_default(false)
 		set_kind("binary")
-		add_files("tests/main.cpp", "tests/common/**.cpp", "tests/reflection/**.cpp", "tests/zest/**.cpp")
+		add_files("tests/unit/main.cpp", "tests/unit/common/**.cpp", "tests/unit/reflection/**.cpp", "tests/unit/zest/**.cpp")
 		if has_config("async") then
-			add_files("tests/async/**.cpp")
+			add_files("tests/unit/async/**.cpp")
 			add_includedirs("examples/build_system")
 		end
 		if has_config("option") then
-			add_files("tests/option/**.cpp")
+			add_files("tests/unit/option/**.cpp")
 		end
 		if has_config("deco") and has_config("option") then
-			add_files("tests/deco/**.cc")
+			add_files("tests/unit/deco/**.cc")
 		end
 		if has_config("serde") and has_config("serde_simdjson") then
-			add_files("tests/serde/json/simdjson_*.cpp")
+			add_files("tests/unit/serde/json/simdjson_*.cpp")
 		end
 		if has_config("serde") and has_config("serde_yyjson") then
-			add_files("tests/serde/content/**.cpp")
+			add_files("tests/unit/serde/content/**.cpp")
 		end
 		if has_config("serde") and has_config("serde_flatbuffers") then
-			add_files("tests/serde/flatbuffers/**.cpp")
+			add_files("tests/unit/serde/flatbuffers/**.cpp")
 		end
 		if has_config("serde") and has_config("serde_toml") then
-			add_files("tests/serde/toml/**.cpp")
+			add_files("tests/unit/serde/toml/**.cpp")
 		end
 		if has_config("serde") then
-			add_files("tests/serde/bincode/**.cpp")
+			add_files("tests/unit/serde/bincode/**.cpp")
 		end
 		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
-			add_files("tests/ipc/**.cpp")
+			add_files("tests/unit/ipc/**.cpp")
 		end
 
 		add_includedirs("include")

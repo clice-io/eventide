@@ -120,13 +120,14 @@ src/
   zest/          # Test runner implementation
 
 tests/
-  option/        # Option parser behavior tests
-  deco/          # Declarative CLI/deco tests
-  reflection/    # Reflection behavior tests
-  eventide/      # Runtime/event-loop/IO/process/fs/sync tests
-  ipc/           # IPC peer and transport tests
-  serde/         # JSON/FlatBuffers serde tests
-  ipc/lsp/   # LSP utility, progress, and jsonrpc-trait tests
+  unit/          # Unit tests
+    option/      # Option parser behavior tests
+    deco/        # Declarative CLI/deco tests
+    reflection/  # Reflection behavior tests
+    async/       # Runtime/event-loop/IO/process/fs/sync tests
+    ipc/         # IPC peer and transport tests
+    serde/       # JSON/FlatBuffers serde tests
+    ipc/lsp/     # LSP utility, progress, and jsonrpc-trait tests
 
 examples/
   ipc/       # IPC stdio, scripted, and multi-process examples
