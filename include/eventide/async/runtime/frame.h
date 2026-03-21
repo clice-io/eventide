@@ -147,6 +147,9 @@ protected:
     explicit standard_task() : async_node(NodeKind::Task) {}
 
 public:
+    /// Optional hook invoked when a child task fails, allowing the parent to
+    /// intercept the error before normal resumption. Used by or_fail_task_await
+    /// to propagate errors directly without resuming the parent coroutine.
     using error_hook = std::coroutine_handle<> (*)(async_node* child, async_node* parent);
 
     std::coroutine_handle<> handle() {

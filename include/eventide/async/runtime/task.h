@@ -148,33 +148,48 @@ inline auto cancel() {
     return transition_await(async_node::Cancelled);
 }
 
+/// Carrier for or_fail(); transformed by await_transform in the promise.
 template <typename Outcome>
 struct or_fail_await {
     Outcome result;
 };
 
+/// An outcome-like type that carries an error channel (no cancel channel).
 template <typename Outcome>
 concept or_fail_result = is_outcome_v<std::remove_cvref_t<Outcome>> &&
                          std::is_void_v<typename std::remove_cvref_t<Outcome>::cancel_type> &&
                          (!std::is_void_v<typename std::remove_cvref_t<Outcome>::error_type>);
 
-// Propagate the error channel of an outcome-like object; otherwise resume with its value.
+/// Propagate the error channel of a non-task outcome; resume with its value on success.
+///
+///   auto value = co_await or_fail(some_result);  // propagates error or unwraps value
+///
 template <typename Outcome>
     requires or_fail_result<Outcome>
 auto or_fail(Outcome&& result) {
     return or_fail_await<std::remove_cvref_t<Outcome>>{std::forward<Outcome>(result)};
 }
 
+/// Carrier for fail(); holds forwarding references to the error constructor args.
+/// Must be consumed immediately via co_await (same lifetime constraint as
+/// std::forward_as_tuple).
 template <typename... Args>
 struct fail_await {
     std::tuple<Args&&...> args;
 };
 
+/// Construct an error and transition the current coroutine to Finished.
+///
+///   co_await fail(error_code, "message");  // replaces co_return outcome_error(...)
+///
 template <typename... Args>
 auto fail(Args&&... args) {
     return fail_await<Args...>{std::forward_as_tuple(std::forward<Args>(args)...)};
 }
 
+/// Awaitable returned by await_transform for or_fail(non-task outcome).
+/// When finish=true (error path): suspends and transitions to Finished.
+/// When finish=false (success path): ready immediately, await_resume unwraps the value.
 template <typename Outcome>
 struct or_fail_resume_await {
     Outcome result;
@@ -205,11 +220,20 @@ class task;
 
 namespace detail {
 
+/// Proxy returned by task::or_fail(). Holds the task until await_transform
+/// converts it into an or_fail_task_await.
 template <typename Task>
 struct or_fail_proxy {
     Task inner;
 };
 
+/// Error hook invoked by handle_subtask_result when a child task fails
+/// while an or_fail_task_await is active. Bypasses normal parent resumption
+/// by writing the child's error directly into the parent promise and
+/// transitioning the parent to Finished/Failed.
+///
+/// If the child threw an exception instead, clears the hook and lets the
+/// parent resume normally so await_resume can rethrow via rethrow_if_exception.
 template <typename ParentPromise, typename ParentError, typename ChildTask>
 std::coroutine_handle<> propagate_fail(async_node* child_node, async_node* parent_node) {
     auto* child = static_cast<typename ChildTask::promise_type*>(child_node);
@@ -219,16 +243,22 @@ std::coroutine_handle<> propagate_fail(async_node* child_node, async_node* paren
 
     child_task->clear_error_hook();
 
+    // Exception: let parent resume normally; await_resume will rethrow.
     if(child->propagated_exception) {
         return parent_task->handle();
     }
 
+    // Error: move into parent and short-circuit to Finished.
     assert(child->value.has_value() && child->value->has_error());
     parent->value.emplace(outcome_error(ParentError(std::move(*child->value).error())));
     parent_task->state = async_node::Failed;
     return parent_task->final_transition();
 }
 
+/// Awaitable for `co_await task.or_fail()`. Installs an error hook on the
+/// child task before suspension. On success, await_resume unwraps the value
+/// directly (skipping the outcome wrapper). On failure, the error hook
+/// fires and the parent never resumes at this point.
 template <typename ParentPromise, typename ParentError, typename ChildTask>
 struct or_fail_task_await {
     typename ChildTask::awaiter inner;
@@ -244,6 +274,7 @@ struct or_fail_task_await {
         return inner.await_suspend(awaiter, location);
     }
 
+    /// Only reached on success (error path is intercepted by the hook).
     auto await_resume() {
         inner.awaitee.h.promise().clear_error_hook();
         if constexpr(!std::is_void_v<typename ChildTask::value_type>) {
@@ -282,6 +313,7 @@ struct task_promise_object : standard_task, promise_result<T, E, void>, promise_
         return task_return_object<T, E>{handle()};
     }
 
+    /// co_await fail(args...): write error and transition to Finished.
     template <typename... Args>
     auto await_transform(fail_await<Args...>&& fail) noexcept
         requires (!std::is_void_v<E>) && std::constructible_from<E, Args...> {
@@ -291,6 +323,7 @@ struct task_promise_object : standard_task, promise_result<T, E, void>, promise_
         return transition_await(async_node::Finished);
     }
 
+    /// co_await or_fail(outcome): propagate error or unwrap value (non-task).
     template <typename Outcome>
     auto await_transform(or_fail_await<Outcome>&& failed) noexcept
         requires (!std::is_void_v<E>) &&
@@ -303,6 +336,7 @@ struct task_promise_object : standard_task, promise_result<T, E, void>, promise_
         return or_fail_resume_await<Outcome>{std::move(failed.result), false};
     }
 
+    /// co_await task.or_fail(): install error hook for cross-task propagation.
     template <typename ChildT, typename ChildE>
     auto await_transform(detail::or_fail_proxy<task<ChildT, ChildE, void>>&& wrapped) noexcept
         requires (!std::is_void_v<E>) && std::constructible_from<E, ChildE> {
@@ -311,6 +345,7 @@ struct task_promise_object : standard_task, promise_result<T, E, void>, promise_
             std::move(wrapped.inner).operator co_await()};
     }
 
+    /// Pass-through for all other awaitables.
     template <typename Awaitable>
     decltype(auto) await_transform(Awaitable&& awaitable) noexcept {
         return std::forward<Awaitable>(awaitable);
@@ -421,6 +456,11 @@ public:
         return awaiter(std::move(*this));
     }
 
+    /// Wrap this task so that co_await propagates errors directly to the parent
+    /// without resuming the parent coroutine. On success, returns the unwrapped value.
+    ///
+    ///   auto val = co_await some_task().or_fail();
+    ///
     auto or_fail() && noexcept
         requires (!std::is_void_v<E>) && std::is_void_v<C> {
         return detail::or_fail_proxy<task>{std::move(*this)};
