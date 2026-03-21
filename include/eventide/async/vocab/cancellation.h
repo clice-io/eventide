@@ -46,7 +46,7 @@ public:
         /// 2. Otherwise it waits until the token's internal event is set, then
         ///    cancels itself immediately.
         ///
-        /// The event itself only wakes the waiter; it does not propagate
+        /// The event itself only wakes the waiter; it does not fail
         /// cancellation upward. The trailing `co_await cancel();` is therefore
         /// essential: it converts "the cancellation event has fired" into the
         /// coroutine state `Cancelled`, which is what with_token(...) and other
@@ -140,7 +140,7 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
 
     if constexpr(!std::is_void_v<E>) {
         if(race_result.has_error()) {
-            co_return outcome_error(std::move(race_result).error());
+            co_await fail(std::move(race_result).error());
         }
     }
 
@@ -151,13 +151,8 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
         co_await cancel();
     }
 
-    auto& task_result = std::get<0>(*race_result);
-
-    if constexpr(std::is_void_v<T> && std::is_void_v<E>) {
-        co_return;
-    } else if constexpr(std::is_void_v<T>) {
-        co_return outcome_value();
-    } else {
+    if constexpr(!std::is_void_v<T>) {
+        auto& task_result = std::get<0>(*race_result);
         co_return std::move(task_result);
     }
 }

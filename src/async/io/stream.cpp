@@ -339,12 +339,12 @@ handle_type guess_handle(int fd) {
 
 task<std::string, error> stream::read() {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
-            co_return outcome_error(err);
+            co_await fail(err);
         }
     }
 
@@ -356,7 +356,7 @@ task<std::string, error> stream::read() {
 
 task<std::size_t, error> stream::read_some(std::span<char> dst) {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(dst.empty()) {
@@ -376,12 +376,12 @@ task<std::size_t, error> stream::read_some(std::span<char> dst) {
 task<stream::chunk, error> stream::read_chunk() {
     chunk out{};
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
-            co_return outcome_error(err);
+            co_await fail(err);
         }
     }
 
@@ -436,19 +436,17 @@ void stream::stop() {
 
 task<void, error> stream::write(std::span<const char> data) {
     if(!self || !self->initialized() || data.empty()) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(self->writer.has_waiter()) {
         assert(false && "stream::write supports a single writer at a time");
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(auto err = co_await stream_write_await{self.get(), data}) {
-        co_return outcome_error(std::move(err));
+        co_await fail(std::move(err));
     }
-
-    co_return outcome_value();
 }
 
 result<std::size_t> stream::try_write(std::span<const char> data) {

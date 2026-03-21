@@ -26,7 +26,7 @@ public:
 
     task<void, Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
-        co_return outcome_value();
+        co_return;
     }
 
     const std::vector<std::string>& outgoing() const {
@@ -68,7 +68,7 @@ public:
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return outcome_value();
+        co_return;
     }
 
     void push_incoming(std::string payload) {

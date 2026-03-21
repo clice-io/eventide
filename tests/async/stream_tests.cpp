@@ -106,10 +106,7 @@ task<std::string, error> read_some_from_pipe(pipe p) {
     std::array<char, 64> buf{};
     auto n = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
     event_loop::current().stop();
-    if(!n.has_value()) {
-        co_return outcome_error(n.error());
-    }
-    co_return std::string(buf.data(), *n);
+    co_return std::string(buf.data(), co_await or_fail(n));
 }
 
 task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
@@ -186,7 +183,7 @@ task<std::string, error> accept_and_read_pipe(pipe::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return outcome_error(conn_res.error());
+        co_await fail(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -202,22 +199,21 @@ task<void, error> connect_and_write_pipe(std::string_view name,
     auto conn_res = co_await pipe::connect(name);
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return outcome_error(conn_res.error());
+        co_await fail(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
     std::span<const char> data(payload.data(), payload.size());
     auto err = co_await conn.write(data);
-
     bump_and_stop(done, 2);
-    co_return err;
+    co_await or_fail(err);
 }
 
 task<std::string, error> accept_and_read(tcp::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current().stop();
-        co_return outcome_error(conn_res.error());
+        co_await fail(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -231,7 +227,7 @@ task<std::size_t, error> accept_and_read_some(tcp::acceptor acc) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         event_loop::current().stop();
-        co_return outcome_error(conn_res.error());
+        co_await fail(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -246,7 +242,7 @@ task<std::string, error> accept_and_read_once(tcp::acceptor acc, int& done) {
     auto conn_res = co_await acc.accept();
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return outcome_error(conn_res.error());
+        co_await fail(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
@@ -261,15 +257,14 @@ task<void, error>
     auto conn_res = co_await tcp::connect(host, port);
     if(!conn_res.has_value()) {
         bump_and_stop(done, 2);
-        co_return outcome_error(conn_res.error());
+        co_await fail(conn_res.error());
     }
 
     auto conn = std::move(*conn_res);
     std::span<const char> data(payload.data(), payload.size());
     auto err = co_await conn.write(data);
-
     bump_and_stop(done, 2);
-    co_return err;
+    co_await or_fail(err);
 }
 
 task<tcp, error> accept_once(tcp::acceptor& acc, int& done) {

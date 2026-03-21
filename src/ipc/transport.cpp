@@ -153,7 +153,7 @@ task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::
     auto connected = co_await tcp::connect(host, port, loop);
     auto channel = to_stream(std::move(connected));
     if(!channel) {
-        co_return outcome_error(channel.error());
+        co_await fail(channel.error());
     }
 
     co_return std::make_unique<StreamTransport>(std::move(*channel));
@@ -238,9 +238,8 @@ task<void, Error> StreamTransport::write_message(std::string_view payload) {
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
     if(status.has_error()) {
-        co_return outcome_error(Error(std::string(status.error().message())));
+        co_await fail(std::string(status.error().message()));
     }
-    co_return outcome_value();
 }
 
 Result<void> StreamTransport::close_output() {

@@ -67,14 +67,12 @@ task<void, error> queue(function<void()> fn, event_loop& loop) {
     op.req.data = &op;
 
     if(auto err = uv::queue_work(loop, op.req, work_cb, after_cb)) {
-        co_return outcome_error(err);
+        co_await fail(err);
     }
 
     if(auto err = co_await op) {
-        co_return outcome_error(std::move(err));
+        co_await fail(std::move(err));
     }
-
-    co_return outcome_value();
 }
 
 }  // namespace eventide

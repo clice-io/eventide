@@ -424,33 +424,29 @@ error udp::disconnect() {
 
 task<void, error> udp::send(std::span<const char> data, std::string_view host, int port) {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     auto resolved = uv::resolve_addr(host, port);
     if(!resolved) {
-        co_return outcome_error(resolved.error());
+        co_await fail(resolved.error());
     }
 
     if(auto err = co_await udp_send_await{self.get(),
                                           data,
                                           std::optional<sockaddr_storage>(resolved->storage)}) {
-        co_return outcome_error(std::move(err));
+        co_await fail(std::move(err));
     }
-
-    co_return outcome_value();
 }
 
 task<void, error> udp::send(std::span<const char> data) {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(auto err = co_await udp_send_await{self.get(), data, std::nullopt}) {
-        co_return outcome_error(std::move(err));
+        co_await fail(std::move(err));
     }
-
-    co_return outcome_value();
 }
 
 error udp::try_send(std::span<const char> data, std::string_view host, int port) {
@@ -502,7 +498,7 @@ error udp::stop_recv() {
 
 task<udp::recv_result, error> udp::recv() {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(self->recv.has_pending()) {
@@ -510,7 +506,7 @@ task<udp::recv_result, error> udp::recv() {
     }
 
     if(self->recv.has_waiter()) {
-        co_return outcome_error(error::connection_already_in_progress);
+        co_await fail(error::connection_already_in_progress);
     }
 
     co_return co_await udp_recv_await{self.get()};
