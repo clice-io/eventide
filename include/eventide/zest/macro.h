@@ -7,7 +7,7 @@
 #define TEST_SUITE(name) struct name##TEST : ::eventide::zest::TestSuiteDef<#name, name##TEST>
 
 #define TEST_CASE(name, ...)                                                                       \
-    void _register_##name() {                                                                      \
+    static bool _register_##name##_impl() {                                                        \
         constexpr auto file_name = std::source_location::current().file_name();                    \
         constexpr auto file_len = std::string_view(file_name).size();                              \
         (void)_register_suites<>;                                                                  \
@@ -16,7 +16,9 @@
                                   ::eventide::fixed_string<file_len>(file_name),                   \
                                   std::source_location::current().line() __VA_OPT__(, )            \
                                       __VA_ARGS__>;                                                \
+        return true;                                                                               \
     }                                                                                              \
+    inline static bool _register_##name = _register_##name##_impl();                               \
     void test_##name()
 
 #define ZEST_CHECK_IMPL(condition, return_action)                                                  \
