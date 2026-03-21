@@ -351,7 +351,7 @@ protected:
     }
 
     /// Deliver the latched completion to the aggregate awaiter once it is safe
-    /// to resume/fail out of the current callback stack.
+    /// to resume or propagate out of the current callback stack.
     std::coroutine_handle<> deliver_deferred() noexcept;
 
     /// Common await_suspend logic for all aggregate operations.
