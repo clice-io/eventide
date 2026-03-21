@@ -105,9 +105,13 @@ task<std::string, error> read_from_pipe(pipe p) {
 task<std::string, error> read_some_from_pipe(pipe p) {
     std::array<char, 64> buf{};
     auto n = co_await p.read_some(std::span<char>(buf.data(), buf.size()));
+    if(!n.has_value()) {
+        event_loop::current().stop();
+        co_await fail(n.error());
+        std::unreachable();
+    }
     event_loop::current().stop();
-    auto count = co_await or_fail(n);
-    co_return std::string(buf.data(), count);
+    co_return std::string(buf.data(), *n);
 }
 
 task<std::pair<std::string, std::size_t>> read_chunk_from_pipe(pipe p) {
