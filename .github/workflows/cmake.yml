@@ -32,10 +32,12 @@ jobs:
           - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: debug,                 cmake_args: "" }
           - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: relwithdebinfo,        cmake_args: "" }
           - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: asan,                  cmake_args: "-DETD_SANITIZE_ADDRESS=ON" }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: no-exceptions+no-rtti, cmake_args: "-DETD_ENABLE_EXCEPTIONS=OFF -DETD_ENABLE_RTTI=OFF" }
 
           # Windows - MinGW
           - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: debug,                 cmake_args: "" }
           - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: relwithdebinfo,        cmake_args: "" }
+          - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: no-exceptions+no-rtti, cmake_args: "-DETD_ENABLE_EXCEPTIONS=OFF -DETD_ENABLE_RTTI=OFF" }
 
           # Linux - GCC
           - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: debug,                 cmake_args: "" }
