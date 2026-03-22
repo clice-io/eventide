@@ -76,9 +76,10 @@ public:
         readable.set();
     }
 
-    void close() {
+    Result<void> close() override {
         closed = true;
         readable.set();
+        return {};
     }
 
     const std::vector<std::string>& outgoing() const {

@@ -67,6 +67,11 @@ public:
 
     task<> run();
 
+    /// Gracefully shut down the peer: cancel in-flight incoming requests,
+    /// fail pending outgoing requests, discard queued messages, and close
+    /// the transport so that run() exits.
+    Result<void> close();
+
     Result<void> close_output();
 
     void set_logger(LogCallback callback, LogLevel min_level = LogLevel::info);

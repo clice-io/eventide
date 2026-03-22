@@ -127,6 +127,10 @@ Result<void> Transport::close_output() {
     return outcome_error(Error("transport does not support closing output"));
 }
 
+Result<void> Transport::close() {
+    return outcome_error(Error("transport does not support close"));
+}
+
 StreamTransport::StreamTransport(stream input, stream output) :
     read_stream(std::move(input)), write_stream(std::move(output)) {}
 
@@ -244,6 +248,15 @@ Result<void> StreamTransport::close_output() {
     }
 
     write_stream = stream{};
+    return {};
+}
+
+Result<void> StreamTransport::close() {
+    read_stream.stop();
+    read_stream = stream{};
+    if(!shared_stream) {
+        write_stream = stream{};
+    }
     return {};
 }
 
