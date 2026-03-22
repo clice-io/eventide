@@ -56,11 +56,11 @@ std::vector<std::string> make_args(Args&&... args) {
 TEST_SUITE(deco_git) {
 
 TEST_CASE(usage_lists_git_style_subcommands) {
-    deco::cli::Dispatcher<GitCommitOpt> commit_dispatcher("git commit [OPTIONS]");
-    commit_dispatcher.dispatch([](GitCommitOpt) {});
+    auto commit_command = deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    commit_command.matchAll([](GitCommitOpt) {});
 
-    deco::cli::Dispatcher<GitCloneOpt> clone_dispatcher("git clone [OPTIONS]");
-    clone_dispatcher.dispatch([](GitCloneOpt) {});
+    auto clone_command = deco::cli::command<GitCloneOpt>("git clone [OPTIONS]");
+    clone_command.matchAll([](GitCloneOpt) {});
 
     deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]",
                                 "A fast, scalable, distributed version control system");
@@ -69,13 +69,13 @@ TEST_CASE(usage_lists_git_style_subcommands) {
                .name = "commit",
                .description = "Record changes to the repository",
            },
-           commit_dispatcher)
+           commit_command)
         .add(
             deco::decl::SubCommand{
                 .name = "clone",
                 .description = "Clone a repository into a new directory",
             },
-            clone_dispatcher);
+            clone_command);
 
     std::stringstream ss;
     git.usage(ss);
@@ -93,9 +93,9 @@ TEST_CASE(clone_subcommand_parses_input_and_option) {
     std::string dispatch_err;
     std::string subcommand_err;
 
-    deco::cli::Dispatcher<GitCloneOpt> clone_dispatcher("git clone [OPTIONS] REPO");
-    clone_dispatcher
-        .dispatch([&](GitCloneOpt opt) {
+    auto clone_command = deco::cli::command<GitCloneOpt>("git clone [OPTIONS] REPO");
+    clone_command
+        .matchAll([&](GitCloneOpt opt) {
             EXPECT_TRUE(opt.repo.has_value());
             if(opt.repo.has_value()) {
                 repo = *opt.repo;
@@ -105,7 +105,7 @@ TEST_CASE(clone_subcommand_parses_input_and_option) {
                 branch = *opt.branch;
             }
         })
-        .when_err([&](auto err) { dispatch_err = err.message; });
+        .on_error([&](auto err) { dispatch_err = err.message; });
 
     deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(
@@ -113,7 +113,7 @@ TEST_CASE(clone_subcommand_parses_input_and_option) {
                .name = "clone",
                .description = "Clone a repository into a new directory",
            },
-           clone_dispatcher)
+           clone_command)
         .when_err([&](auto err) { subcommand_err = err.message; });
 
     auto args = make_args("clone", "https://example.com/demo.git", "-b", "main");
@@ -129,8 +129,8 @@ TEST_CASE(commit_subcommand_reports_required_option_error) {
     std::string dispatch_err;
     std::string subcommand_err;
 
-    deco::cli::Dispatcher<GitCommitOpt> commit_dispatcher("git commit [OPTIONS]");
-    commit_dispatcher.dispatch([](GitCommitOpt) {}).when_err([&](auto err) {
+    auto commit_command = deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    commit_command.matchAll([](GitCommitOpt) {}).on_error([&](auto err) {
         dispatch_err = err.message;
     });
 
@@ -140,7 +140,7 @@ TEST_CASE(commit_subcommand_reports_required_option_error) {
                .name = "commit",
                .description = "Record changes to the repository",
            },
-           commit_dispatcher)
+           commit_command)
         .when_err([&](auto err) { subcommand_err = err.message; });
 
     auto args = make_args("commit", "-a");
@@ -153,8 +153,8 @@ TEST_CASE(commit_subcommand_reports_required_option_error) {
 TEST_CASE(unknown_subcommand_reports_error) {
     std::string subcommand_err;
 
-    deco::cli::Dispatcher<GitCommitOpt> commit_dispatcher("git commit [OPTIONS]");
-    commit_dispatcher.dispatch([](GitCommitOpt) {});
+    auto commit_command = deco::cli::command<GitCommitOpt>("git commit [OPTIONS]");
+    commit_command.matchAll([](GitCommitOpt) {});
 
     deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(
@@ -162,7 +162,7 @@ TEST_CASE(unknown_subcommand_reports_error) {
                .name = "commit",
                .description = "Record changes to the repository",
            },
-           commit_dispatcher)
+           commit_command)
         .when_err([&](auto err) { subcommand_err = err.message; });
 
     auto args = make_args("cherry-pick");
@@ -174,8 +174,8 @@ TEST_CASE(unknown_subcommand_reports_error) {
 TEST_CASE(required_category_error_is_reported) {
     std::string dispatch_err;
 
-    deco::cli::Dispatcher<GitTagOpt> tag_dispatcher("git tag [OPTIONS]");
-    tag_dispatcher.dispatch([](GitTagOpt) {}).when_err([&](auto err) {
+    auto tag_command = deco::cli::command<GitTagOpt>("git tag [OPTIONS]");
+    tag_command.matchAll([](GitTagOpt) {}).on_error([&](auto err) {
         dispatch_err = err.message;
     });
 
@@ -185,7 +185,7 @@ TEST_CASE(required_category_error_is_reported) {
             .name = "tag",
             .description = "Create, list, delete or verify a tag object",
         },
-        tag_dispatcher);
+        tag_command);
 
     auto args = make_args("tag");
     git(args);

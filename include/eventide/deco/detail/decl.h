@@ -281,6 +281,14 @@ struct IntoContext {
                                                                      std::string(reason)),
                                             renderer_ptr);
     }
+
+    template <typename T>
+    auto format_error(std::optional<T> reason) const -> std::optional<T> {
+        if(reason) {
+            return format_error(reason.value());
+        }
+        return std::nullopt;
+    }
 };
 
 struct DecoFields {
@@ -592,7 +600,7 @@ std::optional<std::string> assign_vector(std::optional<ResTy>& target,
     } else if constexpr(trait::CustomStringVectorResultTy<ResTy>) {
         auto& res = target.emplace();
         std::vector<std::string_view> custom_values(values.begin(), values.end());
-        return res.into(custom_values);
+        return context.format_error(res.into(custom_values));
     } else {
         using item_type = typename ResTy::value_type;
         ResTy parsed;

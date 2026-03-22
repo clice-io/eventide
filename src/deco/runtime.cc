@@ -39,7 +39,8 @@ auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler
     std::string command = command_of(subcommand);
     if(command.empty()) {
         errorHandler(
-            {SubCommandError::Type::Internal, "subcommand name/command must not be empty"});
+            SubCommandError{SubCommandError::Type::Internal,
+                            "subcommand name/command must not be empty"});
         return *this;
     }
 
@@ -161,8 +162,10 @@ void SubCommander::parse(std::span<std::string> argv) {
             handlers[it->second].handler(std::move(*matched));
             return;
         }
-        errorHandler({SubCommandError::Type::Internal,
-                      std::format("missing handler for subcommand '{}'", matched->command)});
+        errorHandler(SubCommandError{
+            SubCommandError::Type::Internal,
+            std::format("missing handler for subcommand '{}'", matched->command),
+        });
         return;
     }
 
@@ -171,7 +174,8 @@ void SubCommander::parse(std::span<std::string> argv) {
         return;
     }
 
-    errorHandler({SubCommandError::Type::Internal, "default route resolved without handler"});
+    errorHandler(
+        SubCommandError{SubCommandError::Type::Internal, "default route resolved without handler"});
 }
 
 void SubCommander::operator()(std::span<std::string> argv) {

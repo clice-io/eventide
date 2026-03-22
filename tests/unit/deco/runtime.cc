@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <print>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -259,10 +260,6 @@ struct CommandFlowOpt {
 
     DecoKV(names = {"--target"}; required = false)
     <std::string> target;
-};
-
-struct CommandFlowState {
-    std::string entry;
 };
 
 struct NestedAfterFirstLeaf {
@@ -706,20 +703,21 @@ TEST_CASE(command_after_supports_nested_member_paths) {
     EXPECT_TRUE(seen == "hit");
 }
 
-TEST_CASE(command_context_supports_state_finalize_and_run) {
+TEST_CASE(command_callbacks_can_capture_state_finalize_and_match_all) {
     std::string seen;
-    auto command = deco::cli::command<CommandFlowOpt, CommandFlowState>("run");
+    std::string entry;
+    auto command = deco::cli::command<CommandFlowOpt>("run");
     command
-        .after<&CommandFlowOpt::script>([prefix = std::string("entry:")](auto& step) {
-            step.state().entry = prefix + step.value();
+        .after<&CommandFlowOpt::script>([prefix = std::string("entry:"), &entry](auto& step) {
+            entry = prefix + step.value();
             return step.next();
         })
         .finalize([](auto& ctx) {
-            if(!ctx.options().target.has_value()) {
-                ctx.options().target = std::string("default");
+            if(!ctx.options.target.has_value()) {
+                ctx.options.target = std::string("default");
             }
         })
-        .run([&](auto& ctx) { seen = ctx.state().entry + "|" + ctx.options().target.value(); });
+        .matchAll([&](auto& ctx) { seen = entry + "|" + ctx.options.target.value(); });
 
     command(into_deco_args("main.lua"));
     EXPECT_TRUE(seen == "entry:main.lua|default");
@@ -727,76 +725,76 @@ TEST_CASE(command_context_supports_state_finalize_and_run) {
 
 };  // TEST_SUITE(cli_parse)
 
-TEST_SUITE(dispatcher) {
+TEST_SUITE(command_match) {
 
-TEST_CASE(dispatching) {
-    auto dispactcher = deco::cli::Dispatcher<WebCliOpt>("webcli [OPTIONS]");
+TEST_CASE(match_dispatches_by_category) {
+    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
     std::stringstream ss;
-    dispactcher.dispatch(WebCliOpt::Cate::version_category, [&](auto) { ss << "Version 1.0.0"; })
-        .dispatch(WebCliOpt::Cate::help_category, [&](auto) { dispactcher.usage(ss, true); })
-        .dispatch(WebCliOpt::Cate::request_category,
-                  [&](WebCliOpt opt) {
-                      EXPECT_TRUE(opt.request.method.has_value());
-                      EXPECT_TRUE(opt.request.url.has_value());
-                  })
-        .when_err([&](auto err) { ss << "Error: " << err.message << "\n"; });
+    command.match(WebCliOpt::Cate::version_category, [&](auto) { ss << "Version 1.0.0"; })
+        .match(WebCliOpt::Cate::help_category, [&](auto) { command.usage(ss, true); })
+        .match(WebCliOpt::Cate::request_category,
+               [&](WebCliOpt opt) {
+                   EXPECT_TRUE(opt.request.method.has_value());
+                   EXPECT_TRUE(opt.request.url.has_value());
+               })
+        .on_error([&](auto err) { ss << "Error: " << err.message << "\n"; });
 
-    dispactcher(into_deco_args("-v"));
+    command(into_deco_args("-v"));
     EXPECT_TRUE(ss.str().contains("Version 1.0.0"));
 
     ss.str("");
-    dispactcher(into_deco_args("--help"));
-    EXPECT_TRUE(ss.str().contains("usage: webcli [OPTIONS]"));
+    command(into_deco_args("--help"));
+    EXPECT_TRUE(ss.str().contains("webcli [OPTIONS]"));
 
     ss.str("");
-    dispactcher(into_deco_args("-X", "GET", "--url", "https://example.com"));
+    command(into_deco_args("-X", "GET", "--url", "https://example.com"));
 }
 
-TEST_CASE(dispatching_with_invocation_context) {
-    auto dispatcher = deco::cli::Dispatcher<WebCliOpt>("webcli [OPTIONS]");
+TEST_CASE(match_can_observe_invocation_context) {
+    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
     std::string seen_url;
     unsigned seen_trace_size = 0;
-    dispatcher.dispatch(WebCliOpt::Cate::request_category,
-                        [&](const deco::cli::Invocation<WebCliOpt>& invocation) {
-                            EXPECT_TRUE(invocation.matched(WebCliOpt::Cate::request_category));
-                            seen_trace_size = invocation.trace().size();
-                            seen_url = invocation.options.request.url->url;
-                        });
+    command.match(WebCliOpt::Cate::request_category,
+                  [&](const deco::cli::Invocation<WebCliOpt>& invocation) {
+                      EXPECT_TRUE(invocation.matched(WebCliOpt::Cate::request_category));
+                      seen_trace_size = invocation.trace().size();
+                      seen_url = invocation.options.request.url->url;
+                  });
 
-    dispatcher(into_deco_args("-X", "GET", "--url", "https://example.com"));
+    command(into_deco_args("-X", "GET", "--url", "https://example.com"));
     EXPECT_TRUE(seen_url == "https://example.com");
     EXPECT_EQ(seen_trace_size, 2u);
 }
 
-TEST_CASE(dispatcher_usage_respects_text_style_override) {
-    auto dispatcher = deco::cli::Dispatcher<WebCliOpt>("webcli [OPTIONS]");
+TEST_CASE(command_usage_respects_text_style_override) {
+    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
     auto style = deco::cli::text::default_text_style();
     style.usage.options_heading = "Flags:";
     style.usage.group_by_category = false;
-    dispatcher.text_style(style);
+    command.text_style(style);
 
     std::stringstream ss;
-    dispatcher.usage(ss);
+    command.usage(ss);
     EXPECT_TRUE(ss.str().contains("Flags:"));
     EXPECT_TRUE(!ss.str().contains("Options:"));
 }
 
-TEST_CASE(dispatcher_can_use_custom_renderer) {
+TEST_CASE(command_can_use_custom_renderer) {
     std::string seen_error;
-    auto dispatcher = deco::cli::Dispatcher<WebCliOpt>("webcli [OPTIONS]");
-    dispatcher.render_with(make_custom_renderer()).when_err([&](auto err) {
+    auto command = deco::cli::command<WebCliOpt>("webcli [OPTIONS]");
+    command.render_with(make_custom_renderer()).on_error([&](auto err) {
         seen_error = err.message;
     });
 
     std::stringstream ss;
-    dispatcher.usage(ss);
+    command.usage(ss);
     EXPECT_TRUE(ss.str() == "USAGE<webcli [OPTIONS]:help>");
 
-    dispatcher(into_deco_args("--unknown"));
+    command(into_deco_args("--unknown"));
     EXPECT_TRUE(seen_error == "ERR<0:unknown option '--unknown'>");
 }
 
-};  // TEST_SUITE(dispatcher)
+};  // TEST_SUITE(command_match)
 
 TEST_SUITE(subcommander) {
 
@@ -874,17 +872,17 @@ TEST_CASE(dispatching_with_subcommand_match_handler) {
     EXPECT_TRUE(seen == "run:-v");
 }
 
-TEST_CASE(dispatching_with_subcommand_dispatcher) {
+TEST_CASE(dispatching_with_subcommand_command) {
     std::stringstream ss;
-    deco::cli::Dispatcher<WebCliOpt> web_dispatcher("web [OPTIONS]");
-    web_dispatcher
-        .dispatch(WebCliOpt::Cate::request_category,
-                  [&](WebCliOpt opt) {
-                      EXPECT_TRUE(opt.request.method.has_value());
-                      EXPECT_TRUE(opt.request.url.has_value());
-                      ss << "request-ok";
-                  })
-        .when_err([&](auto err) { ss << "dispatch-err:" << err.message; });
+    auto web_command = deco::cli::command<WebCliOpt>("web [OPTIONS]");
+    web_command
+        .match(WebCliOpt::Cate::request_category,
+               [&](WebCliOpt opt) {
+                   EXPECT_TRUE(opt.request.method.has_value());
+                   EXPECT_TRUE(opt.request.url.has_value());
+                   ss << "request-ok";
+               })
+        .on_error([&](auto err) { ss << "dispatch-err:" << err.message; });
 
     deco::cli::SubCommander subcommander("catter [OPTIONS]");
     subcommander
@@ -893,7 +891,7 @@ TEST_CASE(dispatching_with_subcommand_dispatcher) {
                 .name = "web",
                 .description = "Web request",
             },
-            web_dispatcher)
+            web_command)
         .when_err([&](auto err) { ss << "sub-err:" << err.message; });
 
     std::vector<std::string> args = {"web", "-X", "GET", "--url", "https://example.com"};
@@ -1033,7 +1031,7 @@ TEST_CASE(catter_v2) {
     auto cli = deco::cli::command<CatterOpt>(
         "catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
     auto eat_script_args = [](auto& step) {
-        unsigned idx = step.context().next_cursor();
+        unsigned idx = step.next_cursor();
         std::span<std::string> original_argv = step.original_argv();
         while(idx < original_argv.size() && original_argv[idx] != "--") {
             step.options().script_args.push_back(original_argv[idx++]);
@@ -1043,7 +1041,7 @@ TEST_CASE(catter_v2) {
     cli.after<&CatterOpt::external_script>(eat_script_args)
         .after<&CatterOpt::internal_script>(eat_script_args)
         .after<&CatterOpt::help>([](auto& step) {
-            step.context().usage(std::cerr);
+            step.usage(std::cerr);
             return step.stop();
         });
 }

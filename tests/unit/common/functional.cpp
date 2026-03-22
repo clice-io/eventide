@@ -62,6 +62,7 @@ struct NonTrivialCallable {
 
 static_assert(!std::is_trivially_copyable_v<NonTrivialCallable>);
 static_assert(function<int(int)>::sbo_eligible<NonTrivialCallable>);
+static_assert(!std::is_invocable_v<const function<int(int)>&, int>);
 
 // --- Tests ---
 
@@ -181,6 +182,12 @@ TEST_CASE(function_from_small_lambda_sbo) {
     EXPECT_EQ(fn(-10), 0);
 };
 
+TEST_CASE(function_from_generic_lambda) {
+    function<int(int)> fn([offset = 7](auto x) -> int { return offset + x; });
+    EXPECT_EQ(fn(5), 12);
+    EXPECT_EQ(fn(-7), 0);
+};
+
 TEST_CASE(function_from_large_lambda_heap) {
     // Large lambda uses heap allocation
     char padding[32] = {};
@@ -194,6 +201,15 @@ TEST_CASE(function_from_large_lambda_heap) {
     function<int(int)> fn(std::move(lambda));
     EXPECT_EQ(fn(8), 50);
     EXPECT_EQ(fn(-42), 0);
+};
+
+TEST_CASE(function_from_mutable_lambda) {
+    function<int(int)> fn([sum = 0](int x) mutable -> int {
+        sum += x;
+        return sum;
+    });
+    EXPECT_EQ(fn(2), 2);
+    EXPECT_EQ(fn(3), 5);
 };
 
 TEST_CASE(function_move_construct) {
@@ -241,6 +257,15 @@ TEST_CASE(function_void_return) {
     function<void(int)> fn([&result](int v) { result = v; });
     fn(99);
     EXPECT_EQ(result, 99);
+};
+
+TEST_CASE(function_accepts_move_only_value_argument) {
+    function<std::unique_ptr<int>(std::unique_ptr<int>)> fn([](std::unique_ptr<int> value) {
+        return std::make_unique<int>(*value + 1);
+    });
+    auto result = fn(std::make_unique<int>(41));
+    EXPECT_TRUE(result != nullptr);
+    EXPECT_EQ(*result, 42);
 };
 
 TEST_CASE(function_with_mem_fn_small) {

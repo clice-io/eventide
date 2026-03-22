@@ -22,6 +22,7 @@
 #include "./decl.h"
 #include "./descriptor.h"
 #include "./text.h"
+#include "eventide/common/functional.h"
 
 namespace deco::util {
 
@@ -32,24 +33,21 @@ std::vector<std::string> argvify(int argc, const char* const* argv, unsigned ski
 namespace deco::cli {
 
 template <typename Signature>
-using runtime_callable_t =
-#if defined(__APPLE__)
-    std::function<Signature>;
-#else
-    std::move_only_function<Signature>;
-#endif
+using runtime_callable_t = eventide::function<Signature>;
 
-template <typename T, typename State = std::monostate>
+template <typename T>
 struct Invocation {
     unsigned next_index = 0;
     T options{};
-    State state{};
     std::set<const decl::Category*> matched_categories;
     std::span<std::string> original_argv{};
     std::span<std::string> active_argv{};
     std::shared_ptr<std::vector<std::string>> owned_active_argv{};
     std::vector<backend::ParsedArgumentOwning> parsed_arguments{};
     std::vector<std::string> command_path{};
+    std::string_view command_overview{};
+    void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*) = nullptr;
+    const text::Renderer* renderer_ptr = nullptr;
 
     auto next_cursor() const -> unsigned {
         return next_index;
@@ -76,6 +74,34 @@ struct Invocation {
 
     auto matched(const decl::Category& category) const -> bool {
         return matched_categories.contains(&category);
+    }
+
+    auto renderer() const -> const text::Renderer& {
+        return text::resolve_renderer(renderer_ptr);
+    }
+
+    auto into_context_at_cursor(unsigned index) const -> decl::IntoContext {
+        const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
+        return decl::IntoContext::at_cursor(argv_view, index, renderer_ptr);
+    }
+
+    auto into_context(const backend::ParsedArgumentOwning& arg) const -> decl::IntoContext {
+        const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
+        return decl::IntoContext::from_argument(argv_view, arg, renderer_ptr);
+    }
+
+    auto format_error(std::string_view reason) const -> std::string {
+        return into_context_at_cursor(next_cursor()).format_error(reason);
+    }
+
+    auto usage(std::ostream& os, bool include_help = true) const -> void {
+        if(usage_writer != nullptr) {
+            usage_writer(os, command_overview, include_help, renderer_ptr);
+        }
+    }
+
+    auto print_usage(bool include_help = true, std::ostream& os = std::cout) const -> void {
+        usage(os, include_help);
     }
 };
 
@@ -181,24 +207,26 @@ void write_usage_for(std::ostream& os,
                              renderer);
 }
 
-template <typename T, typename State = std::monostate>
-class Context {
-    using invocation_t = Invocation<T, State>;
+template <typename T, typename FieldTy>
+class AfterStep {
+    using invocation_t = Invocation<T>;
 
     invocation_t* invocation_ptr = nullptr;
-    std::string_view command_overview{};
-    void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*) = nullptr;
-    const text::Renderer* renderer_ptr = nullptr;
+    const backend::ParsedArgumentOwning* parsed_arg = nullptr;
+    unsigned next_cursor_index = 0;
+    std::span<std::string> argv_span{};
+    const FieldTy* parsed_value = nullptr;
 
 public:
-    Context() = default;
+    AfterStep() = default;
 
-    Context(invocation_t& invocation,
-            std::string_view command_overview,
-            void (*usage_writer)(std::ostream&, std::string_view, bool, const text::Renderer*),
-            const text::Renderer* renderer = nullptr) :
-        invocation_ptr(&invocation), command_overview(command_overview), usage_writer(usage_writer),
-        renderer_ptr(renderer) {}
+    AfterStep(invocation_t& invocation,
+              const backend::ParsedArgumentOwning& arg,
+              unsigned next_cursor,
+              std::span<std::string> argv,
+              const FieldTy& value) :
+        invocation_ptr(&invocation), parsed_arg(&arg), next_cursor_index(next_cursor),
+        argv_span(argv), parsed_value(&value) {}
 
     auto invocation() -> invocation_t& {
         return *invocation_ptr;
@@ -216,120 +244,12 @@ public:
         return invocation().options;
     }
 
-    auto state() -> State& {
-        return invocation().state;
-    }
-
-    auto state() const -> const State& {
-        return invocation().state;
-    }
-
-    auto argv() const -> std::span<std::string> {
-        return invocation().argv();
-    }
-
-    auto original_argv() const -> std::span<std::string> {
-        return invocation().original_argv;
-    }
-
-    auto remaining() const -> std::span<std::string> {
-        return invocation().remaining();
-    }
-
-    auto trace() const -> std::span<const backend::ParsedArgumentOwning> {
-        return invocation().trace();
-    }
-
-    auto matched(const decl::Category& category) const -> bool {
-        return invocation().matched(category);
-    }
-
-    auto next_cursor() const -> unsigned {
-        return invocation().next_cursor();
-    }
-
-    auto command_path() const -> std::span<const std::string> {
-        return invocation().command_path;
-    }
-
-    auto renderer() const -> const text::Renderer& {
-        return text::resolve_renderer(renderer_ptr);
-    }
-
-    auto into_context_at_cursor(unsigned index) const -> decl::IntoContext {
-        const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
-        return decl::IntoContext::at_cursor(argv_view, index, renderer_ptr);
-    }
-
-    auto into_context(const backend::ParsedArgumentOwning& arg) const -> decl::IntoContext {
-        const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
-        return decl::IntoContext::from_argument(argv_view, arg, renderer_ptr);
-    }
-
-    auto format_error(std::string_view reason) const -> std::string {
-        return into_context_at_cursor(next_cursor()).format_error(reason);
-    }
-
-    auto usage(std::ostream& os, bool include_help = true) const -> void {
-        if(usage_writer != nullptr) {
-            usage_writer(os, command_overview, include_help, renderer_ptr);
-        }
-    }
-
-    auto print_usage(bool include_help = true, std::ostream& os = std::cout) const -> void {
-        usage(os, include_help);
-    }
-};
-
-template <typename T, typename FieldTy, typename State = std::monostate>
-class ParseStep {
-    Context<T, State>* context_ptr = nullptr;
-    const backend::ParsedArgumentOwning* parsed_arg = nullptr;
-    unsigned next_cursor_index = 0;
-    std::span<std::string> argv_span{};
-    const FieldTy* parsed_value = nullptr;
-
-public:
-    ParseStep() = default;
-
-    ParseStep(Context<T, State>& context,
-              const backend::ParsedArgumentOwning& arg,
-              unsigned next_cursor,
-              std::span<std::string> argv,
-              const FieldTy& value) :
-        context_ptr(&context), parsed_arg(&arg), next_cursor_index(next_cursor), argv_span(argv),
-        parsed_value(&value) {}
-
-    auto context() -> Context<T, State>& {
-        return *context_ptr;
-    }
-
-    auto context() const -> const Context<T, State>& {
-        return *context_ptr;
-    }
-
-    auto options() -> T& {
-        return context().options();
-    }
-
-    auto options() const -> T& {
-        return context_ptr->options();
-    }
-
-    auto state() -> State& {
-        return context().state();
-    }
-
-    auto state() const -> State& {
-        return context_ptr->state();
-    }
-
     auto arg() const -> const backend::ParsedArgumentOwning& {
         return *parsed_arg;
     }
 
     auto trace() const -> std::span<const backend::ParsedArgumentOwning> {
-        return context().trace();
+        return invocation().trace();
     }
 
     auto argv() const -> std::span<std::string> {
@@ -337,11 +257,11 @@ public:
     }
 
     auto original_argv() const -> std::span<std::string> {
-        return context().original_argv();
+        return invocation().original_argv;
     }
 
     auto command_path() const -> std::span<const std::string> {
-        return context().command_path();
+        return invocation().command_path;
     }
 
     auto value() const -> const FieldTy& {
@@ -354,6 +274,34 @@ public:
 
     auto cursor() const -> unsigned {
         return next_cursor_index;
+    }
+
+    auto next_cursor() const -> unsigned {
+        return next_cursor_index;
+    }
+
+    auto renderer() const -> const text::Renderer& {
+        return invocation().renderer();
+    }
+
+    auto into_context_at_cursor(unsigned index) const -> decl::IntoContext {
+        return invocation().into_context_at_cursor(index);
+    }
+
+    auto into_context() const -> decl::IntoContext {
+        return invocation().into_context(arg());
+    }
+
+    auto format_error(std::string_view reason) const -> std::string {
+        return invocation().format_error(reason);
+    }
+
+    auto usage(std::ostream& os, bool include_help = true) const -> void {
+        invocation().usage(os, include_help);
+    }
+
+    auto print_usage(bool include_help = true, std::ostream& os = std::cout) const -> void {
+        invocation().print_usage(include_help, os);
     }
 
     auto next() const -> decl::ParseControl {
@@ -474,15 +422,14 @@ std::string check_valid(const T& options,
 
 namespace detail {
 
-template <typename T, typename State, typename OnOption>
-std::expected<Invocation<T, State>, ParseError>
+template <typename T, typename OnOption>
+std::expected<Invocation<T>, ParseError>
     run_parse_session(std::span<std::string> argv,
-                      State initial_state,
                       OnOption&& on_option,
                       const text::Renderer* formatter = nullptr) {
     const auto& storage = ::deco::detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
-    Invocation<T, State> res{};
+    Invocation<T> res{};
     ParseError err;
     std::span<std::string> current_argv = argv;
     std::shared_ptr<std::vector<std::string>> current_owned_argv{};
@@ -490,7 +437,6 @@ std::expected<Invocation<T, State>, ParseError>
     res.original_argv = argv;
     res.active_argv = current_argv;
     res.owned_active_argv = current_owned_argv;
-    res.state = std::move(initial_state);
 
     while(true) {
         bool restart_requested = false;
@@ -675,9 +621,8 @@ template <typename T, typename Fn>
     requires std::is_invocable_r_v<bool, Fn, const T&, decl::DecoOptionBase*>
 std::expected<ParsedResult<T>, ParseError> parse_with_callback(std::span<std::string> argv,
                                                                Fn&& cont_fn) {
-    return detail::run_parse_session<T, std::monostate>(
+    return detail::run_parse_session<T>(
         argv,
-        std::monostate{},
         [fn = std::forward<Fn>(cont_fn)](Invocation<T>& res,
                                          decl::DecoOptionBase& accessor,
                                          const backend::ParsedArgumentOwning&,
@@ -693,9 +638,8 @@ std::expected<ParsedResult<T>, ParseError> parse_with_callback(std::span<std::st
 template <typename T>
 std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv,
                                                 const text::Renderer& formatter) {
-    return detail::run_parse_session<T, std::monostate>(
+    return detail::run_parse_session<T>(
         argv,
-        std::monostate{},
         [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
             return decl::ParseControl::next();
         },
@@ -704,9 +648,8 @@ std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv,
 
 template <typename T>
 std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv) {
-    return detail::run_parse_session<T, std::monostate>(
+    return detail::run_parse_session<T>(
         argv,
-        std::monostate{},
         [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
             return decl::ParseControl::next();
         });
@@ -742,22 +685,22 @@ std::expected<T, ParseError> parse_only(std::span<std::string> argv) {
     return std::move(res->options);
 }
 
-template <typename T, typename State = std::monostate>
+template <typename T>
 class Command {
-    using invocation_t = Invocation<T, State>;
-    using context_t = Context<T, State>;
-    using context_handler_t = runtime_callable_t<void(context_t&)>;
+    using invocation_t = Invocation<T>;
+    using finalize_handler_t = runtime_callable_t<void(invocation_t&)>;
+    using match_handler_t = runtime_callable_t<void(invocation_t&)>;
     using error_fn_t = runtime_callable_t<void(ParseError)>;
     using step_runner_t =
-        runtime_callable_t<decl::ParseControl(context_t&,
+        runtime_callable_t<decl::ParseControl(invocation_t&,
                                               const backend::ParsedArgumentOwning&,
                                               unsigned,
                                               std::span<std::string>,
                                               decl::DecoOptionBase&)>;
 
-    struct CategoryHandler {
+    struct CategoryMatch {
         const decl::Category* category = nullptr;
-        context_handler_t handler;
+        match_handler_t handler;
     };
 
     struct AfterHook {
@@ -766,17 +709,37 @@ class Command {
     };
 
     template <typename Handler>
-    static auto adapt_context_handler(Handler&& handler) -> context_handler_t {
+    static auto adapt_finalize_handler(Handler&& handler) -> finalize_handler_t {
         using HandlerTy = std::remove_cvref_t<Handler>;
-        return context_handler_t(
-            [handler = std::forward<Handler>(handler)](context_t& ctx) mutable {
-                if constexpr(std::is_invocable_v<HandlerTy&, context_t&>) {
-                    handler(ctx);
-                } else if constexpr(std::is_invocable_v<HandlerTy&, const context_t&>) {
-                    handler(ctx);
+        return finalize_handler_t(
+            [handler = std::forward<Handler>(handler)](invocation_t& invocation) mutable {
+                if constexpr(std::is_invocable_v<HandlerTy&, invocation_t&>) {
+                    handler(invocation);
+                } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
+                    handler(invocation);
                 } else {
                     static_assert(always_false_v<HandlerTy>,
-                                  "Command handler must accept Context<T, State>&.");
+                                  "Command handler must accept Invocation<T>&.");
+                }
+            });
+    }
+
+    template <typename Handler>
+    static auto adapt_match_handler(Handler&& handler) -> match_handler_t {
+        using HandlerTy = std::remove_cvref_t<Handler>;
+        return match_handler_t(
+            [handler = std::forward<Handler>(handler)](invocation_t& invocation) mutable {
+                if constexpr(std::is_invocable_v<HandlerTy&, T>) {
+                    handler(std::move(invocation.options));
+                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
+                    handler(std::move(invocation));
+                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t&>) {
+                    handler(invocation);
+                } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
+                    handler(invocation);
+                } else {
+                    static_assert(always_false_v<HandlerTy>,
+                                  "Command match handler must accept T or Invocation<T>.");
                 }
             });
     }
@@ -791,11 +754,10 @@ class Command {
 
     std::string commandOverview;
     std::string commandName;
-    State initialState{};
     std::vector<AfterHook> afterHooks;
-    std::vector<context_handler_t> finalizers;
-    std::vector<CategoryHandler> categoryHandlers;
-    std::optional<context_handler_t> defaultHandler;
+    std::vector<finalize_handler_t> finalizers;
+    std::vector<CategoryMatch> categoryMatches;
+    std::optional<match_handler_t> matchAllHandler;
     std::optional<text::Renderer> textRenderer;
     error_fn_t errorHandler = [](const ParseError& err) {
         std::println(stderr, "{}", err.message);
@@ -805,8 +767,13 @@ class Command {
         return textRenderer.has_value() ? &*textRenderer : nullptr;
     }
 
-    auto make_context(invocation_t& invocation) const -> context_t {
-        return context_t(invocation, commandOverview, &write_usage_for<T>, renderer_ptr());
+    auto bind_runtime(invocation_t& invocation) const -> void {
+        invocation.command_overview = commandOverview;
+        invocation.usage_writer = &write_usage_for<T>;
+        invocation.renderer_ptr = renderer_ptr();
+        if(!commandName.empty() && invocation.command_path.empty()) {
+            invocation.command_path = {commandName};
+        }
     }
 
 public:
@@ -825,84 +792,84 @@ public:
         using FnTy = std::remove_cvref_t<Fn>;
         if constexpr(!std::is_invocable_r_v<decl::ParseControl,
                                             FnTy&,
-                                            ParseStep<T, ValueTy, State>&>) {
+                                            AfterStep<T, ValueTy>&>) {
             static_assert(std::is_invocable_r_v<decl::ParseControl,
                                                 FnTy&,
-                                                const ParseStep<T, ValueTy, State>&>,
-                          "Command::after callback must return ParseControl and accept ParseStep.");
+                                                const AfterStep<T, ValueTy>&>,
+                          "Command::after callback must return ParseControl and accept AfterStep.");
         }
 
-        AfterHook hook;
-        hook.matches = [](T& options, decl::DecoOptionBase* accessor) {
-            return static_cast<decl::DecoOptionBase*>(
-                       &(detail::access_member_path<Members...>(options))) == accessor;
-        };
-        hook.handler = [fn = std::forward<Fn>(fn)](
-                           context_t& ctx,
+        AfterHook hook{
+            .matches = [](T& options, decl::DecoOptionBase* accessor) {
+                return static_cast<decl::DecoOptionBase*>(
+                           &(detail::access_member_path<Members...>(options))) == accessor;
+            },
+            .handler = [fn = std::forward<Fn>(fn)](
+                           invocation_t& invocation,
                            const backend::ParsedArgumentOwning& arg,
                            unsigned cursor,
                            std::span<std::string> argv,
                            decl::DecoOptionBase& accessor) mutable -> decl::ParseControl {
-            auto& typed_option = static_cast<OptionTy&>(accessor);
-            ParseStep<T, ValueTy, State> step(ctx, arg, cursor, argv, typed_option.value());
-            if constexpr(std::is_invocable_r_v<decl::ParseControl,
-                                               FnTy&,
-                                               ParseStep<T, ValueTy, State>&>) {
-                return fn(step);
-            } else {
-                return fn(std::as_const(step));
-            }
+                auto& typed_option = static_cast<OptionTy&>(accessor);
+                AfterStep<T, ValueTy> step(invocation, arg, cursor, argv, typed_option.value());
+                if constexpr(std::is_invocable_r_v<decl::ParseControl,
+                                                   FnTy&,
+                                                   AfterStep<T, ValueTy>&>) {
+                    return fn(step);
+                } else {
+                    return fn(std::as_const(step));
+                }
+            },
         };
         afterHooks.push_back(std::move(hook));
         return *this;
     }
 
     template <typename Handler>
-        requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, context_t&> ||
-                  std::is_invocable_v<std::remove_cvref_t<Handler>&, const context_t&>)
+        requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t&> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>)
     auto& finalize(Handler&& handler) {
-        finalizers.push_back(adapt_context_handler(std::forward<Handler>(handler)));
+        finalizers.push_back(adapt_finalize_handler(std::forward<Handler>(handler)));
         return *this;
     }
 
     template <typename Handler>
-        requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, context_t&> ||
-                  std::is_invocable_v<std::remove_cvref_t<Handler>&, const context_t&>)
-    auto& when(const decl::Category& category, Handler&& handler) {
-        for(auto& item: categoryHandlers) {
+        requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, T> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t&> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>)
+    auto& match(const decl::Category& category, Handler&& handler) {
+        for(auto& item: categoryMatches) {
             if(item.category == &category) {
-                item.handler = adapt_context_handler(std::forward<Handler>(handler));
+                item.handler = adapt_match_handler(std::forward<Handler>(handler));
                 return *this;
             }
         }
-        categoryHandlers.push_back(
-            CategoryHandler{.category = &category,
-                            .handler = adapt_context_handler(std::forward<Handler>(handler))});
+        categoryMatches.push_back(
+            CategoryMatch{.category = &category,
+                          .handler = adapt_match_handler(std::forward<Handler>(handler))});
         return *this;
     }
 
     template <typename Handler>
-        requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, context_t&> ||
-                  std::is_invocable_v<std::remove_cvref_t<Handler>&, const context_t&>)
-    auto& run(Handler&& handler) {
-        defaultHandler = adapt_context_handler(std::forward<Handler>(handler));
+        requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, T> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t&> ||
+                  std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>)
+    auto& matchAll(Handler&& handler) {
+        matchAllHandler = adapt_match_handler(std::forward<Handler>(handler));
         return *this;
     }
 
-    auto& when_err(error_fn_t handler) {
+    auto& on_error(error_fn_t handler) {
         errorHandler = std::move(handler);
         return *this;
     }
 
-    auto& when_err(std::ostream& os) {
+    auto& on_error(std::ostream& os) {
         errorHandler = [&os](const ParseError& err) {
             os << err.message << "\n";
         };
-        return *this;
-    }
-
-    auto& with_state(State state) {
-        initialState = std::move(state);
         return *this;
     }
 
@@ -917,9 +884,8 @@ public:
     }
 
     auto invoke(std::span<std::string> argv) -> std::expected<invocation_t, ParseError> {
-        auto res = detail::run_parse_session<T, State>(
+        auto res = detail::run_parse_session<T>(
             argv,
-            initialState,
             [this](invocation_t& invocation,
                    decl::DecoOptionBase& accessor,
                    const backend::ParsedArgumentOwning& arg,
@@ -928,11 +894,12 @@ public:
                 if(afterHooks.empty()) {
                     return decl::ParseControl::next();
                 }
-                auto ctx = make_context(invocation);
+                bind_runtime(invocation);
                 auto* accessor_ptr = &accessor;
                 for(auto& hook: afterHooks) {
                     if(hook.matches != nullptr && hook.matches(invocation.options, accessor_ptr)) {
-                        const auto control = hook.handler(ctx, arg, cursor, active_argv, accessor);
+                        const auto control =
+                            hook.handler(invocation, arg, cursor, active_argv, accessor);
                         if(control.action != decl::ParseControl::Action::Continue) {
                             return control;
                         }
@@ -945,12 +912,9 @@ public:
             return res;
         }
 
-        if(!commandName.empty()) {
-            res->command_path = {commandName};
-        }
-        auto ctx = make_context(*res);
+        bind_runtime(*res);
         for(auto& finalize: finalizers) {
-            finalize(ctx);
+            finalize(*res);
         }
         return res;
     }
@@ -975,15 +939,14 @@ public:
             return;
         }
 
-        auto ctx = make_context(*res);
-        for(auto& item: categoryHandlers) {
-            if(ctx.matched(*item.category)) {
-                item.handler(ctx);
+        for(auto& item: categoryMatches) {
+            if(res->matched(*item.category)) {
+                item.handler(*res);
                 return;
             }
         }
-        if(defaultHandler.has_value()) {
-            (*defaultHandler)(ctx);
+        if(matchAllHandler.has_value()) {
+            (*matchAllHandler)(*res);
         }
     }
 
@@ -992,147 +955,10 @@ public:
     }
 };
 
-template <typename T, typename State = std::monostate>
-auto command(std::string_view command_overview) -> Command<T, State> {
-    return Command<T, State>(command_overview);
-}
-
 template <typename T>
-class Dispatcher {
-    using invocation_t = Invocation<T>;
-    using handler_fn_t = runtime_callable_t<void(invocation_t)>;
-    using error_fn_t = runtime_callable_t<void(ParseError)>;
-
-    struct CategoryHandler {
-        const deco::decl::Category* category = nullptr;
-        handler_fn_t handler;
-    };
-
-    template <typename Handler>
-    static auto adapt_handler(Handler&& handler) -> handler_fn_t {
-        using HandlerTy = std::remove_cvref_t<Handler>;
-        return handler_fn_t(
-            [handler = std::forward<Handler>(handler)](invocation_t invocation) mutable {
-                if constexpr(std::is_invocable_v<HandlerTy&, T>) {
-                    handler(std::move(invocation.options));
-                } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
-                    handler(std::move(invocation));
-                } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
-                    handler(invocation);
-                } else {
-                    static_assert(always_false_v<HandlerTy>,
-                                  "Dispatcher handler must accept T or Invocation<T>.");
-                }
-            });
-    }
-
-    handler_fn_t defaultHandler = [](invocation_t) {
-        return "nothing we can do with this options";
-    };
-    error_fn_t errorHandler = [](auto err) {
-        std::println(stderr, "{}", err.message);
-    };
-    std::vector<CategoryHandler> handlers;
-    std::string_view commandOverview;
-    std::optional<text::Renderer> textRenderer;
-
-    auto renderer_ptr() const -> const text::Renderer* {
-        return textRenderer.has_value() ? &*textRenderer : nullptr;
-    }
-
-public:
-    Dispatcher(std::string_view command_overview) : commandOverview(command_overview) {}
-
-    auto& dispatch(const decl::Category& category, handler_fn_t handler) {
-        for(auto& item: handlers) {
-            if(item.category == &category) {
-                item.handler = std::move(handler);
-                return *this;
-            }
-        }
-        handlers.push_back(CategoryHandler{.category = &category, .handler = std::move(handler)});
-        return *this;
-    }
-
-    template <typename Handler>
-        requires (!std::same_as<std::remove_cvref_t<Handler>, handler_fn_t> &&
-                  (std::is_invocable_v<std::remove_cvref_t<Handler>&, T> ||
-                   std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t> ||
-                   std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>))
-    auto& dispatch(const decl::Category& category, Handler&& handler) {
-        return dispatch(category, adapt_handler(std::forward<Handler>(handler)));
-    }
-
-    auto& dispatch(handler_fn_t handler) {
-        defaultHandler = std::move(handler);
-        return *this;
-    }
-
-    template <typename Handler>
-        requires (!std::same_as<std::remove_cvref_t<Handler>, handler_fn_t> &&
-                  (std::is_invocable_v<std::remove_cvref_t<Handler>&, T> ||
-                   std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t> ||
-                   std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>))
-    auto& dispatch(Handler&& handler) {
-        return dispatch(adapt_handler(std::forward<Handler>(handler)));
-    }
-
-    auto& when_err(error_fn_t error_handler) {
-        errorHandler = std::move(error_handler);
-        return *this;
-    }
-
-    auto& when_err(std::ostream& os) {
-        errorHandler = [&os](const ParseError& err) {
-            os << err.message << "\n";
-        };
-        return *this;
-    }
-
-    auto& render_with(text::Renderer renderer) {
-        textRenderer = std::move(renderer);
-        return *this;
-    }
-
-    auto& text_style(text::TextStyle style) {
-        textRenderer = text::CompatibleRenderer(std::move(style));
-        return *this;
-    }
-
-    template <typename Os>
-    void usage(Os& os, bool include_help = true) const {
-        write_usage_for<T>(os, commandOverview, include_help, renderer_ptr());
-    }
-
-    void parse(std::span<std::string> argv) {
-        auto res = detail::run_parse_session<T, std::monostate>(
-            argv,
-            std::monostate{},
-            [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
-                return decl::ParseControl::next();
-            },
-            renderer_ptr());
-        return from(res);
-    }
-
-    void from(std::expected<invocation_t, ParseError> res) {
-        if(res.has_value()) {
-            for(auto& item: handlers) {
-                if(res->matched(*item.category)) {
-                    item.handler(std::move(*res));
-                    return;
-                }
-            }
-            defaultHandler(std::move(*res));
-        } else {
-            errorHandler(std::move(res.error()));
-        }
-    }
-
-    void operator()(std::span<std::string> argv) {
-        return parse(argv);
-    }
-};
+auto command(std::string_view command_overview) -> Command<T> {
+    return Command<T>(command_overview);
+}
 
 class SubCommander {
     using match_t = SubCommandMatch;
@@ -1198,14 +1024,14 @@ public:
     }
 
     template <typename OptTy>
-    auto& add(const decl::SubCommand& subcommand, Dispatcher<OptTy>& dispatcher) {
-        return add(subcommand, [&dispatcher](const match_t& match) { dispatcher(match.args()); });
+    auto& add(const decl::SubCommand& subcommand, Command<OptTy>& command) {
+        return add(subcommand, [&command](const match_t& match) { command(match.args()); });
     }
 
     template <typename OptTy>
-    auto& add(const decl::SubCommand& subcommand, Dispatcher<OptTy>&& dispatcher) {
-        return add(subcommand, [dispatcher = std::move(dispatcher)](const match_t& match) mutable {
-            dispatcher(match.args());
+    auto& add(const decl::SubCommand& subcommand, Command<OptTy>&& command) {
+        return add(subcommand, [command = std::move(command)](const match_t& match) mutable {
+            command(match.args());
         });
     }
 
