@@ -38,9 +38,8 @@ auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler
     -> SubCommander& {
     std::string command = command_of(subcommand);
     if(command.empty()) {
-        errorHandler(
-            SubCommandError{SubCommandError::Type::Internal,
-                            "subcommand name/command must not be empty"});
+        errorHandler(SubCommandError{SubCommandError::Type::Internal,
+                                     "subcommand name/command must not be empty"});
         return *this;
     }
 

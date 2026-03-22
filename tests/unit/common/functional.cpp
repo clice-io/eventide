@@ -260,9 +260,8 @@ TEST_CASE(function_void_return) {
 };
 
 TEST_CASE(function_accepts_move_only_value_argument) {
-    function<std::unique_ptr<int>(std::unique_ptr<int>)> fn([](std::unique_ptr<int> value) {
-        return std::make_unique<int>(*value + 1);
-    });
+    function<std::unique_ptr<int>(std::unique_ptr<int>)> fn(
+        [](std::unique_ptr<int> value) { return std::make_unique<int>(*value + 1); });
     auto result = fn(std::make_unique<int>(41));
     EXPECT_TRUE(result != nullptr);
     EXPECT_EQ(*result, 42);

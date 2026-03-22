@@ -175,9 +175,7 @@ TEST_CASE(required_category_error_is_reported) {
     std::string dispatch_err;
 
     auto tag_command = deco::cli::command<GitTagOpt>("git tag [OPTIONS]");
-    tag_command.matchAll([](GitTagOpt) {}).on_error([&](auto err) {
-        dispatch_err = err.message;
-    });
+    tag_command.matchAll([](GitTagOpt) {}).on_error([&](auto err) { dispatch_err = err.message; });
 
     deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]");
     git.add(

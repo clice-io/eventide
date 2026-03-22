@@ -266,12 +266,13 @@ private:
                             auto& fn = *static_cast<ClassType*>(self->storage.erased.ctx);
                             return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
                         },
-                        [](function* self) { delete static_cast<ClassType*>(self->storage.erased.ctx); }};
+                        [](function* self) {
+                            delete static_cast<ClassType*>(self->storage.erased.ctx);
+                        }};
 
-                    return function(
-                        &vt,
-                        Storage{
-                            .erased = Erased{.ctx = new ClassType(std::forward<Class>(invocable))}});
+                    return function(&vt,
+                                    Storage{.erased = Erased{.ctx = new ClassType(
+                                                                 std::forward<Class>(invocable))}});
                 } else {
                     constexpr static vtable vt = {
                         [](function* self, Args&... args) -> R {
@@ -289,12 +290,13 @@ private:
                         auto& fn = *static_cast<ClassType*>(self->storage.erased.ctx);
                         return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
                     },
-                    [](function* self) { delete static_cast<ClassType*>(self->storage.erased.ctx); }};
+                    [](function* self) {
+                        delete static_cast<ClassType*>(self->storage.erased.ctx);
+                    }};
 
-                return function(
-                    &vt,
-                    Storage{
-                        .erased = Erased{.ctx = new ClassType(std::forward<Class>(invocable))}});
+                return function(&vt,
+                                Storage{.erased = Erased{
+                                            .ctx = new ClassType(std::forward<Class>(invocable))}});
             }
         }
     }

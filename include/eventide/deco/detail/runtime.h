@@ -790,20 +790,18 @@ public:
             "Command::after only supports member pointer paths ending at a deco " "option member.");
         using ValueTy = typename OptionTy::result_type;
         using FnTy = std::remove_cvref_t<Fn>;
-        if constexpr(!std::is_invocable_r_v<decl::ParseControl,
-                                            FnTy&,
-                                            AfterStep<T, ValueTy>&>) {
-            static_assert(std::is_invocable_r_v<decl::ParseControl,
-                                                FnTy&,
-                                                const AfterStep<T, ValueTy>&>,
-                          "Command::after callback must return ParseControl and accept AfterStep.");
+        if constexpr(!std::is_invocable_r_v<decl::ParseControl, FnTy&, AfterStep<T, ValueTy>&>) {
+            static_assert(
+                std::is_invocable_r_v<decl::ParseControl, FnTy&, const AfterStep<T, ValueTy>&>,
+                "Command::after callback must return ParseControl and accept AfterStep.");
         }
 
         AfterHook hook{
-            .matches = [](T& options, decl::DecoOptionBase* accessor) {
-                return static_cast<decl::DecoOptionBase*>(
-                           &(detail::access_member_path<Members...>(options))) == accessor;
-            },
+            .matches =
+                [](T& options, decl::DecoOptionBase* accessor) {
+                    return static_cast<decl::DecoOptionBase*>(
+                               &(detail::access_member_path<Members...>(options))) == accessor;
+                },
             .handler = [fn = std::forward<Fn>(fn)](
                            invocation_t& invocation,
                            const backend::ParsedArgumentOwning& arg,
