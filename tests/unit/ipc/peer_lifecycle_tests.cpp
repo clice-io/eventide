@@ -88,6 +88,106 @@ TEST_CASE(double_run) {
     EXPECT_EQ(loop.run(), 0);
 }
 
+// 5.7 close() stops the read loop
+TEST_CASE(close_stops_run) {
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(1, loop);
+        peer.close();
+    };
+
+    auto close_task = closer();
+    loop.schedule(peer.run());
+    loop.schedule(close_task);
+    EXPECT_EQ(loop.run(), 0);
+}
+
+// 5.8 close() fails pending outgoing requests
+TEST_CASE(close_fails_pending) {
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    Result<AddResult> request_result = outcome_error(Error("not completed"));
+
+    auto requester = [&]() -> task<> {
+        request_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 1, .b = 2});
+    };
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(1, loop);
+        peer.close();
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(requester());
+    loop.schedule(closer());
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(request_result.has_value());
+    EXPECT_EQ(request_result.error().message, "peer closed");
+}
+
+// 5.9 close() cancels in-flight incoming requests (loop exits promptly, not after 10s)
+TEST_CASE(close_cancels_incoming) {
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{
+            R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})",
+        },
+        nullptr);
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    peer.on_request([&](RequestContext, AddParams params) -> RequestResult<AddParams> {
+        // This long sleep should be interrupted by close()
+        co_await sleep(std::chrono::seconds(10), loop);
+        co_return AddResult{.sum = params.a + params.b};
+    });
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(1, loop);
+        peer.close();
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(closer());
+    // If close() didn't cancel the handler, this would take ~10 seconds
+    EXPECT_EQ(loop.run(), 0);
+}
+
+// 5.10 close() on null transport is a no-op
+TEST_CASE(close_null_transport) {
+    event_loop loop;
+    JsonPeer peer(loop, nullptr);
+
+    auto result = peer.close();
+    ASSERT_TRUE(result.has_value());
+}
+
+// 5.11 close() is idempotent
+TEST_CASE(close_idempotent) {
+    auto transport = std::make_unique<ScriptedTransport>(std::vector<std::string>{}, nullptr);
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+
+    auto closer = [&]() -> task<> {
+        co_await sleep(1, loop);
+        peer.close();
+        peer.close();  // second close should be safe
+    };
+
+    loop.schedule(peer.run());
+    loop.schedule(closer());
+    EXPECT_EQ(loop.run(), 0);
+}
+
 };  // TEST_SUITE(ipc_peer_lifecycle)
 
 }  // namespace eventide::ipc

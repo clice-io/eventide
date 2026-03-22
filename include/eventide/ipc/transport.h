@@ -19,6 +19,9 @@ public:
     virtual task<void, Error> write_message(std::string_view payload) = 0;
 
     virtual Result<void> close_output();
+
+    /// Close both input and output, aborting any pending read.
+    virtual Result<void> close();
 };
 
 class StreamTransport : public Transport {
@@ -39,6 +42,8 @@ public:
     task<void, Error> write_message(std::string_view payload) override;
 
     Result<void> close_output() override;
+
+    Result<void> close() override;
 
 private:
     stream read_stream;

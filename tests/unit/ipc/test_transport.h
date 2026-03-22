@@ -51,6 +51,10 @@ public:
     }
 
     task<std::optional<std::string>> read_message() override {
+        if(closed) {
+            co_return std::nullopt;
+        }
+
         while(read_index >= incoming_messages.size()) {
             if(closed) {
                 co_return std::nullopt;
@@ -76,9 +80,10 @@ public:
         readable.set();
     }
 
-    void close() {
+    Result<void> close() override {
         closed = true;
         readable.set();
+        return {};
     }
 
     const std::vector<std::string>& outgoing() const {
