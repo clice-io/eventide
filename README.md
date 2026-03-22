@@ -54,7 +54,7 @@ It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv)
   - inbound `$/cancelRequest` cancels matching in-flight handlers and returns `RequestCancelled (-32800)` (aligned with LSP `LSPErrorCodes::RequestCancelled`)
   - outbound request cancellation (token or timeout) sends `$/cancelRequest` to the remote peer when the request is still pending
   - timeout overloads report `RequestCancelled (-32800)` with message `"request timed out"`
-  - `RequestContext` delegates via `operator->`; use `context->send_request(..., context.cancellation)` to propagate the inbound handler token explicitly
+  - `RequestContext` delegates via `operator->`; use `context->send_request(..., {.token = context.cancellation})` to propagate the inbound handler token to nested outbound requests
 
 ### `ipc/lsp` (`include/eventide/ipc/lsp/*`)
 
@@ -120,13 +120,14 @@ src/
   zest/          # Test runner implementation
 
 tests/
-  option/        # Option parser behavior tests
-  deco/          # Declarative CLI/deco tests
-  reflection/    # Reflection behavior tests
-  eventide/      # Runtime/event-loop/IO/process/fs/sync tests
-  ipc/           # IPC peer and transport tests
-  serde/         # JSON/FlatBuffers serde tests
-  ipc/lsp/   # LSP utility, progress, and jsonrpc-trait tests
+  unit/          # Unit tests
+    option/      # Option parser behavior tests
+    deco/        # Declarative CLI/deco tests
+    reflection/  # Reflection behavior tests
+    async/       # Runtime/event-loop/IO/process/fs/sync tests
+    ipc/         # IPC peer and transport tests
+    serde/       # JSON/FlatBuffers serde tests
+    ipc/lsp/     # LSP utility, progress, and jsonrpc-trait tests
 
 examples/
   ipc/       # IPC stdio, scripted, and multi-process examples

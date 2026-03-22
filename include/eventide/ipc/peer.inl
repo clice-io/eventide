@@ -22,10 +22,10 @@
 
 // Lazy log macro: level check happens before std::format is evaluated.
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define ET_IPC_LOG(self_ptr, lvl, fmt, ...)                       \
-    do {                                                          \
-        if((self_ptr)->logger && (lvl) >= (self_ptr)->min_level)  \
-            (self_ptr)->logger((lvl), std::format(fmt, __VA_ARGS__)); \
+#define ET_IPC_LOG(self_ptr, lvl, fmt, ...)                                                        \
+    do {                                                                                           \
+        if((self_ptr)->logger && (lvl) >= (self_ptr)->min_level)                                   \
+            (self_ptr)->logger((lvl), std::format(fmt, __VA_ARGS__));                              \
     } while(false)
 
 namespace eventide::ipc {
@@ -116,6 +116,7 @@ struct Peer<CodecT>::Self {
 
     bool running = false;
     bool writer_running = false;
+    bool closed = false;
 
     LogCallback logger;
     LogLevel min_level = LogLevel::info;
@@ -124,6 +125,9 @@ struct Peer<CodecT>::Self {
         loop(external_loop), codec(std::move(codec_arg)) {}
 
     void enqueue_outgoing(std::string payload) {
+        if(closed) {
+            return;
+        }
         ET_IPC_LOG(this, LogLevel::trace, "send: {}", payload);
         outgoing_queue.push_back(std::move(payload));
         if(!writer_running) {
@@ -143,8 +147,10 @@ struct Peer<CodecT>::Self {
 
             auto written = co_await transport->write_message(payload);
             if(!written) {
-                ET_IPC_LOG(this, LogLevel::error,
-                    "transport write failed: {}", written.error().message);
+                ET_IPC_LOG(this,
+                           LogLevel::error,
+                           "transport write failed: {}",
+                           written.error().message);
                 outgoing_queue.clear();
                 fail_pending_requests(written.error().message);
                 break;
@@ -182,8 +188,11 @@ struct Peer<CodecT>::Self {
             return;
         }
 
-        ET_IPC_LOG(this, LogLevel::error,
-            "failing {} pending request(s): {}", pending_requests.size(), message);
+        ET_IPC_LOG(this,
+                   LogLevel::error,
+                   "failing {} pending request(s): {}",
+                   pending_requests.size(),
+                   message);
 
         auto values = pending_requests | std::views::values;
         std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
@@ -332,6 +341,37 @@ task<> Peer<CodecT>::run() {
 }
 
 template <typename CodecT>
+Result<void> Peer<CodecT>::close() {
+    if(!self || !self->transport || self->closed) {
+        return {};
+    }
+
+    self->closed = true;
+    ET_IPC_LOG(self.get(), LogLevel::info, "{}", "peer closing");
+
+    // Cancel in-flight incoming requests. Copy sources first because
+    // cancel() may synchronously resume coroutines that erase entries.
+    {
+        auto values = self->incoming_requests | std::views::values;
+        std::vector<std::shared_ptr<cancellation_source>> sources(values.begin(), values.end());
+        for(auto& source: sources) {
+            if(source) {
+                source->cancel();
+            }
+        }
+    }
+
+    // Fail pending outgoing requests.
+    self->fail_pending_requests("peer closed");
+
+    // Discard queued outgoing messages.
+    self->outgoing_queue.clear();
+
+    // Close the transport to unblock any pending read.
+    return self->transport->close();
+}
+
+template <typename CodecT>
 Result<void> Peer<CodecT>::close_output() {
     if(!self || !self->transport) {
         return outcome_error(Error("transport is null"));
@@ -365,8 +405,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
 
     if(opts.timeout.has_value()) {
         if(*opts.timeout <= std::chrono::milliseconds::zero()) {
-            co_return outcome_error(
-                Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
+            co_await fail(protocol::ErrorCode::RequestCancelled, "request timed out");
         }
 
         timeout_source = std::make_shared<cancellation_source>();
@@ -376,12 +415,12 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         }
     }
 
-    if(!self || !self->transport) {
-        co_return outcome_error(Error("transport is null"));
+    if(!self || !self->transport || self->closed) {
+        co_await fail("transport is null");
     }
 
     if(opts.token && opts.token->cancelled()) {
-        co_return outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+        co_await fail(protocol::ErrorCode::RequestCancelled, "request cancelled");
     }
 
     protocol::RequestID request_id{self->next_request_id++};
@@ -392,7 +431,7 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
     auto request_encoded = self->codec.encode_request(request_id, method, params);
     if(!request_encoded) {
         self->pending_requests.erase(request_id);
-        co_return outcome_error(request_encoded.error());
+        co_await fail(request_encoded.error());
     }
 
     self->enqueue_outgoing(std::move(*request_encoded));
@@ -427,27 +466,21 @@ task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method
         }
 
         if(opts.token && opts.token->cancelled()) {
-            co_return outcome_error(
-                Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+            co_await fail(protocol::ErrorCode::RequestCancelled, "request cancelled");
         }
-        co_return outcome_error(Error(protocol::ErrorCode::RequestCancelled, "request timed out"));
+        co_await fail(protocol::ErrorCode::RequestCancelled, "request timed out");
     }
 
     if(!pending->response.has_value()) {
-        co_return outcome_error(Error("request was not completed"));
+        co_await fail("request was not completed");
     }
 
-    auto& response = *pending->response;
-    if(!response) {
-        co_return outcome_error(std::move(response).error());
-    }
-
-    co_return std::move(*response);
+    co_return co_await or_fail(std::move(*pending->response));
 }
 
 template <typename CodecT>
 Result<void> Peer<CodecT>::send_notification_impl(std::string_view method, std::string params) {
-    if(!self || !self->transport) {
+    if(!self || !self->transport || self->closed) {
         return outcome_error(Error("transport is null"));
     }
 
@@ -471,24 +504,12 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
                   "send_request(params) requires RequestTraits<Params>");
     using Traits = protocol::RequestTraits<Params>;
 
-    auto serialized_params = self->codec.serialize_value(params);
-    if(!serialized_params) {
-        co_return outcome_error(serialized_params.error());
-    }
-
+    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
     auto raw_result =
-        co_await send_request_impl(Traits::method, std::move(*serialized_params), std::move(opts));
-    if(!raw_result) {
-        co_return outcome_error(raw_result.error());
-    }
-
-    auto parsed_result =
-        self->codec.template deserialize_value<typename Traits::Result>(*raw_result);
-    if(!parsed_result) {
-        co_return outcome_error(parsed_result.error());
-    }
-
-    co_return std::move(*parsed_result);
+        co_await send_request_impl(Traits::method, std::move(serialized_params), std::move(opts))
+            .or_fail();
+    co_return co_await or_fail(
+        self->codec.template deserialize_value<typename Traits::Result>(raw_result));
 }
 
 template <typename CodecT>
@@ -496,23 +517,10 @@ template <typename ResultT, typename Params>
 task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                 const Params& params,
                                                 request_options opts) {
-    auto serialized_params = self->codec.serialize_value(params);
-    if(!serialized_params) {
-        co_return outcome_error(serialized_params.error());
-    }
-
+    auto serialized_params = co_await or_fail(self->codec.serialize_value(params));
     auto raw_result =
-        co_await send_request_impl(method, std::move(*serialized_params), std::move(opts));
-    if(!raw_result) {
-        co_return outcome_error(raw_result.error());
-    }
-
-    auto parsed_result = self->codec.template deserialize_value<ResultT>(*raw_result);
-    if(!parsed_result) {
-        co_return outcome_error(parsed_result.error());
-    }
-
-    co_return std::move(*parsed_result);
+        co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
+    co_return co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
 }
 
 template <typename CodecT>
@@ -599,24 +607,21 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
             params_raw,
             protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
-            ET_IPC_LOG(peer->self.get(), LogLevel::warn,
-                "request '{}' params deserialization failed: {}",
-                method_name, parsed_params.error().message);
-            co_return outcome_error(parsed_params.error());
+            ET_IPC_LOG(peer->self.get(),
+                       LogLevel::warn,
+                       "request '{}' params deserialization failed: {}",
+                       method_name,
+                       parsed_params.error().message);
+            co_await fail(parsed_params.error());
         }
 
         typename Peer::RequestContext context(*peer, request_id, std::move(token));
         context.method = method_name;
 
-        auto result = co_await std::invoke(cb, context, *parsed_params);
-        if(!result) {
-            co_return outcome_error(result.error());
-        }
-
-        auto serialized = peer->self->codec.serialize_value(*result);
+        auto result = co_await std::invoke(cb, context, *parsed_params).or_fail();
+        auto serialized = peer->self->codec.serialize_value(result);
         if(!serialized) {
-            co_return outcome_error(
-                Error(protocol::ErrorCode::InternalError, serialized.error().message));
+            co_await fail(Error(protocol::ErrorCode::InternalError, serialized.error().message));
         }
 
         co_return std::move(*serialized);
@@ -632,9 +637,10 @@ void Peer<CodecT>::bind_notification_callback(std::string_view method, Callback&
                     peer = this](std::string_view params_raw) {
         auto parsed_params = peer->self->codec.template deserialize_value<Params>(params_raw);
         if(!parsed_params) {
-            ET_IPC_LOG(peer->self.get(), LogLevel::warn,
-                "notification params deserialization failed: {}",
-                parsed_params.error().message);
+            ET_IPC_LOG(peer->self.get(),
+                       LogLevel::warn,
+                       "notification params deserialization failed: {}",
+                       parsed_params.error().message);
             return;
         }
         std::invoke(cb, *parsed_params);

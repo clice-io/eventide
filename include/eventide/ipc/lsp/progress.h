@@ -19,10 +19,7 @@ public:
     task<void, Error> create(request_options opts = {}) {
         auto result = co_await peer.send_request(protocol::WorkDoneProgressCreateParams{token},
                                                  std::move(opts));
-        if(result.has_error()) {
-            co_return outcome_error(result.error());
-        }
-        co_return outcome_value();
+        co_await or_fail(result);
     }
 
     /// Send $/progress with kind=begin.

@@ -26,7 +26,7 @@ public:
 
     task<void, Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
-        co_return outcome_value();
+        co_return;
     }
 
     const std::vector<std::string>& outgoing() const {
@@ -51,6 +51,10 @@ public:
     }
 
     task<std::optional<std::string>> read_message() override {
+        if(closed) {
+            co_return std::nullopt;
+        }
+
         while(read_index >= incoming_messages.size()) {
             if(closed) {
                 co_return std::nullopt;
@@ -68,7 +72,7 @@ public:
         if(write_hook) {
             write_hook(payload, *this);
         }
-        co_return outcome_value();
+        co_return;
     }
 
     void push_incoming(std::string payload) {
@@ -76,9 +80,10 @@ public:
         readable.set();
     }
 
-    void close() {
+    Result<void> close() override {
         closed = true;
         readable.set();
+        return {};
     }
 
     const std::vector<std::string>& outgoing() const {

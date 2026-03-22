@@ -53,7 +53,7 @@ public:
         None = 0,
         /// Reserved for future use.
         ExplicitCancel = 1 << 0,
-        /// When set, cancellation of this node does NOT propagate upward.
+        /// When set, cancellation of this node does NOT fail upward.
         /// The parent resumes normally and can inspect the cancelled state.
         /// Used by catch_cancel() and with_token().
         InterceptCancel = 1 << 1,
@@ -147,6 +147,11 @@ protected:
     explicit standard_task() : async_node(NodeKind::Task) {}
 
 public:
+    /// Optional hook invoked when a child task fails, allowing the parent to
+    /// intercept the error before normal resumption. Used by or_fail_task_await
+    /// to propagate errors directly without resuming the parent coroutine.
+    using error_hook = std::coroutine_handle<> (*)(async_node* child, async_node* parent);
+
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
     }
@@ -162,6 +167,18 @@ public:
 
     void set_awaitee(async_node* node) noexcept {
         awaitee = node;
+    }
+
+    void set_error_hook(error_hook fn) noexcept {
+        error_hook_fn = fn;
+    }
+
+    error_hook get_error_hook() const noexcept {
+        return error_hook_fn;
+    }
+
+    void clear_error_hook() noexcept {
+        error_hook_fn = nullptr;
     }
 
 protected:
@@ -184,6 +201,8 @@ private:
 
     /// The node that this task awaits.
     async_node* awaitee = nullptr;
+
+    error_hook error_hook_fn = nullptr;
 };
 
 class waiter_link : public async_node {
@@ -335,7 +354,7 @@ protected:
     }
 
     /// Deliver the latched completion to the aggregate awaiter once it is safe
-    /// to resume/propagate out of the current callback stack.
+    /// to resume or propagate out of the current callback stack.
     std::coroutine_handle<> deliver_deferred() noexcept;
 
     /// Common await_suspend logic for all aggregate operations.

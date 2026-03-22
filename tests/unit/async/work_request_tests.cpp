@@ -10,7 +10,7 @@ namespace {
 task<void, error> wait_work(std::atomic<int>& flag, event_loop& loop) {
     auto ec = co_await queue([&]() { flag.fetch_add(1); }, loop);
     event_loop::current().stop();
-    co_return ec;
+    co_await or_fail(ec);
 }
 
 task<void, error>
@@ -19,7 +19,7 @@ task<void, error>
     if(done.fetch_add(1) + 1 == target) {
         event_loop::current().stop();
     }
-    co_return ec;
+    co_await or_fail(ec);
 }
 
 }  // namespace

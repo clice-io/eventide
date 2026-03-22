@@ -318,15 +318,6 @@ struct CatterTrailing {
     <std::vector<std::string>> cmd;
 };
 
-struct CatterSelf2 {
-    DecoFlag(required = false)
-    v;
-    DecoInput(required = false, after_parsed = Action::stop)
-    <std::string> script_internal;
-    DecoKV(required = false, after_parsed = Action::stop)
-    <std::string> s;
-};
-
 TEST_SUITE(cli_parse) {
 
 TEST_CASE(parsing) {
@@ -529,10 +520,12 @@ TEST_CASE(modern_renderer_crops_long_diagnostic_source_line) {
 
 TEST_CASE(with_cont_parse) {
     std::vector<std::string> args = {"-v", "script::cdb", "-t", "x", "--", "make"};
-    auto command = deco::cli::command<CatterSelf>("catter");
-    command.after<&CatterSelf::script_internal>([](const auto& step) { return step.stop(); });
-    auto res = command.invoke(args);
-    auto res2 = deco::cli::parse<CatterTrailing>(res->remaining());
+    auto res = deco::cli::parse_with_callback<CatterSelf>(
+        args,
+        [](const CatterSelf& opt, deco::decl::DecoOptionBase* ptr) {
+            return !(&opt.s == ptr || &opt.script_internal == ptr);
+        });
+    auto res2 = deco::cli::parse<CatterTrailing>({args.begin() + res->next_index, args.end()});
     EXPECT_EQ(res->next_index, 2);
     EXPECT_EQ(*res->options.script_internal, "script::cdb");
     EXPECT_EQ(res2->options.cmd->size(), 1);

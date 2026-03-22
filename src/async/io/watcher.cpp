@@ -279,23 +279,21 @@ error signal::stop() {
 
 task<void, error> signal::wait() {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(self->pending > 0) {
         self->pending -= 1;
-        co_return outcome_value();
+        co_return;
     }
 
     if(self->waiter != nullptr) {
-        co_return outcome_error(error::connection_already_in_progress);
+        co_await fail(error::connection_already_in_progress);
     }
 
     if(auto err = co_await signal_await{self.get()}) {
-        co_return outcome_error(std::move(err));
+        co_await fail(std::move(err));
     }
-
-    co_return outcome_value();
 }
 
 #define ETD_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                               \

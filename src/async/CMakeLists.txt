@@ -8,6 +8,7 @@ eventide_add_git_dependency(
         LIBUV_BUILD_SHARED OFF
         LIBUV_BUILD_STATIC ON
         UV_LINT_W4 OFF
+        ASAN ${ETD_SANITIZE_ADDRESS}
 )
 
 if(WIN32)

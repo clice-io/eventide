@@ -278,7 +278,7 @@ typename acceptor<Stream>::Self* acceptor<Stream>::operator->() noexcept {
 template <typename Stream>
 task<Stream, error> acceptor<Stream>::accept() {
     if(!self) {
-        co_return outcome_error(error::invalid_argument);
+        co_await fail(error::invalid_argument);
     }
 
     if(self->has_pending()) {
@@ -286,7 +286,7 @@ task<Stream, error> acceptor<Stream>::accept() {
     }
 
     if(self->has_waiter()) {
-        co_return outcome_error(error::connection_already_in_progress);
+        co_await fail(error::connection_already_in_progress);
     }
 
     co_return co_await accept_await<Stream>{self.get()};
@@ -367,7 +367,7 @@ result<pipe> pipe::create(pipe::options opts, event_loop& loop) {
 task<pipe, error> pipe::connect(std::string_view name, pipe::options opts, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::pipe_init(loop, self->pipe, opts.ipc ? 1 : 0)) {
-        co_return outcome_error(err);
+        co_await fail(err);
     }
 
     co_return co_await connect_await<pipe>{std::move(self), name, opts};
@@ -391,7 +391,7 @@ result<tcp> tcp::open(int fd, event_loop& loop) {
 task<tcp, error> tcp::connect(std::string_view host, int port, event_loop& loop) {
     auto self = Self::make();
     if(auto err = uv::tcp_init(loop, self->tcp)) {
-        co_return outcome_error(err);
+        co_await fail(err);
     }
 
     co_return co_await connect_await<tcp>{std::move(self), host, port};

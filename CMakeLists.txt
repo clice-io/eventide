@@ -29,14 +29,6 @@ option(ETD_SANITIZE_THREAD "Enable ThreadSanitizer" OFF)
 option(ETD_SANITIZE_UNDEFINED "Enable UndefinedBehaviorSanitizer" OFF)
 
 if(MSVC)
-    set(eventide_msvc_flag_vars
-        CMAKE_CXX_FLAGS
-        CMAKE_CXX_FLAGS_DEBUG
-        CMAKE_CXX_FLAGS_RELEASE
-        CMAKE_CXX_FLAGS_RELWITHDEBINFO
-        CMAKE_CXX_FLAGS_MINSIZEREL
-    )
-
     if(ETD_ENABLE_CCACHE)
         foreach(flag_var
                 CMAKE_C_FLAGS_DEBUG
@@ -46,30 +38,6 @@ if(MSVC)
             if(DEFINED ${flag_var})
                 string(REPLACE "/Zi" "/Z7" ${flag_var} "${${flag_var}}")
                 set(${flag_var} "${${flag_var}}" CACHE STRING "" FORCE)
-            endif()
-        endforeach()
-    endif()
-
-    if(NOT ETD_ENABLE_EXCEPTIONS)
-        foreach(flag_var ${eventide_msvc_flag_vars})
-            if(DEFINED ${flag_var})
-                set(eventide_flags "${${flag_var}}")
-                string(REGEX REPLACE "(^| )[/-]EH[a-zA-Z0-9-]+( |$)" " " eventide_flags "${eventide_flags}")
-                string(REGEX REPLACE " +" " " eventide_flags "${eventide_flags}")
-                string(STRIP "${eventide_flags}" eventide_flags)
-                set(${flag_var} "${eventide_flags}" CACHE STRING "" FORCE)
-            endif()
-        endforeach()
-    endif()
-
-    if(NOT ETD_ENABLE_RTTI)
-        foreach(flag_var ${eventide_msvc_flag_vars})
-            if(DEFINED ${flag_var})
-                set(eventide_flags "${${flag_var}}")
-                string(REGEX REPLACE "(^| )[/-]GR( |$)" " " eventide_flags "${eventide_flags}")
-                string(REGEX REPLACE " +" " " eventide_flags "${eventide_flags}")
-                string(STRIP "${eventide_flags}" eventide_flags)
-                set(${flag_var} "${eventide_flags}" CACHE STRING "" FORCE)
             endif()
         endforeach()
     endif()
@@ -294,6 +262,18 @@ if(ETD_ENABLE_TEST)
     if(NOT ETD_ENABLE_ZEST)
         message(STATUS "ETD_ENABLE_TEST=ON: enabling ETD_ENABLE_ZEST")
         set(ETD_ENABLE_ZEST ON CACHE BOOL "Build zest test framework target" FORCE)
+    endif()
+endif()
+
+if(ETD_ENABLE_ZEST)
+    if(NOT ETD_ENABLE_OPTION)
+        message(STATUS "ETD_ENABLE_ZEST=ON: enabling ETD_ENABLE_OPTION")
+        set(ETD_ENABLE_OPTION ON CACHE BOOL "Enable option parser target" FORCE)
+    endif()
+
+    if(NOT ETD_ENABLE_DECO)
+        message(STATUS "ETD_ENABLE_ZEST=ON: enabling ETD_ENABLE_DECO")
+        set(ETD_ENABLE_DECO ON CACHE BOOL "Enable deco parser headers and tests" FORCE)
     endif()
 endif()
 

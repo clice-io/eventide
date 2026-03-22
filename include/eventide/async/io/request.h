@@ -18,10 +18,7 @@ template <typename Fn, typename R = callable_return_t<std::remove_cvref_t<Fn>>>
     requires std::is_invocable_v<Fn> && (!std::is_void_v<R>)
 task<R, error> queue(Fn&& fn, event_loop& loop = event_loop::current()) {
     std::optional<R> ret;
-    auto result = co_await queue(function<void()>([&] { ret.emplace(fn()); }), loop);
-    if(result.has_error()) {
-        co_return outcome_error(result.error());
-    }
+    co_await queue(function<void()>([&] { ret.emplace(fn()); }), loop).or_fail();
     co_return std::move(*ret);
 }
 

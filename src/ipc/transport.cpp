@@ -127,6 +127,10 @@ Result<void> Transport::close_output() {
     return outcome_error(Error("transport does not support closing output"));
 }
 
+Result<void> Transport::close() {
+    return outcome_error(Error("transport does not support close"));
+}
+
 StreamTransport::StreamTransport(stream input, stream output) :
     read_stream(std::move(input)), write_stream(std::move(output)) {}
 
@@ -151,12 +155,7 @@ task<std::unique_ptr<StreamTransport>, Error> StreamTransport::connect_tcp(std::
                                                                            int port,
                                                                            event_loop& loop) {
     auto connected = co_await tcp::connect(host, port, loop);
-    auto channel = to_stream(std::move(connected));
-    if(!channel) {
-        co_return outcome_error(channel.error());
-    }
-
-    co_return std::make_unique<StreamTransport>(std::move(*channel));
+    co_return std::make_unique<StreamTransport>(co_await or_fail(to_stream(std::move(connected))));
 }
 
 Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event_loop& loop) {
@@ -238,9 +237,8 @@ task<void, Error> StreamTransport::write_message(std::string_view payload) {
     auto& stream = shared_stream ? read_stream : write_stream;
     auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
     if(status.has_error()) {
-        co_return outcome_error(Error(std::string(status.error().message())));
+        co_await fail(std::string(status.error().message()));
     }
-    co_return outcome_value();
 }
 
 Result<void> StreamTransport::close_output() {
@@ -250,6 +248,15 @@ Result<void> StreamTransport::close_output() {
     }
 
     write_stream = stream{};
+    return {};
+}
+
+Result<void> StreamTransport::close() {
+    read_stream.stop();
+    read_stream = stream{};
+    if(!shared_stream) {
+        write_stream = stream{};
+    }
     return {};
 }
 

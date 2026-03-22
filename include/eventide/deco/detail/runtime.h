@@ -645,6 +645,25 @@ std::expected<Invocation<T, State>, ParseError> run_parse_session(std::span<std:
 
 }  // namespace detail
 
+template <typename T, typename Fn>
+    requires std::is_invocable_r_v<bool, Fn, const T&, decl::DecoOptionBase*>
+std::expected<ParsedResult<T>, ParseError> parse_with_callback(std::span<std::string> argv,
+                                                               Fn&& cont_fn) {
+    return detail::run_parse_session<T, std::monostate>(
+        argv,
+        std::monostate{},
+        [fn = std::forward<Fn>(cont_fn)](Invocation<T>& res,
+                                         decl::DecoOptionBase& accessor,
+                                         const backend::ParsedArgumentOwning&,
+                                         unsigned,
+                                         std::span<std::string>) mutable -> decl::ParseControl {
+            if(std::invoke(fn, std::as_const(res.options), &accessor)) {
+                return decl::ParseControl::next();
+            }
+            return decl::ParseControl::stop();
+        });
+}
+
 template <typename T>
 std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv,
                                                 const text::Renderer& formatter) {

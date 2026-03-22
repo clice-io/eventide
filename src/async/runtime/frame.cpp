@@ -289,6 +289,14 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             // await_resume handles exceptions (rethrow_if_exception)
             // and errors (explicit return value inspection).
             self->awaitee = nullptr;
+            // If the child task has an error hook (set by or_fail_task_await),
+            // let the hook handle error propagation instead of resuming normally.
+            if(child->state == Failed && child->kind == NodeKind::Task) {
+                auto* child_task = static_cast<standard_task*>(child);
+                if(auto propagate = child_task->get_error_hook()) {
+                    return propagate(child, self);
+                }
+            }
             return self->handle();
         }
 

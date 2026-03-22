@@ -28,14 +28,14 @@ task<void, error>
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data, host, port);
     bump_and_stop(done, 2);
-    co_return ec;
+    co_await or_fail(ec);
 }
 
 task<void, error> send_connected(udp& sock, std::string_view payload, int& done) {
     std::span<const char> data(payload.data(), payload.size());
     auto ec = co_await sock.send(data);
     bump_and_stop(done, 2);
-    co_return ec;
+    co_await or_fail(ec);
 }
 
 }  // namespace

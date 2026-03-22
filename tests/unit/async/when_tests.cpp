@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <utility>
 
 #include "eventide/zest/zest.h"
 #include "eventide/async/async.h"
@@ -78,7 +79,8 @@ task<int> delayed_int(int ms, int value) {
 }
 
 task<int, error> return_error(error err) {
-    co_return outcome_error(err);
+    co_await fail(err);
+    std::unreachable();
 }
 
 task<int, error> return_value(int val) {
@@ -87,7 +89,8 @@ task<int, error> return_value(int val) {
 
 task<int, error> delayed_return_error(int ms, error err) {
     co_await sleep(ms);
-    co_return outcome_error(err);
+    co_await fail(err);
+    std::unreachable();
 }
 
 task<int, error> delayed_return_value(int ms, int val) {
@@ -959,7 +962,7 @@ TEST_CASE(all_error_cancels_siblings) {
 
     auto failing = [&]() -> task<int, error> {
         co_await sleep(1);
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto slow = [&]() -> task<int, error> {
@@ -983,7 +986,7 @@ TEST_CASE(all_error_cancels_siblings) {
 
 TEST_CASE(all_error_immediate) {
     auto failing = []() -> task<int, error> {
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto normal = []() -> task<int, error> {
@@ -1021,7 +1024,7 @@ TEST_CASE(all_success_no_false_error) {
 
 TEST_CASE(all_mixed_error_and_void) {
     auto failing = []() -> task<int, error> {
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto void_task = []() -> task<> {
@@ -1041,7 +1044,7 @@ TEST_CASE(all_operation_aborted) {
     int slow_done = 0;
 
     auto aborting = [&]() -> task<int, error> {
-        co_return outcome_error(error::operation_aborted);
+        co_await fail(error::operation_aborted);
     };
 
     auto slow = [&]() -> task<int, error> {
@@ -1067,7 +1070,7 @@ TEST_CASE(all_eof_error) {
     int slow_done = 0;
 
     auto eof_task = [&]() -> task<int, error> {
-        co_return outcome_error(error::end_of_file);
+        co_await fail(error::end_of_file);
     };
 
     auto slow = [&]() -> task<int, error> {
@@ -1094,7 +1097,7 @@ TEST_CASE(any_error_cancels_siblings) {
 
     auto failing = [&]() -> task<int, error> {
         co_await sleep(1);
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto slow = [&]() -> task<int, error> {
@@ -1150,7 +1153,7 @@ TEST_CASE(any_range_error) {
 
 TEST_CASE(direct_co_await_returns_error) {
     auto failing = []() -> task<int, error> {
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto parent = [&]() -> task<int, error> {
@@ -1166,13 +1169,13 @@ TEST_CASE(direct_co_await_returns_error) {
 TEST_CASE(nested_manual_propagation) {
     auto failing = [&]() -> task<int, error> {
         co_await sleep(1);
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto parent = [&]() -> task<int, error> {
         auto res = co_await when_all(failing(), delayed_return_value(10, 42));
         if(!res) {
-            co_return outcome_error(std::move(res).error());
+            co_await fail(std::move(res).error());
         }
         auto [a, b] = *res;
         co_return a + b;
@@ -1189,7 +1192,7 @@ TEST_CASE(with_token_returns_error) {
 
     auto failing = [&]() -> task<int, error> {
         co_await sleep(1);
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto wrapped = with_token(failing(), source.token());
@@ -1225,7 +1228,7 @@ TEST_CASE(all_mixed_error_types) {
 
     auto failing = [&]() -> task<int, error> {
         co_await sleep(1);
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto slow = [&]() -> task<int, custom_error> {
@@ -1252,7 +1255,7 @@ TEST_CASE(any_mixed_error_types) {
 
     auto failing = [&]() -> task<int, custom_error> {
         co_await sleep(1);
-        co_return outcome_error(custom_error{7});
+        co_await fail(custom_error{7});
     };
 
     auto slow = [&]() -> task<int, error> {
@@ -1276,11 +1279,11 @@ TEST_CASE(any_mixed_error_types) {
 
 TEST_CASE(any_sync_all_error) {
     auto fail_a = []() -> task<int, error> {
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto fail_b = []() -> task<int, error> {
-        co_return outcome_error(error::end_of_file);
+        co_await fail(error::end_of_file);
     };
 
     auto combined = [&]() -> task<> {
@@ -1295,7 +1298,7 @@ TEST_CASE(any_sync_all_error) {
 
 TEST_CASE(error_vs_cancel_priority) {
     auto failing = []() -> task<int, error, cancellation> {
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto canceling = []() -> task<int, error, cancellation> {
@@ -1762,7 +1765,7 @@ TEST_CASE(returns_structured_error) {
 
     auto failing = [&]() -> task<int, error> {
         co_await sleep(1);
-        co_return outcome_error(error::connection_refused);
+        co_await fail(error::connection_refused);
     };
 
     auto slow = [&]() -> task<> {
@@ -1791,7 +1794,7 @@ TEST_CASE(mixed_error_types) {
 
     auto failing = [&]() -> task<int, custom_error> {
         co_await sleep(1);
-        co_return outcome_error(custom_error{7});
+        co_await fail(custom_error{7});
     };
 
     auto slow = [&]() -> task<> {
@@ -1821,7 +1824,7 @@ TEST_CASE(direct_error_does_not_escape) {
     auto failing = [&]() -> task<> {
         auto inner = [&]() -> task<int, error> {
             co_await sleep(1);
-            co_return outcome_error(error::connection_refused);
+            co_await fail(error::connection_refused);
         };
         auto res = co_await inner();
         (void)res;
