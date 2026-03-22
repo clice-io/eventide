@@ -9,8 +9,8 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/deco/decl.h"
-#include "eventide/deco/ty.h"
+#include "./decl.h"
+#include "./ty.h"
 #include "eventide/common/comptime.h"
 #include "eventide/common/memory.h"
 #include "eventide/common/meta.h"
@@ -177,8 +177,8 @@ private:
                 config_consume_next(config_stack, level);
                 return keep_going;
             } else {
-                static_assert(eventide::dependent_false<FieldTy>,
-                              "Only deco fields or nested option structs are supported.");
+                // now we just ignore it, some times we just need parameter in this
+                // struct but do not want to change it.
                 return true;
             }
         });
@@ -282,12 +282,13 @@ public:
     }
 };
 
-template <typename RootTy, auto record = eventide::comptime::counting_flag<3>>
+template <typename RootTy, auto record = eventide::comptime::counting_flag<4>>
 class LLVMOptGenerator : public DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy> {
     using base_t = DecoStructConsumer<LLVMOptGenerator<RootTy, record>, RootTy>;
 
 public:
     using accessor_fn = typename base_t::accessor_fn;
+    using parse_callback_t = decl::ErasedParseCallback;
 
 private:
     using info_item = backend::OptTable::Info;
@@ -296,6 +297,7 @@ private:
     using id_map_type = eventide::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
     using category_map_type =
         eventide::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
+    using callback_map_type = eventide::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
 
     // Keep a dummy at index 0 so item.id can be used as direct index.
     resource_ty resource{};
@@ -303,6 +305,7 @@ private:
     item_pool_type itemPool{};
     id_map_type idMap{};
     category_map_type categoryMap{};
+    callback_map_type callbackMap{};
 
     bool hasInputSlot = false;
     bool hasTrailingSlot = false;
@@ -310,6 +313,7 @@ private:
     unsigned inputOptionId = 0;
     accessor_fn trailingAccessor = nullptr;
     const decl::Category* trailingCategory = nullptr;
+    parse_callback_t trailingCallback{};
 
     constexpr static auto make_default_item(unsigned id) {
         return info_item::unaliased_one(backend::pfx_none,
@@ -332,6 +336,7 @@ private:
         item.id = item_id;
         idMap.push_back(mapped_accessor);
         categoryMap.push_back(nullptr);
+        callbackMap.push_back({});
         return item;
     }
 
@@ -339,7 +344,66 @@ private:
         categoryMap[item_id] = category;
     }
 
-    constexpr auto& set_common_options(info_item& item, const decl::CommonOptionFields& fields) {
+    constexpr void set_callback_for_item(unsigned item_id, parse_callback_t callback) {
+        callbackMap[item_id] = callback;
+    }
+
+    template <typename CallbackTy>
+    constexpr static auto encode_callback(CallbackTy callback) -> parse_callback_t::storage_t {
+        static_assert(sizeof(CallbackTy) == parse_callback_t::storage_size,
+                      "Eventide Error: callback pointer size mismatch");
+        parse_callback_t::storage_t storage{};
+        const auto* src = reinterpret_cast<const char*>(&callback);
+        for(std::size_t i = 0; i < sizeof(CallbackTy); ++i) {
+            storage[i] = src[i];
+        }
+        return storage;
+    }
+
+    template <typename CallbackTy>
+    static auto decode_callback(const parse_callback_t::storage_t& storage) -> CallbackTy {
+        static_assert(sizeof(CallbackTy) == parse_callback_t::storage_size,
+                      "Eventide Error: callback pointer size mismatch");
+        CallbackTy callback = nullptr;
+        auto* dst = reinterpret_cast<char*>(&callback);
+        for(std::size_t i = 0; i < sizeof(CallbackTy); ++i) {
+            dst[i] = storage[i];
+        }
+        return callback;
+    }
+
+    template <typename ResultTy, typename CallbackTy>
+    static auto invoke_parse_callback(const parse_callback_t::storage_t& storage,
+                                      const backend::ParsedArgumentOwning& arg,
+                                      unsigned next_cursor,
+                                      std::span<std::string> argv,
+                                      const decl::DecoOptionBase& option) -> decl::ParseControl {
+        const auto callback = decode_callback<CallbackTy>(storage);
+        if(callback == nullptr) {
+            return decl::ParseControl::next();
+        }
+        const auto& typed_option = static_cast<const decl::DecoOption<ResultTy>&>(option);
+        const decl::ParseStep<ResultTy> step(arg, next_cursor, argv, typed_option.value());
+        return callback(step);
+    }
+
+    template <typename ResultTy, typename CallbackTy>
+    constexpr static auto make_parse_callback(CallbackTy callback) -> parse_callback_t {
+        if constexpr(resource_ty::is_counting) {
+            return {};
+        }
+        if(callback == nullptr) {
+            return {};
+        }
+        return parse_callback_t{
+            .storage = encode_callback(callback),
+            .invoke = &invoke_parse_callback<ResultTy, CallbackTy>,
+        };
+    }
+
+    template <typename FieldsTy>
+    constexpr auto& set_common_options(info_item& item, const FieldsTy& fields) {
+        static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<FieldsTy>>);
         if(!fields.help.empty()) {
             item.help_text = strPool.add(fields.help).data();
         }
@@ -383,21 +447,26 @@ private:
         target._prefixed_name = strPool.add(parsed.prefix, parsed.name);
     }
 
+    template <typename FieldsTy>
     constexpr auto& set_named_options(unsigned item_id,
                                       accessor_fn mapped_accessor,
                                       std::string_view field_name,
-                                      const decl::NamedOptionFields& fields) {
+                                      const FieldsTy& fields,
+                                      parse_callback_t callback = {}) {
+        static_assert(std::is_base_of_v<decl::NamedOptionFields, std::remove_cvref_t<FieldsTy>>);
         const auto category = fields.category.ptr();
         auto& item = item_by_id(item_id);
         if(fields.names.empty()) {
             set_generated_name_from_field(item, field_name);
             set_common_options(item, fields);
             set_category_for_item(item.id, category);
+            set_callback_for_item(item.id, callback);
             return item;
         }
 
         set_prefixed_name(item, fields.names.front());
         set_category_for_item(item.id, category);
+        set_callback_for_item(item.id, callback);
 
         const auto item_snapshot = item;
         for(std::size_t i = 1; i < fields.names.size(); ++i) {
@@ -408,14 +477,16 @@ private:
             set_prefixed_name(alias, fields.names[i]);
             set_common_options(alias, fields);
             set_category_for_item(alias.id, category);
+            set_callback_for_item(alias.id, callback);
         }
 
         set_common_options(item_by_id(item_id), fields);
         return item_by_id(item_id);
     }
 
-    constexpr void add_input_option(const decl::CommonOptionFields& cfg,
-                                    accessor_fn mapped_accessor) {
+    template <typename CfgTy>
+    constexpr void add_input_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
+        static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
         if(hasInputSlot) {
             ETD_THROW("Only one DecoInput can be declared");
         }
@@ -428,10 +499,13 @@ private:
         idMap[inputOptionId] = mapped_accessor;
         set_common_options(item_by_id(inputOptionId), cfg);
         set_category_for_item(inputOptionId, cfg.category.ptr());
+        set_callback_for_item(inputOptionId,
+                              make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed));
     }
 
-    constexpr void add_trailing_option(const decl::CommonOptionFields& cfg,
-                                       accessor_fn mapped_accessor) {
+    template <typename CfgTy>
+    constexpr void add_trailing_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
+        static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
         if(hasTrailingSlot) {
             ETD_THROW("Only one DecoPack can be declared");
         }
@@ -439,6 +513,7 @@ private:
         hasTrailingPack = true;
         trailingAccessor = mapped_accessor;
         trailingCategory = cfg.category.ptr();
+        trailingCallback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
 
         // The backend only has one input id slot. If trailing appears first, reserve that slot
         // now so parse_args can still emit a valid input option id.
@@ -451,13 +526,15 @@ private:
         }
     }
 
-    constexpr void add_flag_option(const decl::FlagFields& cfg,
+    template <typename CfgTy>
+    constexpr void add_flag_option(const CfgTy& cfg,
                                    accessor_fn mapped_accessor,
                                    std::string_view field_name) {
+        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         auto& item = new_item(mapped_accessor);
         item.kind = backend::Option::FlagClass;
         item.param = 0;
-        set_named_options(item.id, mapped_accessor, field_name, cfg);
+        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
     constexpr static bool has_kv_style(char style, decl::KVStyle expected) {
@@ -471,10 +548,11 @@ private:
         return backend::Option::SeparateClass;
     }
 
+    template <typename FieldsTy>
     constexpr void add_generated_kv_joined_alias(unsigned item_id,
                                                  accessor_fn mapped_accessor,
                                                  std::string_view field_name,
-                                                 const decl::KVFields& fields) {
+                                                 const FieldsTy& fields) {
         const auto base_item = item_by_id(item_id);
         auto& alias = new_item(mapped_accessor);
         auto alias_id = alias.id;
@@ -484,12 +562,16 @@ private:
         set_generated_name_from_field(alias, field_name, "=");
         set_common_options(alias, fields);
         set_category_for_item(alias.id, fields.category.ptr());
+        set_callback_for_item(
+            alias.id,
+            make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
     }
 
+    template <typename FieldsTy>
     constexpr auto& set_kv_options_split_by_name(unsigned item_id,
                                                  accessor_fn mapped_accessor,
                                                  std::string_view field_name,
-                                                 const decl::KVFields& fields) {
+                                                 const FieldsTy& fields) {
         const auto category = fields.category.ptr();
         auto& item = item_by_id(item_id);
 
@@ -503,12 +585,18 @@ private:
             item.kind = backend::Option::SeparateClass;
             set_common_options(item, fields);
             set_category_for_item(item.id, category);
+            set_callback_for_item(
+                item.id,
+                make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
             add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, fields);
             return item_by_id(item_id);
         }
 
         set_kv_name_and_kind(item, fields.names.front());
         set_category_for_item(item.id, category);
+        set_callback_for_item(
+            item.id,
+            make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
 
         const auto item_snapshot = item;
         for(std::size_t i = 1; i < fields.names.size(); ++i) {
@@ -519,15 +607,20 @@ private:
             set_kv_name_and_kind(alias, fields.names[i]);
             set_common_options(alias, fields);
             set_category_for_item(alias.id, category);
+            set_callback_for_item(
+                alias.id,
+                make_parse_callback<typename FieldsTy::result_type>(fields.after_parsed));
         }
 
         set_common_options(item_by_id(item_id), fields);
         return item_by_id(item_id);
     }
 
-    constexpr void add_kv_option(const decl::KVFields& cfg,
+    template <typename CfgTy>
+    constexpr void add_kv_option(const CfgTy& cfg,
                                  accessor_fn mapped_accessor,
                                  std::string_view field_name) {
+        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
         const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
         if(!allow_joined && !allow_separate) {
@@ -541,24 +634,28 @@ private:
             return;
         }
         item.kind = allow_joined ? backend::Option::JoinedClass : backend::Option::SeparateClass;
-        set_named_options(item.id, mapped_accessor, field_name, cfg);
+        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
         if(allow_joined && cfg.names.empty()) {
             add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, cfg);
         }
     }
 
-    constexpr void add_comma_option(const decl::CommaJoinedFields& cfg,
+    template <typename CfgTy>
+    constexpr void add_comma_option(const CfgTy& cfg,
                                     accessor_fn mapped_accessor,
                                     std::string_view field_name) {
+        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         auto& item = new_item(mapped_accessor);
         item.kind = backend::Option::CommaJoinedClass;
         item.param = 1;
-        set_named_options(item.id, mapped_accessor, field_name, cfg);
+        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
-    constexpr void add_multi_option(const decl::MultiFields& cfg,
+    template <typename CfgTy>
+    constexpr void add_multi_option(const CfgTy& cfg,
                                     accessor_fn mapped_accessor,
                                     std::string_view field_name) {
+        const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         if(cfg.arg_num == 0) {
             ETD_THROW("DecoMulti arg_num must be greater than 0");
         }
@@ -568,7 +665,7 @@ private:
         auto& item = new_item(mapped_accessor);
         item.kind = backend::Option::MultiArgClass;
         item.param = static_cast<unsigned char>(cfg.arg_num);
-        set_named_options(item.id, mapped_accessor, field_name, cfg);
+        set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
     template <typename DecoTy>
@@ -580,11 +677,13 @@ public:
     constexpr static unsigned unknown_option_id = 1;
 
     constexpr explicit LLVMOptGenerator() :
-        strPool(resource), itemPool(resource), idMap(resource), categoryMap(resource) {
+        strPool(resource), itemPool(resource), idMap(resource), categoryMap(resource),
+        callbackMap(resource) {
         // Dummy item: keeps id and index aligned (id 0 => index 0).
         itemPool.push_back(make_default_item(0));
         idMap.push_back(nullptr);
         categoryMap.push_back(nullptr);
+        callbackMap.push_back({});
 
         auto& unknown = new_item(nullptr);
         unknown = info_item::unknown(unknown.id);
@@ -695,6 +794,10 @@ public:
         return std::span<const decl::Category* const>(categoryMap.data(), categoryMap.size());
     }
 
+    constexpr auto callback_map() const {
+        return std::span<const parse_callback_t>(callbackMap.data(), callbackMap.size());
+    }
+
     constexpr void* field_ptr_of(backend::OptSpecifier opt, RootTy& object) const {
         if(!opt.is_valid()) {
             return nullptr;
@@ -735,6 +838,10 @@ public:
         return trailingCategory;
     }
 
+    constexpr parse_callback_t trailing_callback() const {
+        return trailingCallback;
+    }
+
     constexpr const decl::Category* category_of(backend::OptSpecifier opt) const {
         if(!opt.is_valid()) {
             return nullptr;
@@ -744,6 +851,17 @@ public:
             return nullptr;
         }
         return categoryMap[id];
+    }
+
+    constexpr parse_callback_t callback_of(backend::OptSpecifier opt) const {
+        if(!opt.is_valid()) {
+            return {};
+        }
+        const auto id = opt.id();
+        if(id >= callback_map().size()) {
+            return {};
+        }
+        return callbackMap[id];
     }
 
     auto make_opt_table() const& {

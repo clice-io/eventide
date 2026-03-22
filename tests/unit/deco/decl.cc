@@ -1,10 +1,7 @@
-#include "eventide/deco/decl.h"
-
 #include <string>
 #include <vector>
 
-#include "eventide/deco/macro.h"
-#include "eventide/deco/trait.h"
+#include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
 
 static_assert(deco::trait::ScalarResultType<bool>);
@@ -41,7 +38,7 @@ struct CustomScalarResult {
 
     std::string value;
 
-    std::optional<std::string_view> into(std::string_view input) {
+    std::optional<std::string> into(std::string_view input) {
         value = std::string(input);
         return std::nullopt;
     }
@@ -232,7 +229,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
 
         std::vector<std::string> values;
 
-        std::optional<std::string_view> into(const std::vector<std::string_view>& input) {
+        std::optional<std::string> into(const std::vector<std::string_view>& input) {
             values.assign(input.begin(), input.end());
             return std::nullopt;
         }

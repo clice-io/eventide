@@ -5,8 +5,8 @@
 #include <type_traits>
 #include <vector>
 
-#include "eventide/deco/decl.h"
-#include "eventide/deco/ty.h"
+#include "./decl.h"
+#include "./ty.h"
 
 /*
  * generate string that describes the structure of options declared in deco::desc namespace, and

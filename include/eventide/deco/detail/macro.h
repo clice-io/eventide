@@ -1,8 +1,8 @@
 #pragma once
 #include <type_traits>
 
-#include "eventide/deco/decl.h"
-#include "eventide/deco/trait.h"
+#include "./decl.h"
+#include "./trait.h"
 
 #define DECO_CONCAT_IMPL(a, b) a##b
 #define DECO_CONCAT(a, b) DECO_CONCAT_IMPL(a, b)
@@ -14,10 +14,16 @@
     using _deco_base_t::required;                                                                  \
     using _deco_base_t::category;
 
-#define DECO_USING_COMMON                                                                          \
+#define DECO_USING_CONFIG_COMMON                                                                   \
     DECO_USING_OPTION_FIELDS                                                                       \
     using _deco_base_t::help;                                                                      \
     using _deco_base_t::meta_var;
+
+#define DECO_USING_COMMON                                                                          \
+    DECO_USING_CONFIG_COMMON                                                                       \
+    using Step = typename _deco_callback_base_t::Step;                                             \
+    using Action = typename _deco_callback_base_t::Action;                                         \
+    using _deco_callback_base_t::after_parsed;
 
 #define DECO_USING_NAMED                                                                           \
     DECO_USING_COMMON                                                                              \
@@ -40,7 +46,7 @@
 #define DECO_CONFIG_IMPL(id, TY, ...)                                                              \
     struct DECO_CFG_STRUCT_NAME(id) : public deco::decl::ConfigFields {                            \
         using _deco_base_t = deco::decl::ConfigFields;                                             \
-        DECO_USING_COMMON                                                                          \
+        DECO_USING_CONFIG_COMMON                                                                   \
         constexpr DECO_CFG_STRUCT_NAME(id)() {                                                     \
             type = TY;                                                                             \
             __VA_ARGS__;                                                                           \
@@ -59,8 +65,13 @@
 
 #define DECO_DECLARE_OPTION_TYPED_IMPL(id, option_base_ty, cfg_base_ty, using_block, ...)          \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_ty {                                   \
-        struct __deco_field_ty : public cfg_base_ty {                                              \
+        struct __deco_field_ty :                                                                   \
+            public cfg_base_ty,                                                                    \
+            public deco::decl::OptionCallbackField<typename option_base_ty::result_type> {         \
             using _deco_base_t = cfg_base_ty;                                                      \
+            using _deco_callback_base_t =                                                          \
+                deco::decl::OptionCallbackField<typename option_base_ty::result_type>;             \
+            using result_type = typename option_base_ty::result_type;                              \
             using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
             }                                                                                      \
@@ -87,8 +98,12 @@
                                           ...)                                                     \
     template <res_concept ResTy = default_res_type>                                                \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_tpl<ResTy> {                           \
-        struct __deco_field_ty : public cfg_base_ty {                                              \
+        struct __deco_field_ty :                                                                   \
+            public cfg_base_ty,                                                                    \
+            public deco::decl::OptionCallbackField<ResTy> {                                        \
             using _deco_base_t = cfg_base_ty;                                                      \
+            using _deco_callback_base_t = deco::decl::OptionCallbackField<ResTy>;                  \
+            using result_type = ResTy;                                                             \
             using_block constexpr __deco_field_ty() {                                              \
                 __VA_ARGS__;                                                                       \
             }                                                                                      \

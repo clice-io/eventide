@@ -1,12 +1,9 @@
-#include "eventide/deco/serialize.h"
-
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
-#include "eventide/deco/macro.h"
-#include "eventide/deco/runtime.h"
+#include "eventide/deco/deco.h"
 #include "eventide/zest/zest.h"
 
 namespace {
