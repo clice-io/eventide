@@ -434,6 +434,13 @@ auto excerpt_diagnostic_line(std::string_view line,
     }
 
     constexpr std::string_view ellipsis = "...";
+    if(max_width <= ellipsis.size()) {
+        excerpt.line = std::string(ellipsis.substr(0, max_width));
+        excerpt.marker_start = 0;
+        excerpt.marker_width = 1;
+        return excerpt;
+    }
+
     constexpr std::size_t context_before_marker = 16;
 
     std::size_t content_start = 0;
@@ -445,12 +452,16 @@ auto excerpt_diagnostic_line(std::string_view line,
     }
 
     bool crop_left = content_start > 0;
-    std::size_t available = max_width - (crop_left ? ellipsis.size() : 0);
+    std::size_t available = max_width;
+    if(crop_left) {
+        available -= ellipsis.size();
+    }
     std::size_t content_end = std::min(line.size(), content_start + available);
     bool crop_right = content_end < line.size();
     if(crop_right) {
-        available -= ellipsis.size();
+        available = available > ellipsis.size() ? available - ellipsis.size() : 0;
         content_end = std::min(line.size(), content_start + available);
+        crop_right = content_end < line.size();
     }
 
     if(content_end >= line.size()) {
@@ -515,7 +526,7 @@ auto modern_heading(std::string_view title, std::string_view body) -> std::strin
 }
 
 auto mutable_default_renderer() -> Renderer& {
-    static CompatibleRenderer renderer;
+    static thread_local CompatibleRenderer renderer;
     return renderer;
 }
 

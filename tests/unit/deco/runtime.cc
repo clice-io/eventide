@@ -1,6 +1,7 @@
 #include "eventide/deco/detail/runtime.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <print>
@@ -1040,17 +1041,21 @@ struct CatterOpt {
         std::optional<std::string> into(std::string_view input,
                                         const deco::decl::IntoContext& ctx) {
             namespace fs = std::filesystem;
-            path = input;
-            if(fs::exists(path)) {
-                if(fs::is_directory(path)) {
-                    return ctx.format_error("a file is needed");
-                } else if(fs::is_regular_file(path)) {
-                    return std::nullopt;
+            try {
+                path = input;
+                if(fs::exists(path)) {
+                    if(fs::is_directory(path)) {
+                        return ctx.format_error("a file is needed");
+                    } else if(fs::is_regular_file(path)) {
+                        return std::nullopt;
+                    }
+                } else {
+                    return ctx.format_error("the path does not exist!");
                 }
-            } else {
-                return ctx.format_error("the path does not exist!");
+                return ctx.format_error("unsupported script path");
+            } catch(const fs::filesystem_error& err) {
+                return ctx.format_error(std::format("filesystem error: {}", err.what()));
             }
-            return ctx.format_error("unsupported script path");
         }
     };
 
@@ -1089,6 +1094,27 @@ TEST_CASE(catter_v2) {
             step.usage(std::cerr);
             return step.stop();
         });
+
+    const auto script_path =
+        std::filesystem::temp_directory_path() / "eventide-catter-v2-script.tmp";
+    {
+        std::ofstream out(script_path);
+        out << "print('hello')\n";
+    }
+
+    auto res = cli.invoke(
+        into_deco_args("-s", script_path.string(), "--flag", "demo", "--", "make", "test"));
+    EXPECT_TRUE(res.has_value());
+    if(!res.has_value()) {
+        std::filesystem::remove(script_path);
+        return;
+    }
+
+    EXPECT_TRUE(res->options.external_script.has_value());
+    EXPECT_TRUE(res->options.script_args == std::vector<std::string>{"--flag", "demo"});
+    EXPECT_TRUE(res->options.command.has_value());
+    EXPECT_TRUE(*res->options.command == std::vector<std::string>{"make", "test"});
+    std::filesystem::remove(script_path);
 }
 
 };  // TEST_SUITE(deco_cases_from_user)

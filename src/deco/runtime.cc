@@ -6,6 +6,9 @@ namespace deco::util {
 
 std::vector<std::string> argvify(int argc, const char* const* argv, unsigned skip_num) {
     std::vector<std::string> res;
+    if(argc <= 0) {
+        return res;
+    }
     for(unsigned i = skip_num; i < static_cast<unsigned>(argc); ++i) {
         res.emplace_back(argv[i]);
     }

@@ -338,8 +338,8 @@ struct SubCommandMatch {
     std::span<std::string> original_argv{};
     std::span<std::string> remaining_argv{};
     std::string_view token{};
-    std::string_view name{};
-    std::string_view command{};
+    std::string name{};
+    std::string command{};
 
     auto args() const -> std::span<std::string> {
         return remaining_argv;

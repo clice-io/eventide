@@ -21,10 +21,10 @@ struct PositionStyle {
 struct UsageStyle {
     bool group_by_category = true;
     std::size_t help_column = 32;
-    std::string_view options_heading = "Options:";
-    std::string_view group_prefix = "Group ";
-    std::string_view exclusive_suffix = ", exclusive with other groups";
-    std::string_view default_help = "no description provided";
+    std::string options_heading = "Options:";
+    std::string group_prefix = "Group ";
+    std::string exclusive_suffix = ", exclusive with other groups";
+    std::string default_help = "no description provided";
 };
 
 struct SubCommandStyle {
@@ -33,7 +33,7 @@ struct SubCommandStyle {
     bool show_description = true;
     bool align_description = true;
     bool show_command_alias = true;
-    std::string_view heading = "Subcommands:";
+    std::string heading = "Subcommands:";
 };
 
 struct TextStyle {

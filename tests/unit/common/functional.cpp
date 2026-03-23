@@ -108,9 +108,15 @@ TEST_CASE(function_ref_from_pointer_and_mem_fn) {
 };
 
 TEST_CASE(function_ref_from_const_mem_fn) {
-    Adder adder{42};
+    const Adder adder{42};
     auto fn = bind_ref<&Adder::add_const>(adder);
     EXPECT_EQ(fn(8), 50);
+};
+
+TEST_CASE(function_ref_from_const_callable_object) {
+    const SmallCallable sc{100};
+    function_ref<int(int)> fn(sc);
+    EXPECT_EQ(fn(23), 123);
 };
 
 TEST_CASE(function_ref_bind_ref_non_const) {

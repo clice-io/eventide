@@ -43,7 +43,7 @@ struct mem_fn<V, Ret (Class::*)(Args...) const> {
 template <typename Class, typename MemFn>
 concept is_mem_fn_of = requires {
     typename MemFn::ClassType;
-    requires std::is_same_v<Class, typename MemFn::ClassType>;
+    requires std::is_same_v<std::remove_cv_t<Class>, typename MemFn::ClassType>;
 };
 
 template <typename Ret, typename Fn, typename... Args>
@@ -66,7 +66,7 @@ public:
     using Sign = R(Args...);
 
     using Erased = union {
-        void* ctx;
+        const void* ctx;
         Sign* fn;
     };
 
@@ -80,13 +80,14 @@ private:
     constexpr function_ref(R (*proxy)(const function_ref*, Args&...), Erased ctx) noexcept :
         proxy{proxy}, erased{ctx} {}
 
-    template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
-        requires is_mem_fn_of<ClassType, MemFn>
+    template <typename Class, typename MemFn, typename ClassType = std::remove_reference_t<Class>>
+        requires std::is_lvalue_reference_v<Class&&> && is_mem_fn_of<ClassType, MemFn> &&
+                 std::is_invocable_r_v<R, decltype(MemFn::get()), ClassType&, Args...>
     constexpr static function_ref make(Class&& invocable, MemFn) noexcept {
         return function_ref(
             [](const function_ref* self, Args&... args) -> R {
-                return (static_cast<ClassType*>(self->erased.ctx)->*MemFn::get())(
-                    static_cast<Args&&>(args)...);
+                auto& fn = *const_cast<ClassType*>(static_cast<const ClassType*>(self->erased.ctx));
+                return invoke_ret<R>(MemFn::get(), fn, static_cast<Args&&>(args)...);
             },
             Erased{.ctx = &invocable});
     }
@@ -105,10 +106,10 @@ private:
         if constexpr(std::is_convertible_v<Class&&, Sign*>) {
             return make(static_cast<Sign*>(std::forward<Class>(invocable)));
         } else {
-            using ClassType = std::remove_cvref_t<Class>;
+            using ClassType = std::remove_reference_t<Class>;
             return function_ref(
                 [](const function_ref* self, Args&... args) -> R {
-                    auto& fn = *static_cast<ClassType*>(self->erased.ctx);
+                    auto& fn = *const_cast<ClassType*>(static_cast<const ClassType*>(self->erased.ctx));
                     return invoke_ret<R>(fn, static_cast<Args&&>(args)...);
                 },
                 Erased{.ctx = &invocable});
@@ -117,6 +118,7 @@ private:
 
 public:
     template <auto MemFnPointer, typename Class, typename Mem>
+        requires std::is_lvalue_reference_v<Class&&>
     friend constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj);
 
     constexpr function_ref(Sign* invocable) noexcept : function_ref(make(invocable)) {}
@@ -213,7 +215,7 @@ private:
 
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
         requires sbo_eligible<ClassType> && is_mem_fn_of<ClassType, MemFn>
-    constexpr static function make(Class&& invocable, MemFn) noexcept {
+    constexpr static function make(Class&& invocable, MemFn) {
         if consteval {
             constexpr static vtable vt = {
                 [](function* self, Args&... args) -> R {
@@ -240,7 +242,7 @@ private:
 
     template <typename Class, typename MemFn, typename ClassType = std::remove_cvref_t<Class>>
         requires (!sbo_eligible<ClassType>) && is_mem_fn_of<ClassType, MemFn>
-    constexpr static function make(Class&& invocable, MemFn) noexcept {
+    constexpr static function make(Class&& invocable, MemFn) {
         constexpr static vtable vt = {
             [](function* self, Args&... args) -> R {
                 return (static_cast<ClassType*>(self->storage.erased.ctx)->*MemFn::get())(
@@ -254,7 +256,7 @@ private:
     }
 
     template <typename Class>
-    constexpr static function make(Class&& invocable) noexcept {
+    constexpr static function make(Class&& invocable) {
         if constexpr(std::is_convertible_v<Class&&, Sign*>) {
             return make(static_cast<Sign*>(std::forward<Class>(invocable)));
         } else {
@@ -308,7 +310,7 @@ public:
     template <typename Class>
         requires (!std::is_same_v<std::remove_cvref_t<Class>, function>) &&
                  std::is_invocable_r_v<R, Class, Args...>
-    constexpr function(Class&& invocable) noexcept :
+    constexpr function(Class&& invocable) :
         function(make(std::forward<Class>(invocable))) {}
 
     template <typename... CallArgs>
@@ -336,6 +338,7 @@ private:
 };
 
 template <auto MemFnPointer, typename Class, typename Mem = mem_fn<MemFnPointer>>
+    requires std::is_lvalue_reference_v<Class&&>
 constexpr function_ref<typename Mem::FunctionType> bind_ref(Class&& obj) {
     return function_ref<typename Mem::FunctionType>::make(std::forward<Class>(obj), Mem{});
 }
