@@ -36,6 +36,7 @@ target_sources(eventide_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/io/acceptor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/console.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/fs.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io/fs_event.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/loop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/process.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/request.cpp"

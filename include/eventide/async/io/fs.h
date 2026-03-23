@@ -201,13 +201,18 @@ task<std::string, error> realpath(std::string_view path, event_loop& loop = even
 
 task<void, error> fchmod(int fd, int mode, event_loop& loop = event_loop::current());
 
-task<void, error>
-    chown(std::string_view path, int uid, int gid, event_loop& loop = event_loop::current());
+task<void, error> chown(std::string_view path,
+                        std::uint32_t uid,
+                        std::uint32_t gid,
+                        event_loop& loop = event_loop::current());
 
-task<void, error> fchown(int fd, int uid, int gid, event_loop& loop = event_loop::current());
-
 task<void, error>
-    lchown(std::string_view path, int uid, int gid, event_loop& loop = event_loop::current());
+    fchown(int fd, std::uint32_t uid, std::uint32_t gid, event_loop& loop = event_loop::current());
+
+task<void, error> lchown(std::string_view path,
+                         std::uint32_t uid,
+                         std::uint32_t gid,
+                         event_loop& loop = event_loop::current());
 
 struct fs_stats {
     std::uint64_t type = 0;
@@ -258,68 +263,5 @@ result<std::string> read_to_string(std::string_view path);
 }  // namespace sync
 
 }  // namespace fs
-
-class fs_event {
-public:
-    fs_event() noexcept;
-
-    fs_event(const fs_event&) = delete;
-    fs_event& operator=(const fs_event&) = delete;
-
-    fs_event(fs_event&& other) noexcept;
-    fs_event& operator=(fs_event&& other) noexcept;
-
-    ~fs_event();
-
-    struct Self;
-    Self* operator->() noexcept;
-
-    struct watch_options {
-        /// Report creation/removal events (if supported by backend).
-        bool watch_entry;
-
-        /// Use stat polling where available.
-        bool stat;
-
-        /// Recurse into subdirectories when supported.
-        bool recursive;
-
-        constexpr watch_options(bool watch_entry = false,
-                                bool stat = false,
-                                bool recursive = false) :
-            watch_entry(watch_entry), stat(stat), recursive(recursive) {}
-    };
-
-    struct change_flags {
-        /// Entry renamed or moved.
-        bool rename;
-
-        /// Entry content/metadata changed.
-        bool change;
-
-        constexpr change_flags(bool rename = false, bool change = false) :
-            rename(rename), change(change) {}
-    };
-
-    struct change {
-        std::string path;
-        change_flags flags = {};
-    };
-
-    static result<fs_event> create(event_loop& loop = event_loop::current());
-
-    /// Start watching the given path; flags mapped to libuv equivalents.
-    error start(const char* path, watch_options options = watch_options{});
-
-    error stop();
-
-    /// Await a change event; delivers one pending change at a time.
-    task<change, error> wait();
-
-private:
-    explicit fs_event(unique_handle<Self> self) noexcept;
-
-    unique_handle<Self> self;
-};
 
 }  // namespace eventide

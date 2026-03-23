@@ -239,8 +239,8 @@ TEST_CASE(chown_fchown_lchown) {
 
         // Get current owner.
         auto st = co_await fs::stat(file, loop).or_fail();
-        int uid = static_cast<int>(st.uid);
-        int gid = static_cast<int>(st.gid);
+        auto uid = static_cast<std::uint32_t>(st.uid);
+        auto gid = static_cast<std::uint32_t>(st.gid);
 
         // chown to same owner (should succeed without root).
         co_await fs::chown(file, uid, gid, loop).or_fail();
