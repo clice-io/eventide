@@ -189,17 +189,18 @@ if has_config("option") then
 		set_kind("$(kind)")
 		add_files("src/option/*.cc")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(eventide/option/*)")
+		add_headerfiles("include/(eventide/option/option.h)", "include/(eventide/option/detail/**.h)")
 		add_deps("common")
 	end)
 end
 
 if has_config("deco") and has_config("option") then
 	target("deco", function()
-		set_kind("headeronly")
+		set_kind("$(kind)")
+		add_files("src/deco/*.cc")
 		add_includedirs("include", { public = true })
 		add_cxflags("cl::/Zc:preprocessor", { public = true })
-		add_headerfiles("include/(eventide/deco/*)")
+		add_headerfiles("include/(eventide/deco/deco.h)", "include/(eventide/deco/detail/**.h)")
 		add_deps("option")
 	end)
 end

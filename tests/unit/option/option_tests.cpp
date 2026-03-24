@@ -9,9 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "eventide/option/opt_table.h"
 #include "eventide/option/option.h"
-#include "eventide/option/util.h"
 #include "eventide/zest/zest.h"
 
 namespace {

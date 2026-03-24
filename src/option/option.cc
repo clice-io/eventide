@@ -7,9 +7,6 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/option/opt_table.h"
-#include "eventide/option/parsed_arg.h"
-
 namespace eventide::option {
 namespace {
 

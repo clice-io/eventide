@@ -7,9 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "eventide/deco/decl.h"
-#include "eventide/deco/macro.h"
-#include "eventide/deco/runtime.h"
+#include "eventide/deco/deco.h"
+#include "eventide/deco/detail/text.h"
 #include "eventide/zest/detail/registry.h"
 #include "eventide/zest/run.h"
 
@@ -221,19 +220,21 @@ namespace eventide::zest {
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto args = deco::util::argvify(argc, argv);
-    deco::cli::Dispatcher<ZestCliOptions> dispatcher(command_overview);
+    auto renderer = deco::cli::text::ModernRenderer();
+    deco::cli::Command<ZestCliOptions> command(command_overview);
+    command.render_with(renderer);
 
-    auto parsed = deco::cli::parse<ZestCliOptions>(args);
+    auto parsed = deco::cli::parse<ZestCliOptions>(args, renderer);
     if(!parsed.has_value()) {
         std::cerr << "Error parsing options: " << parsed.error().message << "\n";
-        dispatcher.usage(std::cerr);
+        command.usage(std::cerr);
         std::exit(1);
     }
 
     auto options = to_runner_options(std::move(parsed->options));
     if(!options.has_value()) {
         std::cerr << "Error parsing options: " << options.error() << "\n";
-        dispatcher.usage(std::cerr);
+        command.usage(std::cerr);
         std::exit(1);
     }
 

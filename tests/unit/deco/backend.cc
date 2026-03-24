@@ -1,11 +1,9 @@
-#include "eventide/deco/backend.h"
-
 #include <expected>
 #include <string>
 #include <type_traits>
 #include <vector>
 
-#include "eventide/deco/macro.h"
+#include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
 
 namespace {

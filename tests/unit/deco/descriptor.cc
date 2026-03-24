@@ -1,9 +1,7 @@
-#include "eventide/deco/descriptor.h"
-
 #include <string>
 #include <vector>
 
-#include "eventide/deco/macro.h"
+#include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
 
 namespace {
