@@ -63,6 +63,7 @@ struct NonTrivialCallable {
 static_assert(!std::is_trivially_copyable_v<NonTrivialCallable>);
 static_assert(function<int(int)>::sbo_eligible<NonTrivialCallable>);
 static_assert(!std::is_invocable_v<const function<int(int)>&, int>);
+static_assert(std::is_invocable_v<const function<int(int) const>&, int>);
 
 // --- Tests ---
 
@@ -216,6 +217,25 @@ TEST_CASE(function_from_mutable_lambda) {
     });
     EXPECT_EQ(fn(2), 2);
     EXPECT_EQ(fn(3), 5);
+};
+
+TEST_CASE(function_const_from_callable_object) {
+    const function<int(int) const> fn(SmallCallable{100});
+    EXPECT_EQ(fn(23), 123);
+};
+
+TEST_CASE(function_const_from_function_pointer) {
+    const function<int(int) const> fn(free_negate);
+    EXPECT_EQ(fn(5), -5);
+};
+
+TEST_CASE(function_const_rejects_mutable_lambda) {
+    auto lambda = [sum = 0](int x) mutable -> int {
+        sum += x;
+        return sum;
+    };
+    static_assert(!std::is_constructible_v<function<int(int) const>, decltype(lambda)>);
+    EXPECT_TRUE(true);
 };
 
 TEST_CASE(function_move_construct) {
