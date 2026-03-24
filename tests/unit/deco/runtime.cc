@@ -381,16 +381,16 @@ TEST_CASE(parsing) {
     EXPECT_TRUE(opt.request.url->url == "https://example.com");
 }
 
-TEST_CASE(parse_only_returns_options) {
+TEST_CASE(parse_result_exposes_options) {
     auto args = into_deco_args("-X", "POST", "--url", "https://example.com");
-    auto res = deco::cli::parse_only<WebCliOpt>(args);
+    auto res = deco::cli::parse<WebCliOpt>(args);
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
     }
 
-    EXPECT_TRUE(res->request.method->type == Request::RequestType::Type::Post);
-    EXPECT_TRUE(res->request.url->url == "https://example.com");
+    EXPECT_TRUE(res->options.request.method->type == Request::RequestType::Type::Post);
+    EXPECT_TRUE(res->options.request.url->url == "https://example.com");
 }
 
 TEST_CASE(parsing_input_and_trailing) {

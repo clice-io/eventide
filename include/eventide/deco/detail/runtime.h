@@ -667,31 +667,6 @@ std::expected<Invocation<T>, ParseError> parse(std::span<std::string> argv) {
 }
 
 template <typename T>
-// Returns bare options without preserving Invocation lifetime state.
-// Built-in deco parsing therefore only supports owning string result types.
-// Custom into(...) implementations remain responsible for any borrowed storage they expose.
-std::expected<T, ParseError> parse_only(std::span<std::string> argv,
-                                        const text::Renderer& formatter) {
-    auto res = parse<T>(argv, formatter);
-    if(!res.has_value()) {
-        return std::unexpected(std::move(res.error()));
-    }
-    return std::move(res->options);
-}
-
-template <typename T>
-// Returns bare options without preserving Invocation lifetime state.
-// Built-in deco parsing therefore only supports owning string result types.
-// Custom into(...) implementations remain responsible for any borrowed storage they expose.
-std::expected<T, ParseError> parse_only(std::span<std::string> argv) {
-    auto res = parse<T>(argv);
-    if(!res.has_value()) {
-        return std::unexpected(std::move(res.error()));
-    }
-    return std::move(res->options);
-}
-
-template <typename T>
 class Command {
     using invocation_t = Invocation<T>;
     using finalize_handler_t = runtime_callable_t<void(invocation_t&)>;
@@ -921,17 +896,6 @@ public:
             finalize(*res);
         }
         return res;
-    }
-
-    // Returns bare options without preserving Invocation lifetime state.
-    // Built-in deco parsing therefore only supports owning string result types.
-    // Custom into(...) implementations remain responsible for any borrowed storage they expose.
-    auto parse_only(std::span<std::string> argv) -> std::expected<T, ParseError> {
-        auto res = invoke(argv);
-        if(!res.has_value()) {
-            return std::unexpected(std::move(res.error()));
-        }
-        return std::move(res->options);
     }
 
     template <typename Os>
