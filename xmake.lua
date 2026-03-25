@@ -166,7 +166,7 @@ if has_config("ztest") then
 		set_kind("$(kind)")
 		add_files("src/zest/*.cpp")
 		add_includedirs("include", { public = true })
-        add_headerfiles("include/(eventide/zest/**)")
+		add_headerfiles("include/(eventide/zest/**)")
 		add_cxflags("cl::/Zc:preprocessor", { public = true })
 		add_deps("common")
 		add_packages("cpptrace", { public = true })
