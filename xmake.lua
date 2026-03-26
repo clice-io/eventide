@@ -232,7 +232,6 @@ target("eventide", function()
 	set_kind("static")
 	add_rules("utils.merge.archive")
 	set_policy("build.merge_archive", true)
-	add_files("src/eventide.cpp")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/**)")
 
