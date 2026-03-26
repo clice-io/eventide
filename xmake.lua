@@ -230,8 +230,6 @@ end
 target("eventide", function()
 	set_default(false)
 	set_kind("static")
-	add_rules("utils.merge.archive")
-	set_policy("build.merge_archive", true)
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/**)")
 
@@ -270,6 +268,39 @@ target("eventide", function()
 	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 		add_deps("ipc", "language", { public = true })
 	end
+
+	-- `utils.merge.archive` mutates dependency link inheritance globally in after_load,
+	-- which breaks sibling targets such as `unit_tests`.
+	-- Merge static deps locally after linking this target instead.
+	after_link(function (target, opt)
+		import("utils.archive.merge_staticlib")
+		import("core.project.depend")
+		import("utils.progress")
+
+		local libraryfiles = {}
+		for _, dep in ipairs(target:orderdeps()) do
+			if dep:is_static() then
+				table.insert(libraryfiles, dep:targetfile())
+			end
+		end
+		if #libraryfiles > 0 then
+			table.insert(libraryfiles, target:targetfile())
+		end
+
+		depend.on_changed(function ()
+			progress.show(opt.progress, "${color.build.target}merging.$(mode) %s", path.filename(target:targetfile()))
+			if #libraryfiles > 0 then
+				local tmpfile = os.tmpfile() .. path.extension(target:targetfile())
+				merge_staticlib(target, tmpfile, libraryfiles)
+				os.cp(tmpfile, target:targetfile())
+				os.rm(tmpfile)
+			end
+		end, {
+			dependfile = target:dependfile(target:targetfile() .. ".eventide.merge"),
+			files = libraryfiles,
+			changed = target:is_rebuilt()
+		})
+	end)
 end)
 
 if has_config("test") and has_config("ztest") then
