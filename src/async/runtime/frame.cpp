@@ -20,7 +20,7 @@ async_node* detail::current_node() noexcept {
     return current_running_node;
 }
 
-async_node* async_node::current() noexcept {
+const async_node* async_node::current() noexcept {
     return current_running_node;
 }
 
@@ -63,11 +63,10 @@ void drain_pending_destroys() {
 
 }  // namespace
 
-void detail::resume_and_drain(std::coroutine_handle<> handle) {
+void detail::resume_and_drain(async_node* restore_to, std::coroutine_handle<> handle) {
     if(handle) {
-        auto* prev = current_running_node;
         handle.resume();
-        current_running_node = prev;
+        current_running_node = restore_to;
     }
 #if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     drain_pending_destroys();
@@ -137,8 +136,9 @@ void async_node::cancel() {
             return;
         }
 
+        auto* prev = current_running_node;
         auto next = awaiter->handle_subtask_result(link);
-        detail::resume_and_drain(next);
+        detail::resume_and_drain(prev, next);
     };
 
     switch(kind) {
@@ -177,8 +177,9 @@ void async_node::cancel() {
                 break;
             }
 
+            auto* prev = current_running_node;
             auto next = self->deliver_deferred();
-            detail::resume_and_drain(next);
+            detail::resume_and_drain(prev, next);
             break;
         }
 
@@ -217,8 +218,9 @@ void system_op::complete() noexcept {
     if(!parent) {
         return;
     }
+    auto* prev = current_running_node;
     auto next = parent->handle_subtask_result(this);
-    detail::resume_and_drain(next);
+    detail::resume_and_drain(prev, next);
 }
 
 /// Wires this node as a child of `awaiter`. For Task nodes, sets state

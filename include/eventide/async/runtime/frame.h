@@ -16,12 +16,18 @@
 
 namespace eventide {
 
+class async_node;
 class sync_primitive;
 
 namespace detail {
 
 /// Resume a coroutine and immediately drain any deferred root-frame destruction.
-void resume_and_drain(std::coroutine_handle<> handle);
+/// @param restore_to  The async_node* to write back into the thread-local
+///                    current-node slot after the resumed chain returns.
+///                    Callers must capture this **before** any call to
+///                    handle_subtask_result / deliver_deferred, which
+///                    overwrite the slot as part of symmetric-transfer setup.
+void resume_and_drain(async_node* restore_to, std::coroutine_handle<> handle);
 
 }  // namespace detail
 
@@ -124,7 +130,7 @@ public:
 
     /// Returns the async_node whose coroutine body is currently executing on
     /// this thread, or nullptr if no coroutine is active.
-    static async_node* current() noexcept;
+    const static async_node* current() noexcept;
 
     /// Convenience: calls dump_dot() on the current node.  Returns an empty
     /// string if no coroutine is active.
