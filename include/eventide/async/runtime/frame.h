@@ -122,6 +122,14 @@ public:
     /// Dump the async graph reachable from this node as a DOT (graphviz) graph.
     std::string dump_dot() const;
 
+    /// Returns the async_node whose coroutine body is currently executing on
+    /// this thread, or nullptr if no coroutine is active.
+    static async_node* current() noexcept;
+
+    /// Convenience: calls dump_dot() on the current node.  Returns an empty
+    /// string if no coroutine is active.
+    static std::string dump_current_dot();
+
 private:
     const static async_node* get_awaiter(const async_node* node);
     const static sync_primitive* get_resource_parent(const async_node* node);
@@ -419,5 +427,16 @@ protected:
 public:
     void complete() noexcept;
 };
+
+namespace detail {
+
+/// Thread-local pointer to the async_node whose coroutine body is currently
+/// executing on this thread.  Set by the tracking awaiters in task.h and
+/// save/restored around every resume entry-point so that user code can always
+/// call async_node::current() to obtain it.
+void set_current_node(async_node* node) noexcept;
+async_node* current_node() noexcept;
+
+}  // namespace detail
 
 }  // namespace eventide

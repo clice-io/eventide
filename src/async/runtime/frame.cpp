@@ -10,6 +10,27 @@
 
 namespace eventide {
 
+static thread_local async_node* current_running_node = nullptr;
+
+void detail::set_current_node(async_node* node) noexcept {
+    current_running_node = node;
+}
+
+async_node* detail::current_node() noexcept {
+    return current_running_node;
+}
+
+async_node* async_node::current() noexcept {
+    return current_running_node;
+}
+
+std::string async_node::dump_current_dot() {
+    if(auto* node = current_running_node) {
+        return node->dump_dot();
+    }
+    return {};
+}
+
 namespace {
 
 #if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
@@ -44,7 +65,9 @@ void drain_pending_destroys() {
 
 void detail::resume_and_drain(std::coroutine_handle<> handle) {
     if(handle) {
+        auto* prev = current_running_node;
         handle.resume();
+        current_running_node = prev;
     }
 #if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     drain_pending_destroys();
@@ -66,17 +89,22 @@ std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     awaiter->clear_awaitee();
 
     switch(deferred) {
-        case Deferred::Resume: return static_cast<standard_task*>(awaiter)->handle();
+        case Deferred::Resume:
+            current_running_node = awaiter;
+            return static_cast<standard_task*>(awaiter)->handle();
 
         case Deferred::Cancel:
             if(policy & InterceptCancel) {
                 state = Cancelled;
+                current_running_node = awaiter;
                 return static_cast<standard_task*>(awaiter)->handle();
             }
             awaiter->state = Cancelled;
             return awaiter->final_transition();
 
-        case Deferred::Error: return static_cast<standard_task*>(awaiter)->handle();
+        case Deferred::Error:
+            current_running_node = awaiter;
+            return static_cast<standard_task*>(awaiter)->handle();
 
         case Deferred::None: break;
     }
@@ -168,7 +196,9 @@ void async_node::cancel() {
 void async_node::resume() {
     if(is_standard_task()) {
         if(!is_cancelled() && !is_failed()) {
+            auto* prev = current_running_node;
             static_cast<standard_task*>(this)->handle().resume();
+            current_running_node = prev;
 #if ETD_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
             drain_pending_destroys();
 #endif
@@ -277,6 +307,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             if(child->state == Cancelled) {
                 if(child->policy & InterceptCancel) {
                     self->awaitee = nullptr;
+                    current_running_node = self;
                     return self->handle();
                 }
 
@@ -297,6 +328,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
                     return propagate(child, self);
                 }
             }
+            current_running_node = self;
             return self->handle();
         }
 
