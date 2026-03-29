@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -234,18 +235,29 @@ std::uint32_t PositionMapper::length(std::uint32_t line,
     return measure(content.substr(start + begin_byte_column, size));
 }
 
-protocol::Position PositionMapper::to_position(std::uint32_t offset) const {
+std::optional<protocol::Position> PositionMapper::to_position(std::uint32_t offset) const {
+    if(offset > content.size()) [[unlikely]] {
+        return std::nullopt;
+    }
     auto line = line_of(offset);
     auto column = offset - line_start(line);
+    if(line_start(line) + column > line_end_exclusive(line)) [[unlikely]] {
+        return std::nullopt;
+    }
     return protocol::Position{
         .line = line,
         .character = character(line, column),
     };
 }
 
-std::uint32_t PositionMapper::to_offset(protocol::Position position) const {
+std::optional<std::uint32_t> PositionMapper::to_offset(protocol::Position position) const {
     auto line = position.line;
     auto target = position.character;
+
+    if(line >= line_starts.size()) [[unlikely]] {
+        return std::nullopt;
+    }
+
     auto begin = line_start(line);
     auto end = line_end_exclusive(line);
 
@@ -254,7 +266,9 @@ std::uint32_t PositionMapper::to_offset(protocol::Position position) const {
     }
 
     if(encoding == PositionEncoding::UTF8) {
-        assert(begin + target <= end && "character out of range");
+        if(begin + target > end) [[unlikely]] {
+            return std::nullopt;
+        }
         return begin + target;
     }
 
@@ -263,7 +277,9 @@ std::uint32_t PositionMapper::to_offset(protocol::Position position) const {
     for(std::size_t index = 0; index < text.size();) {
         auto [utf8, utf16] = next_codepoint_sizes(text, index);
         auto step = (encoding == PositionEncoding::UTF16) ? utf16 : 1;
-        assert(target >= step && "character out of range");
+        if(target < step) [[unlikely]] {
+            return std::nullopt;
+        }
         target -= step;
         offset += utf8;
         index += utf8;
@@ -272,8 +288,7 @@ std::uint32_t PositionMapper::to_offset(protocol::Position position) const {
         }
     }
 
-    assert(false && "character out of range");
-    return end;
+    return std::nullopt;
 }
 
 }  // namespace eventide::ipc::lsp

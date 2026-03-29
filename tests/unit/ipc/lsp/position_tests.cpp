@@ -22,8 +22,9 @@ TEST_CASE(utf16_column_counts) {
     PositionMapper converter(content, PositionEncoding::UTF16);
 
     auto position = converter.to_position(4);
-    ASSERT_EQ(position.line, 0U);
-    ASSERT_EQ(position.character, 2U);
+    ASSERT_TRUE(position.has_value());
+    ASSERT_EQ(position->line, 0U);
+    ASSERT_EQ(position->character, 2U);
 }
 
 TEST_CASE(round_trip_offsets) {
@@ -34,7 +35,10 @@ TEST_CASE(round_trip_offsets) {
         PositionMapper converter(content, encoding);
         for(auto offset: offsets) {
             auto position = converter.to_position(offset);
-            ASSERT_EQ(converter.to_offset(position), offset);
+            ASSERT_TRUE(position.has_value());
+            auto mapped = converter.to_offset(*position);
+            ASSERT_TRUE(mapped.has_value());
+            ASSERT_EQ(*mapped, offset);
         }
     }
 }
@@ -66,19 +70,28 @@ TEST_CASE(position_offset_values) {
 
     for(const auto& sample: samples) {
         auto p8 = utf8_converter.to_position(sample.offset);
-        EXPECT_EQ(p8.line, sample.line);
-        EXPECT_EQ(p8.character, sample.utf8_character);
-        EXPECT_EQ(utf8_converter.to_offset(p8), sample.offset);
+        ASSERT_TRUE(p8.has_value());
+        EXPECT_EQ(p8->line, sample.line);
+        EXPECT_EQ(p8->character, sample.utf8_character);
+        auto o8 = utf8_converter.to_offset(*p8);
+        ASSERT_TRUE(o8.has_value());
+        EXPECT_EQ(*o8, sample.offset);
 
         auto p16 = utf16_converter.to_position(sample.offset);
-        EXPECT_EQ(p16.line, sample.line);
-        EXPECT_EQ(p16.character, sample.utf16_character);
-        EXPECT_EQ(utf16_converter.to_offset(p16), sample.offset);
+        ASSERT_TRUE(p16.has_value());
+        EXPECT_EQ(p16->line, sample.line);
+        EXPECT_EQ(p16->character, sample.utf16_character);
+        auto o16 = utf16_converter.to_offset(*p16);
+        ASSERT_TRUE(o16.has_value());
+        EXPECT_EQ(*o16, sample.offset);
 
         auto p32 = utf32_converter.to_position(sample.offset);
-        EXPECT_EQ(p32.line, sample.line);
-        EXPECT_EQ(p32.character, sample.utf32_character);
-        EXPECT_EQ(utf32_converter.to_offset(p32), sample.offset);
+        ASSERT_TRUE(p32.has_value());
+        EXPECT_EQ(p32->line, sample.line);
+        EXPECT_EQ(p32->character, sample.utf32_character);
+        auto o32 = utf32_converter.to_offset(*p32);
+        ASSERT_TRUE(o32.has_value());
+        EXPECT_EQ(*o32, sample.offset);
     }
 }
 
@@ -140,7 +153,10 @@ TEST_CASE(roundtrip_multiline_boundaries) {
         PositionMapper converter(content, encoding);
         for(auto offset: boundaries) {
             auto position = converter.to_position(offset);
-            ASSERT_EQ(converter.to_offset(position), offset);
+            ASSERT_TRUE(position.has_value());
+            auto mapped = converter.to_offset(*position);
+            ASSERT_TRUE(mapped.has_value());
+            ASSERT_EQ(*mapped, offset);
         }
     }
 }
@@ -179,8 +195,10 @@ TEST_CASE(invalid_position_stability) {
             PositionMapper converter(content, encoding);
             for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
                 auto position = converter.to_position(offset);
-                auto mapped_offset = converter.to_offset(position);
-                EXPECT_TRUE(mapped_offset <= content.size());
+                ASSERT_TRUE(position.has_value());
+                auto mapped_offset = converter.to_offset(*position);
+                ASSERT_TRUE(mapped_offset.has_value());
+                EXPECT_TRUE(*mapped_offset <= content.size());
             }
         }
     };
@@ -214,6 +232,46 @@ TEST_CASE(strict_utf8_validation) {
     expect_invalid_sequence(0xF4u, 0x90u, 0x80u, 0x80u);
     expect_invalid_sequence(0xF5u, 0x80u, 0x80u, 0x80u);
     expect_invalid_sequence('a', 0xF0u, 0x9Fu, 'b');
+}
+
+TEST_CASE(to_position_out_of_range) {
+    std::string_view content = "abc\ndef";
+    PositionMapper converter(content, PositionEncoding::UTF8);
+
+    // Offset beyond content size.
+    EXPECT_FALSE(converter.to_position(100).has_value());
+    EXPECT_FALSE(converter.to_position(8).has_value());
+
+    // Offset at content size is valid (EOF position).
+    EXPECT_TRUE(converter.to_position(7).has_value());
+}
+
+TEST_CASE(to_offset_line_out_of_range) {
+    std::string_view content = "abc\ndef";
+    PositionMapper converter(content, PositionEncoding::UTF8);
+
+    // Line beyond document.
+    EXPECT_FALSE(converter.to_offset({.line = 5, .character = 0}).has_value());
+    EXPECT_FALSE(converter.to_offset({.line = 2, .character = 0}).has_value());
+
+    // Valid last line.
+    EXPECT_TRUE(converter.to_offset({.line = 1, .character = 0}).has_value());
+}
+
+TEST_CASE(to_offset_character_out_of_range) {
+    std::string_view content = "abc\ndef";
+
+    for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        PositionMapper converter(content, encoding);
+
+        // Character beyond line length.
+        EXPECT_FALSE(converter.to_offset({.line = 0, .character = 10}).has_value());
+        EXPECT_FALSE(converter.to_offset({.line = 1, .character = 4}).has_value());
+
+        // Valid end of line.
+        EXPECT_TRUE(converter.to_offset({.line = 0, .character = 3}).has_value());
+        EXPECT_TRUE(converter.to_offset({.line = 1, .character = 3}).has_value());
+    }
 }
 
 };  // TEST_SUITE(language_position)

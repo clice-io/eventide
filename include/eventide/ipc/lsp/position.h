@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -49,10 +50,12 @@ public:
                          std::uint32_t end_byte_column) const;
 
     /// Converts a byte offset to LSP `Position{line, character}`.
-    protocol::Position to_position(std::uint32_t offset) const;
+    /// Returns `std::nullopt` when the offset is out of range.
+    std::optional<protocol::Position> to_position(std::uint32_t offset) const;
 
     /// Converts LSP position to byte offset in the original text.
-    std::uint32_t to_offset(protocol::Position position) const;
+    /// Returns `std::nullopt` when the position is out of range.
+    std::optional<std::uint32_t> to_offset(protocol::Position position) const;
 
     /// Measures `text` length in the current position encoding.
     std::uint32_t measure(std::string_view text) const;
