@@ -197,6 +197,9 @@ public:
                                    int port,
                                    options opts = options(),
                                    event_loop& loop = event_loop::current());
+
+    /// Query the local address/port of a listening acceptor.
+    static result<int> local_port(acceptor& acc);
 };
 
 /// TTY/console wrapper.

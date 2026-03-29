@@ -430,4 +430,25 @@ result<tcp::acceptor>
     return tcp::acceptor(std::move(self));
 }
 
+result<int> tcp::local_port(tcp::acceptor& acc) {
+    if(!acc.self) {
+        return outcome_error(error::invalid_argument);
+    }
+
+    sockaddr_storage storage{};
+    int namelen = sizeof(storage);
+    int err = uv_tcp_getsockname(&acc->tcp, reinterpret_cast<sockaddr*>(&storage), &namelen);
+    if(err != 0) {
+        return outcome_error(uv::status_to_error(err));
+    }
+
+    if(storage.ss_family == AF_INET) {
+        return ntohs(reinterpret_cast<sockaddr_in*>(&storage)->sin_port);
+    } else if(storage.ss_family == AF_INET6) {
+        return ntohs(reinterpret_cast<sockaddr_in6*>(&storage)->sin6_port);
+    }
+
+    return outcome_error(error::invalid_argument);
+}
+
 }  // namespace eventide

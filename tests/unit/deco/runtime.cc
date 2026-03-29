@@ -134,10 +134,10 @@ struct TrailingOnlyOpt {
 };
 
 struct CallbackStopState {
-    inline static unsigned arg_index = 0;
-    inline static unsigned next_cursor = 0;
-    inline static std::size_t argv_size = 0;
-    inline static std::string value;
+    inline thread_local static unsigned arg_index = 0;
+    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::size_t argv_size = 0;
+    inline thread_local static std::string value;
 
     static void reset() {
         arg_index = 0;
@@ -162,9 +162,9 @@ struct CallbackStopOpt {
 };
 
 struct CallbackRestartState {
-    inline static unsigned arg_index = 0;
-    inline static unsigned next_cursor = 0;
-    inline static std::string value;
+    inline thread_local static unsigned arg_index = 0;
+    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::string value;
 
     static void reset() {
         arg_index = 0;
@@ -190,9 +190,9 @@ struct CallbackRestartOpt {
 };
 
 struct CallbackRestartOwnedState {
-    inline static unsigned arg_index = 0;
-    inline static unsigned next_cursor = 0;
-    inline static std::string value;
+    inline thread_local static unsigned arg_index = 0;
+    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::string value;
 
     static void reset() {
         arg_index = 0;
@@ -217,7 +217,7 @@ struct CallbackRestartOwnedOpt {
 };
 
 struct CallbackRestartTwiceState {
-    inline static unsigned restart_count = 0;
+    inline thread_local static unsigned restart_count = 0;
 
     static void reset() {
         restart_count = 0;
@@ -251,11 +251,11 @@ struct CallbackShortcutOpt {
 };
 
 struct CallbackComposeState {
-    inline static unsigned arg_index = 0;
-    inline static unsigned next_cursor = 0;
-    inline static std::size_t argv_size = 0;
-    inline static bool value = false;
-    inline static unsigned count = 0;
+    inline thread_local static unsigned arg_index = 0;
+    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::size_t argv_size = 0;
+    inline thread_local static bool value = false;
+    inline thread_local static unsigned count = 0;
 
     static void reset() {
         arg_index = 0;

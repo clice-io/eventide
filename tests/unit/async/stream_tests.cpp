@@ -60,32 +60,6 @@ inline int close_socket(socket_t sock) {
 }
 #endif
 
-int pick_free_port() {
-    socket_t fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(fd == invalid_socket) {
-        return -1;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-
-    if(::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-        close_socket(fd);
-        return -1;
-    }
-
-    socklen_t len = sizeof(addr);
-    if(::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
-        close_socket(fd);
-        return -1;
-    }
-
-    int port = ntohs(addr.sin_port);
-    close_socket(fd);
-    return port;
-}
 
 bool bump_and_stop(int& done, int target) {
     done += 1;
@@ -505,12 +479,13 @@ TEST_CASE(stop) {
 TEST_SUITE(tcp) {
 
 TEST_CASE(accept_and_read) {
-    int port = pick_free_port();
-    ASSERT_TRUE(port > 0);
-
     event_loop loop;
-    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
+
+    auto port_res = tcp::local_port(*acc_res);
+    ASSERT_TRUE(port_res.has_value());
+    int port = *port_res;
 
     auto server = accept_and_read(std::move(*acc_res));
 
@@ -538,12 +513,13 @@ TEST_CASE(accept_and_read) {
 }
 
 TEST_CASE(accept_already_waiting) {
-    int port = pick_free_port();
-    ASSERT_TRUE(port > 0);
-
     event_loop loop;
-    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
+
+    auto port_res = tcp::local_port(*acc_res);
+    ASSERT_TRUE(port_res.has_value());
+    int port = *port_res;
 
     auto acc = std::move(*acc_res);
     int done = 0;
@@ -576,12 +552,13 @@ TEST_CASE(accept_already_waiting) {
 }
 
 TEST_CASE(connect_and_write) {
-    int port = pick_free_port();
-    ASSERT_TRUE(port > 0);
-
     event_loop loop;
-    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
+
+    auto port_res = tcp::local_port(*acc_res);
+    ASSERT_TRUE(port_res.has_value());
+    int port = *port_res;
 
     int done = 0;
     auto server = accept_and_read_once(std::move(*acc_res), done);
@@ -599,12 +576,13 @@ TEST_CASE(connect_and_write) {
 }
 
 TEST_CASE(read_some_error) {
-    int port = pick_free_port();
-    ASSERT_TRUE(port > 0);
-
     event_loop loop;
-    auto acc_res = tcp::listen("127.0.0.1", port, {}, loop);
+    auto acc_res = tcp::listen("127.0.0.1", 0, {}, loop);
     ASSERT_TRUE(acc_res.has_value());
+
+    auto port_res = tcp::local_port(*acc_res);
+    ASSERT_TRUE(port_res.has_value());
+    int port = *port_res;
 
     auto server = accept_and_read_some(std::move(*acc_res));
 
