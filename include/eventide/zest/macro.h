@@ -8,29 +8,20 @@
     struct name##TEST : __VA_OPT__(__VA_ARGS__, )::eventide::zest::TestSuiteDef<#name, name##TEST>
 
 #define TEST_SUITE_ATTRS(...)                                                                      \
-    constexpr static ::eventide::zest::TestAttrs suite_attrs = [] constexpr {                      \
-        struct _B : ::eventide::zest::TestAttrs {                                                  \
-            constexpr _B() { __VA_ARGS__; }                                                        \
-        };                                                                                         \
-        return ::eventide::zest::TestAttrs{_B{}};                                                  \
-    }()
+    constexpr static ::eventide::zest::TestAttrs suite_attrs {                                     \
+        __VA_ARGS__                                                                                \
+    }
 
 #define TEST_CASE(name, ...)                                                                       \
     void _register_##name() {                                                                      \
         constexpr auto file_name = std::source_location::current().file_name();                    \
         constexpr auto file_len = std::string_view(file_name).size();                              \
         (void)_register_suites<>;                                                                  \
-        constexpr auto _zest_attrs_ = [] constexpr {                                               \
-            struct _B : ::eventide::zest::TestAttrs {                                              \
-                constexpr _B() { __VA_OPT__(__VA_ARGS__;) }                                        \
-            };                                                                                     \
-            return ::eventide::zest::TestAttrs{_B{}};                                              \
-        }();                                                                                       \
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
                                   ::eventide::fixed_string<file_len>(file_name),                   \
-                                  std::source_location::current().line(),                           \
-                                  _zest_attrs_>;                                                   \
+                                  std::source_location::current().line()                           \
+                                      __VA_OPT__(, ::eventide::zest::TestAttrs{__VA_ARGS__})>;     \
     }                                                                                              \
     void test_##name()
 
