@@ -627,11 +627,15 @@ uv_loop_t* sync_loop() noexcept {
         uv_loop_t loop{};
 
         sync_loop_holder() {
-            uv_loop_init(&loop);
+            if(uv_loop_init(&loop) != 0) {
+                std::terminate();
+            }
         }
 
         ~sync_loop_holder() {
-            uv_loop_close(&loop);
+            if(uv_loop_close(&loop) != 0) {
+                std::terminate();
+            }
         }
     } holder;
 

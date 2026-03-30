@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <expected>
+#include <functional>
 #include <iostream>
 #include <print>
 #include <string>
@@ -383,6 +385,9 @@ int Runner::run_tests(RunnerOptions options) {
     std::vector<TestResult> results(runnable.size());
 
     if(options.parallel) {
+        using namespace std::chrono;
+        auto wall_begin = system_clock::now();
+
         // Partition: parallel-safe tests first, serial tests after.
         std::vector<std::size_t> parallel_indices;
         std::vector<std::size_t> serial_indices;
@@ -395,10 +400,12 @@ int Runner::run_tests(RunnerOptions options) {
         }
 
         // Run parallel-safe tests across the thread pool.
-        const auto num_workers =
-            std::max(1u,
-                     options.parallel_workers ? options.parallel_workers
-                                              : std::thread::hardware_concurrency());
+        const auto num_workers = std::min(
+            static_cast<std::size_t>(
+                std::max(1u,
+                         options.parallel_workers ? options.parallel_workers
+                                                  : std::thread::hardware_concurrency())),
+            parallel_indices.size());
 
         std::atomic<std::size_t> next_task{0};
 
@@ -429,9 +436,17 @@ int Runner::run_tests(RunnerOptions options) {
             results[i] = run_single(runnable[i], false);
         }
 
+        summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
+
         // Print all results in original order.
         for(const auto& result: results) {
-            record_result(result);
+            const bool failed = is_failure(result.state);
+            print_run_result(result.display_name, failed, result.duration, options.only_failed_output);
+            if(failed) {
+                summary.failed += 1;
+                summary.failed_tests.push_back(
+                    FailedTest{result.display_name, result.path, result.line});
+            }
         }
     } else {
         for(std::size_t i = 0; i < runnable.size(); ++i) {
