@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -546,10 +547,15 @@ ALWAYS_INLINE std::size_t udp_get_send_queue_count(const uv_udp_t& handle) noexc
     return ::uv_udp_get_send_queue_count(&handle);
 }
 
-ALWAYS_INLINE error spawn(uv_loop_t& loop,
-                          uv_process_t& process,
-                          const uv_process_options_t& options) noexcept {
+/// uv_spawn internally registers a SIGCHLD handler in a process-global
+/// red-black tree that is NOT thread-safe.  Serialise all spawn calls
+/// so that concurrent event-loops on different threads do not race.
+inline error spawn(uv_loop_t& loop,
+                   uv_process_t& process,
+                   const uv_process_options_t& options) noexcept {
     assert(options.file != nullptr && "uv::spawn requires options.file");
+    static std::mutex spawn_mutex;
+    std::lock_guard lock(spawn_mutex);
     return status_to_error(::uv_spawn(&loop, &process, &options));
 }
 

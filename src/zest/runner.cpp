@@ -1,10 +1,15 @@
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <expected>
+#include <functional>
 #include <iostream>
 #include <print>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "eventide/deco/deco.h"
@@ -34,6 +39,17 @@ struct ZestCliOptions {
 
     DecoFlag(names = {"--only-failed"}; help = "Only print failed test cases"; required = false)
     only_failed = false;
+
+    DecoFlag(names = {"--parallel"}; help = "Run test cases in parallel"; required = false)
+    parallel = false;
+
+    DecoKVStyled(
+        style = deco::decl::KVStyle::Joined | deco::decl::KVStyle::Separate,
+        names = {"--parallel-workers"};
+        meta_var = "<N>";
+        help = "Number of worker threads for parallel mode (default: hardware_concurrency)";
+        required = false)
+    <unsigned> parallel_workers = 0;
 };
 
 auto to_runner_options(ZestCliOptions options)
@@ -44,6 +60,8 @@ auto to_runner_options(ZestCliOptions options)
 
     eventide::zest::RunnerOptions runner_options;
     runner_options.only_failed_output = *options.only_failed;
+    runner_options.parallel = *options.parallel;
+    runner_options.parallel_workers = *options.parallel_workers;
     if(options.test_filter_input.has_value()) {
         runner_options.filter = std::move(*options.test_filter_input);
     } else {
@@ -70,6 +88,14 @@ struct RunSummary {
     std::uint32_t skipped = 0;
     std::chrono::milliseconds duration{0};
     std::vector<FailedTest> failed_tests;
+};
+
+struct TestResult {
+    std::string display_name;
+    std::string path;
+    std::size_t line;
+    eventide::zest::TestState state;
+    std::chrono::milliseconds duration;
 };
 
 using SuiteMap = std::unordered_map<std::string, std::vector<eventide::zest::TestCase>>;
@@ -274,12 +300,22 @@ int Runner::run_tests(RunnerOptions options) {
         std::println("{}[  FOCUS   ] Running in focus-only mode.{}", yellow, clear);
     }
 
+    // Collect all runnable test cases.
+    struct RunnableTest {
+        std::string display_name;
+        std::string path;
+        std::size_t line;
+        bool serial;
+        std::function<TestState()> test;
+    };
+
+    std::vector<RunnableTest> runnable;
+    std::unordered_set<std::string> active_suites;
+
     for(auto& [suite_name, test_cases]: grouped_suites) {
         if(!matches_suite_filter(suite_name, patterns)) {
             continue;
         }
-
-        bool suite_has_tests = false;
 
         for(auto& test_case: test_cases) {
             if(!matches_test_filter(suite_name, test_case.name, patterns)) {
@@ -287,7 +323,6 @@ int Runner::run_tests(RunnerOptions options) {
             }
 
             const auto display_name = make_display_name(suite_name, test_case.name);
-            suite_has_tests = true;
 
             if(focus_mode && !test_case.attrs.focus) {
                 summary.skipped += 1;
@@ -302,30 +337,124 @@ int Runner::run_tests(RunnerOptions options) {
                 continue;
             }
 
-            if(!options.only_failed_output) {
-                std::println("{}[ RUN      ] {}{}", green, display_name, clear);
-            }
-            summary.tests += 1;
+            active_suites.insert(std::string(suite_name));
+            runnable.push_back(RunnableTest{
+                .display_name = display_name,
+                .path = test_case.path,
+                .line = test_case.line,
+                .serial = test_case.attrs.serial,
+                .test = std::move(test_case.test),
+            });
+        }
+    }
 
-            using namespace std::chrono;
-            auto begin = system_clock::now();
-            auto state = test_case.test();
-            auto end = system_clock::now();
+    summary.suites = static_cast<std::uint32_t>(active_suites.size());
+    summary.tests = static_cast<std::uint32_t>(runnable.size());
 
-            auto duration = duration_cast<milliseconds>(end - begin);
-            const bool failed = is_failure(state);
-            print_run_result(display_name, failed, duration, options.only_failed_output);
+    auto run_single = [&](const RunnableTest& test, bool show_run_line) -> TestResult {
+        if(show_run_line && !options.only_failed_output) {
+            std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
+        }
 
-            summary.duration += duration;
-            if(failed) {
-                summary.failed += 1;
-                summary.failed_tests.push_back(
-                    FailedTest{display_name, test_case.path, test_case.line});
+        using namespace std::chrono;
+        auto begin = system_clock::now();
+        auto state = test.test();
+        auto end = system_clock::now();
+
+        return TestResult{
+            .display_name = test.display_name,
+            .path = test.path,
+            .line = test.line,
+            .state = state,
+            .duration = duration_cast<milliseconds>(end - begin),
+        };
+    };
+
+    auto record_result = [&](const TestResult& result) {
+        const bool failed = is_failure(result.state);
+        print_run_result(result.display_name, failed, result.duration, options.only_failed_output);
+        summary.duration += result.duration;
+        if(failed) {
+            summary.failed += 1;
+            summary.failed_tests.push_back(
+                FailedTest{result.display_name, result.path, result.line});
+        }
+    };
+
+    // Execute tests.
+    std::vector<TestResult> results(runnable.size());
+
+    if(options.parallel) {
+        using namespace std::chrono;
+        auto wall_begin = system_clock::now();
+
+        // Partition: parallel-safe tests first, serial tests after.
+        std::vector<std::size_t> parallel_indices;
+        std::vector<std::size_t> serial_indices;
+        for(std::size_t i = 0; i < runnable.size(); ++i) {
+            if(runnable[i].serial) {
+                serial_indices.push_back(i);
+            } else {
+                parallel_indices.push_back(i);
             }
         }
 
-        if(suite_has_tests) {
-            summary.suites += 1;
+        // Run parallel-safe tests across the thread pool.
+        const auto num_workers =
+            std::min(static_cast<std::size_t>(std::max(1u,
+                                                       options.parallel_workers
+                                                           ? options.parallel_workers
+                                                           : std::thread::hardware_concurrency())),
+                     parallel_indices.size());
+
+        std::atomic<std::size_t> next_task{0};
+
+        auto worker = [&]() {
+            while(true) {
+                auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
+                if(idx >= parallel_indices.size()) {
+                    break;
+                }
+                auto i = parallel_indices[idx];
+                results[i] = run_single(runnable[i], false);
+            }
+        };
+
+        {
+            std::vector<std::thread> pool;
+            pool.reserve(num_workers);
+            for(unsigned w = 0; w < num_workers; ++w) {
+                pool.emplace_back(worker);
+            }
+            for(auto& t: pool) {
+                t.join();
+            }
+        }
+
+        // Run serial tests sequentially after the parallel batch.
+        for(auto i: serial_indices) {
+            results[i] = run_single(runnable[i], false);
+        }
+
+        summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
+
+        // Print all results in original order.
+        for(const auto& result: results) {
+            const bool failed = is_failure(result.state);
+            print_run_result(result.display_name,
+                             failed,
+                             result.duration,
+                             options.only_failed_output);
+            if(failed) {
+                summary.failed += 1;
+                summary.failed_tests.push_back(
+                    FailedTest{result.display_name, result.path, result.line});
+            }
+        }
+    } else {
+        for(std::size_t i = 0; i < runnable.size(); ++i) {
+            results[i] = run_single(runnable[i], true);
+            record_result(results[i]);
         }
     }
 
