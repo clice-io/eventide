@@ -29,7 +29,7 @@
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
                                   ::eventide::fixed_string<file_len>(file_name),                   \
-                                  std::source_location::current().line(),                           \
+                                  std::source_location::current().line(),                          \
                                   _zest_attrs_>;                                                   \
     }                                                                                              \
     void test_##name()
