@@ -165,9 +165,8 @@ jobs:
           cmake --build "${build_dir}" --parallel
           ctest --test-dir "${build_dir}" --verbose
 
-          echo "::group::Parallel test run"
+          echo "--- Running tests in parallel mode ---"
           "${build_dir}/unit_tests" --parallel
-          echo "::endgroup::"
 
       - name: Show compiler cache stats
         shell: bash
