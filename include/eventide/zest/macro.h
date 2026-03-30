@@ -11,9 +11,7 @@
 #define ZEST_MAKE_ATTRS(...)                                                                       \
     [] constexpr {                                                                                 \
         ::eventide::zest::TestAttrs _a{};                                                          \
-        [[maybe_unused]] auto& skip   = _a.skip;                                                   \
-        [[maybe_unused]] auto& focus  = _a.focus;                                                   \
-        [[maybe_unused]] auto& serial = _a.serial;                                                  \
+        auto& [skip, focus, serial] = _a;                                                          \
         __VA_ARGS__;                                                                               \
         return _a;                                                                                 \
     }()
