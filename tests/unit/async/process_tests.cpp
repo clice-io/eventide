@@ -50,7 +50,7 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
 
 }  // namespace
 
-TEST_SUITE(process_io) {
+TEST_SUITE(process_io, zest::TestAttrs{.serial = true}) {
 
 TEST_CASE(spawn_wait_simple) {
     event_loop loop;
@@ -312,13 +312,16 @@ TEST_CASE(query_info_child) {
     process::options opts;
 #ifdef _WIN32
     opts.file = "cmd.exe";
-    // Run a command that takes a moment so we can query it while alive.
-    opts.args = {opts.file, "/c", "ping -n 2 127.0.0.1 >nul"};
+    // Echo a ready marker then block on stdin until the parent closes it.
+    opts.args = {opts.file, "/c", "echo x & set /p dummy="};
 #else
     opts.file = "/bin/sh";
-    opts.args = {opts.file, "-c", "sleep 0.2"};
+    // Print a ready marker then block on stdin until the parent closes the pipe.
+    opts.args = {opts.file, "-c", "printf x; read _"};
 #endif
-    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+    opts.streams = {process::stdio::pipe(true, false),
+                    process::stdio::pipe(false, true),
+                    process::stdio::ignore()};
 
     auto spawn_res = process::spawn(opts, loop);
     ASSERT_TRUE(spawn_res.has_value());
@@ -326,19 +329,29 @@ TEST_CASE(query_info_child) {
     auto pid = spawn_res->proc.pid();
     EXPECT_GT(pid, 0);
 
-    // Query via the instance method.
-    auto info = spawn_res->proc.query_info();
-    ASSERT_TRUE(info.has_value());
-    EXPECT_EQ(info->pid, pid);
-    EXPECT_GT(info->rss, std::size_t{0});
+    auto verify = [&]() -> task<void> {
+        // Wait until the child has written to stdout — it is definitely running.
+        auto data = co_await spawn_res->stdout_pipe.read();
+        EXPECT_TRUE(data.has_value());
 
-    // Query via the static overload.
-    auto info2 = process::query_info(pid);
-    ASSERT_TRUE(info2.has_value());
-    EXPECT_EQ(info2->pid, pid);
+        // Query via the instance method.
+        auto info = spawn_res->proc.query_info();
+        CO_ASSERT_TRUE(info.has_value());
+        EXPECT_EQ(info->pid, pid);
+        EXPECT_GT(info->rss, std::size_t{0});
 
-    auto worker = wait_for_exit(spawn_res->proc);
-    loop.schedule(worker);
+        // Query via the static overload.
+        auto info2 = process::query_info(pid);
+        CO_ASSERT_TRUE(info2.has_value());
+        EXPECT_EQ(info2->pid, pid);
+
+        // Destroy stdin pipe so the child gets EOF and exits.
+        { auto drop = std::move(spawn_res->stdin_pipe); }
+        co_await spawn_res->proc.wait();
+        event_loop::current().stop();
+    };
+
+    loop.schedule(verify());
     loop.run();
 }
 

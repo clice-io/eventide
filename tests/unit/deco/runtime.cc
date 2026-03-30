@@ -318,7 +318,7 @@ namespace {
 
 template <typename... Args>
 std::span<std::string> into_deco_args(Args&&... args) {
-    static std::vector<std::string> res;
+    static thread_local std::vector<std::string> res;
     res.clear();
     res.reserve(sizeof...(args));
     (res.emplace_back(std::forward<Args>(args)), ...);

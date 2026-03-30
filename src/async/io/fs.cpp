@@ -617,11 +617,25 @@ task<std::vector<fs::dirent>, error> fs::readdir(fs::dir_handle& dir, event_loop
 
 namespace {
 
-/// Returns the default loop handle for synchronous libuv fs calls.
-/// libuv sync operations (cb = nullptr) don't actually interact with the
-/// event loop, so uv_default_loop() is safe to use from any thread.
+/// Returns a thread-local loop handle for synchronous libuv fs calls.
+/// libuv sync operations (cb = nullptr) don't actually run the event loop,
+/// but uv_default_loop() is a process-global singleton and is NOT thread-safe.
+/// Using a thread-local loop avoids data races when sync fs calls are made
+/// from multiple threads concurrently.
 uv_loop_t* sync_loop() noexcept {
-    return uv_default_loop();
+    static thread_local struct sync_loop_holder {
+        uv_loop_t loop{};
+
+        sync_loop_holder() {
+            uv_loop_init(&loop);
+        }
+
+        ~sync_loop_holder() {
+            uv_loop_close(&loop);
+        }
+    } holder;
+
+    return &holder.loop;
 }
 
 }  // namespace

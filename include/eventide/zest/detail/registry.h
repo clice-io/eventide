@@ -19,6 +19,7 @@ enum class TestState {
 struct TestAttrs {
     bool skip = false;
     bool focus = false;
+    bool serial = false;
 };
 
 struct TestCase {

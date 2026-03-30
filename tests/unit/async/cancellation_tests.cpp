@@ -126,7 +126,7 @@ TEST_CASE(token_share_state) {
     EXPECT_TRUE(token_b.cancelled());
 }
 
-TEST_CASE(queue_cancel_resume) {
+TEST_CASE(queue_cancel_resume, zest::TestAttrs{.serial = true}) {
     event_loop loop;
     cancellation_source source;
     event start_target;
@@ -213,7 +213,7 @@ TEST_CASE(queue_cancel_resume) {
     EXPECT_FALSE(target_started.load(std::memory_order_acquire));
 }
 
-TEST_CASE(fs_cancel_resume) {
+TEST_CASE(fs_cancel_resume, zest::TestAttrs{.serial = true}) {
     event_loop loop;
     cancellation_source source;
     event start_target;

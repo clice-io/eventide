@@ -5,7 +5,17 @@
 
 namespace eventide::zest {
 
-template <fixed_string TestName, typename Derived>
+/// Merge suite-level and case-level test attributes.
+/// Case-level flags override suite defaults when explicitly set to true.
+constexpr TestAttrs merge_attrs(TestAttrs suite, TestAttrs test_case) {
+    return {
+        .skip = suite.skip || test_case.skip,
+        .focus = suite.focus || test_case.focus,
+        .serial = suite.serial || test_case.serial,
+    };
+}
+
+template <fixed_string TestName, typename Derived, TestAttrs SuiteAttrs = TestAttrs{}>
 struct TestSuiteDef {
 private:
     TestState state = TestState::Passed;
@@ -61,7 +71,11 @@ public:
             return test.state;
         };
 
-        test_cases().emplace_back(case_name.data(), path.data(), line, attrs, run_test);
+        test_cases().emplace_back(case_name.data(),
+                                  path.data(),
+                                  line,
+                                  merge_attrs(SuiteAttrs, attrs),
+                                  run_test);
         return true;
     }();
 };
