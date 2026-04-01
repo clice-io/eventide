@@ -613,12 +613,12 @@ public:
         return tuple_view<K, V>(root, entry);
     }
 
-    auto operator[](const K& key) const
-        -> proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<V>>
-        requires (
-            std::totally_ordered<proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>>)
-    {
-        using clean_k = proxy_detail::deep_clean_t<K>;
+    template <typename U = K>
+        requires std::totally_ordered_with<
+            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
+            const U&>
+    auto operator[](const U& key) const
+        -> proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<V>> {
         using clean_v = proxy_detail::deep_clean_t<V>;
         using value_return_t = proxy_detail::field_return_type_t<clean_v>;
 
@@ -629,10 +629,11 @@ public:
         return proxy_detail::read_field<clean_v>(root, entry, proxy_detail::voffset(1));
     }
 
-    auto find(const K& key) const -> std::optional<tuple_view<K, V>>
-        requires (
-            std::totally_ordered<proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>>)
-    {
+    template <typename U = K>
+        requires std::totally_ordered_with<
+            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
+            const U&>
+    auto find(const U& key) const -> std::optional<tuple_view<K, V>> {
         auto entry = find_entry(key);
         if(entry == nullptr) {
             return std::nullopt;
@@ -640,10 +641,11 @@ public:
         return tuple_view<K, V>(root, entry);
     }
 
-    auto contains(const K& key) const -> bool
-        requires (
-            std::totally_ordered<proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>>)
-    {
+    template <typename U = K>
+        requires std::totally_ordered_with<
+            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
+            const U&>
+    auto contains(const U& key) const -> bool {
         return find_entry(key) != nullptr;
     }
 
@@ -656,7 +658,8 @@ public:
     }
 
 private:
-    auto find_entry(const K& key) const -> const ::flatbuffers::Table* {
+    template <typename U>
+    auto find_entry(const U& key) const -> const ::flatbuffers::Table* {
         using clean_k = proxy_detail::deep_clean_t<K>;
 
         if(!valid()) {

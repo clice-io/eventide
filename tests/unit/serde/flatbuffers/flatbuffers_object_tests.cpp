@@ -815,6 +815,37 @@ TEST_CASE(map_contains) {
     EXPECT_FALSE(m.contains(std::string("missing")));
 }
 
+TEST_CASE(map_transparent_lookup) {
+    with_map_string_int input{
+        .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = table_view<with_map_string_int>::from_bytes(*encoded);
+    auto m = root[&with_map_string_int::data];
+    ASSERT_TRUE(m.valid());
+
+    // lookup with const char*
+    EXPECT_EQ(m["beta"], 2);
+    EXPECT_TRUE(m.contains("alpha"));
+    EXPECT_FALSE(m.contains("missing"));
+
+    // lookup with string_view
+    std::string_view sv = "gamma";
+    EXPECT_EQ(m[sv], 3);
+    EXPECT_TRUE(m.contains(sv));
+
+    auto result = m.find("beta");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->template get<0>(), "beta");
+    EXPECT_EQ(result->template get<1>(), 2);
+
+    auto missing = m.find("nope");
+    EXPECT_FALSE(missing.has_value());
+}
+
 // ======== Edge case tests ========
 
 TEST_CASE(enum_field) {
