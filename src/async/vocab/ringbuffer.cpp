@@ -1,6 +1,7 @@
 #include "ringbuffer.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 
 namespace eventide {
@@ -29,13 +30,18 @@ std::pair<const char*, size_t> ring_buffer::get_read_ptr() const {
         return {nullptr, 0};
     }
 
+    // When the buffer is full, head == tail but size > 0. Using `>=` here
+    // would yield contiguous = 0, causing read_chunk() to return an empty
+    // span and the caller to spin forever. Use strict `>` so the full case
+    // falls through to the else branch (data.size() - head), which is correct.
     size_t contiguous = 0;
-    if(tail >= head) {
+    if(tail > head) {
         contiguous = tail - head;
     } else {
         contiguous = data.size() - head;
     }
 
+    assert(contiguous > 0 && "get_read_ptr: non-empty buffer must yield contiguous > 0");
     return {data.data() + head, contiguous};
 }
 
