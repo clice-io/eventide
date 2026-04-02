@@ -5,6 +5,7 @@
 #include <deque>
 
 #include "../libuv.h"
+#include "eventide/common/functional.h"
 #include "eventide/async/runtime/frame.h"
 
 namespace eventide {
@@ -14,7 +15,7 @@ namespace eventide {
 /// pushes it onto the intrusive stack, and signals uv_async_t. The event
 /// loop thread pops all nodes in one atomic exchange and executes them.
 struct post_node {
-    std::function<void()> callback;
+    function<void()> callback;
     post_node* next = nullptr;
 };
 
@@ -96,7 +97,7 @@ void on_post(uv_async_t* handle) {
     }
 }
 
-void event_loop::post(std::function<void()> callback) {
+void event_loop::post(function<void()> callback) {
     assert(self && "post: event loop has been destroyed");
 
     auto* node = new post_node{std::move(callback)};
