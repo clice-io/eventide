@@ -1,12 +1,16 @@
 #include "eventide/ipc/recording_transport.h"
 
+#include <cassert>
 #include <format>
 #include <utility>
 
 namespace eventide::ipc {
 
 RecordingTransport::RecordingTransport(std::unique_ptr<Transport> inner, std::string path) :
-    inner_(std::move(inner)), file_(std::move(path), std::ios::binary | std::ios::trunc) {}
+    inner_(std::move(inner)), file_(std::move(path), std::ios::binary | std::ios::trunc) {
+    assert(inner_ && "RecordingTransport requires a non-null inner transport");
+    assert(file_.is_open() && "RecordingTransport failed to open trace output file");
+}
 
 RecordingTransport::~RecordingTransport() = default;
 
@@ -32,6 +36,9 @@ Result<void> RecordingTransport::close() {
 }
 
 void RecordingTransport::write_framed(std::string_view payload) {
+    if(!file_) {
+        return;
+    }
     auto header = std::format("Content-Length: {}\r\n\r\n", payload.size());
     file_.write(header.data(), static_cast<std::streamsize>(header.size()));
     file_.write(payload.data(), static_cast<std::streamsize>(payload.size()));
