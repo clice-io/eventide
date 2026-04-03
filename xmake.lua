@@ -85,14 +85,15 @@ if has_config("test") and is_plat("windows") then
 end
 
 rule("cl-flags")
-	on_load(function(target)
-		target:add("cxflags", "cl::/Zc:preprocessor", "cl::/utf-8", { public = true })
-	end)
+on_load(function(target)
+	target:add("cxflags", "cl::/Zc:preprocessor", "cl::/utf-8", { public = true })
+end)
 
 target("common", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/common/*)")
+	add_rules("cl-flags")
 end)
 
 target("reflection", function()
@@ -100,6 +101,7 @@ target("reflection", function()
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(eventide/reflection/*)")
 	add_deps("common")
+	add_rules("cl-flags")
 end)
 
 if has_config("serde") and has_config("serde_simdjson") then
@@ -113,6 +115,7 @@ if has_config("serde") and has_config("serde_simdjson") then
 			"include/(eventide/serde/content/**.h)",
 			"include/(eventide/serde/content/**.inl)"
 		)
+		add_rules("cl-flags")
 		add_deps("reflection")
 		add_packages("simdjson", { public = true })
 		add_packages("yyjson", { public = true })
@@ -124,6 +127,7 @@ if has_config("serde") and has_config("serde_flatbuffers") then
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/serde/flatbuffers.h)", "include/(eventide/serde/flatbuffers/**.h)")
+		add_rules("cl-flags")
 		add_deps("reflection")
 		add_packages("flatbuffers", { public = true })
 	end)
@@ -134,6 +138,8 @@ if has_config("serde") and has_config("serde_toml") then
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/serde/toml.h)", "include/(eventide/serde/toml/**.h)")
+		add_rules("cl-flags")
+
 		add_deps("reflection")
 		add_packages("toml++", { public = true })
 	end)
@@ -148,6 +154,7 @@ if has_config("serde") then
 			"include/(eventide/serde/bincode/**.h)",
 			"include/(eventide/serde/serde/**.h)"
 		)
+		add_rules("cl-flags")
 		add_deps("common", "reflection")
 		if has_config("serde_simdjson") then
 			add_headerfiles(
