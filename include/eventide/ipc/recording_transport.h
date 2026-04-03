@@ -1,6 +1,7 @@
 #pragma once
 
-#include <fstream>
+#include <chrono>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -9,13 +10,13 @@
 
 namespace eventide::ipc {
 
-/// Transport decorator that records client-to-server messages to a file.
-/// The recorded file uses standard LSP wire format (Content-Length framing)
-/// and can be piped directly to stdin for replay.
+/// Transport decorator that records client-to-server messages to a JSONL file.
+/// Each line is: {"ts":<ms_since_start>,"msg":"<escaped_json>"}
+/// The timestamp enables faithful replay pacing.
 class RecordingTransport : public Transport {
 public:
     /// @param transport  The real transport to wrap.
-    /// @param path       File path to write the recorded trace.
+    /// @param path       File path to write the recorded trace (.jsonl).
     RecordingTransport(std::unique_ptr<Transport> transport, std::string path);
     ~RecordingTransport();
 
@@ -25,10 +26,11 @@ public:
     Result<void> close() override;
 
 private:
-    void write_framed(std::string_view payload);
+    void write_record(std::string_view payload);
 
     std::unique_ptr<Transport> inner;
-    std::ofstream file;
+    std::FILE* file = nullptr;
+    std::chrono::steady_clock::time_point start;
 };
 
 }  // namespace eventide::ipc
