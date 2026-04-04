@@ -295,6 +295,36 @@ constexpr auto serialize_reflectable(S& s, const V& v) -> std::expected<typename
     return s_struct.end();
 }
 
+/// True if field I of struct T may be absent from JSON without error.
+/// A field is optional if it is excluded (skip/flatten) or its underlying
+/// value type is std::optional<T>.
+template <typename T, std::size_t I>
+consteval bool is_field_optional() {
+    if constexpr(schema::is_field_excluded<T, I>()) {
+        return true;
+    } else {
+        // refl::field_type may carry const from the reflection machinery,
+        // so strip cv before checking specialization.
+        using field_t = std::remove_cv_t<refl::field_type<T, I>>;
+        if constexpr(serde::annotated_type<field_t>) {
+            return is_specialization_of<std::optional, typename field_t::annotated_type>;
+        } else {
+            return is_specialization_of<std::optional, field_t>;
+        }
+    }
+}
+
+/// Compute a bitmask of field indices that MUST be present in JSON.
+template <typename T>
+consteval std::uint64_t required_field_mask() {
+    static_assert(refl::field_count<T>() <= 64, "required_field_mask: >64 fields not supported");
+    std::uint64_t mask = 0;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
+        ((is_field_optional<T, Is>() ? void() : void(mask |= (std::uint64_t(1) << Is))), ...);
+    }(std::make_index_sequence<refl::field_count<T>()>{});
+    return mask;
+}
+
 template <typename Config, typename E, bool DenyUnknown, deserializer_like D, typename V>
     requires refl::reflectable_class<std::remove_cvref_t<V>>
 constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
@@ -307,6 +337,8 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
     ETD_EXPECTED_TRY_V(
         auto d_struct,
         d.deserialize_struct(refl::type_name<value_t>(), refl::field_count<value_t>()));
+
+    std::uint64_t seen_fields = 0;
 
     while(true) {
         ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
@@ -322,6 +354,7 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
             if(!field_status) {
                 return std::unexpected(field_status.error());
             }
+            seen_fields |= (std::uint64_t(1) << *idx);
             continue;
         }
 
@@ -343,6 +376,12 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         } else {
             ETD_EXPECTED_TRY(d_struct.skip_value());
         }
+    }
+
+    // Verify all required (non-optional, non-excluded) fields were present.
+    constexpr std::uint64_t required = required_field_mask<value_t>();
+    if((seen_fields & required) != required) {
+        return std::unexpected(E::type_mismatch);
     }
 
     return d_struct.end();
