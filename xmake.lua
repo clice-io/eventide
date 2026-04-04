@@ -285,10 +285,8 @@ target("eventide", function()
 	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 		add_deps("ipc", "language", { public = true })
 	end
-	if not has_config("test") then
-		add_rules("utils.merge.archive")
-		set_policy("build.merge_archive", true)
-	end
+	add_rules("utils.merge.archive")
+	set_policy("build.merge_archive", true)
 end)
 
 if has_config("test") and has_config("ztest") then
