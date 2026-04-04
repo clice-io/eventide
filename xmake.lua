@@ -285,8 +285,36 @@ target("eventide", function()
 	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
 		add_deps("ipc", "language", { public = true })
 	end
-	add_rules("utils.merge.archive")
-	set_policy("build.merge_archive", true)
+
+	after_link(function(target, opt)
+		import("utils.archive.merge_staticlib")
+		import("core.project.depend")
+		import("utils.progress")
+		local libraryfiles = {}
+
+		for _, dep in ipairs(target:orderdeps()) do
+			if dep:is_static() then
+				table.insert(libraryfiles, dep:targetfile())
+			end
+		end
+
+		if #libraryfiles > 0 then
+			table.insert(libraryfiles, target:targetfile())
+		end
+		depend.on_changed(function()
+			progress.show(opt.progress, "${color.build.target}merging.$(mode) %s", path.filename(target:targetfile()))
+			if #libraryfiles > 0 then
+				local tmpfile = os.tmpfile() .. path.extension(target:targetfile())
+				merge_staticlib(target, tmpfile, libraryfiles)
+				os.cp(tmpfile, target:targetfile())
+				os.rm(tmpfile)
+			end
+		end, {
+			dependfile = target:dependfile(target:targetfile() .. ".merge_archive"),
+			files = libraryfiles,
+			changed = target:is_rebuilt(),
+		})
+	end)
 end)
 
 if has_config("test") and has_config("ztest") then
@@ -329,37 +357,7 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/ipc/**.cpp")
 		end
 
-		add_includedirs("include")
-		add_deps("common", "reflection", "ztest")
-		if has_config("async") then
-			add_deps("async")
-		end
-		if has_config("option") then
-			add_deps("option")
-		end
-		if has_config("deco") and has_config("option") then
-			add_deps("deco")
-		end
-		if has_config("serde") then
-			add_deps("serde")
-			if has_config("serde_simdjson") then
-				add_deps("serde_json")
-			end
-			if has_config("serde_flatbuffers") then
-				add_deps("serde_flatbuffers")
-			end
-			if has_config("serde_toml") then
-				add_deps("serde_toml")
-			end
-		end
-		if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
-			add_deps("ipc")
-			add_deps("language")
-		end
-
-		if has_config("test") and is_plat("windows") then
-			add_packages("unistd_h")
-		end
+		add_deps("eventide")
 
 		add_tests("default")
 	end)
