@@ -22,14 +22,19 @@ namespace deco::decl {
 
 enum class DecoType {
     Input,
+
     // after "--"
     TrailingInput,
+
     // -p
     Flag,
+
     // -o 1
     KV,
+
     // -x,a,b,c
     CommaJoined,
+
     // -x 1 2 3, fixed size
     Multi,
 };
@@ -37,8 +42,12 @@ enum class DecoType {
 enum KVStyle : char {
     // -KEYValue
     Joined = 1 << 0,
+
     // -o 1
-    Separate = 1 << 1
+    Separate = 1 << 1,
+
+    // -o 1 or -o=1
+    JoinedOrSeparate = Joined | Separate
 };
 
 struct Category {
