@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -122,7 +123,7 @@ struct serde_error {
         std::string result;
         for(std::size_t i = 0; i < detail->path.size(); ++i) {
             if(auto* field = std::get_if<std::string>(&detail->path[i])) {
-                if(i > 0 && std::holds_alternative<std::string>(detail->path[i - 1])) {
+                if(i > 0) {
                     result += '.';
                 }
                 result += *field;

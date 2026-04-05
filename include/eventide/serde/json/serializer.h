@@ -46,8 +46,11 @@ public:
     explicit Serializer(std::size_t initial_capacity) : builder(initial_capacity) {}
 
     result_t<std::string_view> view() const {
-        if(!is_valid || !stack.empty() || !root_written) {
+        if(!is_valid) {
             return std::unexpected(last_error);
+        }
+        if(!stack.empty() || !root_written) {
+            return std::unexpected(error_kind::invalid_state);
         }
 
         std::string_view out{};

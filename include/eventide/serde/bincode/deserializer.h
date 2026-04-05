@@ -126,7 +126,7 @@ public:
             deserializer(deserializer) {}
 
         result_t<std::optional<std::string_view>> next_key() {
-            return std::unexpected(error_kind::unsupported_operation);
+            return deserializer.mark_invalid(error_kind::unsupported_operation);
         }
 
         status_t invalid_key(std::string_view /*key_name*/) {
