@@ -125,16 +125,15 @@ public:
     }
 
     [[nodiscard]] error_type error() const noexcept {
-        return current_error();
+        return last_error;
     }
 
     status_t finish() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         if(!root_consumed) {
-            mark_invalid(error_kind::invalid_state);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::invalid_state);
         }
         return {};
     }
@@ -169,8 +168,7 @@ public:
                                                                 value,
                                                                 error_type::type_mismatch);
         if(!result) {
-            mark_invalid(result.error());
-            return std::unexpected(current_error());
+            return mark_invalid(result.error());
         }
         return {};
     }
@@ -201,8 +199,7 @@ public:
 
         auto narrowed = serde::detail::narrow_int<T>(parsed, error_kind::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -224,16 +221,14 @@ public:
         }
 
         if(parsed < 0) {
-            mark_invalid(error_kind::number_out_of_range);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::number_out_of_range);
         }
 
         const auto unsigned_value = static_cast<std::uint64_t>(parsed);
         auto narrowed =
             serde::detail::narrow_uint<T>(unsigned_value, error_kind::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -256,8 +251,7 @@ public:
 
         auto narrowed = serde::detail::narrow_float<T>(parsed, error_kind::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -280,8 +274,7 @@ public:
         auto narrowed =
             serde::detail::narrow_char(std::string_view(text), error_kind::type_mismatch);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -378,14 +371,12 @@ private:
             return std::unexpected(node.error());
         }
         if(*node == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::type_mismatch);
         }
 
         auto parsed = std::forward<Reader>(reader)(**node);
         if(!parsed) {
-            mark_invalid(parsed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(parsed.error());
         }
 
         out = std::move(*parsed);
@@ -464,15 +455,14 @@ private:
 
     result_t<const ::toml::node*> access_node(bool consume) {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         if(has_current_value) {
             last_accessed_node = current_node;
             return current_node;
         }
         if(root_consumed) {
-            mark_invalid(error_kind::invalid_state);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::invalid_state);
         }
         if(consume) {
             root_consumed = true;
@@ -496,8 +486,7 @@ private:
             return std::unexpected(node.error());
         }
         if(*node == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::type_mismatch);
         }
 
         const auto* casted = [&]() -> const T* {
@@ -509,8 +498,7 @@ private:
         }();
 
         if(casted == nullptr) {
-            mark_invalid(error_kind::type_mismatch);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::type_mismatch);
         }
         return casted;
     }
@@ -538,21 +526,17 @@ private:
         };
     }
 
-    void mark_invalid(error_type error = error_type::invalid_state) {
+    std::unexpected<error_type> mark_invalid(error_type error = error_type::invalid_state) {
         is_valid = false;
         if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
             if(!error.location()) {
-                auto loc = source_from_node(last_accessed_node);
-                if(loc) {
+                if(auto loc = source_from_node(last_accessed_node)) {
                     error.set_location(*loc);
                 }
             }
             last_error = error;
         }
-    }
-
-    [[nodiscard]] error_type current_error() const noexcept {
-        return last_error;
+        return std::unexpected(last_error);
     }
 
 private:

@@ -37,7 +37,7 @@ public:
     public:
         result_t<bool> has_next() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.error());
             }
             if(has_pending_value) {
                 return true;
@@ -49,8 +49,7 @@ public:
             auto value_result = *iter;
             auto err = std::move(value_result).get(pending_value);
             if(err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(err);
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid(err);
             }
 
             has_pending_value = true;
@@ -69,15 +68,14 @@ public:
 
         status_t end() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.error());
             }
 
             ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
 
             if(is_strict_length) {
                 if(consumed_count != expected_length || has_next_result) {
-                    deserializer.mark_invalid();
-                    return std::unexpected(deserializer.current_error());
+                    return deserializer.mark_invalid();
                 }
                 return {};
             }
@@ -99,8 +97,7 @@ public:
         status_t consume_next(Action&& action) {
             ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
             if(!has_next_result) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid();
             }
 
             ETD_EXPECTED_TRY(std::forward<Action>(action)(pending_value));
@@ -147,11 +144,10 @@ public:
     public:
         result_t<std::optional<std::string_view>> next_key() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.error());
             }
             if(has_pending_value) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid();
             }
             if(iter == end_iter) {
                 return std::optional<std::string_view>{};
@@ -161,14 +157,12 @@ public:
             auto field_result = *iter;
             auto field_err = std::move(field_result).get(field);
             if(field_err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(field_err);
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid(field_err);
             }
 
             auto key_err = field.unescaped_key(pending_key);
             if(key_err != simdjson::SUCCESS) {
-                deserializer.mark_invalid(key_err);
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid(key_err);
             }
             pending_value = std::move(field).value();
             has_pending_value = true;
@@ -176,18 +170,16 @@ public:
         }
 
         status_t invalid_key(std::string_view /*key_name*/) {
-            deserializer.mark_invalid(simdjson::INCORRECT_TYPE);
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid(simdjson::INCORRECT_TYPE);
         }
 
         template <typename T>
         status_t deserialize_value(T& value) {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.error());
             }
             if(!has_pending_value) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid();
             }
 
             ETD_EXPECTED_TRY(deserializer.deserialize_from_value(pending_value, value));
@@ -199,11 +191,10 @@ public:
 
         status_t skip_value() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.error());
             }
             if(!has_pending_value) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid();
             }
 
             ETD_EXPECTED_TRY(deserializer.skip_value(pending_value));
@@ -215,7 +206,7 @@ public:
 
         status_t end() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.error());
             }
 
             if(has_pending_value) {
@@ -227,8 +218,7 @@ public:
                 auto field_result = *iter;
                 auto field_err = std::move(field_result).get(field);
                 if(field_err != simdjson::SUCCESS) {
-                    deserializer.mark_invalid(field_err);
-                    return std::unexpected(deserializer.current_error());
+                    return deserializer.mark_invalid(field_err);
                 }
 
                 auto value = std::move(field).value();
@@ -286,31 +276,26 @@ public:
         return is_valid;
     }
 
-    error_type error() {
-        if(is_valid) {
-            return error_kind::ok;
-        }
-        return current_error();
+    error_type error() const {
+        return last_error;
     }
 
     status_t finish() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         if(!root_consumed) {
-            mark_invalid();
-            return std::unexpected(current_error());
+            return mark_invalid();
         }
         if(!document.at_end()) {
-            mark_invalid(simdjson::TRAILING_CONTENT);
-            return std::unexpected(current_error());
+            return mark_invalid(simdjson::TRAILING_CONTENT);
         }
         return {};
     }
 
     result_t<bool> deserialize_none() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         bool is_none = false;
@@ -319,8 +304,7 @@ public:
             err = current_value->is_null().get(is_none);
         } else {
             if(root_consumed) {
-                mark_invalid();
-                return std::unexpected(current_error());
+                return mark_invalid();
             }
 
             err = document.is_null().get(is_none);
@@ -330,8 +314,7 @@ public:
         }
 
         if(err != simdjson::SUCCESS) {
-            mark_invalid(err);
-            return std::unexpected(current_error());
+            return mark_invalid(err);
         }
         return is_none;
     }
@@ -371,7 +354,7 @@ public:
             /// of struct alternatives in std::variant.
             bool matched = false;
             bool considered = false;
-            simdjson::error_code last_error = simdjson::INCORRECT_TYPE;
+            error_type obj_last_error = error_type::type_mismatch;
 
             auto try_alternative = [&](auto type_tag) {
                 if(matched) {
@@ -384,26 +367,25 @@ public:
                 }
                 considered = true;
 
-                auto candidate_error = deserialize_variant_candidate<alt_t>(*raw, value);
-                if(candidate_error == simdjson::SUCCESS) {
+                auto candidate_status = deserialize_variant_candidate<alt_t>(*raw, value);
+                if(candidate_status) {
                     matched = true;
                 } else {
-                    last_error = candidate_error;
+                    obj_last_error = candidate_status.error();
                 }
             };
 
             (try_alternative(std::type_identity<Ts>{}), ...);
 
             if(!matched) {
-                mark_invalid(considered ? last_error : simdjson::INCORRECT_TYPE);
-                return std::unexpected(current_error());
+                return mark_invalid(considered ? obj_last_error.kind : error_kind::type_mismatch);
             }
             return {};
         }
 
         bool matched = false;
         bool considered = false;
-        simdjson::error_code last_error = simdjson::INCORRECT_TYPE;
+        error_type variant_last_error = error_type::type_mismatch;
         auto try_alternative = [&](auto type_tag) {
             if(matched) {
                 return;
@@ -415,23 +397,21 @@ public:
             }
 
             considered = true;
-            auto candidate_error = deserialize_variant_candidate<alt_t>(*raw, value);
-            if(candidate_error == simdjson::SUCCESS) {
+            auto candidate_status = deserialize_variant_candidate<alt_t>(*raw, value);
+            if(candidate_status) {
                 matched = true;
             } else {
-                last_error = candidate_error;
+                variant_last_error = candidate_status.error();
             }
         };
 
         (try_alternative(std::type_identity<Ts>{}), ...);
 
         if(!considered) {
-            mark_invalid(simdjson::INCORRECT_TYPE);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::type_mismatch);
         }
         if(!matched) {
-            mark_invalid(last_error);
-            return std::unexpected(current_error());
+            return mark_invalid(variant_last_error.kind);
         }
         return {};
     }
@@ -454,11 +434,9 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed =
-            serde::detail::narrow_int<T>(parsed, json::make_error(simdjson::NUMBER_OUT_OF_RANGE));
+        auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(simdjson::NUMBER_OUT_OF_RANGE);
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -476,11 +454,9 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed =
-            serde::detail::narrow_uint<T>(parsed, json::make_error(simdjson::NUMBER_OUT_OF_RANGE));
+        auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(simdjson::NUMBER_OUT_OF_RANGE);
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -498,11 +474,9 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed =
-            serde::detail::narrow_float<T>(parsed, json::make_error(simdjson::NUMBER_OUT_OF_RANGE));
+        auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(simdjson::NUMBER_OUT_OF_RANGE);
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -519,11 +493,9 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed =
-            serde::detail::narrow_char(text, json::make_error(simdjson::INCORRECT_TYPE));
+        auto narrowed = serde::detail::narrow_char(text, error_type::type_mismatch);
         if(!narrowed) {
-            mark_invalid(simdjson::INCORRECT_TYPE);
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -553,7 +525,7 @@ public:
 
         DeserializeSeq seq(*this, std::move(array), len.value_or(0), false);
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         return seq;
     }
@@ -563,7 +535,7 @@ public:
 
         DeserializeTuple tuple(*this, std::move(array), len, true);
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         return tuple;
     }
@@ -573,7 +545,7 @@ public:
 
         DeserializeMap map(*this, std::move(object));
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         return map;
     }
@@ -583,7 +555,7 @@ public:
 
         DeserializeStruct s(*this, std::move(object));
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         return s;
     }
@@ -614,7 +586,7 @@ private:
     template <typename T, typename DocFn, typename ValFn>
     result_t<T> read_source(DocFn&& doc_fn, ValFn&& val_fn, bool consume = true) {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         T out{};
@@ -623,8 +595,7 @@ private:
             err = std::forward<ValFn>(val_fn)(*current_value).get(out);
         } else {
             if(root_consumed) {
-                mark_invalid();
-                return std::unexpected(current_error());
+                return mark_invalid();
             }
             err = std::forward<DocFn>(doc_fn)(document).get(out);
             if(err == simdjson::SUCCESS && consume) {
@@ -633,8 +604,7 @@ private:
         }
 
         if(err != simdjson::SUCCESS) {
-            mark_invalid(err);
-            return std::unexpected(current_error());
+            return mark_invalid(err);
         }
         return out;
     }
@@ -653,8 +623,7 @@ private:
         std::string_view raw{};
         auto err = value.raw_json().get(raw);
         if(err != simdjson::SUCCESS) {
-            mark_invalid(err);
-            return std::unexpected(current_error());
+            return mark_invalid(err);
         }
         return {};
     }
@@ -723,25 +692,18 @@ private:
 
     template <typename Alt, typename... Ts>
     static auto deserialize_variant_candidate(simdjson::padded_string_view raw,
-                                              std::variant<Ts...>& value) -> simdjson::error_code {
+                                              std::variant<Ts...>& value) -> status_t {
         Alt candidate{};
         Deserializer probe(raw);
         if(!probe.valid()) {
-            return json::to_simdjson_error(probe.error().kind);
+            return std::unexpected(probe.error());
         }
 
-        auto status = serde::deserialize(probe, candidate);
-        if(!status) {
-            return json::to_simdjson_error(status.error().kind);
-        }
-
-        auto finished = probe.finish();
-        if(!finished) {
-            return json::to_simdjson_error(finished.error().kind);
-        }
+        ETD_EXPECTED_TRY(serde::deserialize(probe, candidate));
+        ETD_EXPECTED_TRY(probe.finish());
 
         value = std::move(candidate);
-        return simdjson::SUCCESS;
+        return {};
     }
 
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
@@ -754,8 +716,7 @@ private:
     result_t<simdjson::padded_string_view> to_padded_subview(std::string_view raw) {
         const char* base = input_view.data();
         if(base == nullptr) {
-            mark_invalid();
-            return std::unexpected(current_error());
+            return mark_invalid();
         }
 
         const auto raw_addr = reinterpret_cast<std::uintptr_t>(raw.data());
@@ -763,14 +724,12 @@ private:
         const std::size_t total_capacity = input_view.capacity();
 
         if(raw_addr < base_addr) {
-            mark_invalid();
-            return std::unexpected(current_error());
+            return mark_invalid();
         }
 
         const std::size_t offset = static_cast<std::size_t>(raw_addr - base_addr);
         if(offset > total_capacity || raw.size() > (total_capacity - offset)) {
-            mark_invalid();
-            return std::unexpected(current_error());
+            return mark_invalid();
         }
 
         const std::size_t remaining_capacity = total_capacity - offset;
@@ -797,15 +756,18 @@ private:
                                                        [](auto& val) { return val.get_object(); });
     }
 
-    void set_error(simdjson::error_code error) {
-        if(last_error == simdjson::SUCCESS) {
-            last_error = error;
+    std::unexpected<error_type> mark_invalid(error_kind err = error_kind::invalid_state) {
+        is_valid = false;
+        error_type error(err);
+        if(auto loc = compute_location()) {
+            error.set_location(*loc);
         }
+        last_error = error;
+        return std::unexpected(last_error);
     }
 
-    void mark_invalid(simdjson::error_code error = simdjson::TAPE_ERROR) {
-        is_valid = false;
-        set_error(error);
+    std::unexpected<error_type> mark_invalid(simdjson::error_code err) {
+        return mark_invalid(json::make_error(err));
     }
 
     std::optional<serde::source_location> compute_location() {
@@ -841,21 +803,10 @@ private:
         return serde::source_location{line, col, offset};
     }
 
-    error_type current_error() {
-        error_type err = (last_error != simdjson::SUCCESS)
-                             ? error_type(json::make_error(last_error))
-                             : error_type(error_kind::tape_error);
-        auto loc = compute_location();
-        if(loc) {
-            err.set_location(*loc);
-        }
-        return err;
-    }
-
 private:
     bool is_valid = true;
     bool root_consumed = false;
-    simdjson::error_code last_error = simdjson::SUCCESS;
+    error_type last_error;
     simdjson::ondemand::value* current_value = nullptr;
 
     simdjson::ondemand::parser parser;

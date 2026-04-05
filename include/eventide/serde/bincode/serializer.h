@@ -97,7 +97,7 @@ public:
     }
 
     [[nodiscard]] error_type error() const noexcept {
-        return current_error();
+        return last_error;
     }
 
     [[nodiscard]] std::span<const std::byte> bytes() const noexcept {
@@ -143,7 +143,7 @@ public:
         ETD_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         if(value.empty()) {
@@ -160,7 +160,7 @@ public:
         ETD_EXPECTED_TRY(write_length(value.size()));
 
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         bytes_buffer.insert(bytes_buffer.end(), value.begin(), value.end());
@@ -230,7 +230,7 @@ private:
         requires std::integral<T>
     status_t write_integral(T value) {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         using unsigned_t = std::make_unsigned_t<T>;
@@ -258,10 +258,6 @@ private:
         is_valid = false;
         last_error = error;
         return std::unexpected(error);
-    }
-
-    error_type current_error() const {
-        return is_valid ? error_type::ok : last_error;
     }
 
 private:

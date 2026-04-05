@@ -74,25 +74,6 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     }
 }
 
-constexpr auto to_simdjson_error(error_kind error) noexcept -> simdjson::error_code {
-    switch(error) {
-        case error_kind::ok: return simdjson::SUCCESS;
-        case error_kind::allocation_failed: return simdjson::MEMALLOC;
-        case error_kind::type_mismatch: return simdjson::INCORRECT_TYPE;
-        case error_kind::number_out_of_range: return simdjson::NUMBER_OUT_OF_RANGE;
-        case error_kind::trailing_content: return simdjson::TRAILING_CONTENT;
-        case error_kind::io_error: return simdjson::IO_ERROR;
-        case error_kind::index_out_of_bounds: return simdjson::INDEX_OUT_OF_BOUNDS;
-        case error_kind::no_such_field: return simdjson::NO_SUCH_FIELD;
-        case error_kind::already_exists: return simdjson::NO_SUCH_FIELD;
-        case error_kind::parse_error:
-        case error_kind::write_failed:
-        case error_kind::invalid_state:
-        case error_kind::tape_error:
-        case error_kind::unknown:
-        default: return simdjson::TAPE_ERROR;
-    }
-}
 #endif
 
 #if ETD_SERDE_JSON_ERROR_HAS_YYJSON

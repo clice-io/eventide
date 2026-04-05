@@ -92,23 +92,22 @@ public:
     }
 
     [[nodiscard]] error_type error() const noexcept {
-        return current_error();
+        return last_error;
     }
 
     status_t finish() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         if(!root_consumed) {
-            mark_invalid();
-            return std::unexpected(current_error());
+            return mark_invalid();
         }
         return {};
     }
 
     result_t<bool> deserialize_none() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         auto ref = peek_value_ref();
@@ -140,8 +139,7 @@ public:
                                                                 value,
                                                                 error_type::type_mismatch);
         if(!result) {
-            mark_invalid(result.error());
-            return std::unexpected(current_error());
+            return mark_invalid(result.error());
         }
         return {};
     }
@@ -172,8 +170,7 @@ public:
 
         auto narrowed = serde::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -196,8 +193,7 @@ public:
 
         auto narrowed = serde::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -220,8 +216,7 @@ public:
 
         auto narrowed = serde::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -243,8 +238,7 @@ public:
 
         auto narrowed = serde::detail::narrow_char(text, error_type::type_mismatch);
         if(!narrowed) {
-            mark_invalid(narrowed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(narrowed.error());
         }
 
         value = *narrowed;
@@ -287,7 +281,7 @@ public:
 
         DeserializeMap map(*this, object);
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         return map;
     }
@@ -297,7 +291,7 @@ public:
 
         DeserializeStruct structure(*this, object);
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         return structure;
     }
@@ -306,8 +300,7 @@ public:
         ETD_EXPECTED_TRY_V(auto source, consume_value_ref());
         auto copied = content::Value::copy_of(source);
         if(!copied.has_value()) {
-            mark_invalid(copied.error());
-            return std::unexpected(current_error());
+            return mark_invalid(copied.error());
         }
         return std::move(*copied);
     }
@@ -328,7 +321,7 @@ private:
     template <typename T, typename Reader>
     status_t read_scalar(T& out, Reader&& reader) {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         auto ref = peek_value_ref();
@@ -338,8 +331,7 @@ private:
 
         auto parsed = std::forward<Reader>(reader)(*ref);
         if(!parsed) {
-            mark_invalid(parsed.error());
-            return std::unexpected(current_error());
+            return mark_invalid(parsed.error());
         }
 
         out = *parsed;
@@ -409,8 +401,7 @@ private:
             return value_kind::object;
         }
 
-        mark_invalid(error_type::type_mismatch);
-        return std::unexpected(current_error());
+        return mark_invalid(error_type::type_mismatch);
     }
 
     static serde::type_hint map_to_type_hint(value_kind kind) {
@@ -442,14 +433,13 @@ private:
 
     result_t<content::ValueRef> access_value_ref(bool consume) {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         if(has_current_value) {
             return current_value;
         }
         if(root_consumed || !root_value.valid()) {
-            mark_invalid();
-            return std::unexpected(current_error());
+            return mark_invalid();
         }
         if(consume) {
             root_consumed = true;
@@ -473,8 +463,7 @@ private:
 
         auto array = ref->get_array();
         if(!array) {
-            mark_invalid(error_type::type_mismatch);
-            return std::unexpected(current_error());
+            return mark_invalid(error_type::type_mismatch);
         }
         return *array;
     }
@@ -487,21 +476,17 @@ private:
 
         auto object = ref->get_object();
         if(!object) {
-            mark_invalid(error_type::type_mismatch);
-            return std::unexpected(current_error());
+            return mark_invalid(error_type::type_mismatch);
         }
         return std::move(*object);
     }
 
-    void mark_invalid(error_type error = error_type::invalid_state) {
+    std::unexpected<error_type> mark_invalid(error_type error = error_type::invalid_state) {
         is_valid = false;
         if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
             last_error = error;
         }
-    }
-
-    [[nodiscard]] error_type current_error() const noexcept {
-        return last_error;
+        return std::unexpected(last_error);
     }
 
 private:

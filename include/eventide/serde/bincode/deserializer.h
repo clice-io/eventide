@@ -42,7 +42,7 @@ public:
 
         result_t<bool> has_next() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.last_error);
             }
             return read_count < expected_count;
         }
@@ -66,7 +66,7 @@ public:
 
         status_t end() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.last_error);
             }
             if(read_count != expected_count) {
                 return deserializer.mark_invalid(error_type::invalid_state);
@@ -88,7 +88,7 @@ public:
         template <typename T>
         status_t deserialize_element(T& value) {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.last_error);
             }
             if(read_count >= expected_count) {
                 return deserializer.mark_invalid(error_type::invalid_state);
@@ -106,7 +106,7 @@ public:
 
         status_t end() {
             if(!deserializer.is_valid) {
-                return std::unexpected(deserializer.current_error());
+                return std::unexpected(deserializer.last_error);
             }
             if(read_count != expected_count) {
                 return deserializer.mark_invalid(error_type::invalid_state);
@@ -169,12 +169,12 @@ public:
     }
 
     [[nodiscard]] error_type error() const noexcept {
-        return current_error();
+        return last_error;
     }
 
     status_t finish() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
         if(offset != bytes.size()) {
             return mark_invalid(error_kind::trailing_bytes);
@@ -280,8 +280,7 @@ public:
         if(tag == 1U) {
             return false;
         }
-        auto status = mark_invalid(error_type::type_mismatch);
-        return std::unexpected(status.error());
+        return mark_invalid(error_type::type_mismatch);
     }
 
     template <typename... Ts>
@@ -365,13 +364,12 @@ private:
         requires std::integral<T>
     result_t<T> read_integral() {
         if(!is_valid) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         using unsigned_t = std::make_unsigned_t<T>;
         if(offset + sizeof(unsigned_t) > bytes.size()) {
-            (void)mark_invalid(error_kind::unexpected_eof);
-            return std::unexpected(current_error());
+            return mark_invalid(error_kind::unexpected_eof);
         }
 
         unsigned_t raw = 0;
@@ -396,21 +394,16 @@ private:
         ETD_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
         if(raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
-            (void)mark_invalid(error_type::number_out_of_range);
-            return std::unexpected(current_error());
+            return mark_invalid(error_type::number_out_of_range);
         }
 
         return static_cast<std::size_t>(raw);
     }
 
-    status_t mark_invalid(error_type error) {
+    std::unexpected<error_type> mark_invalid(error_type error) {
         is_valid = false;
         last_error = error;
-        return std::unexpected(error);
-    }
-
-    error_type current_error() const {
-        return is_valid ? error_type(error_kind::ok) : last_error;
+        return std::unexpected(last_error);
     }
 
 private:

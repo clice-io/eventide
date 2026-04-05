@@ -77,8 +77,8 @@ private:
 /// Requirements on D (parent Deserializer):
 ///   - D::error_type, D::result_t<T>, D::status_t
 ///   - d.valid() -> bool
-///   - d.current_error() -> error_type
-///   - d.mark_invalid() / d.mark_invalid(error)
+///   - d.error() -> error_type
+///   - d.mark_invalid() -> std::unexpected<error_type>
 ///   - d.deserialize_element_value(ElementRef, T&) -> status_t
 ///
 /// ElementRef: the type used to reference an individual array element.
@@ -95,7 +95,7 @@ public:
 
     result_t<bool> has_next() {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
         return index < array_size;
     }
@@ -104,8 +104,7 @@ public:
     status_t deserialize_element(T& value) {
         ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
         if(!has_next_result) {
-            deserializer.mark_invalid();
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid();
         }
 
         ETD_EXPECTED_TRY(deserializer.deserialize_element_value(array, index, value));
@@ -118,8 +117,7 @@ public:
     status_t skip_element() {
         ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
         if(!has_next_result) {
-            deserializer.mark_invalid();
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid();
         }
 
         ++index;
@@ -129,15 +127,14 @@ public:
 
     status_t end() {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
 
         ETD_EXPECTED_TRY_V(auto has_next_result, has_next());
 
         if(strict_length) {
             if(consumed_count != expected_length || has_next_result) {
-                deserializer.mark_invalid();
-                return std::unexpected(deserializer.current_error());
+                return deserializer.mark_invalid();
             }
             return {};
         }
@@ -172,8 +169,8 @@ protected:
 /// Requirements on D (parent Deserializer):
 ///   - D::error_type, D::result_t<T>, D::status_t
 ///   - d.valid() -> bool
-///   - d.current_error() -> error_type
-///   - d.mark_invalid() / d.mark_invalid(error)
+///   - d.error() -> error_type
+///   - d.mark_invalid() -> std::unexpected<error_type>
 ///   - d.deserialize_entry_value(ValueType, T&) -> status_t
 ///
 /// ValueType: the type used to reference an object value.
@@ -194,11 +191,10 @@ public:
 
     result_t<std::optional<std::string_view>> next_key() {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
         if(has_pending_value) {
-            deserializer.mark_invalid();
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid();
         }
         if(index == entries.size()) {
             return std::optional<std::string_view>{};
@@ -210,11 +206,10 @@ public:
 
     status_t invalid_key(std::string_view /*key_name*/) {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
         if(!has_pending_value) {
-            deserializer.mark_invalid();
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid();
         }
 
         ++index;
@@ -225,11 +220,10 @@ public:
     template <typename T>
     status_t deserialize_value(T& value) {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
         if(!has_pending_value) {
-            deserializer.mark_invalid();
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid();
         }
 
         ETD_EXPECTED_TRY(deserializer.deserialize_entry_value(entries[index].value, value));
@@ -241,11 +235,10 @@ public:
 
     status_t skip_value() {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
         if(!has_pending_value) {
-            deserializer.mark_invalid();
-            return std::unexpected(deserializer.current_error());
+            return deserializer.mark_invalid();
         }
 
         ++index;
@@ -255,7 +248,7 @@ public:
 
     status_t end() {
         if(!deserializer.valid()) {
-            return std::unexpected(deserializer.current_error());
+            return std::unexpected(deserializer.error());
         }
 
         if(has_pending_value) {

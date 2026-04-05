@@ -47,7 +47,7 @@ public:
 
     result_t<std::string_view> view() const {
         if(!is_valid || !stack.empty() || !root_written) {
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         std::string_view out{};
@@ -68,7 +68,7 @@ public:
         stack.clear();
         root_written = false;
         is_valid = true;
-        last_error = simdjson::SUCCESS;
+        last_error = error_kind::ok;
     }
 
     bool valid() const {
@@ -76,10 +76,7 @@ public:
     }
 
     error_type error() const {
-        if(is_valid) {
-            return error_kind::ok;
-        }
-        return current_error();
+        return last_error;
     }
 
     result_t<value_type> serialize_null() {
@@ -232,13 +229,13 @@ private:
     result_t<value_type> end_object() {
         if(!is_valid || stack.empty()) {
             mark_invalid();
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         const auto frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         builder.end_object();
@@ -259,12 +256,12 @@ private:
     result_t<value_type> end_array() {
         if(!is_valid || stack.empty()) {
             mark_invalid();
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         if(stack.back().kind != container_kind::array) {
             mark_invalid();
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         builder.end_array();
@@ -275,13 +272,13 @@ private:
     status_t key(std::string_view key_name) {
         if(!is_valid || stack.empty()) {
             mark_invalid();
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         auto& frame = stack.back();
         if(frame.kind != container_kind::object || !frame.expect_key) {
             mark_invalid();
-            return std::unexpected(current_error());
+            return std::unexpected(last_error);
         }
 
         if(!frame.first) {
@@ -337,35 +334,24 @@ private:
         return true;
     }
 
-    void set_error(simdjson::error_code error) {
-        if(last_error == simdjson::SUCCESS) {
+    void mark_invalid(error_kind error = error_kind::tape_error) {
+        is_valid = false;
+        if(last_error == error_kind::ok) {
             last_error = error;
         }
-    }
-
-    void mark_invalid(simdjson::error_code error = simdjson::TAPE_ERROR) {
-        is_valid = false;
-        set_error(error);
-    }
-
-    error_type current_error() const {
-        if(last_error != simdjson::SUCCESS) {
-            return json::make_error(last_error);
-        }
-        return error_kind::tape_error;
     }
 
     status_t status() const {
         if(is_valid) {
             return {};
         }
-        return std::unexpected(current_error());
+        return std::unexpected(last_error);
     }
 
 private:
     bool is_valid = true;
     bool root_written = false;
-    simdjson::error_code last_error = simdjson::SUCCESS;
+    error_type last_error = error_kind::ok;
     std::vector<container_frame> stack;
     simdjson::builder::string_builder builder;
 };
