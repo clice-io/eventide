@@ -49,7 +49,10 @@ SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)
 SERDE_STANDARD_TEST_CASES_POINTERS_WIRE_SAFE(rt)
 SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)
 SERDE_STANDARD_TEST_CASES_ATTRS(rt)
+SERDE_STANDARD_TEST_CASES_BEHAVIOR_ATTRS(rt)
 SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS(rt)
+// RawValue is not supported: the content (yyjson) backend operates on a DOM,
+// not raw JSON text; there are no serialize/deserialize traits for RawValue.
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
 };  // TEST_SUITE(serde_yyjson_standard)

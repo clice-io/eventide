@@ -14,6 +14,7 @@
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/serde/json/serializer.h"
 #include "eventide/serde/serde/annotation.h"
+#include "eventide/serde/serde/raw_value.h"
 #include "eventide/serde/serde/serde.h"
 
 namespace eventide::serde {
@@ -454,6 +455,140 @@ TEST_CASE(unknown_fields_ignored_by_default) {
 }
 
 };  // TEST_SUITE(serde_required_fields)
+
+// ═══════════════════════════════════════════════════════════════════════
+// RawValue tests
+// ═══════════════════════════════════════════════════════════════════════
+
+struct WithRawValue {
+    std::string label;
+    RawValue raw;
+};
+
+TEST_SUITE(serde_json_raw_value) {
+
+TEST_CASE(raw_value_serialize_object) {
+    RawValue rv;
+    rv.data = R"({"nested":true})";
+    ASSERT_EQ(to_json(rv), R"({"nested":true})");
+}
+
+TEST_CASE(raw_value_serialize_array) {
+    RawValue rv;
+    rv.data = R"([1,2,3])";
+    ASSERT_EQ(to_json(rv), R"([1,2,3])");
+}
+
+TEST_CASE(raw_value_serialize_string) {
+    RawValue rv;
+    rv.data = R"("hello")";
+    ASSERT_EQ(to_json(rv), R"("hello")");
+}
+
+TEST_CASE(raw_value_serialize_number) {
+    RawValue rv;
+    rv.data = "42";
+    ASSERT_EQ(to_json(rv), "42");
+}
+
+TEST_CASE(raw_value_serialize_null_json) {
+    RawValue rv;
+    rv.data = "null";
+    ASSERT_EQ(to_json(rv), "null");
+}
+
+TEST_CASE(raw_value_serialize_empty_is_null) {
+    RawValue rv;
+    // empty data serializes as JSON null
+    ASSERT_EQ(to_json(rv), "null");
+}
+
+TEST_CASE(raw_value_deserialize_object) {
+    RawValue rv;
+    ASSERT_TRUE(from_json(R"({"nested":true})", rv).has_value());
+    EXPECT_EQ(rv.data, R"({"nested":true})");
+}
+
+TEST_CASE(raw_value_deserialize_array) {
+    RawValue rv;
+    ASSERT_TRUE(from_json(R"([1,2,3])", rv).has_value());
+    EXPECT_EQ(rv.data, R"([1,2,3])");
+}
+
+TEST_CASE(raw_value_deserialize_string) {
+    RawValue rv;
+    ASSERT_TRUE(from_json(R"("hello")", rv).has_value());
+    EXPECT_EQ(rv.data, R"("hello")");
+}
+
+TEST_CASE(raw_value_deserialize_number) {
+    RawValue rv;
+    ASSERT_TRUE(from_json("42", rv).has_value());
+    EXPECT_EQ(rv.data, "42");
+}
+
+TEST_CASE(raw_value_deserialize_null) {
+    RawValue rv;
+    ASSERT_TRUE(from_json("null", rv).has_value());
+    EXPECT_EQ(rv.data, "null");
+}
+
+TEST_CASE(raw_value_roundtrip_object) {
+    RawValue original;
+    original.data = R"({"nested":true})";
+
+    auto json = to_json(original);
+    ASSERT_TRUE(json.has_value());
+
+    RawValue parsed;
+    ASSERT_TRUE(from_json(*json, parsed).has_value());
+    EXPECT_EQ(parsed.data, original.data);
+}
+
+TEST_CASE(raw_value_roundtrip_array) {
+    RawValue original;
+    original.data = R"([1,2,3])";
+
+    auto json = to_json(original);
+    ASSERT_TRUE(json.has_value());
+
+    RawValue parsed;
+    ASSERT_TRUE(from_json(*json, parsed).has_value());
+    EXPECT_EQ(parsed.data, original.data);
+}
+
+TEST_CASE(raw_value_in_struct_serialize) {
+    WithRawValue s;
+    s.label = "test";
+    s.raw.data = R"({"nested":true})";
+
+    auto json = to_json(s);
+    ASSERT_TRUE(json.has_value());
+    EXPECT_EQ(*json, R"({"label":"test","raw":{"nested":true}})");
+}
+
+TEST_CASE(raw_value_in_struct_deserialize) {
+    WithRawValue s;
+    ASSERT_TRUE(from_json(R"({"label":"test","raw":{"nested":true}})", s).has_value());
+    EXPECT_EQ(s.label, "test");
+    EXPECT_EQ(s.raw.data, R"({"nested":true})");
+}
+
+TEST_CASE(raw_value_in_struct_roundtrip) {
+    WithRawValue original;
+    original.label = "roundtrip";
+    original.raw.data = R"([10,20,30])";
+
+    auto json = to_json(original);
+    ASSERT_TRUE(json.has_value());
+
+    WithRawValue parsed;
+    ASSERT_TRUE(from_json(*json, parsed).has_value());
+    EXPECT_EQ(parsed.label, original.label);
+    EXPECT_EQ(parsed.raw.data, original.raw.data);
+}
+
+};  // TEST_SUITE(serde_json_raw_value)
 
 }  // namespace
 

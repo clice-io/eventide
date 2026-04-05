@@ -30,6 +30,13 @@ SERDE_STANDARD_TEST_CASES_SEQUENCE_SET(rt)
 SERDE_STANDARD_TEST_CASES_MAPS(rt)
 SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)
 SERDE_STANDARD_TEST_CASES_POINTERS_TOML_SAFE(rt)
+SERDE_STANDARD_TEST_CASES_VARIANT_TOML_SAFE(rt)
+SERDE_STANDARD_TEST_CASES_ATTRS(rt)
+SERDE_STANDARD_TEST_CASES_BEHAVIOR_ATTRS(rt)
+SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS_NO_INTERNAL(rt)
+// Internally tagged variants require content::Deserializer for buffered
+// field replay, which the TOML backend does not implement.
+// RawValue is not supported: TOML has no raw-passthrough serialization API.
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
 };  // TEST_SUITE(serde_toml_standard)

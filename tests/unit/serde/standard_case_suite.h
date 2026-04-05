@@ -41,6 +41,7 @@
 
 #include "eventide/serde/serde/annotation.h"
 #include "eventide/serde/serde/attrs.h"
+#include "eventide/serde/serde/attrs/behavior.h"
 
 namespace eventide::serde::standard_case {
 
@@ -478,6 +479,102 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         .width = 10.0,
         .height = 20.0,
     };
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Behavior attribute test types (with<Adapter>, as<Target>, literal)
+// ---------------------------------------------------------------------------
+
+/// Adapter for behavior::with<DoubleIntAdapter>.
+/// On serialize: emits the int value multiplied by 2.
+/// On deserialize: reads the raw int and divides by 2.
+///
+/// Supports both the standalone path (Adapter::serialize / Adapter::deserialize)
+/// and the struct-field path (Adapter::serialize_field / Adapter::deserialize_field).
+struct DoubleIntAdapter {
+    // Standalone serialize: called as Adapter::serialize(s, v) from serde.h
+    template <typename S>
+    static auto serialize(S& s, const int& v) {
+        return s.serialize_int(static_cast<std::int64_t>(v) * 2);
+    }
+
+    // Standalone deserialize: called as Adapter::deserialize(d, v) from serde.h
+    template <typename D>
+    static auto deserialize(D& d, int& v) {
+        std::int64_t raw{};
+        auto status = d.deserialize_int(raw);
+        if(!status) {
+            return status;
+        }
+        v = static_cast<int>(raw / 2);
+        return status;
+    }
+
+    // Struct-field serialize: called as Adapter::serialize_field(s_struct, name, v)
+    template <typename SerializeStruct>
+    static auto serialize_field(SerializeStruct& s_struct, std::string_view name, const int& v) {
+        return s_struct.serialize_field(name, static_cast<std::int64_t>(v) * 2);
+    }
+
+    // Struct-field deserialize: called as Adapter::deserialize_field(d_struct, v)
+    template <typename DeserializeStruct>
+    static auto deserialize_field(DeserializeStruct& d_struct, int& v) {
+        std::int64_t raw{};
+        auto status = d_struct.deserialize_value(raw);
+        if(!status) {
+            return status;
+        }
+        v = static_cast<int>(raw / 2);
+        return status;
+    }
+};
+
+/// Struct with a behavior::with<DoubleIntAdapter> annotated field.
+struct BehaviorWithPayload {
+    int id{};
+    annotation<int, behavior::with<DoubleIntAdapter>> doubled_value;
+
+    auto operator==(const BehaviorWithPayload&) const -> bool = default;
+};
+
+/// Struct with a behavior::as<std::int64_t> annotated field.
+/// The int field is widened to int64_t on serialize and narrowed back on deserialize.
+struct BehaviorAsPayload {
+    int id{};
+    annotation<int, behavior::as<std::int64_t>> wide_value;
+
+    auto operator==(const BehaviorAsPayload&) const -> bool = default;
+};
+
+/// Struct with a schema::literal annotated field.
+/// The literal annotation is metadata-only in the current serde engine;
+/// the field serializes and deserializes normally as its underlying type.
+struct BehaviorLiteralPayload {
+    int id{};
+    annotation<std::string, schema::literal<"hello">> kind;
+
+    auto operator==(const BehaviorLiteralPayload&) const -> bool = default;
+};
+
+inline auto make_behavior_with_payload() -> BehaviorWithPayload {
+    BehaviorWithPayload out{};
+    out.id = 42;
+    out.doubled_value = 7;
+    return out;
+}
+
+inline auto make_behavior_as_payload() -> BehaviorAsPayload {
+    BehaviorAsPayload out{};
+    out.id = 5;
+    out.wide_value = 12345;
+    return out;
+}
+
+inline auto make_behavior_literal_payload() -> BehaviorLiteralPayload {
+    BehaviorLiteralPayload out{};
+    out.id = 99;
+    out.kind = "hello";
     return out;
 }
 
@@ -942,6 +1039,25 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             eventide::serde::standard_case::make_tagged_internal_holder());                        \
     }
 
+/// Tagged variants (external / adjacent only — no internally_tagged).
+/// Use this for backends that do not implement content::Deserializer (e.g. TOML).
+///
+/// Note: standalone tagged variants are omitted here because TOML serializes
+/// annotated-variant table values without the boxed_root_key wrapper, but the
+/// deserializer expects the wrapper for non-root_table_v types.  Embedding them
+/// inside a struct field (as the *Holder types do) avoids the root-level
+/// serialisation mismatch and is sufficient for broad coverage.
+
+#define SERDE_STANDARD_TEST_CASES_TAGGED_VARIANTS_NO_INTERNAL(rt)                                  \
+    TEST_CASE(standard_tagged_variants_roundtrip) {                                                \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
+            rt,                                                                                    \
+            eventide::serde::standard_case::make_tagged_external_holder());                        \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(                                                           \
+            rt,                                                                                    \
+            eventide::serde::standard_case::make_tagged_adjacent_holder());                        \
+    }
+
 /// Text decoder error paths.
 /// decode_text signature:
 ///   template <typename T>
@@ -1030,6 +1146,25 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
 #define SERDE_STANDARD_TEST_CASES_VARIANT_TEXT_SAFE(rt)                                            \
     SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)
 
+/// Variant values safe for TOML.
+/// Struct alternatives are excluded from root-level variant tests because the TOML
+/// serializer emits struct-valued variants as the root table (no __root__ wrapper),
+/// making them indistinguishable from a null/monostate at deserialisation time.
+
+#define SERDE_STANDARD_TEST_CASES_VARIANT_TOML_SAFE(rt)                                            \
+    TEST_CASE(standard_variant_roundtrip) {                                                        \
+        using primary_variant_t = std::variant<std::monostate, int, double, std::string>;          \
+        using nested_int_list_t = std::variant<std::monostate, std::vector<int>>;                  \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, primary_variant_t{std::in_place_index<0>});            \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, primary_variant_t{123});                               \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, primary_variant_t{2.75});                              \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, primary_variant_t{std::string("variant-text")});       \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
+                                        nested_int_list_t{                                         \
+                                            std::vector<int>{1, 2, 3} \
+        });                           \
+    }
+
 /// All container-like and sum-type groups.
 
 #define SERDE_STANDARD_TEST_CASES_STL_CONTAINERS(rt)                                               \
@@ -1039,6 +1174,80 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)                                                         \
     SERDE_STANDARD_TEST_CASES_POINTERS(rt)                                                         \
     SERDE_STANDARD_TEST_CASES_VARIANT(rt)
+
+/// Attribute behaviors safe for positional (binary) formats like Bincode.
+///
+/// Excluded from full SERDE_STANDARD_TEST_CASES_ATTRS:
+///   - skip_if_none with nullopt: binary format serializes nothing, deserializer reads past it.
+///   - rename_all / deny_unknown_fields annotated structs: require map-style deserialization.
+
+#define SERDE_STANDARD_TEST_CASES_ATTRS_BINCODE_SAFE(rt)                                           \
+    TEST_CASE(standard_attrs_roundtrip) {                                                          \
+        using payload_t = eventide::serde::standard_case::AttrPayload;                             \
+        {                                                                                          \
+            auto input = eventide::serde::standard_case::make_attr_payload();                      \
+            input.internal_id = 4242;                                                              \
+            auto output = (rt)(input);                                                             \
+            ASSERT_TRUE(output.has_value());                                                       \
+            EXPECT_EQ(output->id, input.id);                                                       \
+            EXPECT_EQ(eventide::serde::annotated_value(output->display_name),                      \
+                      std::string("alice"));                                                       \
+            EXPECT_EQ(eventide::serde::annotated_value(output->internal_id), 1000);                \
+            EXPECT_EQ(eventide::serde::annotated_value(output->note),                              \
+                      std::optional<std::string>{"note"});                                         \
+            EXPECT_EQ(eventide::serde::annotated_value(output->profile),                           \
+                      eventide::serde::annotated_value(input.profile));                            \
+            EXPECT_EQ(eventide::serde::annotated_value(output->level),                             \
+                      eventide::serde::standard_case::AccessLevel::admin);                         \
+        }                                                                                          \
+        SERDE_STANDARD_ASSERT_ROUNDTRIP(rt,                                                        \
+                                        eventide::serde::standard_case::EnumStringAccess{          \
+                                            eventide::serde::standard_case::AccessLevel::viewer}); \
+    }
+
+/// Behavior attribute tests: with<Adapter>, as<Target>, literal.
+///
+/// Tests:
+///   - BehaviorWithPayload: int field serialized via DoubleIntAdapter (x2/÷2)
+///   - BehaviorAsPayload:   int field widened to int64_t via as<int64_t>
+///   - BehaviorLiteralPayload: string field annotated with literal<"hello"> (metadata only)
+///
+/// Compatible with all struct-based backends (JSON, TOML, bincode, flatbuffers, yyjson).
+
+#define SERDE_STANDARD_TEST_CASES_BEHAVIOR_ATTRS(rt)                                               \
+    TEST_CASE(standard_behavior_attrs_roundtrip) {                                                 \
+        {                                                                                          \
+            auto input = eventide::serde::standard_case::make_behavior_with_payload();             \
+            auto output = (rt)(input);                                                             \
+            ASSERT_TRUE(output.has_value());                                                       \
+            EXPECT_EQ(output->id, input.id);                                                       \
+            EXPECT_EQ(eventide::serde::annotated_value(output->doubled_value),                     \
+                      eventide::serde::annotated_value(input.doubled_value));                      \
+        }                                                                                          \
+        {                                                                                          \
+            auto input = eventide::serde::standard_case::make_behavior_with_payload();             \
+            input.doubled_value = 0;                                                               \
+            auto output = (rt)(input);                                                             \
+            ASSERT_TRUE(output.has_value());                                                       \
+            EXPECT_EQ(eventide::serde::annotated_value(output->doubled_value), 0);                 \
+        }                                                                                          \
+        {                                                                                          \
+            auto input = eventide::serde::standard_case::make_behavior_as_payload();               \
+            auto output = (rt)(input);                                                             \
+            ASSERT_TRUE(output.has_value());                                                       \
+            EXPECT_EQ(output->id, input.id);                                                       \
+            EXPECT_EQ(eventide::serde::annotated_value(output->wide_value),                        \
+                      eventide::serde::annotated_value(input.wide_value));                         \
+        }                                                                                          \
+        {                                                                                          \
+            auto input = eventide::serde::standard_case::make_behavior_literal_payload();          \
+            auto output = (rt)(input);                                                             \
+            ASSERT_TRUE(output.has_value());                                                       \
+            EXPECT_EQ(output->id, input.id);                                                       \
+            EXPECT_EQ(eventide::serde::annotated_value(output->kind),                              \
+                      eventide::serde::annotated_value(input.kind));                               \
+        }                                                                                          \
+    }
 
 /// Extended schema/annotation/tagged coverage.
 

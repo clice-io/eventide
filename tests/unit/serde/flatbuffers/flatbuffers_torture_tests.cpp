@@ -30,6 +30,14 @@ SERDE_STANDARD_TEST_CASES_SEQUENCE_SET(rt)
 SERDE_STANDARD_TEST_CASES_MAPS(rt)
 SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)
 SERDE_STANDARD_TEST_CASES_POINTERS_WIRE_SAFE(rt)
+SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)
+// BEHAVIOR_ATTRS: flatbuffers strips behavior annotations (with<>/as<>) in
+// its own decode path, so adapter transformations are not applied on deser.
+// TAGGED_VARIANTS: flatbuffers uses schema-based field layout, not runtime
+// string-keyed tags; external/adjacent/internal tagging is not applicable.
+// ATTRS: annotation<T, flatten/rename_all/deny_unknown_fields> triggers
+// structured-binding decomposition errors in the reflection system.
+// RawValue is not supported: no serialize/deserialize traits for flatbuffers.
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
 };  // TEST_SUITE(serde_flatbuffers_standard)

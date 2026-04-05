@@ -1,9 +1,11 @@
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "eventide/zest/zest.h"
 #include "eventide/serde/bincode.h"
+#include "eventide/serde/serde/raw_value.h"
 
 namespace eventide::serde {
 
@@ -115,6 +117,80 @@ TEST_CASE(struct_deserialize_respects_flatten) {
 }
 
 };  // TEST_SUITE(serde_bincode)
+
+// ═══════════════════════════════════════════════════════════════════════
+// RawValue tests
+// ═══════════════════════════════════════════════════════════════════════
+
+struct WithRawValueBincode {
+    std::string label;
+    RawValue raw;
+};
+
+TEST_SUITE(serde_bincode_raw_value) {
+
+TEST_CASE(raw_value_serialize) {
+    RawValue rv;
+    rv.data = R"({"nested":true})";
+
+    auto bytes = bincode::to_bytes(rv);
+    ASSERT_TRUE(bytes.has_value());
+    // bincode encodes as length-prefixed bytes, so the byte count must be non-zero
+    EXPECT_FALSE(bytes->empty());
+}
+
+TEST_CASE(raw_value_roundtrip_json_string) {
+    RawValue original;
+    original.data = R"({"nested":true})";
+
+    auto bytes = bincode::to_bytes(original);
+    ASSERT_TRUE(bytes.has_value());
+
+    RawValue parsed;
+    ASSERT_TRUE(bincode::from_bytes(*bytes, parsed).has_value());
+    EXPECT_EQ(parsed.data, original.data);
+}
+
+TEST_CASE(raw_value_roundtrip_array_string) {
+    RawValue original;
+    original.data = R"([1,2,3])";
+
+    auto bytes = bincode::to_bytes(original);
+    ASSERT_TRUE(bytes.has_value());
+
+    RawValue parsed;
+    ASSERT_TRUE(bincode::from_bytes(*bytes, parsed).has_value());
+    EXPECT_EQ(parsed.data, original.data);
+}
+
+TEST_CASE(raw_value_roundtrip_empty) {
+    RawValue original;
+    // empty data
+
+    auto bytes = bincode::to_bytes(original);
+    ASSERT_TRUE(bytes.has_value());
+
+    RawValue parsed;
+    parsed.data = "non-empty";
+    ASSERT_TRUE(bincode::from_bytes(*bytes, parsed).has_value());
+    EXPECT_EQ(parsed.data, "");
+}
+
+TEST_CASE(raw_value_in_struct_roundtrip) {
+    WithRawValueBincode original;
+    original.label = "test";
+    original.raw.data = R"({"key":"value"})";
+
+    auto bytes = bincode::to_bytes(original);
+    ASSERT_TRUE(bytes.has_value());
+
+    WithRawValueBincode parsed;
+    ASSERT_TRUE(bincode::from_bytes(*bytes, parsed).has_value());
+    EXPECT_EQ(parsed.label, original.label);
+    EXPECT_EQ(parsed.raw.data, original.raw.data);
+}
+
+};  // TEST_SUITE(serde_bincode_raw_value)
 
 }  // namespace
 

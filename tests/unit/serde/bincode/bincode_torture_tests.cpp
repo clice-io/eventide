@@ -32,6 +32,10 @@ SERDE_STANDARD_TEST_CASES_MAPS(rt)
 SERDE_STANDARD_TEST_CASES_OPTIONAL(rt)
 SERDE_STANDARD_TEST_CASES_POINTERS(rt)
 SERDE_STANDARD_TEST_CASES_VARIANT(rt)
+SERDE_STANDARD_TEST_CASES_ATTRS_BINCODE_SAFE(rt)
+SERDE_STANDARD_TEST_CASES_BEHAVIOR_ATTRS(rt)
+// Tagged variants (external/adjacent/internal) require map-style
+// deserialization with string keys, which bincode does not support.
 SERDE_STANDARD_TEST_CASES_COMPLEX(rt)
 
 };  // TEST_SUITE(serde_bincode_standard)
