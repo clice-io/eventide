@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -63,7 +64,7 @@ constexpr auto match_and_deserialize_alt(std::string_view tag_value,
     }(std::make_index_sequence<sizeof...(Ts)>{});
 
     if(!matched) {
-        return std::unexpected(E::custom("unknown variant tag '" + std::string(tag_value) + "'"));
+        return std::unexpected(E::custom(std::format("unknown variant tag '{}'", tag_value)));
     }
     return status;
 }
@@ -159,7 +160,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
         if(!key.has_value() || *key != expected) {
             return std::unexpected(
-                E::custom("expected adjacent tag field '" + std::string(expected) + "'"));
+                E::custom(std::format("expected adjacent tag field '{}'", expected)));
         }
         return {};
     };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -45,26 +46,25 @@ struct basic_error {
 
     // --- semantic factory methods ---
     static basic_error missing_field(std::string_view field_name) {
-        return {Kind::type_mismatch, "missing required field '" + std::string(field_name) + "'"};
+        return {Kind::type_mismatch, std::format("missing required field '{}'", field_name)};
     }
 
     static basic_error unknown_field(std::string_view field_name) {
-        return {Kind::type_mismatch, "unknown field '" + std::string(field_name) + "'"};
+        return {Kind::type_mismatch, std::format("unknown field '{}'", field_name)};
     }
 
     static basic_error duplicate_field(std::string_view field_name) {
-        return {Kind::type_mismatch, "duplicate field '" + std::string(field_name) + "'"};
+        return {Kind::type_mismatch, std::format("duplicate field '{}'", field_name)};
     }
 
     static basic_error invalid_type(std::string_view expected, std::string_view got) {
         return {Kind::type_mismatch,
-                "invalid type: expected " + std::string(expected) + ", got " + std::string(got)};
+                std::format("invalid type: expected {}, got {}", expected, got)};
     }
 
     static basic_error invalid_length(std::size_t expected, std::size_t got) {
         return {Kind::type_mismatch,
-                "invalid length: expected " + std::to_string(expected) + ", got " +
-                    std::to_string(got)};
+                std::format("invalid length: expected {}, got {}", expected, got)};
     }
 
     static basic_error custom(std::string_view msg) {
@@ -110,11 +110,7 @@ struct basic_error {
             result += p;
         }
         if(location) {
-            result += " (line ";
-            result += std::to_string(location->line);
-            result += ", column ";
-            result += std::to_string(location->column);
-            result += ')';
+            result += std::format(" (line {}, column {})", location->line, location->column);
         }
         return result;
     }
