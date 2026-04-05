@@ -63,7 +63,7 @@ constexpr auto match_and_deserialize_alt(std::string_view tag_value,
     }(std::make_index_sequence<sizeof...(Ts)>{});
 
     if(!matched) {
-        return std::unexpected(E::type_mismatch);
+        return std::unexpected(E::custom("unknown variant tag '" + std::string(tag_value) + "'"));
     }
     return status;
 }
@@ -121,7 +121,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
 
     ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
     if(!key.has_value()) {
-        return std::unexpected(E::type_mismatch);
+        return std::unexpected(E::custom("expected externally tagged variant key"));
     }
 
     ETD_EXPECTED_TRY((match_and_deserialize_alt<E>(*key, names, value, [&](auto& alt) {
@@ -158,7 +158,7 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
     auto expect_next_key = [&](std::string_view expected) -> std::expected<void, E> {
         ETD_EXPECTED_TRY_V(auto key, d_struct.next_key());
         if(!key.has_value() || *key != expected) {
-            return std::unexpected(E::type_mismatch);
+            return std::unexpected(E::custom("expected adjacent tag field '" + std::string(expected) + "'"));
         }
         return {};
     };
@@ -177,13 +177,13 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
 
             if(*key == TagAttr::field_names[0]) {
                 if(has_tag) {
-                    return std::unexpected(E::type_mismatch);
+                    return std::unexpected(E::duplicate_field(TagAttr::field_names[0]));
                 }
                 ETD_EXPECTED_TRY(d_struct.deserialize_value(tag_value));
                 has_tag = true;
             } else if(*key == TagAttr::field_names[1]) {
                 if(has_content) {
-                    return std::unexpected(E::type_mismatch);
+                    return std::unexpected(E::duplicate_field(TagAttr::field_names[1]));
                 }
                 has_content = true;
 
@@ -200,7 +200,10 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         }
 
         if(!has_tag || !has_content) {
-            return std::unexpected(E::type_mismatch);
+            if(!has_tag) {
+                return std::unexpected(E::missing_field(TagAttr::field_names[0]));
+            }
+            return std::unexpected(E::missing_field(TagAttr::field_names[1]));
         }
 
         if(buffered_content.has_value()) {
@@ -275,7 +278,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     auto obj_ref = dom_result.as_ref();
     auto obj = obj_ref.get_object();
     if(!obj) {
-        return std::unexpected(E::type_mismatch);
+        return std::unexpected(E::invalid_type("object", "non-object"));
     }
 
     // Pass 1: find tag
@@ -285,7 +288,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
         if(entry.key == tag_field) {
             auto s = entry.value.get_string();
             if(!s) {
-                return std::unexpected(E::type_mismatch);
+                return std::unexpected(E::invalid_type("string", "non-string"));
             }
             tag_value = *s;
             found = true;
@@ -293,7 +296,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
         }
     }
     if(!found) {
-        return std::unexpected(E::type_mismatch);
+        return std::unexpected(E::missing_field(tag_field));
     }
 
     // Pass 2: match tag -> deserialize full object as that struct type

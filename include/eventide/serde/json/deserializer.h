@@ -26,7 +26,7 @@ template <typename Config = config::default_config>
 class Deserializer {
 public:
     using config_type = Config;
-    using error_type = json::error_kind;
+    using error_type = json::error;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -286,7 +286,7 @@ public:
         return is_valid;
     }
 
-    error_type error() const {
+    error_type error() {
         if(is_valid) {
             return error_kind::ok;
         }
@@ -727,17 +727,17 @@ private:
         Alt candidate{};
         Deserializer probe(raw);
         if(!probe.valid()) {
-            return json::to_simdjson_error(probe.error());
+            return json::to_simdjson_error(probe.error().kind);
         }
 
         auto status = serde::deserialize(probe, candidate);
         if(!status) {
-            return json::to_simdjson_error(status.error());
+            return json::to_simdjson_error(status.error().kind);
         }
 
         auto finished = probe.finish();
         if(!finished) {
-            return json::to_simdjson_error(finished.error());
+            return json::to_simdjson_error(finished.error().kind);
         }
 
         value = std::move(candidate);
@@ -808,11 +808,45 @@ private:
         set_error(error);
     }
 
-    error_type current_error() const {
-        if(last_error != simdjson::SUCCESS) {
-            return json::make_error(last_error);
+    std::optional<serde::source_location> compute_location() {
+        auto loc_result = document.current_location();
+        const char* loc = nullptr;
+        if(std::move(loc_result).get(loc) != simdjson::SUCCESS || loc == nullptr) {
+            return std::nullopt;
         }
-        return error_kind::tape_error;
+
+        const char* base = input_view.data();
+        if(base == nullptr || loc < base) {
+            return std::nullopt;
+        }
+
+        std::size_t offset = static_cast<std::size_t>(loc - base);
+        std::size_t total = input_view.size();
+        if(offset > total) {
+            offset = total;
+        }
+
+        // Compute line and column by scanning input
+        std::size_t line = 1;
+        std::size_t col = 1;
+        for(std::size_t i = 0; i < offset; ++i) {
+            if(base[i] == '\n') {
+                ++line;
+                col = 1;
+            } else {
+                ++col;
+            }
+        }
+
+        return serde::source_location{line, col, offset};
+    }
+
+    error_type current_error() {
+        error_type err = (last_error != simdjson::SUCCESS)
+            ? error_type(json::make_error(last_error))
+            : error_type(error_kind::tape_error);
+        err.location = compute_location();
+        return err;
     }
 
 private:
@@ -828,7 +862,7 @@ private:
 };
 
 template <typename Config = config::default_config, typename T>
-auto from_json(std::string_view json, T& value) -> std::expected<void, error_kind> {
+auto from_json(std::string_view json, T& value) -> std::expected<void, error> {
     Deserializer<Config> deserializer(json);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
@@ -840,7 +874,7 @@ auto from_json(std::string_view json, T& value) -> std::expected<void, error_kin
 }
 
 template <typename Config = config::default_config, typename T>
-auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<void, error_kind> {
+auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<void, error> {
     Deserializer<Config> deserializer(json);
     if(!deserializer.valid()) {
         return std::unexpected(deserializer.error());
@@ -853,7 +887,7 @@ auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<voi
 
 template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
-auto from_json(std::string_view json) -> std::expected<T, error_kind> {
+auto from_json(std::string_view json) -> std::expected<T, error> {
     T value{};
     ETD_EXPECTED_TRY(from_json<Config>(json, value));
     return value;
@@ -861,7 +895,7 @@ auto from_json(std::string_view json) -> std::expected<T, error_kind> {
 
 template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
-auto from_json(simdjson::padded_string_view json) -> std::expected<T, error_kind> {
+auto from_json(simdjson::padded_string_view json) -> std::expected<T, error> {
     T value{};
     ETD_EXPECTED_TRY(from_json<Config>(json, value));
     return value;

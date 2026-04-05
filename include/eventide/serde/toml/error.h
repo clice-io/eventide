@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string_view>
 
+#include "eventide/serde/serde/error.h"
+
 namespace eventide::serde::toml {
 
 enum class error_kind : std::uint16_t {
@@ -29,5 +31,7 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
         default: return "unknown toml error";
     }
 }
+
+using error = eventide::serde::basic_error<error_kind>;
 
 }  // namespace eventide::serde::toml

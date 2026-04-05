@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string_view>
 
+#include "eventide/serde/serde/error.h"
+
 namespace eventide::serde::bincode {
 
 enum class error_kind : std::uint8_t {
@@ -30,5 +32,7 @@ constexpr std::string_view error_message(error_kind error) {
 
     return "invalid_state";
 }
+
+using error = eventide::serde::basic_error<error_kind>;
 
 }  // namespace eventide::serde::bincode

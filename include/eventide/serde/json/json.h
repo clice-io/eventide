@@ -72,19 +72,19 @@ auto to_json(const T& value)
 // Top-level convenience API (uses streaming simdjson backend by default)
 
 template <typename Config = config::default_config, typename T>
-auto parse(std::string_view json, T& value) -> std::expected<void, error_kind> {
+auto parse(std::string_view json, T& value) -> std::expected<void, error> {
     return from_json<Config>(json, value);
 }
 
 template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
-auto parse(std::string_view json) -> std::expected<T, error_kind> {
+auto parse(std::string_view json) -> std::expected<T, error> {
     return from_json<T, Config>(json);
 }
 
 template <typename Config = config::default_config, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> std::expected<std::string, error_kind> {
+    -> std::expected<std::string, error> {
     return to_json<Config>(value, initial_capacity);
 }
 
@@ -98,7 +98,7 @@ concept json_dynamic_dom_type =
 
 template <typename Config, json_dynamic_dom_type T>
 struct deserialize_traits<json::Deserializer<Config>, T> {
-    using error_type = json::error_kind;
+    using error_type = json::error;
 
     static auto deserialize(json::Deserializer<Config>& deserializer, T& value)
         -> std::expected<void, error_type> {

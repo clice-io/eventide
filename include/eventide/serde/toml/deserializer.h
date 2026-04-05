@@ -81,7 +81,7 @@ template <typename Config = config::default_config>
 class Deserializer {
 public:
     using config_type = Config;
-    using error_type = error_kind;
+    using error_type = error;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -467,6 +467,7 @@ private:
             return std::unexpected(current_error());
         }
         if(has_current_value) {
+            last_accessed_node = current_node;
             return current_node;
         }
         if(root_consumed) {
@@ -476,6 +477,7 @@ private:
         if(consume) {
             root_consumed = true;
         }
+        last_accessed_node = root_node;
         return root_node;
     }
 
@@ -521,9 +523,27 @@ private:
         return open_as<::toml::table>();
     }
 
+    static std::optional<serde::source_location> source_from_node(const ::toml::node* node) {
+        if(!node) {
+            return std::nullopt;
+        }
+        auto region = node->source();
+        if(!static_cast<bool>(region.begin)) {
+            return std::nullopt;
+        }
+        return serde::source_location{
+            static_cast<std::size_t>(region.begin.line),
+            static_cast<std::size_t>(region.begin.column),
+            0,
+        };
+    }
+
     void mark_invalid(error_type error = error_type::invalid_state) {
         is_valid = false;
         if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
+            if(!error.location) {
+                error.location = source_from_node(last_accessed_node);
+            }
             last_error = error;
         }
     }
@@ -539,10 +559,11 @@ private:
     const ::toml::node* root_node = nullptr;
     bool has_current_value = false;
     const ::toml::node* current_node = nullptr;
+    const ::toml::node* last_accessed_node = nullptr;
 };
 
 template <typename Config = config::default_config, typename T>
-auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, error_kind> {
+auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, error> {
     const auto* root = detail::select_root_node<T>(table);
     Deserializer<Config> deserializer(root);
 
@@ -553,7 +574,7 @@ auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, erro
 
 template <typename T, typename Config = config::default_config>
     requires std::default_initializable<T>
-auto from_toml(const ::toml::table& table) -> std::expected<T, error_kind> {
+auto from_toml(const ::toml::table& table) -> std::expected<T, error> {
     T value{};
     ETD_EXPECTED_TRY(from_toml<Config>(table, value));
     return value;

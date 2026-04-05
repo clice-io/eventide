@@ -13,7 +13,7 @@ namespace {
 using toml::parse;
 using toml::to_string;
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, toml::error_kind> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, toml::error> {
     auto encoded = to_string(input);
     if(!encoded) {
         return std::unexpected(encoded.error());

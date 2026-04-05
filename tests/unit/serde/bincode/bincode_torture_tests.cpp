@@ -11,7 +11,7 @@ namespace {
 using bincode::from_bytes;
 using bincode::to_bytes;
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, bincode::error_kind> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, bincode::error> {
     auto encoded = to_bytes(input);
     if(!encoded) {
         return std::unexpected(encoded.error());

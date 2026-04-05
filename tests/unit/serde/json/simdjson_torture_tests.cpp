@@ -12,7 +12,7 @@ namespace {
 using json::from_json;
 using json::to_json;
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, json::error_kind> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, json::error> {
     auto encoded = to_json(input);
     if(!encoded) {
         return std::unexpected(encoded.error());

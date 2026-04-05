@@ -358,7 +358,9 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         if(idx) {
             auto field_status = dispatch_field_by_index<value_t, Config, E>(*idx, d_struct, v);
             if(!field_status) {
-                return std::unexpected(field_status.error());
+                auto err = std::move(field_status).error();
+                err.prepend_field(key_name);
+                return std::unexpected(std::move(err));
             }
             seen_fields |= (std::uint64_t(1) << *idx);
             continue;
@@ -368,7 +370,9 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         if constexpr(has_flatten_fields<value_t>()) {
             auto flatten_status = try_flatten_fields<value_t, Config, E>(key_name, d_struct, v);
             if(!flatten_status) {
-                return std::unexpected(flatten_status.error());
+                auto err = std::move(flatten_status).error();
+                err.prepend_field(key_name);
+                return std::unexpected(std::move(err));
             }
             flatten_matched = *flatten_status;
         }
@@ -378,7 +382,7 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
         }
 
         if constexpr(DenyUnknown) {
-            return std::unexpected(E::type_mismatch);
+            return std::unexpected(E::unknown_field(key_name));
         } else {
             ETD_EXPECTED_TRY(d_struct.skip_value());
         }
@@ -388,7 +392,15 @@ constexpr auto deserialize_reflectable(D& d, V& v) -> std::expected<void, E> {
     // This enables correct variant backtracking and catches malformed input.
     constexpr std::uint64_t required = required_field_mask<value_t>();
     if((seen_fields & required) != required) {
-        return std::unexpected(E::type_mismatch);
+        // Find the first missing required field name
+        constexpr auto table = make_field_table<value_t, Config>();
+        std::uint64_t missing = required & ~seen_fields;
+        for(const auto& entry: table) {
+            if(!entry.is_alias && (missing & (std::uint64_t(1) << entry.index))) {
+                return std::unexpected(E::missing_field(entry.name));
+            }
+        }
+        return std::unexpected(E::missing_field("unknown"));
     }
 
     return d_struct.end();

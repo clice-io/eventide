@@ -15,7 +15,7 @@
 
 namespace eventide::serde::toml {
 
-inline auto parse_table(std::string_view text) -> std::expected<::toml::table, error_kind> {
+inline auto parse_table(std::string_view text) -> std::expected<::toml::table, error> {
 #if TOML_EXCEPTIONS
     try {
         return ::toml::parse(text);
@@ -32,7 +32,7 @@ inline auto parse_table(std::string_view text) -> std::expected<::toml::table, e
 }
 
 template <typename T>
-auto parse(std::string_view text, T& value) -> std::expected<void, error_kind> {
+auto parse(std::string_view text, T& value) -> std::expected<void, error> {
     auto table = parse_table(text);
     if(!table) {
         return std::unexpected(table.error());
@@ -42,7 +42,7 @@ auto parse(std::string_view text, T& value) -> std::expected<void, error_kind> {
 
 template <typename T>
     requires std::default_initializable<T>
-auto parse(std::string_view text) -> std::expected<T, error_kind> {
+auto parse(std::string_view text) -> std::expected<T, error> {
     auto table = parse_table(text);
     if(!table) {
         return std::unexpected(table.error());
@@ -51,7 +51,7 @@ auto parse(std::string_view text) -> std::expected<T, error_kind> {
 }
 
 template <typename T>
-auto to_string(const T& value) -> std::expected<std::string, error_kind> {
+auto to_string(const T& value) -> std::expected<std::string, error> {
     auto table = to_toml(value);
     if(!table) {
         return std::unexpected(table.error());

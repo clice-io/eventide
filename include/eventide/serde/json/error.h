@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string_view>
 
+#include "eventide/serde/serde/error.h"
+
 #if __has_include(<simdjson.h>)
 #include <simdjson.h>
 #define ETD_SERDE_JSON_ERROR_HAS_SIMDJSON 1
@@ -112,5 +114,7 @@ constexpr auto make_write_error(yyjson_write_code error) noexcept -> error_kind 
     return error_kind::write_failed;
 }
 #endif
+
+using error = eventide::serde::basic_error<error_kind>;
 
 }  // namespace eventide::serde::json

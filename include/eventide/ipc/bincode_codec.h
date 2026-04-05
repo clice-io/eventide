@@ -90,7 +90,7 @@ public:
         auto status = serde::bincode::from_bytes(bytes_span, value);
         if(!status) {
             return outcome_error(
-                Error(code, std::string(serde::bincode::error_message(status.error()))));
+                Error(code, std::string(serde::bincode::error_message(status.error().kind))));
         }
         return value;
     }

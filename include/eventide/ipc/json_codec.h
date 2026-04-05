@@ -35,7 +35,7 @@ public:
         if(!serialized) {
             return outcome_error(
                 Error(protocol::ErrorCode::InternalError,
-                      std::string(serde::json::error_message(serialized.error()))));
+                      std::string(serde::json::error_message(serialized.error().kind))));
         }
         return std::move(*serialized);
     }
@@ -53,7 +53,7 @@ public:
         auto parsed = serde::json::parse<T, lsp_config>(raw);
         if(!parsed) {
             return outcome_error(
-                Error(code, std::string(serde::json::error_message(parsed.error()))));
+                Error(code, std::string(serde::json::error_message(parsed.error().kind))));
         }
         return std::move(*parsed);
     }

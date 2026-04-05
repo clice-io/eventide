@@ -58,7 +58,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     if(!status) {
         return IncomingParseError{
             Error(protocol::ErrorCode::ParseError,
-                  std::string(serde::bincode::error_message(status.error())))};
+                  std::string(serde::bincode::error_message(status.error().kind)))};
     }
 
     return std::visit(

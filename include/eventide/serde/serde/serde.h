@@ -336,12 +336,16 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                            d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
+        std::size_t tuple_index = 0;
         auto read_element = [&](auto& element) -> bool {
             auto result = d_tuple.deserialize_element(element);
             if(!result) {
-                element_result = std::unexpected(result.error());
+                auto err = std::move(result).error();
+                err.prepend_index(tuple_index);
+                element_result = std::unexpected(std::move(err));
                 return false;
             }
+            ++tuple_index;
             return true;
         };
         std::apply([&](auto&... elements) { return (read_element(elements) && ...); }, v);
@@ -366,6 +370,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             static_assert(eventide::detail::sequence_insertable<V, element_t>,
                           "cannot auto deserialize range: container does not support insertion");
 
+            std::size_t seq_index = 0;
             while(true) {
                 ETD_EXPECTED_TRY_V(auto has_next, d_seq.has_next());
                 if(!has_next) {
@@ -373,9 +378,15 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 }
 
                 element_t element{};
-                ETD_EXPECTED_TRY(d_seq.deserialize_element(element));
+                auto elem_status = d_seq.deserialize_element(element);
+                if(!elem_status) {
+                    auto err = std::move(elem_status).error();
+                    err.prepend_index(seq_index);
+                    return std::unexpected(std::move(err));
+                }
 
                 eventide::detail::append_sequence_element(v, std::move(element));
+                ++seq_index;
             }
 
             return d_seq.end();
@@ -416,7 +427,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 }
 
                 mapped_t mapped{};
-                ETD_EXPECTED_TRY(d_map.deserialize_value(mapped));
+                auto map_val_status = d_map.deserialize_value(mapped);
+                if(!map_val_status) {
+                    auto err = std::move(map_val_status).error();
+                    err.prepend_field(*key);
+                    return std::unexpected(std::move(err));
+                }
 
                 eventide::detail::insert_map_entry(v, std::move(*parsed_key), std::move(mapped));
             }
