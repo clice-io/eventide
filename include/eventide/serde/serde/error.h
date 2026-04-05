@@ -26,12 +26,10 @@ template <typename Kind>
 struct serde_error {
     Kind kind;
 
-    // --- serde_error_like concept compatibility ---
     constexpr static Kind type_mismatch = Kind::type_mismatch;
     constexpr static Kind number_out_of_range = Kind::number_out_of_range;
     constexpr static Kind invalid_state = Kind::invalid_state;
 
-    // --- constructors (from Kind: zero allocation) ---
     serde_error() : kind(Kind::ok) {}
 
     serde_error(Kind k) : kind(k) {}
@@ -39,11 +37,9 @@ struct serde_error {
     serde_error(Kind k, std::string msg) :
         kind(k), detail(std::make_unique<detail_data>(std::move(msg))) {}
 
-    // Move
     serde_error(serde_error&&) noexcept = default;
     serde_error& operator=(serde_error&&) noexcept = default;
 
-    // Copy (deep-copies detail if present)
     serde_error(const serde_error& other) : kind(other.kind) {
         if(other.detail) {
             detail = std::make_unique<detail_data>(*other.detail);
@@ -58,7 +54,6 @@ struct serde_error {
         return *this;
     }
 
-    // --- semantic factory methods (allocate detail) ---
     static serde_error missing_field(std::string_view field_name) {
         return {Kind::type_mismatch, std::format("missing required field '{}'", field_name)};
     }
@@ -89,7 +84,6 @@ struct serde_error {
         return {k, std::string(msg)};
     }
 
-    // --- path manipulation (lazily allocates detail) ---
     void prepend_field(std::string_view name) {
         ensure_detail();
         detail->path.insert(detail->path.begin(), std::string(name));
@@ -100,7 +94,6 @@ struct serde_error {
         detail->path.insert(detail->path.begin(), index);
     }
 
-    // --- location ---
     std::optional<source_location> location() const {
         return detail ? detail->location : std::nullopt;
     }
@@ -110,12 +103,10 @@ struct serde_error {
         detail->location = loc;
     }
 
-    // --- accessors ---
     std::string_view message() const {
         return detail ? std::string_view(detail->message) : error_message(kind);
     }
 
-    // --- formatting ---
     std::string format_path() const {
         if(!detail) {
             return {};
@@ -150,17 +141,12 @@ struct serde_error {
         return result;
     }
 
-    // --- comparison ---
-    friend bool operator==(const serde_error& lhs, Kind rhs) noexcept {
-        return lhs.kind == rhs;
+    bool operator==(const serde_error& rhs) const noexcept {
+        return kind == rhs.kind;
     }
 
-    friend bool operator==(Kind lhs, const serde_error& rhs) noexcept {
-        return lhs == rhs.kind;
-    }
-
-    friend bool operator==(const serde_error& lhs, const serde_error& rhs) noexcept {
-        return lhs.kind == rhs.kind;
+    bool operator==(Kind rhs) const noexcept {
+        return kind == rhs;
     }
 
 private:

@@ -69,7 +69,7 @@ public:
         auto bytes = serde::bincode::to_bytes(value);
         if(!bytes) {
             return outcome_error(
-                Error(protocol::ErrorCode::InternalError, std::string(bytes.error().message())));
+                Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
         }
         return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
     }
@@ -89,7 +89,7 @@ public:
         T value{};
         auto status = serde::bincode::from_bytes(bytes_span, value);
         if(!status) {
-            return outcome_error(Error(code, std::string(status.error().message())));
+            return outcome_error(Error(code, status.error().to_string()));
         }
         return value;
     }

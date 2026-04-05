@@ -10,8 +10,6 @@ namespace eventide::ipc {
 
 namespace {
 
-// --- Bincode envelope variant ---
-
 struct bincode_request {
     protocol::RequestID id;
     std::string method;
@@ -41,8 +39,7 @@ using bincode_envelope =
 Result<std::string> encode_envelope(const bincode_envelope& envelope) {
     auto bytes = serde::bincode::to_bytes(envelope);
     if(!bytes) {
-        return outcome_error(
-            Error(protocol::ErrorCode::InternalError, std::string(bytes.error().message())));
+        return outcome_error(Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
     }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
@@ -57,7 +54,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     auto status = serde::bincode::from_bytes(bytes_span, envelope);
     if(!status) {
         return IncomingParseError{
-            Error(protocol::ErrorCode::ParseError, std::string(status.error().message()))};
+            Error(protocol::ErrorCode::ParseError, status.error().to_string())};
     }
 
     return std::visit(

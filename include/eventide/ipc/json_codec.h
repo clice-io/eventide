@@ -33,8 +33,8 @@ public:
     Result<std::string> serialize_value(const T& value) {
         auto serialized = serde::json::to_string<lsp_config>(value);
         if(!serialized) {
-            return outcome_error(Error(protocol::ErrorCode::InternalError,
-                                       std::string(serialized.error().message())));
+            return outcome_error(
+                Error(protocol::ErrorCode::InternalError, serialized.error().to_string()));
         }
         return std::move(*serialized);
     }
@@ -51,7 +51,7 @@ public:
         }
         auto parsed = serde::json::parse<T, lsp_config>(raw);
         if(!parsed) {
-            return outcome_error(Error(code, std::string(parsed.error().message())));
+            return outcome_error(Error(code, parsed.error().to_string()));
         }
         return std::move(*parsed);
     }
