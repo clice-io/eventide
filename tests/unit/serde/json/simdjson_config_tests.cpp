@@ -4,6 +4,7 @@
 #include "eventide/serde/json/deserializer.h"
 #include "eventide/serde/json/json.h"
 #include "eventide/serde/json/serializer.h"
+#include "eventide/serde/serde/attrs.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/serde.h"
 
@@ -36,6 +37,32 @@ struct ambiguous_camel_payload {
 
 struct camel_config {
     using field_rename = rename_policy::lower_camel;
+};
+
+struct upper_camel_config {
+    using field_rename = rename_policy::upper_camel;
+};
+
+struct upper_snake_config {
+    using field_rename = rename_policy::upper_snake;
+};
+
+struct lower_snake_config {
+    using field_rename = rename_policy::lower_snake;
+};
+
+enum class permission_level {
+    read_only,
+    read_write,
+    full_access,
+};
+
+struct enum_string_config_upper_snake {
+    using enum_rename = rename_policy::upper_snake;
+};
+
+struct enum_string_config_lower_camel {
+    using enum_rename = rename_policy::lower_camel;
 };
 
 TEST_SUITE(serde_simdjson_config) {
@@ -146,6 +173,132 @@ TEST_CASE(parse_value_with_config) {
     EXPECT_EQ(result->request_id, 2);
     EXPECT_EQ(result->user_name, "fay");
     EXPECT_EQ(result->nested_info.some_value, 9);
+}
+
+TEST_CASE(upper_camel_rename) {
+    protocol_payload input{
+        .request_id = 10,
+        .user_name = "grace",
+        .nested_info = {.some_value = 5},
+    };
+
+    auto encoded = to_json<upper_camel_config>(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"RequestId":10,"UserName":"grace","NestedInfo":{"SomeValue":5}})");
+
+    protocol_payload parsed{};
+    auto status = from_json<upper_camel_config>(
+        R"({"RequestId":10,"UserName":"grace","NestedInfo":{"SomeValue":5}})",
+        parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.request_id, 10);
+    EXPECT_EQ(parsed.user_name, "grace");
+    EXPECT_EQ(parsed.nested_info.some_value, 5);
+}
+
+TEST_CASE(upper_snake_rename) {
+    protocol_payload input{
+        .request_id = 11,
+        .user_name = "henry",
+        .nested_info = {.some_value = 6},
+    };
+
+    auto encoded = to_json<upper_snake_config>(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"REQUEST_ID":11,"USER_NAME":"henry","NESTED_INFO":{"SOME_VALUE":6}})");
+
+    protocol_payload parsed{};
+    auto status = from_json<upper_snake_config>(
+        R"({"REQUEST_ID":11,"USER_NAME":"henry","NESTED_INFO":{"SOME_VALUE":6}})",
+        parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.request_id, 11);
+    EXPECT_EQ(parsed.user_name, "henry");
+    EXPECT_EQ(parsed.nested_info.some_value, 6);
+}
+
+TEST_CASE(lower_snake_rename) {
+    // lower_snake is identity for already-snake_case field names.
+    protocol_payload input{
+        .request_id = 12,
+        .user_name = "iris",
+        .nested_info = {.some_value = 7},
+    };
+
+    auto encoded = to_json<lower_snake_config>(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"request_id":12,"user_name":"iris","nested_info":{"some_value":7}})");
+
+    protocol_payload parsed{};
+    auto status = from_json<lower_snake_config>(
+        R"({"request_id":12,"user_name":"iris","nested_info":{"some_value":7}})",
+        parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.request_id, 12);
+    EXPECT_EQ(parsed.user_name, "iris");
+    EXPECT_EQ(parsed.nested_info.some_value, 7);
+}
+
+TEST_CASE(enum_string_upper_snake_policy) {
+    // enum_string<E, Policy> — default Policy is lower_camel.
+    // With upper_snake policy, multi-word enum names are uppercased with underscores.
+    enum_string<permission_level, rename_policy::upper_snake> level = permission_level::read_only;
+
+    auto encoded = to_json(level);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("READ_ONLY")");
+
+    enum_string<permission_level, rename_policy::upper_snake> parsed =
+        permission_level::full_access;
+    auto status = from_json(R"("READ_WRITE")", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed, permission_level::read_write);
+}
+
+TEST_CASE(enum_string_lower_snake_policy) {
+    // With lower_snake policy, multi-word enum names stay lower_snake.
+    // The default (lower_camel) would produce "readOnly" vs lower_snake "read_only".
+    enum_string<permission_level, rename_policy::lower_snake> level = permission_level::full_access;
+
+    auto encoded = to_json(level);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("full_access")");
+
+    enum_string<permission_level, rename_policy::lower_snake> parsed =
+        permission_level::full_access;
+    auto status = from_json(R"("read_write")", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed, permission_level::read_write);
+}
+
+TEST_CASE(enum_string_lower_camel_policy) {
+    // Explicit lower_camel policy — multi-word enum names become camelCase.
+    enum_string<permission_level, rename_policy::lower_camel> level = permission_level::read_only;
+
+    auto encoded = to_json(level);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("readOnly")");
+
+    enum_string<permission_level, rename_policy::lower_camel> parsed =
+        permission_level::full_access;
+    auto status = from_json(R"("readWrite")", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed, permission_level::read_write);
+}
+
+TEST_CASE(enum_string_upper_camel_policy) {
+    // upper_camel policy for enum values: first letter of each word capitalized.
+    enum_string<permission_level, rename_policy::upper_camel> level = permission_level::full_access;
+
+    auto encoded = to_json(level);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("FullAccess")");
+
+    enum_string<permission_level, rename_policy::upper_camel> parsed =
+        permission_level::full_access;
+    auto status = from_json(R"("ReadOnly")", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed, permission_level::read_only);
 }
 
 };  // TEST_SUITE(serde_simdjson_config)
