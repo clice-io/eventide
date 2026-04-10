@@ -106,6 +106,17 @@ struct WebCliOpt {
     Help help;
 };
 
+enum class BuiltinCliMode {
+    Fast,
+    Slow,
+    Debug,
+};
+
+struct BuiltinEnumCliOpt {
+    DecoKV(names = {"--mode"}, required = true)
+    <BuiltinCliMode> mode;
+};
+
 struct InputAndTrailingOpt {
     struct Cate {
         constexpr static deco::decl::Category input_category{
@@ -393,6 +404,17 @@ TEST_CASE(parse_result_exposes_options) {
     EXPECT_TRUE(res->options.request.url->url == "https://example.com");
 }
 
+TEST_CASE(parsing_builtin_enum) {
+    auto res = deco::cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Debug"));
+    EXPECT_TRUE(res.has_value());
+    if(!res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(res->options.mode.has_value());
+    EXPECT_TRUE(res->options.mode.value() == BuiltinCliMode::Debug);
+}
+
 TEST_CASE(parsing_input_and_trailing) {
     auto args = into_deco_args("front", "--", "a", "b", "c");
     auto res = deco::cli::parse<InputAndTrailingOpt>(args);
@@ -457,6 +479,12 @@ TEST_CASE(when_error) {
     EXPECT_FALSE(res6.has_value());
     EXPECT_TRUE(res6.error().type == deco::cli::ParseError::Type::BackendParsing &&
                 res6.error().message.contains("unknown option"));
+
+    auto res7 = deco::cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
+    EXPECT_FALSE(res7.has_value());
+    EXPECT_TRUE(res7.error().type == deco::cli::ParseError::Type::IntoError);
+    EXPECT_TRUE(res7.error().message.contains("invalid enum value: Turbo"));
+    EXPECT_TRUE(res7.error().message.contains("supported: Fast, Slow, Debug"));
 }
 
 TEST_CASE(parse_errors_include_location_context) {
@@ -469,6 +497,16 @@ TEST_CASE(parse_errors_include_location_context) {
     EXPECT_TRUE(res.error().message.contains("at argv[0]:"));
     EXPECT_TRUE(res.error().message.contains("--unknown"));
     EXPECT_TRUE(res.error().message.contains("^"));
+
+    auto enum_res = deco::cli::parse<BuiltinEnumCliOpt>(into_deco_args("--mode", "Turbo"));
+    EXPECT_FALSE(enum_res.has_value());
+    if(enum_res.has_value()) {
+        return;
+    }
+
+    EXPECT_TRUE(enum_res.error().message.contains("at argv[1]:"));
+    EXPECT_TRUE(enum_res.error().message.contains("Turbo"));
+    EXPECT_TRUE(enum_res.error().message.contains("supported: Fast, Slow, Debug"));
 }
 
 TEST_CASE(global_text_style_can_disable_positioned_diagnostics) {

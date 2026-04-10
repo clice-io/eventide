@@ -4,22 +4,32 @@
 #include "eventide/deco/deco.h"
 #include <eventide/zest/zest.h>
 
+enum class BuiltinEnumValue {
+    Alpha,
+    Beta,
+    Gamma,
+};
+
 static_assert(deco::trait::ScalarResultType<bool>);
 static_assert(deco::trait::ScalarResultType<int>);
 static_assert(deco::trait::ScalarResultType<std::string>);
+static_assert(deco::trait::ScalarResultType<BuiltinEnumValue>);
 static_assert(!deco::trait::ScalarResultType<std::string_view>);
 static_assert(!deco::trait::ScalarResultType<const char*>);
 static_assert(!deco::trait::ScalarResultType<std::vector<int>>);
 
 static_assert(deco::trait::VectorResultType<std::vector<int>>);
 static_assert(deco::trait::VectorResultType<std::vector<std::string>>);
+static_assert(deco::trait::VectorResultType<std::vector<BuiltinEnumValue>>);
 static_assert(!deco::trait::VectorResultType<std::vector<std::string_view>>);
 static_assert(!deco::trait::VectorResultType<std::span<const std::string>>);
 
 static_assert(deco::trait::InputResultType<int>);
 static_assert(deco::trait::InputResultType<std::string>);
+static_assert(deco::trait::InputResultType<BuiltinEnumValue>);
 static_assert(deco::trait::InputResultType<std::vector<int>>);
 static_assert(deco::trait::InputResultType<std::vector<std::string>>);
+static_assert(deco::trait::InputResultType<std::vector<BuiltinEnumValue>>);
 static_assert(!deco::trait::InputResultType<std::string_view>);
 static_assert(!deco::trait::InputResultType<std::vector<std::string_view>>);
 static_assert(!deco::trait::InputResultType<const char*>);
@@ -206,6 +216,22 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     auto float_err = float_opt.into(make_parsed_arg("--ratio", {"3.14x"}));
     EXPECT_TRUE(float_err.has_value());
 
+    deco::decl::ScalarOption<BuiltinEnumValue> enum_opt{};
+    auto enum_ok = enum_opt.into(make_parsed_arg("--mode", {"Beta"}));
+    EXPECT_TRUE(!enum_ok.has_value());
+    EXPECT_TRUE(enum_opt.has_value());
+    EXPECT_TRUE(enum_opt.value() == BuiltinEnumValue::Beta);
+    auto enum_err = enum_opt.into(make_parsed_arg("--mode", {"Delta"}));
+    EXPECT_TRUE(enum_err.has_value());
+    EXPECT_TRUE(enum_err->contains("invalid enum value: Delta"));
+    EXPECT_TRUE(enum_err->contains("supported: Alpha, Beta, Gamma"));
+
+    deco::decl::InputOption<BuiltinEnumValue> enum_input{};
+    auto enum_input_ok = enum_input.into(make_parsed_arg("Gamma"));
+    EXPECT_TRUE(!enum_input_ok.has_value());
+    EXPECT_TRUE(enum_input.has_value());
+    EXPECT_TRUE(enum_input.value() == BuiltinEnumValue::Gamma);
+
     deco::decl::ScalarOption<double> double_opt{};
     auto double_err = double_opt.into(make_parsed_arg("--precise", {"3.14"}));
     EXPECT_FALSE(double_err.has_value());
@@ -220,6 +246,19 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
     EXPECT_TRUE(vector_opt.value()[1] == 8);
     auto vector_err = vector_opt.into(make_parsed_arg("-P", {"7", "x"}));
     EXPECT_TRUE(vector_err.has_value());
+
+    deco::decl::VectorOption<std::vector<BuiltinEnumValue>> enum_vector{};
+    auto enum_vector_ok = enum_vector.into(make_parsed_arg("-M", {"Alpha", "Gamma"}));
+    EXPECT_TRUE(!enum_vector_ok.has_value());
+    EXPECT_TRUE(enum_vector.has_value());
+    EXPECT_TRUE(enum_vector.value().size() == 2);
+    EXPECT_TRUE(enum_vector.value()[0] == BuiltinEnumValue::Alpha);
+    EXPECT_TRUE(enum_vector.value()[1] == BuiltinEnumValue::Gamma);
+    auto enum_vector_err = enum_vector.into(make_parsed_arg("-M", {"Alpha", "Delta"}));
+    EXPECT_TRUE(enum_vector_err.has_value());
+    EXPECT_TRUE(enum_vector_err->contains("invalid vector value at index 1"));
+    EXPECT_TRUE(enum_vector_err->contains("invalid enum value: Delta"));
+    EXPECT_TRUE(enum_vector_err->contains("supported: Alpha, Beta, Gamma"));
 
     deco::decl::ScalarOption<CustomScalarResult> custom_scalar{};
     auto custom_scalar_ok = custom_scalar.into(make_parsed_arg("--name", {"alice"}));

@@ -5,7 +5,6 @@
 #include <charconv>
 #include <concepts>
 #include <cstdlib>
-#include <format>
 #include <memory>
 #include <optional>
 #include <span>
@@ -17,6 +16,8 @@
 
 #include "text.h"
 #include "trait.h"
+
+#include "eventide/reflection/enum.h"
 
 namespace deco::decl {
 
@@ -525,6 +526,27 @@ inline bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
     return true;
 }
 
+template <typename EnumTy>
+std::string format_invalid_enum_value(std::string_view text) {
+    std::string message = "invalid enum value: ";
+    message += text;
+
+    const auto& names = refl::reflection<EnumTy>::member_names;
+    if(names.empty()) {
+        return message;
+    }
+
+    message += " (supported: ";
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(i != 0) {
+            message += ", ";
+        }
+        message += names[i];
+    }
+    message += ")";
+    return message;
+}
+
 template <typename ResTy>
 std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view text) {
     if constexpr(std::same_as<ResTy, bool>) {
@@ -551,6 +573,12 @@ std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view t
         return std::nullopt;
     } else if constexpr(std::same_as<ResTy, long double>) {
         return "unsupported floating-point type: long double";
+    } else if constexpr(std::is_enum_v<ResTy>) {
+        if(auto parsed = refl::enum_value<ResTy>(text)) {
+            out = *parsed;
+            return std::nullopt;
+        }
+        return format_invalid_enum_value<ResTy>(text);
     } else if constexpr(std::floating_point<ResTy>) {
         std::string copy(text);
         char* parse_end = nullptr;
