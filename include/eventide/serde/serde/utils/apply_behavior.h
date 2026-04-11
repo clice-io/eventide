@@ -82,8 +82,16 @@ constexpr auto apply_deserialize_behavior(value_t& value, Reader&& read, WithFn&
             value = *parsed;
             return std::expected<void, E>{};
         } else {
-            return std::expected<void, E>(std::unexpected(
-                E::custom(std::format("unknown enum string value '{}'", enum_text))));
+            if constexpr(requires(std::string msg) {
+                             { E::custom(msg) } -> std::convertible_to<E>;
+                         }) {
+                return std::expected<void, E>(std::unexpected(
+                    E::custom(std::format("unknown enum string value '{}'", enum_text))));
+            } else if constexpr(requires { { E::type_mismatch } -> std::convertible_to<E>; }) {
+                return std::expected<void, E>(std::unexpected(E::type_mismatch));
+            } else {
+                return std::expected<void, E>(std::unexpected(E{}));
+            }
         }
     } else {
         return std::nullopt;

@@ -23,6 +23,7 @@
 #include "eventide/common/ranges.h"
 #include "eventide/serde/flatbuffers/schema.h"
 #include "eventide/serde/serde/config.h"
+#include "eventide/serde/serde/error.h"
 #include "eventide/serde/serde/serde.h"
 #include "eventide/serde/serde/utils/common.h"
 
@@ -36,7 +37,7 @@
 namespace eventide::serde::flatbuffers {
 
 enum class object_error_code : std::uint8_t {
-    none = 0,
+    ok = 0,
     invalid_state,
     unsupported_type,
     type_mismatch,
@@ -44,9 +45,11 @@ enum class object_error_code : std::uint8_t {
     too_many_fields,
 };
 
+using error = eventide::serde::serde_error<object_error_code>;
+
 constexpr std::string_view error_message(object_error_code code) {
     switch(code) {
-        case object_error_code::none: return "none";
+        case object_error_code::ok: return "ok";
         case object_error_code::invalid_state: return "invalid state";
         case object_error_code::unsupported_type: return "unsupported type";
         case object_error_code::type_mismatch: return "type mismatch";

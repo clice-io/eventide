@@ -59,6 +59,22 @@ struct with_skip {
     std::int32_t c;
 };
 
+struct with_skip_if_optional {
+    std::int32_t a;
+    skip_if_none<std::string> note;
+    std::int32_t b;
+};
+
+struct with_as_field {
+    std::int32_t id;
+    annotation<std::int64_t, behavior::as<std::int32_t>> value;
+};
+
+struct with_enum_string_field {
+    std::int32_t id;
+    enum_string<color> c;
+};
+
 TEST_SUITE(serde_flatbuffers_object) {
 
 TEST_CASE(trivial_struct_field_serializes_as_inline_struct) {
@@ -970,6 +986,92 @@ TEST_CASE(array_view_out_of_bounds) {
     // Out-of-bounds access should return default
     EXPECT_EQ(scores[1], 0);
     EXPECT_EQ(scores[100], 0);
+}
+
+// ======== Attribute roundtrip tests ========
+
+TEST_CASE(roundtrip_skip_field) {
+    with_skip input{};
+    input.a = 3;
+    input.internal = 999;
+    input.c = 5;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_skip output{};
+    auto status = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.a, 3);
+    EXPECT_EQ(annotated_value(output.internal), 0);
+    EXPECT_EQ(output.c, 5);
+}
+
+TEST_CASE(roundtrip_skip_if_optional) {
+    // Present case
+    {
+        with_skip_if_optional input{};
+        input.a = 1;
+        input.note = std::string("hello");
+        input.b = 2;
+
+        auto encoded = to_flatbuffer(input);
+        ASSERT_TRUE(encoded.has_value());
+
+        with_skip_if_optional output{};
+        auto status = flatbuffers::from_flatbuffer(*encoded, output);
+        ASSERT_TRUE(status.has_value());
+        EXPECT_EQ(output.a, 1);
+        ASSERT_TRUE(annotated_value(output.note).has_value());
+        EXPECT_EQ(*annotated_value(output.note), "hello");
+        EXPECT_EQ(output.b, 2);
+    }
+    // Absent case (skip_if triggers on serialize)
+    {
+        with_skip_if_optional input{};
+        input.a = 3;
+        input.b = 4;
+
+        auto encoded = to_flatbuffer(input);
+        ASSERT_TRUE(encoded.has_value());
+
+        with_skip_if_optional output{};
+        auto status = flatbuffers::from_flatbuffer(*encoded, output);
+        ASSERT_TRUE(status.has_value());
+        EXPECT_EQ(output.a, 3);
+        EXPECT_FALSE(annotated_value(output.note).has_value());
+        EXPECT_EQ(output.b, 4);
+    }
+}
+
+TEST_CASE(roundtrip_as_behavior) {
+    with_as_field input{};
+    input.id = 1;
+    input.value = 42;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_as_field output{};
+    auto status = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.id, 1);
+    EXPECT_EQ(annotated_value(output.value), 42);
+}
+
+TEST_CASE(roundtrip_enum_string_behavior) {
+    with_enum_string_field input{};
+    input.id = 1;
+    input.c = color::blue;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_enum_string_field output{};
+    auto status = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.id, 1);
+    EXPECT_EQ(annotated_value(output.c), color::blue);
 }
 
 };  // TEST_SUITE(serde_flatbuffers_object)

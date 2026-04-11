@@ -10,13 +10,13 @@ namespace eventide::serde {
 
 namespace {
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, flatbuffers::object_error_code> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, flatbuffers::error> {
     auto encoded = flatbuffers::to_flatbuffer(input);
     if(!encoded) {
-        return std::unexpected(encoded.error());
+        return std::unexpected(flatbuffers::error(encoded.error()));
     }
     if(encoded->empty()) {
-        return std::unexpected(flatbuffers::object_error_code::invalid_state);
+        return std::unexpected(flatbuffers::error(flatbuffers::object_error_code::invalid_state));
     }
     return flatbuffers::from_flatbuffer<T>(*encoded);
 };
