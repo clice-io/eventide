@@ -119,5 +119,4 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
     "IntoContext)."
 
 #define DecoInputResultErrString                                                                   \
-    "Input result type must be a scalar value (including enums and owning strings) or a vector " \
-    "of primitive scalar values, or provide a compatible into(...) overload."
+    "Input result type must be a scalar value (including enums and owning strings) or a vector " "of primitive scalar values, or provide a compatible into(...) overload."

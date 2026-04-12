@@ -428,20 +428,17 @@ struct AliasRuntimeOpt {
     DecoMulti(2, names = {"--pair"}; required = false)
     <std::vector<std::string>> pair;
 
-    DecoFlagAlias(names = {"-O1"}; required = false; forward = {"--optimize", "1"};)
-    _;
+    DecoFlagAlias(names = {"-O1"}; required = false; forward = {"--optimize", "1"};) _;
 
-    DecoKVAlias(names = {"--target-alias"}; required = false; forward = runtime_alias_forward_pair;)
-    __;
+    DecoKVAlias(names = {"--target-alias"}; required = false;
+                forward = runtime_alias_forward_pair;) __;
 
-    DecoCommaAlias(names = {"--tags-alias"}; required = false; forward = {"--tags"};)
-    ___;
+    DecoCommaAlias(names = {"--tags-alias"}; required = false; forward = {"--tags"};) ___;
 
-    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; forward = {"--pair"};)
-    ____;
+    DecoMultiAlias(2, names = {"--pair-alias"}; required = false; forward = {"--pair"};) ____;
 
-    DecoFlagAlias(names = {"--ctx-fail"}; required = false; forward = runtime_alias_forward_pair_with_context;)
-    _____;
+    DecoFlagAlias(names = {"--ctx-fail"}; required = false;
+                  forward = runtime_alias_forward_pair_with_context;) _____;
 };
 
 struct CatterTrailing {
@@ -799,7 +796,8 @@ TEST_CASE(option_callback_can_restart_with_owned_argv) {
 }
 
 TEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
-    auto res = deco::cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
+    auto res =
+        deco::cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;

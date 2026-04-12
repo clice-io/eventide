@@ -17,7 +17,6 @@
 
 #include "text.h"
 #include "trait.h"
-
 #include "eventide/serde/serde/spelling.h"
 
 namespace deco::decl {
@@ -304,8 +303,8 @@ struct IntoContext {
 
 using AliasForwardResult = std::expected<std::vector<std::string>, std::string>;
 using AliasForwardFn = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg);
-using AliasForwardFnWithContext =
-    AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg, const IntoContext& context);
+using AliasForwardFnWithContext = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg,
+                                                         const IntoContext& context);
 
 struct AliasForwardField {
     enum class Kind : char {
@@ -322,8 +321,7 @@ struct AliasForwardField {
 
     constexpr AliasForwardField() = default;
 
-    constexpr auto operator=(std::initializer_list<std::string_view> tokens)
-        -> AliasForwardField& {
+    constexpr auto operator=(std::initializer_list<std::string_view> tokens) -> AliasForwardField& {
         kind = Kind::Static;
         static_tokens.assign(tokens.begin(), tokens.end());
         dynamic = nullptr;
@@ -380,6 +378,7 @@ struct MetaVarField {
     bool explicit_value = false;
 
     constexpr MetaVarField() = default;
+
     constexpr MetaVarField(std::string_view value, bool explicit_value = false) :
         value(value), explicit_value(explicit_value) {}
 

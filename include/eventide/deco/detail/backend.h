@@ -196,7 +196,8 @@ private:
             if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
                 return bool(derived.template on_comma_joined_alias<FieldTy>(cfg, field_name, path));
             } else {
-                return bool(derived.template on_comma_joined_config<FieldTy>(cfg, field_name, path));
+                return bool(
+                    derived.template on_comma_joined_config<FieldTy>(cfg, field_name, path));
             }
         } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
             if constexpr(std::is_base_of_v<decl::AliasFields, CfgTy>) {
@@ -479,7 +480,8 @@ private:
         eventide::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
     using callback_map_type = eventide::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
 
-    using alias_meta_map_type = eventide::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
+    using alias_meta_map_type =
+        eventide::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
     using string_pool_type = eventide::comptime::ComptimeVector<std::string_view, resource_ty, 5>;
 
     // Keep a dummy at index 0 so item.id can be used as direct index.
@@ -926,8 +928,9 @@ private:
         switch(cfg.forward.kind) {
             case decl::AliasForwardField::Kind::None: break;
             case decl::AliasForwardField::Kind::Static:
-                meta.static_tokens = std::span<const std::string_view>(cfg.forward.static_tokens.data(),
-                                                                       cfg.forward.static_tokens.size());
+                meta.static_tokens =
+                    std::span<const std::string_view>(cfg.forward.static_tokens.data(),
+                                                      cfg.forward.static_tokens.size());
                 break;
             case decl::AliasForwardField::Kind::Dynamic: meta.dynamic = cfg.forward.dynamic; break;
             case decl::AliasForwardField::Kind::DynamicWithContext:
@@ -1059,7 +1062,8 @@ public:
         }
         add_alias_option(cfg,
                          field_name,
-                         allow_joined ? backend::Option::JoinedClass : backend::Option::SeparateClass,
+                         allow_joined ? backend::Option::JoinedClass
+                                      : backend::Option::SeparateClass,
                          1);
         return true;
     }

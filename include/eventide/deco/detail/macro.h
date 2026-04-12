@@ -216,22 +216,18 @@
                                  arg_num = number;                                                 \
                                  __VA_ARGS__)
 
-#define DecoFlagAlias(...)                                                                          \
+#define DecoFlagAlias(...)                                                                         \
     DECO_DECLARE_ALIAS(deco::decl::FlagAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
 
-#define DecoKVAliasStyled(kv_style, ...)                                                            \
-    DECO_DECLARE_ALIAS(deco::decl::KVAliasFields,                                                  \
-                       DECO_USING_KV_ALIAS,                                                         \
-                       style = kv_style;                                                            \
+#define DecoKVAliasStyled(kv_style, ...)                                                           \
+    DECO_DECLARE_ALIAS(deco::decl::KVAliasFields, DECO_USING_KV_ALIAS, style = kv_style;           \
                        __VA_ARGS__)
 
 #define DecoKVAlias(...) DecoKVAliasStyled(deco::decl::KVStyle::Separate, __VA_ARGS__)
 
-#define DecoCommaAlias(...)                                                                         \
+#define DecoCommaAlias(...)                                                                        \
     DECO_DECLARE_ALIAS(deco::decl::CommaJoinedAliasFields, DECO_USING_ALIAS, __VA_ARGS__)
 
-#define DecoMultiAlias(number, ...)                                                                 \
-    DECO_DECLARE_ALIAS(deco::decl::MultiAliasFields,                                               \
-                       DECO_USING_MULTI_ALIAS,                                                      \
-                       arg_num = number;                                                            \
+#define DecoMultiAlias(number, ...)                                                                \
+    DECO_DECLARE_ALIAS(deco::decl::MultiAliasFields, DECO_USING_MULTI_ALIAS, arg_num = number;     \
                        __VA_ARGS__)

@@ -150,7 +150,8 @@ inline auto resolve_static_alias_forward(const AliasMeta& meta,
             return argv;
         case AliasMeta::Kind::CommaJoined:
             if(meta.static_tokens.empty()) {
-                return std::unexpected(std::string("comma alias forward requires at least one target token"));
+                return std::unexpected(
+                    std::string("comma alias forward requires at least one target token"));
             }
             argv.reserve(meta.static_tokens.size());
             for(std::size_t i = 0; i + 1 < meta.static_tokens.size(); ++i) {
@@ -466,7 +467,8 @@ std::string check_valid(const T& options,
     storage.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
         using field_ty = std::remove_cvref_t<decltype(field)>;
         if constexpr(ty::deco_option_like<field_ty>) {
-            if(matched_categories.contains(cfg.category.ptr()) && cfg.required && !field.has_value()) {
+            if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
+               !field.has_value()) {
                 err = std::format("required option {} is missing",
                                   desc::from_deco_option(cfg, false, name));
                 return false;
@@ -586,7 +588,8 @@ std::expected<Invocation<T>, ParseError>
                 }
 
                 category = category ? category : storage.category_of(raw_parg.option_id);
-                const auto into_context = decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
+                const auto into_context =
+                    decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
                 if(const auto* alias_meta = storage.alias_meta_of(raw_parg.option_id)) {
                     if(category == nullptr) {
                         err = {ParseError::Type::Internal,
@@ -598,10 +601,12 @@ std::expected<Invocation<T>, ParseError>
                     if(!resolved.has_value()) {
                         const auto reason = resolved.error();
                         const bool should_format =
-                            alias_meta->forward_kind != decl::AliasForwardField::Kind::DynamicWithContext;
+                            alias_meta->forward_kind !=
+                            decl::AliasForwardField::Kind::DynamicWithContext;
                         err = {ParseError::Type::IntoError,
-                               reason.empty() || !should_format ? std::string(reason)
-                                                                : into_context.format_error(reason)};
+                               reason.empty() || !should_format
+                                   ? std::string(reason)
+                                   : into_context.format_error(reason)};
                         return false;
                     }
 
@@ -614,8 +619,10 @@ std::expected<Invocation<T>, ParseError>
 
                     res.next_index = next_cursor;
                     restart_requested = true;
-                    restart_owned_argv = std::make_shared<std::vector<std::string>>(std::move(rewritten));
-                    restart_argv = std::span<std::string>(restart_owned_argv->data(), restart_owned_argv->size());
+                    restart_owned_argv =
+                        std::make_shared<std::vector<std::string>>(std::move(rewritten));
+                    restart_argv = std::span<std::string>(restart_owned_argv->data(),
+                                                          restart_owned_argv->size());
                     return false;
                 }
 
@@ -712,12 +719,13 @@ std::expected<Invocation<T>, ParseError>
             if constexpr(ty::deco_option_like<field_ty>) {
                 if(res.matched_categories.contains(cfg.category.ptr()) && cfg.required &&
                    !field.has_value()) {
-                    const auto active_argv =
-                        std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
-                    err = {ParseError::Type::DecoParsing,
-                           decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
-                               .format_error(std::format("required option {} is missing",
-                                                         desc::from_deco_option(cfg, false, name)))};
+                    const auto active_argv = std::span<const std::string>(res.active_argv.data(),
+                                                                          res.active_argv.size());
+                    err = {
+                        ParseError::Type::DecoParsing,
+                        decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
+                            .format_error(std::format("required option {} is missing",
+                                                      desc::from_deco_option(cfg, false, name)))};
                     return false;
                 }
             }
@@ -887,8 +895,8 @@ class Command {
         return text::CompatibleRenderer(resolved_config().render.compatible);
     }
 
-    auto bind_runtime(invocation_t& invocation, const text::Renderer* active_renderer = nullptr) const
-        -> void {
+    auto bind_runtime(invocation_t& invocation,
+                      const text::Renderer* active_renderer = nullptr) const -> void {
         invocation.command_overview = commandOverview;
         invocation.usage_config = resolved_config();
         invocation.usage_writer = &write_usage_for<T>;

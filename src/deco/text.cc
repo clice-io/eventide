@@ -549,7 +549,8 @@ auto deco_text_mutable_global_config() -> config::Config& {
 }
 
 auto deco_text_mutable_config_renderer() -> Renderer& {
-    static thread_local Renderer renderer = fallback_renderer_from_config(deco_text_mutable_global_config());
+    static thread_local Renderer renderer =
+        fallback_renderer_from_config(deco_text_mutable_global_config());
     return renderer;
 }
 

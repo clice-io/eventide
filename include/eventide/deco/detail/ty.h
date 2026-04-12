@@ -21,8 +21,8 @@ concept is_alias_field = requires { typename base_ty<T>::__deco_alias_ty; };
 // deco field is either a config field or derived from decl::DecoFields, which is the base class for
 // all option fields.
 template <typename T>
-concept is_deco_field = std::is_base_of_v<decl::DecoFields, base_ty<T>> || is_config_field<T> ||
-                        is_alias_field<T>;
+concept is_deco_field =
+    std::is_base_of_v<decl::DecoFields, base_ty<T>> || is_config_field<T> || is_alias_field<T>;
 
 // field that define the option kind
 template <typename T>

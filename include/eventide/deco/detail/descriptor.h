@@ -290,7 +290,8 @@ inline std::string usage_text_for_field(const FieldTy&,
         using result_ty = typename ty::base_ty<FieldTy>::result_type;
         const auto value_token = inferred_meta_var_token<result_ty>(cfg.meta_var, config);
         if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
-            if constexpr(!trait::ScalarResultType<result_ty> && trait::VectorResultType<result_ty>) {
+            if constexpr(!trait::ScalarResultType<result_ty> &&
+                         trait::VectorResultType<result_ty>) {
                 return std::format("{}...", value_token);
             }
             return value_token;
@@ -334,9 +335,7 @@ inline std::string from_deco_option(const T& field,
         if constexpr(ty::deco_option_like<T>) {
             return detail::help_text_for_field(field, cfg, fallback_name, active);
         } else {
-            return detail::help_text(cfg,
-                                     fallback_name,
-                                     detail::meta_var_token(cfg.meta_var));
+            return detail::help_text(cfg, fallback_name, detail::meta_var_token(cfg.meta_var));
         }
     }
     if constexpr(ty::deco_option_like<T>) {

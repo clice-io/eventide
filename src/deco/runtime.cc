@@ -104,9 +104,9 @@ void SubCommander::usage(std::ostream& os) const {
             .command = item.command,
         });
     }
-    os << text::render_subcommands(
-        document,
-        fallback_renderer.has_value() ? &*fallback_renderer : renderer_ptr());
+    os << text::render_subcommands(document,
+                                   fallback_renderer.has_value() ? &*fallback_renderer
+                                                                 : renderer_ptr());
 }
 
 auto SubCommander::match(std::span<std::string> argv) const
