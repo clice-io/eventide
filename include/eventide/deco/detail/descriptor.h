@@ -282,7 +282,8 @@ inline std::string help_text(const CfgTy& cfg,
                              std::string_view value_token,
                              const config::Config& config) {
     const auto usage = usage_text(cfg, true, fallback_name, value_token);
-    const auto help = has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
+    const auto help =
+        has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
     return render_help_text(usage, help, config.render.compatible.usage);
 }
 
@@ -315,7 +316,8 @@ inline std::string help_text_for_field(const FieldTy& field,
                                        std::string_view fallback_name,
                                        const config::Config& config) {
     const auto usage = usage_text_for_field(field, cfg, true, fallback_name, config);
-    const auto help = has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
+    const auto help =
+        has_help_text(cfg.help) ? cfg.help : config.render.compatible.usage.default_help;
     return render_help_text(usage, help, config.render.compatible.usage);
 }
 
@@ -332,7 +334,10 @@ inline std::string from_deco_option(const T& field,
         if constexpr(ty::deco_option_like<T>) {
             return detail::help_text_for_field(field, cfg, fallback_name, active);
         } else {
-            return detail::help_text(cfg, fallback_name, detail::meta_var_token(cfg.meta_var), active);
+            return detail::help_text(cfg,
+                                     fallback_name,
+                                     detail::meta_var_token(cfg.meta_var),
+                                     active);
         }
     }
     if constexpr(ty::deco_option_like<T>) {

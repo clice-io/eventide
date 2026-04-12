@@ -175,10 +175,12 @@ struct AliasBackendOpt {
                   forward = {"--optimize", "1"};) _;
 
     DecoKVAlias(names = {"--define-alias", "--define-alias-alt"}; required = false;
-                category = sharedCategory; forward = std::vector<std::string_view>{"--define"};) __;
+                category = sharedCategory;
+                forward = std::vector<std::string_view>{"--define"};) __;
 
     DecoMultiAlias(2, names = {"--pair-alias", "--pair-alias-alt"}; required = false;
-                   category = requestCategory; forward = backend_alias_forward_fn;) ___;
+                   category = requestCategory;
+                   forward = backend_alias_forward_fn;) ___;
 };
 
 using ParseAllStorage = std::remove_cvref_t<decltype(deco::detail::build_storage<ParseAllOpt>())>;
@@ -588,13 +590,9 @@ TEST_CASE(category_map_supports_multiple_exclusive_category_definitions) {
 TEST_CASE(alias_entries_have_backend_metadata_without_accessor) {
     const auto& built = deco::detail::build_storage<AliasBackendOpt>();
 
-    auto parsed = parse_with(built,
-                             {"--optimize-one",
-                              "--define-alias-alt",
-                              "NAME=VALUE",
-                              "--pair-alias-alt",
-                              "a",
-                              "b"});
+    auto parsed = parse_with(
+        built,
+        {"--optimize-one", "--define-alias-alt", "NAME=VALUE", "--pair-alias-alt", "a", "b"});
     EXPECT_TRUE(parsed.has_value());
     if(!parsed.has_value()) {
         return;
