@@ -20,8 +20,8 @@ template <std::size_t I, typename List>
 struct type_list_element;
 
 template <std::size_t I, typename First, typename... Rest>
-struct type_list_element<I, type_list<First, Rest...>>
-    : type_list_element<I - 1, type_list<Rest...>> {};
+struct type_list_element<I, type_list<First, Rest...>> :
+    type_list_element<I - 1, type_list<Rest...>> {};
 
 template <typename First, typename... Rest>
 struct type_list_element<0, type_list<First, Rest...>> {
@@ -60,8 +60,8 @@ struct type_list_concat<List> {
 };
 
 template <typename First, typename Second, typename... Rest>
-struct type_list_concat<First, Second, Rest...>
-    : type_list_concat<type_list_cat_t<First, Second>, Rest...> {};
+struct type_list_concat<First, Second, Rest...> :
+    type_list_concat<type_list_cat_t<First, Second>, Rest...> {};
 
 template <typename... Lists>
 using type_list_concat_t = typename type_list_concat<Lists...>::type;
@@ -72,11 +72,10 @@ template <typename List>
 struct type_list_size;
 
 template <typename... Ts>
-struct type_list_size<type_list<Ts...>>
-    : std::integral_constant<std::size_t, sizeof...(Ts)> {};
+struct type_list_size<type_list<Ts...>> : std::integral_constant<std::size_t, sizeof...(Ts)> {};
 
 template <typename List>
-inline constexpr std::size_t type_list_size_v = type_list_size<List>::value;
+constexpr inline std::size_t type_list_size_v = type_list_size<List>::value;
 
 // ---------------------------------------------------------------------------
 // field_slot -- compile-time per-field descriptor
@@ -92,13 +91,11 @@ inline constexpr std::size_t type_list_size_v = type_list_size<List>::value;
 ///                       Defaults to RawType when no behavior attr is present.
 /// @tparam BehaviorAttrs A std::tuple<...> of the behavior attributes found
 ///                       on this field (skip_if, with, as, enum_string, tagged).
-template <typename RawType,
-          typename WireType     = RawType,
-          typename BehaviorAttrs = std::tuple<>>
+template <typename RawType, typename WireType = RawType, typename BehaviorAttrs = std::tuple<>>
 struct field_slot {
-    using raw_type  = RawType;
+    using raw_type = RawType;
     using wire_type = WireType;
-    using attrs     = BehaviorAttrs;
+    using attrs = BehaviorAttrs;
 };
 
 }  // namespace eventide::serde::schema

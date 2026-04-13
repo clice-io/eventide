@@ -15,7 +15,7 @@ namespace eventide::serde {
 
 using schema::type_kind;
 using schema::type_info;
-using schema::type_info_instance;
+using schema::type_info_of;
 using schema::array_type_info;
 using schema::map_type_info;
 using schema::optional_type_info;
@@ -41,7 +41,7 @@ TEST_SUITE(virtual_schema_type_info) {
 
 TEST_CASE(scalar_helpers) {
     // int32: signed integer, numeric, scalar
-    constexpr auto& int_info = type_info_instance<int, default_config>::value;
+    constexpr auto& int_info = *type_info_of<int, default_config>();
     EXPECT_EQ(int_info.kind, type_kind::int32);
     EXPECT_TRUE(int_info.is_integer());
     EXPECT_TRUE(int_info.is_signed_integer());
@@ -51,7 +51,7 @@ TEST_CASE(scalar_helpers) {
     EXPECT_TRUE(int_info.is_scalar());
 
     // uint64: unsigned integer, numeric, scalar
-    constexpr auto& u64_info = type_info_instance<std::uint64_t, default_config>::value;
+    constexpr auto& u64_info = *type_info_of<std::uint64_t, default_config>();
     EXPECT_TRUE(u64_info.is_integer());
     EXPECT_FALSE(u64_info.is_signed_integer());
     EXPECT_TRUE(u64_info.is_unsigned_integer());
@@ -59,27 +59,27 @@ TEST_CASE(scalar_helpers) {
     EXPECT_TRUE(u64_info.is_scalar());
 
     // double: floating, numeric, scalar
-    constexpr auto& dbl_info = type_info_instance<double, default_config>::value;
+    constexpr auto& dbl_info = *type_info_of<double, default_config>();
     EXPECT_FALSE(dbl_info.is_integer());
     EXPECT_TRUE(dbl_info.is_floating());
     EXPECT_TRUE(dbl_info.is_numeric());
     EXPECT_TRUE(dbl_info.is_scalar());
 
     // bool: scalar but not numeric
-    constexpr auto& bool_info = type_info_instance<bool, default_config>::value;
+    constexpr auto& bool_info = *type_info_of<bool, default_config>();
     EXPECT_TRUE(bool_info.is_scalar());
     EXPECT_FALSE(bool_info.is_numeric());
     EXPECT_FALSE(bool_info.is_integer());
     EXPECT_FALSE(bool_info.is_floating());
 
     // string: scalar but not numeric
-    constexpr auto& str_info = type_info_instance<std::string, default_config>::value;
+    constexpr auto& str_info = *type_info_of<std::string, default_config>();
     EXPECT_EQ(str_info.kind, type_kind::string);
     EXPECT_TRUE(str_info.is_scalar());
     EXPECT_FALSE(str_info.is_numeric());
 
     // enum: scalar but not numeric
-    constexpr auto& enum_info = type_info_instance<test_schema::color, default_config>::value;
+    constexpr auto& enum_info = *type_info_of<test_schema::color, default_config>();
     EXPECT_EQ(enum_info.kind, type_kind::enumeration);
     EXPECT_TRUE(enum_info.is_scalar());
     EXPECT_FALSE(enum_info.is_numeric());
@@ -88,7 +88,7 @@ TEST_CASE(scalar_helpers) {
 TEST_CASE(compound_types) {
     // vector<int> -> array with int32 element
     {
-        constexpr auto& info = type_info_instance<std::vector<int>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::vector<int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::array);
         EXPECT_FALSE(info.is_scalar());
         auto* arr = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
@@ -97,7 +97,7 @@ TEST_CASE(compound_types) {
 
     // set<int> -> set with int32 element
     {
-        constexpr auto& info = type_info_instance<std::set<int>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::set<int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::set);
         EXPECT_FALSE(info.is_scalar());
         auto* arr = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
@@ -106,7 +106,7 @@ TEST_CASE(compound_types) {
 
     // map<string, int> -> map with string key, int32 value
     {
-        constexpr auto& info = type_info_instance<std::map<std::string, int>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::map<std::string, int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::map);
         EXPECT_FALSE(info.is_scalar());
         auto* m = static_cast<const map_type_info*>(static_cast<const type_info*>(&info));
@@ -116,7 +116,7 @@ TEST_CASE(compound_types) {
 
     // optional<int> -> optional with int32 inner
     {
-        constexpr auto& info = type_info_instance<std::optional<int>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::optional<int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::optional);
         auto* opt = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(opt->inner->kind, type_kind::int32);
@@ -124,7 +124,7 @@ TEST_CASE(compound_types) {
 
     // unique_ptr<int> -> pointer with int32 inner
     {
-        constexpr auto& info = type_info_instance<std::unique_ptr<int>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::unique_ptr<int>, default_config>();
         EXPECT_EQ(info.kind, type_kind::pointer);
         auto* ptr = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(ptr->inner->kind, type_kind::int32);
@@ -132,7 +132,7 @@ TEST_CASE(compound_types) {
 
     // shared_ptr<string> -> pointer with string inner
     {
-        constexpr auto& info = type_info_instance<std::shared_ptr<std::string>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::shared_ptr<std::string>, default_config>();
         EXPECT_EQ(info.kind, type_kind::pointer);
         auto* ptr = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(ptr->inner->kind, type_kind::string);
@@ -140,7 +140,7 @@ TEST_CASE(compound_types) {
 
     // variant<int, string> -> variant with 2 alternatives
     {
-        constexpr auto& info = type_info_instance<std::variant<int, std::string>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::variant<int, std::string>, default_config>();
         EXPECT_EQ(info.kind, type_kind::variant);
         auto* var = static_cast<const variant_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(var->alternatives.size(), 2U);
@@ -150,7 +150,7 @@ TEST_CASE(compound_types) {
 
     // pair<int, float> -> tuple with 2 elements
     {
-        constexpr auto& info = type_info_instance<std::pair<int, float>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::pair<int, float>, default_config>();
         EXPECT_EQ(info.kind, type_kind::tuple);
         auto* tup = static_cast<const tuple_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(tup->elements.size(), 2U);
@@ -160,7 +160,8 @@ TEST_CASE(compound_types) {
 
     // tuple<int, double, string> -> tuple with 3 elements
     {
-        constexpr auto& info = type_info_instance<std::tuple<int, double, std::string>, default_config>::value;
+        constexpr auto& info =
+            *type_info_of<std::tuple<int, double, std::string>, default_config>();
         EXPECT_EQ(info.kind, type_kind::tuple);
         auto* tup = static_cast<const tuple_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(tup->elements.size(), 3U);
@@ -171,7 +172,7 @@ TEST_CASE(compound_types) {
 
     // SimpleStruct -> structure
     {
-        constexpr auto& info = type_info_instance<test_schema::SimpleStruct, default_config>::value;
+        constexpr auto& info = *type_info_of<test_schema::SimpleStruct, default_config>();
         EXPECT_EQ(info.kind, type_kind::structure);
         EXPECT_FALSE(info.is_scalar());
     }
@@ -180,7 +181,7 @@ TEST_CASE(compound_types) {
 TEST_CASE(nested_type_info) {
     // vector<optional<int>> -> array -> optional -> int32
     {
-        constexpr auto& info = type_info_instance<std::vector<std::optional<int>>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::vector<std::optional<int>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::array);
         auto* arr = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(arr->element->kind, type_kind::optional);
@@ -190,7 +191,8 @@ TEST_CASE(nested_type_info) {
 
     // map<string, vector<int>> -> map -> string key, array value -> int32 element
     {
-        constexpr auto& info = type_info_instance<std::map<std::string, std::vector<int>>, default_config>::value;
+        constexpr auto& info =
+            *type_info_of<std::map<std::string, std::vector<int>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::map);
         auto* m = static_cast<const map_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(m->key->kind, type_kind::string);
@@ -201,7 +203,7 @@ TEST_CASE(nested_type_info) {
 
     // set<vector<string>> -> set -> array -> string
     {
-        constexpr auto& info = type_info_instance<std::set<std::vector<std::string>>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::set<std::vector<std::string>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::set);
         auto* s = static_cast<const array_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(s->element->kind, type_kind::array);
@@ -211,7 +213,7 @@ TEST_CASE(nested_type_info) {
 
     // unique_ptr<vector<int>> -> pointer -> array -> int32
     {
-        constexpr auto& info = type_info_instance<std::unique_ptr<std::vector<int>>, default_config>::value;
+        constexpr auto& info = *type_info_of<std::unique_ptr<std::vector<int>>, default_config>();
         EXPECT_EQ(info.kind, type_kind::pointer);
         auto* ptr = static_cast<const optional_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(ptr->inner->kind, type_kind::array);

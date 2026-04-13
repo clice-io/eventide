@@ -97,9 +97,13 @@ struct type_info {
         return kind == type_kind::float32 || kind == type_kind::float64;
     }
 
-    constexpr bool is_numeric() const { return is_integer() || is_floating(); }
+    constexpr bool is_numeric() const {
+        return is_integer() || is_floating();
+    }
 
-    constexpr bool is_scalar() const { return kind <= type_kind::enumeration; }
+    constexpr bool is_scalar() const {
+        return kind <= type_kind::enumeration;
+    }
 };
 
 /// array / set
@@ -149,11 +153,21 @@ struct field_info {
     const type_info* type;                      // recursive type descriptor (wire view)
 
     // Level 1 flags
-    bool has_default;    // schema::default_value
-    bool is_literal;     // schema::literal
-    bool has_skip_if;    // behavior::skip_if present
-    bool has_behavior;   // with/as/enum_string present
+    bool has_default;   // schema::default_value
+    bool is_literal;    // schema::literal
+    bool has_skip_if;   // behavior::skip_if present
+    bool has_behavior;  // with/as/enum_string present
 };
+
+// ---------------------------------------------------------------------------
+// schema_opaque — opt-out from recursive type decomposition
+// ---------------------------------------------------------------------------
+
+/// Types marked schema_opaque are treated as opaque by the schema system.
+/// They get kind=unknown and are not recursively decomposed in type_info_instance.
+/// Backend-specific serialize/deserialize hooks handle these types directly.
+template <typename T>
+constexpr inline bool schema_opaque = false;
 
 // ---------------------------------------------------------------------------
 // kind_of<T>() — map C++ types to type_kind values
@@ -219,6 +233,10 @@ consteval type_kind kind_of() {
     // Unwrap annotation to get the underlying type
     if constexpr(serde::annotated_type<V>) {
         return kind_of<typename V::annotated_type>();
+    }
+    // Opaque types with custom hooks — do not decompose
+    else if constexpr(schema_opaque<V>) {
+        return type_kind::unknown;
     }
     // Enum -> enumeration
     else if constexpr(std::is_enum_v<V>) {

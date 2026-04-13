@@ -114,14 +114,15 @@ TEST_CASE(rename_policies) {
 TEST_CASE(explicit_rename_overrides_rename_all) {
     constexpr auto& fields =
         virtual_schema<test_schema::MixedRenameStruct, test_schema::CamelConfig>::fields;
-    EXPECT_EQ(fields[0].name, "ID");            // explicit rename wins
-    EXPECT_EQ(fields[1].name, "totalScore");     // rename_all applied
-    EXPECT_EQ(fields[2].name, "itemName");       // rename_all applied
+    EXPECT_EQ(fields[0].name, "ID");          // explicit rename wins
+    EXPECT_EQ(fields[1].name, "totalScore");  // rename_all applied
+    EXPECT_EQ(fields[2].name, "itemName");    // rename_all applied
 }
 
 TEST_CASE(field_count_unchanged) {
     EXPECT_EQ((virtual_schema<test_schema::RenameAllTarget, test_schema::CamelConfig>::count), 3U);
-    EXPECT_EQ((virtual_schema<test_schema::MixedRenameStruct, test_schema::CamelConfig>::count), 3U);
+    EXPECT_EQ((virtual_schema<test_schema::MixedRenameStruct, test_schema::CamelConfig>::count),
+              3U);
 }
 
 TEST_CASE(alias_unaffected_by_rename_all) {

@@ -62,20 +62,27 @@ struct TaggedVariantStruct {
 // -- multi-attribute combinations --
 
 struct MultiAttrStruct {
-    annotation<std::optional<int>, schema::default_value, behavior::skip_if<pred::optional_none>> opt_with_default;
+    annotation<std::optional<int>, schema::default_value, behavior::skip_if<pred::optional_none>>
+        opt_with_default;
     annotation<int, schema::rename<"score">, behavior::as<std::string>> renamed_as;
 };
 
 // -- skip_if + as combination --
 
 struct SkipIfAsStruct {
-    annotation<std::optional<std::string>, behavior::skip_if<pred::optional_none>, behavior::as<std::string>> field;
+    annotation<std::optional<std::string>,
+               behavior::skip_if<pred::optional_none>,
+               behavior::as<std::string>>
+        field;
 };
 
 // -- skip_if + with combination --
 
 struct SkipIfWithStruct {
-    annotation<std::optional<int>, behavior::skip_if<pred::optional_none>, behavior::with<IntToStringAdapter>> field;
+    annotation<std::optional<int>,
+               behavior::skip_if<pred::optional_none>,
+               behavior::with<IntToStringAdapter>>
+        field;
 };
 
 }  // namespace test_schema
