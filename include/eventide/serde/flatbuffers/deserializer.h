@@ -169,16 +169,71 @@ private:
             return std::unexpected(object_error_code::invalid_state);
         }
 
+        using schema_t = serde::schema::virtual_schema<U>;
+        using slots_t = typename schema_t::slots;
+
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+
         std::expected<void, object_error_code> result{};
-        refl::for_each(out, [&](auto field) {
-            const auto field_id = field_voffset(field.index());
-            auto status = decode_field(table, field_id, field.value(), false);
-            if(!status) {
-                result = std::unexpected(status.error());
-                return false;
-            }
-            return true;
-        });
+
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+                 if(!result) {
+                     return;
+                 }
+
+                 using slot = serde::schema::type_list_element_t<I, slots_t>;
+                 using raw_t = std::remove_const_t<typename slot::raw_type>;
+                 using wire_t = std::remove_const_t<typename slot::wire_type>;
+                 using attrs_t = typename slot::attrs;
+                 constexpr auto& info = schema_t::fields[I];
+
+                 const auto field_id = field_voffset(I);
+                 auto& raw_value = *reinterpret_cast<raw_t*>(base + info.offset);
+
+                 // behavior: as — decode wire type, then convert back
+                 if constexpr(serde::detail::tuple_has_spec_v<attrs_t, serde::behavior::as>) {
+                     wire_t temp{};
+                     auto s = decode_field(table, field_id, temp, false);
+                     if(!s) {
+                         result = std::unexpected(s.error());
+                         return;
+                     }
+                     if(has_field(table, field_id)) {
+                         raw_value = raw_t(std::move(temp));
+                     }
+                 }
+                 // behavior: enum_string — decode string, then map to enum
+                 else if constexpr(serde::detail::tuple_has_spec_v<attrs_t,
+                                                                   serde::behavior::enum_string>) {
+                     using Policy = typename serde::detail::
+                         tuple_find_spec_t<attrs_t, serde::behavior::enum_string>::policy;
+                     std::string str;
+                     auto s = decode_field(table, field_id, str, false);
+                     if(!s) {
+                         result = std::unexpected(s.error());
+                         return;
+                     }
+                     if(has_field(table, field_id)) {
+                         auto parsed = serde::spelling::map_string_to_enum<raw_t, Policy>(str);
+                         if(parsed.has_value()) {
+                             raw_value = *parsed;
+                         } else {
+                             result = std::unexpected(object_error_code::type_mismatch);
+                         }
+                     }
+                 }
+                 // default path (also handles with<Adapter> fallback)
+                 else {
+                     auto s = decode_field(table, field_id, raw_value, false);
+                     if(!s) {
+                         result = std::unexpected(s.error());
+                     }
+                 }
+             }()),
+             ...);
+        }(std::make_index_sequence<schema_t::count>{});
+
         if(!result) {
             return std::unexpected(result.error());
         }

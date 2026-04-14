@@ -974,6 +974,164 @@ TEST_CASE(array_view_out_of_bounds) {
 
 };  // TEST_SUITE(serde_flatbuffers_object)
 
+// ===================================================================
+// Attribute tests: flatten, as, enum_string, skip_if, skip roundtrip
+// ===================================================================
+
+struct inner_fields {
+    std::string city;
+    std::int32_t zip;
+
+    auto operator==(const inner_fields&) const -> bool = default;
+};
+
+struct with_flatten {
+    std::int32_t id;
+    flatten<inner_fields> inner;
+    std::string tag;
+};
+
+struct with_as {
+    annotation<std::int32_t, behavior::as<double>> value;
+    std::string name;
+};
+
+enum class status : std::int32_t { active = 0, inactive = 1, pending = 2 };
+
+struct with_enum_string {
+    std::int32_t id;
+    enum_string<status> state;
+};
+
+struct with_skip_if {
+    std::int32_t id;
+    skip_if_none<std::string> note;
+    std::int32_t score;
+};
+
+TEST_SUITE(serde_flatbuffers_attrs) {
+
+TEST_CASE(skip_roundtrip) {
+    with_skip input{};
+    input.a = 10;
+    input.internal = 777;
+    input.c = 20;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_skip output{};
+    auto status = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.a, 10);
+    EXPECT_EQ(output.internal, 0);  // skipped field stays default
+    EXPECT_EQ(output.c, 20);
+}
+
+TEST_CASE(flatten_roundtrip) {
+    with_flatten input{};
+    input.id = 1;
+    input.inner.city = "tokyo";
+    input.inner.zip = 100;
+    input.tag = "test";
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_flatten output{};
+    auto s = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(output.id, 1);
+    EXPECT_EQ(output.inner.city, "tokyo");
+    EXPECT_EQ(output.inner.zip, 100);
+    EXPECT_EQ(output.tag, "test");
+}
+
+TEST_CASE(as_roundtrip) {
+    with_as input{};
+    input.value = 42;
+    input.name = "test";
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_as output{};
+    auto s = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(static_cast<std::int32_t>(output.value), 42);
+    EXPECT_EQ(output.name, "test");
+}
+
+TEST_CASE(enum_string_roundtrip) {
+    with_enum_string input{};
+    input.id = 1;
+    input.state = status::pending;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_enum_string output{};
+    auto s = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(output.id, 1);
+    EXPECT_EQ(static_cast<status>(output.state), status::pending);
+}
+
+TEST_CASE(enum_string_all_values) {
+    for(auto val: {status::active, status::inactive, status::pending}) {
+        with_enum_string input{};
+        input.id = static_cast<std::int32_t>(val);
+        input.state = val;
+
+        auto encoded = to_flatbuffer(input);
+        ASSERT_TRUE(encoded.has_value());
+
+        with_enum_string output{};
+        auto s = flatbuffers::from_flatbuffer(*encoded, output);
+        ASSERT_TRUE(s.has_value());
+        EXPECT_EQ(output.id, input.id);
+        EXPECT_EQ(static_cast<status>(output.state), val);
+    }
+}
+
+TEST_CASE(skip_if_none_present) {
+    with_skip_if input{};
+    input.id = 1;
+    input.note = std::string("hello");
+    input.score = 99;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_skip_if output{};
+    auto s = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(output.id, 1);
+    EXPECT_TRUE(output.note.has_value());
+    EXPECT_EQ(static_cast<std::string>(output.note.value()), "hello");
+    EXPECT_EQ(output.score, 99);
+}
+
+TEST_CASE(skip_if_none_absent) {
+    with_skip_if input{};
+    input.id = 2;
+    input.note = std::nullopt;
+    input.score = 50;
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_skip_if output{};
+    output.note = std::string("should be cleared");
+    auto s = flatbuffers::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(output.id, 2);
+    EXPECT_FALSE(output.note.has_value());
+    EXPECT_EQ(output.score, 50);
+}
+
+};  // TEST_SUITE(serde_flatbuffers_attrs)
+
 }  // namespace
 
 }  // namespace eventide::serde

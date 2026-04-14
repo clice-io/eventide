@@ -21,9 +21,15 @@
 
 #include "eventide/common/expected_try.h"
 #include "eventide/common/ranges.h"
+#include "eventide/reflection/struct.h"
 #include "eventide/serde/flatbuffers/schema.h"
+#include "eventide/serde/schema/virtual_schema.h"
+#include "eventide/serde/serde/annotation.h"
+#include "eventide/serde/serde/attrs/behavior.h"
+#include "eventide/serde/serde/attrs/schema.h"
 #include "eventide/serde/serde/config.h"
-#include "eventide/serde/serde/serde.h"
+#include "eventide/serde/serde/spelling.h"
+#include "eventide/serde/serde/traits.h"
 #include "eventide/serde/serde/utils/common.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -98,200 +104,52 @@ public:
 
     using status_t = result_t<void>;
 
-    class SerializeSeq {
-    public:
-        explicit SerializeSeq(Serializer& serializer, std::optional<std::size_t> len) noexcept :
-            serializer(serializer) {
-            if(len.has_value()) {
-                elements.reserve(*len);
-            }
-        }
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            ETD_EXPECTED_TRY_V(auto encoded, serde::serialize(serializer, value));
-            elements.push_back(encoded);
-            return {};
-        }
-
-        result_t<value_type> end() {
-            const auto offset = serializer.builder.CreateVector(elements);
-            return serializer.wrap_offset(offset);
-        }
-
-    private:
-        Serializer& serializer;
-        std::vector<value_type> elements;
-    };
-
-    class SerializeTuple {
-    public:
-        explicit SerializeTuple(Serializer& serializer, std::size_t len) noexcept :
-            serializer(serializer) {
-            writers.reserve(len);
-        }
-
-        template <typename T>
-        status_t serialize_element(const T& value) {
-            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
-            ++next_index;
-
-            return serializer.collect_field(writers, field_id, value);
-        }
-
-        result_t<value_type> end() {
-            return serializer.finish_table(writers);
-        }
-
-    private:
-        Serializer& serializer;
-        std::vector<std::function<void()>> writers;
-        std::size_t next_index = 0;
-    };
-
-    class SerializeMap {
-    public:
-        explicit SerializeMap(Serializer& serializer, std::optional<std::size_t> len) noexcept :
-            serializer(serializer) {
-            if(len.has_value()) {
-                entries.reserve(*len);
-            }
-        }
-
-        template <typename K, typename V>
-        status_t serialize_entry(const K& key, const V& value) {
-            std::vector<std::function<void()>> writers;
-
-            ETD_EXPECTED_TRY(serializer.collect_field(writers, detail::first_field, key));
-            ETD_EXPECTED_TRY_V(auto value_field, detail::field_voffset(1));
-            ETD_EXPECTED_TRY(serializer.collect_field(writers, value_field, value));
-            ETD_EXPECTED_TRY_V(auto entry, serializer.finish_table(writers));
-            entries.push_back(entry);
-
-            return {};
-        }
-
-        result_t<value_type> end() {
-            const auto offset = serializer.builder.CreateVector(entries);
-            return serializer.wrap_offset(offset);
-        }
-
-    private:
-        Serializer& serializer;
-        std::vector<value_type> entries;
-    };
-
-    class SerializeStruct {
-    public:
-        explicit SerializeStruct(Serializer& serializer, std::size_t len) noexcept :
-            serializer(serializer) {
-            writers.reserve(len);
-        }
-
-        template <typename T>
-        status_t serialize_field(std::string_view /*key*/, const T& value) {
-            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(next_index));
-            ++next_index;
-            return serializer.collect_field(writers, field_id, value);
-        }
-
-        result_t<value_type> end() {
-            return serializer.finish_table(writers);
-        }
-
-    private:
-        Serializer& serializer;
-        std::vector<std::function<void()>> writers;
-        std::size_t next_index = 0;
-    };
-
     explicit Serializer(std::size_t initial_capacity = 1024) : builder(initial_capacity) {}
 
     template <typename T>
     auto bytes(const T& value) -> result_t<std::vector<std::uint8_t>> {
         builder.Clear();
 
-        ETD_EXPECTED_TRY_V(auto root, serde::serialize(*this, value));
+        ETD_EXPECTED_TRY_V(auto root, encode_root(value));
 
         builder.Finish(root, detail::buffer_identifier);
         const auto* begin = builder.GetBufferPointer();
         return std::vector<std::uint8_t>(begin, begin + builder.GetSize());
     }
 
-    result_t<value_type> serialize_null() {
-        return encode_boxed(nullptr);
-    }
-
+private:
     template <typename T>
-    result_t<value_type> serialize_some(const T& value) {
-        return serde::serialize(*this, value);
-    }
+    auto encode_root(const T& value) -> result_t<value_type> {
+        using U = std::remove_cvref_t<T>;
+        using clean_u_t = detail::clean_t<U>;
 
-    result_t<value_type> serialize_bool(bool value) {
-        return encode_boxed(value);
-    }
-
-    result_t<value_type> serialize_int(std::int64_t value) {
-        return encode_boxed(value);
-    }
-
-    result_t<value_type> serialize_uint(std::uint64_t value) {
-        return encode_boxed(value);
-    }
-
-    result_t<value_type> serialize_float(double value) {
-        return encode_boxed(value);
-    }
-
-    result_t<value_type> serialize_char(char value) {
-        return encode_boxed(value);
-    }
-
-    result_t<value_type> serialize_str(std::string_view value) {
-        return encode_boxed(value);
-    }
-
-    result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
-        return encode_boxed(value);
-    }
-
-    template <typename... Ts>
-    result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
-        return encode_variant(value);
-    }
-
-    result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> len) {
-        return SerializeSeq(*this, len);
-    }
-
-    result_t<SerializeTuple> serialize_tuple(std::size_t len) {
-        return SerializeTuple(*this, len);
-    }
-
-    result_t<SerializeMap> serialize_map(std::optional<std::size_t> len) {
-        return SerializeMap(*this, len);
-    }
-
-    result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t len) {
-        return SerializeStruct(*this, len);
-    }
-
-    template <typename T>
-    auto serialize_reflectable(const T& value) -> result_t<value_type> {
-        using U = detail::remove_annotation_t<T>;
-        if constexpr(can_inline_struct_v<U>) {
-            return encode_boxed(value);
-        } else {
+        if constexpr(serde::annotated_type<U>) {
+            return encode_root(serde::annotated_value(value));
+        } else if constexpr(is_specialization_of<std::optional, U>) {
+            if(!value.has_value()) {
+                // Empty table represents None
+                std::vector<std::function<void()>> writers;
+                return finish_table(writers);
+            }
+            return encode_root(value.value());
+        } else if constexpr(is_specialization_of<std::unique_ptr, U> ||
+                            is_specialization_of<std::shared_ptr, U>) {
+            if(!value) {
+                std::vector<std::function<void()>> writers;
+                return finish_table(writers);
+            }
+            return encode_root(*value);
+        } else if constexpr(refl::reflectable_class<clean_u_t> && !can_inline_struct_v<clean_u_t>) {
             return encode_table(value);
+        } else if constexpr(is_pair_v<clean_u_t> || is_tuple_v<clean_u_t>) {
+            return encode_tuple_like(value);
+        } else if constexpr(is_specialization_of<std::variant, U>) {
+            return encode_variant(value);
+        } else {
+            return encode_boxed(value);
         }
     }
 
-    template <typename T>
-    auto serialize_boxed(const T& value) -> result_t<value_type> {
-        return encode_boxed(value);
-    }
-
-private:
     // Non-template helper to avoid lld issues with std::function vtable entries
     // for lambdas inside heavily-instantiated template member functions.
     void push_add_offset(std::vector<std::function<void()>>& writers,
@@ -317,21 +175,6 @@ private:
         return value_type(builder.EndTable(start));
     }
 
-    struct TableFieldCollector {
-        Serializer<Config>* serializer = nullptr;
-        std::vector<std::function<void()>>* writers = nullptr;
-        std::size_t current_index = 0;
-
-        template <typename V>
-        auto serialize_field(std::string_view /*key*/, const V& field_value) -> status_t {
-            if(serializer == nullptr || writers == nullptr) {
-                return std::unexpected(object_error_code::invalid_state);
-            }
-            ETD_EXPECTED_TRY_V(auto field_id, detail::field_voffset(current_index));
-            return serializer->collect_field(*writers, field_id, field_value);
-        }
-    };
-
     template <typename T>
     auto encode_boxed(const T& value) -> result_t<value_type> {
         std::vector<std::function<void()>> writers;
@@ -344,28 +187,80 @@ private:
         using U = detail::remove_annotation_t<T>;
         static_assert(refl::reflectable_class<U>, "encode_table requires reflectable class");
 
-        std::vector<std::function<void()>> writers;
-        TableFieldCollector collector{
-            .serializer = this,
-            .writers = &writers,
-            .current_index = 0,
-        };
+        using schema_t = serde::schema::virtual_schema<U, Config>;
+        using slots_t = typename schema_t::slots;
 
-        std::expected<void, object_error_code> field_result;
-        refl::for_each(value, [&](auto field) {
-            collector.current_index = field.index();
-            auto status =
-                serde::detail::serialize_struct_field<Config, object_error_code>(collector, field);
-            if(!status) {
-                field_result = std::unexpected(status.error());
-                return false;
+        const auto& base_ref = [&]() -> const U& {
+            if constexpr(serde::annotated_type<T>) {
+                return serde::annotated_value(value);
+            } else {
+                return value;
             }
-            return true;
-        });
+        }();
+        const auto* base = reinterpret_cast<const std::byte*>(std::addressof(base_ref));
+
+        std::vector<std::function<void()>> writers;
+        std::expected<void, object_error_code> field_result;
+
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+                 if(!field_result) {
+                     return;
+                 }
+
+                 using slot = serde::schema::type_list_element_t<I, slots_t>;
+                 using raw_t = typename slot::raw_type;
+                 using wire_t = typename slot::wire_type;
+                 using attrs_t = typename slot::attrs;
+                 constexpr auto& info = schema_t::fields[I];
+
+                 auto field_id = detail::field_voffset(I);
+                 if(!field_id) {
+                     field_result = std::unexpected(field_id.error());
+                     return;
+                 }
+
+                 const auto& raw_value = *reinterpret_cast<const raw_t*>(base + info.offset);
+
+                 // skip_if: conditionally omit field
+                 if constexpr(serde::detail::tuple_has_spec_v<attrs_t, serde::behavior::skip_if>) {
+                     using Pred = typename serde::detail::
+                         tuple_find_spec_t<attrs_t, serde::behavior::skip_if>::predicate;
+                     if(serde::detail::evaluate_skip_predicate<Pred>(raw_value, true)) {
+                         return;
+                     }
+                 }
+
+                 // behavior: as / enum_string — convert to wire type before encoding
+                 if constexpr(serde::detail::tuple_has_spec_v<attrs_t, serde::behavior::as>) {
+                     wire_t converted(raw_value);
+                     auto s = collect_field(writers, *field_id, converted);
+                     if(!s) {
+                         field_result = std::unexpected(s.error());
+                     }
+                 } else if constexpr(serde::detail::
+                                         tuple_has_spec_v<attrs_t, serde::behavior::enum_string>) {
+                     using Policy = typename serde::detail::
+                         tuple_find_spec_t<attrs_t, serde::behavior::enum_string>::policy;
+                     auto str = serde::spelling::map_enum_to_string<raw_t, Policy>(raw_value);
+                     auto s = collect_field(writers, *field_id, str);
+                     if(!s) {
+                         field_result = std::unexpected(s.error());
+                     }
+                 } else {
+                     // default path (also handles with<Adapter> fallback)
+                     auto s = collect_field(writers, *field_id, raw_value);
+                     if(!s) {
+                         field_result = std::unexpected(s.error());
+                     }
+                 }
+             }()),
+             ...);
+        }(std::make_index_sequence<schema_t::count>{});
+
         if(!field_result) {
             return std::unexpected(field_result.error());
         }
-
         return finish_table(writers);
     }
 
@@ -706,56 +601,4 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
     return serializer.bytes(value);
 }
 
-static_assert(serde::serializer_like<Serializer<>>);
-
 }  // namespace eventide::serde::flatbuffers
-
-namespace eventide::serde {
-
-template <typename Config, typename T>
-    requires refl::reflectable_class<std::remove_cvref_t<T>>
-struct serialize_traits<flatbuffers::Serializer<Config>, T> {
-    using serializer_t = flatbuffers::Serializer<Config>;
-
-    static auto serialize(serializer_t& serializer, const T& value) ->
-        typename serializer_t::template result_t<typename serializer_t::value_type> {
-        return serializer.serialize_reflectable(value);
-    }
-};
-
-template <typename Config, typename T>
-    requires (!refl::reflectable_class<std::remove_cvref_t<T>> &&
-              !std::ranges::input_range<std::remove_cvref_t<T>> &&
-              !is_pair_v<std::remove_cvref_t<T>> && !is_tuple_v<std::remove_cvref_t<T>> &&
-              !is_specialization_of<std::variant, std::remove_cvref_t<T>> &&
-              (std::is_enum_v<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::null_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::bool_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::int_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::uint_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::floating_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::char_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::str_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>> ||
-               serde::bytes_like<flatbuffers::detail::clean_t<std::remove_cvref_t<T>>>))
-struct serialize_traits<flatbuffers::Serializer<Config>, T> {
-    using serializer_t = flatbuffers::Serializer<Config>;
-
-    static auto serialize(serializer_t& serializer, const T& value) ->
-        typename serializer_t::template result_t<typename serializer_t::value_type> {
-        return serializer.serialize_boxed(value);
-    }
-};
-
-template <typename Config, typename T>
-    requires (std::ranges::input_range<std::remove_cvref_t<T>> &&
-              !refl::reflectable_class<std::remove_cvref_t<T>>)
-struct serialize_traits<flatbuffers::Serializer<Config>, T> {
-    using serializer_t = flatbuffers::Serializer<Config>;
-
-    static auto serialize(serializer_t& serializer, const T& value) ->
-        typename serializer_t::template result_t<typename serializer_t::value_type> {
-        return serializer.serialize_boxed(value);
-    }
-};
-
-}  // namespace eventide::serde

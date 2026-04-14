@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "eventide/serde/flatbuffers/schema.h"
+#include "eventide/serde/schema/virtual_schema.h"
 #include "eventide/serde/serde/serde.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -114,13 +115,6 @@ struct scalar_storage<T> {
 template <typename T>
 using scalar_storage_t = typename scalar_storage<std::remove_cvref_t<T>>::type;
 
-template <typename Object>
-consteval auto field_offsets() {
-    return []<std::size_t... I>(std::index_sequence<I...>) {
-        return std::array<std::size_t, sizeof...(I)>{refl::field_offset<Object>(I)...};
-    }(std::make_index_sequence<refl::field_count<Object>()>{});
-}
-
 template <typename Object, typename Member>
 auto field_index(Member Object::* member) -> std::size_t {
     static_assert(std::default_initializable<Object>,
@@ -131,13 +125,13 @@ auto field_index(Member Object::* member) -> std::size_t {
     const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(sample.*member));
     const auto offset = static_cast<std::size_t>(field - base);
 
-    constexpr auto offsets = field_offsets<Object>();
-    for(std::size_t i = 0; i < offsets.size(); ++i) {
-        if(offsets[i] == offset) {
+    using schema_t = serde::schema::virtual_schema<Object>;
+    for(std::size_t i = 0; i < schema_t::count; ++i) {
+        if(schema_t::fields[i].offset == offset) {
             return i;
         }
     }
-    return offsets.size();
+    return schema_t::count;
 }
 
 inline auto voffset(std::size_t index) -> ::flatbuffers::voffset_t {
@@ -748,7 +742,7 @@ public:
         }
 
         const auto index = proxy_detail::field_index(member);
-        if(index >= refl::field_count<object_type>()) {
+        if(index >= serde::schema::virtual_schema<object_type>::count) {
             return false;
         }
         return table->GetOptionalFieldOffset(proxy_detail::voffset(index)) != 0;
@@ -771,7 +765,7 @@ public:
         }
 
         const auto index = proxy_detail::field_index(member);
-        if(index >= refl::field_count<object_type>()) {
+        if(index >= serde::schema::virtual_schema<object_type>::count) {
             return return_t{};
         }
 
