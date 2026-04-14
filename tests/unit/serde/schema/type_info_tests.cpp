@@ -33,6 +33,29 @@ struct SimpleStruct {
     float score;
 };
 
+struct RenameTarget {
+    int user_name;
+    std::string display_name;
+};
+
+using RenamedRoot =
+    annotation<RenameTarget, schema::rename_all<spelling::rename_policy::lower_camel>>;
+
+using StrictRoot = annotation<RenameTarget, schema::deny_unknown_fields>;
+
+struct Circle {
+    double radius;
+};
+
+struct Rect {
+    double width;
+    double height;
+};
+
+using TaggedRoot =
+    annotation<std::variant<Circle, Rect>,
+               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+
 }  // namespace test_schema
 
 namespace {
@@ -219,6 +242,45 @@ TEST_CASE(nested_type_info) {
         EXPECT_EQ(ptr->inner->kind, type_kind::array);
         auto* arr = static_cast<const array_type_info*>(ptr->inner);
         EXPECT_EQ(arr->element->kind, type_kind::int32);
+    }
+}
+
+TEST_CASE(annotated_type_info) {
+    {
+        constexpr auto& info = *type_info_of<test_schema::RenamedRoot, default_config>();
+        EXPECT_EQ(info.kind, type_kind::structure);
+
+        auto* si = static_cast<const schema::struct_type_info*>(static_cast<const type_info*>(&info));
+        EXPECT_EQ(si->fields.size(), 2U);
+        EXPECT_EQ(si->fields[0].name, "userName");
+        EXPECT_EQ(si->fields[1].name, "displayName");
+        EXPECT_FALSE(si->deny_unknown);
+    }
+
+    {
+        constexpr auto& info = *type_info_of<test_schema::StrictRoot, default_config>();
+        EXPECT_EQ(info.kind, type_kind::structure);
+
+        auto* si = static_cast<const schema::struct_type_info*>(static_cast<const type_info*>(&info));
+        EXPECT_EQ(si->fields.size(), 2U);
+        EXPECT_TRUE(si->deny_unknown);
+    }
+
+    {
+        constexpr auto& info = *type_info_of<test_schema::TaggedRoot, default_config>();
+        EXPECT_EQ(info.kind, type_kind::variant);
+
+        auto* var =
+            static_cast<const variant_type_info*>(static_cast<const type_info*>(&info));
+        EXPECT_EQ(var->tagging, schema::tag_mode::internal);
+        EXPECT_EQ(var->alternatives.size(), 2U);
+        EXPECT_EQ(var->alternatives[0]->kind, type_kind::structure);
+        EXPECT_EQ(var->alternatives[1]->kind, type_kind::structure);
+        EXPECT_EQ(var->tag_field, "kind");
+        EXPECT_EQ(var->content_field, "");
+        EXPECT_EQ(var->alt_names.size(), 2U);
+        EXPECT_EQ(var->alt_names[0], "circle");
+        EXPECT_EQ(var->alt_names[1], "rect");
     }
 }
 

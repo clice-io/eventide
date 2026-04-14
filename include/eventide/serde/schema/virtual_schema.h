@@ -299,6 +299,32 @@ struct unwrap_annotated<T> {
     using attrs = typename std::remove_cvref_t<T>::attrs;
 };
 
+template <typename BaseConfig, typename AttrsTuple, bool HasRenameAll =
+              serde::detail::tuple_has_spec_v<AttrsTuple, schema::rename_all>>
+struct struct_schema_config {
+    using type = BaseConfig;
+};
+
+template <typename BaseConfig, typename AttrsTuple>
+struct struct_schema_config<BaseConfig, AttrsTuple, true> {
+    struct type : BaseConfig {
+        using field_rename =
+            typename serde::detail::tuple_find_spec_t<AttrsTuple, schema::rename_all>::policy;
+    };
+};
+
+template <typename BaseConfig, typename AttrsTuple>
+using struct_schema_config_t = typename struct_schema_config<BaseConfig, AttrsTuple>::type;
+
+template <typename AttrsTuple>
+constexpr bool has_struct_schema_attrs_v =
+    serde::detail::tuple_has_spec_v<AttrsTuple, schema::rename_all> ||
+    serde::detail::tuple_has_v<AttrsTuple, schema::deny_unknown_fields>;
+
+template <typename AttrsTuple>
+constexpr bool has_tagged_schema_attr_v =
+    serde::detail::tuple_any_of_v<AttrsTuple, serde::is_tagged_attr>;
+
 template <typename T, std::size_t I>
 consteval bool has_alias_attr() {
     using field_t = refl::field_type<T, I>;
@@ -424,10 +450,7 @@ consteval void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename Config, std::size_t I>
 consteval field_info make_field_info(std::size_t base_offset) {
     using field_t = refl::field_type<T, I>;
-    using unwrap = unwrap_annotated<field_t>;
-    using raw_type = typename unwrap::raw_type;
-    using attrs_t = typename unwrap::attrs;
-    using wire_t = resolve_wire_type_t<raw_type, attrs_t>;
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
 
     std::string_view name = resolve_wire_name<T, I, Config>();
 
@@ -446,7 +469,7 @@ consteval field_info make_field_info(std::size_t base_offset) {
         .aliases = aliases,
         .offset = offset,
         .physical_index = I,
-        .type = type_info_of<wire_t, Config>(),
+        .type = type_info_of<field_t, Config>(),
         .has_default = has_default,
         .is_literal = is_literal,
         .has_skip_if = has_skip_if,
@@ -514,6 +537,80 @@ struct enum_values_as_i64 {
 template <typename V, typename Config>
 struct struct_info_node;
 
+template <typename V, typename Config, typename AttrsTuple>
+struct annotated_struct_info_node {
+    using schema_config = struct_schema_config_t<Config, AttrsTuple>;
+
+    constexpr static std::size_t count = effective_field_count<V>();
+    constexpr static std::array<field_info, count> fields = build_fields<V, schema_config>();
+    constexpr static bool is_trivially_copyable =
+        std::is_trivial_v<V> && std::is_standard_layout_v<V>;
+    constexpr static bool deny_unknown =
+        serde::detail::tuple_has_v<AttrsTuple, schema::deny_unknown_fields>;
+
+    const inline static struct_type_info value = {
+        {type_kind::structure, refl::type_name<V>()},
+        {fields.data(), count},
+        is_trivially_copyable,
+        deny_unknown,
+    };
+};
+
+template <typename TagAttr>
+consteval tag_mode tagged_mode_for() {
+    constexpr auto strategy = serde::tagged_strategy_of<TagAttr>;
+    if constexpr(strategy == serde::tagged_strategy::external) {
+        return tag_mode::external;
+    } else if constexpr(strategy == serde::tagged_strategy::internal) {
+        return tag_mode::internal;
+    } else {
+        return tag_mode::adjacent;
+    }
+}
+
+template <typename Variant, typename Config, typename AttrsTuple>
+struct annotated_variant_info_node;
+
+template <typename Config, typename AttrsTuple, typename... Ts>
+struct annotated_variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
+    using variant_t = std::variant<Ts...>;
+    using tag_attr = serde::detail::tuple_find_t<AttrsTuple, serde::is_tagged_attr>;
+
+    constexpr static auto alt_names = serde::resolve_tag_names<tag_attr, Ts...>();
+    constexpr static std::array<const type_info*, sizeof...(Ts)> alternatives = {
+        type_info_of<Ts, Config>()...};
+    constexpr static tag_mode tagging = tagged_mode_for<tag_attr>();
+    constexpr static std::string_view tag_field =
+        tagging == tag_mode::external ? std::string_view{} : tag_attr::field_names[0];
+    constexpr static std::string_view content_field =
+        tagging == tag_mode::adjacent ? tag_attr::field_names[1] : std::string_view{};
+
+    const inline static variant_type_info value = {
+        {type_kind::variant, refl::type_name<variant_t>()},
+        {alternatives.data(), alternatives.size()},
+        tagging,
+        tag_field,
+        content_field,
+        {alt_names.data(), alt_names.size()},
+    };
+};
+
+template <typename T, typename Config>
+constexpr const type_info* type_info_of_annotated() {
+    using unwrap = unwrap_annotated<T>;
+    using raw_t = typename unwrap::raw_type;
+    using attrs_t = typename unwrap::attrs;
+    using wire_t = resolve_wire_type_t<raw_t, attrs_t>;
+
+    if constexpr(has_tagged_schema_attr_v<attrs_t> && is_specialization_of<std::variant, wire_t>) {
+        return &annotated_variant_info_node<wire_t, Config, attrs_t>::value;
+    } else if constexpr(refl::reflectable_class<wire_t> && has_struct_schema_attrs_v<attrs_t>) {
+        return &annotated_struct_info_node<wire_t, Config, attrs_t>::value;
+    } else {
+        return type_info_of<wire_t, Config>();
+    }
+}
+
 }  // namespace detail
 
 /// Returns a pointer to a static type descriptor for T.
@@ -522,6 +619,8 @@ constexpr const type_info* type_info_of() {
     // Strip cv-qualifiers: T may carry const from refl::field_type.
     if constexpr(!std::is_same_v<T, std::remove_cv_t<T>>) {
         return type_info_of<std::remove_cv_t<T>, Config>();
+    } else if constexpr(serde::annotated_type<T>) {
+        return detail::type_info_of_annotated<T, Config>();
     } else if constexpr(schema_opaque<T>) {
         constexpr static type_info info = {type_kind::unknown, refl::type_name<T>()};
         return &info;

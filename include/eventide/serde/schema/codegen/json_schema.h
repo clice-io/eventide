@@ -151,7 +151,7 @@ private:
             auto fragment = std::move(out);
             out = std::move(saved);
             // Strip '{' and '}', append as comma-separated fields
-            if(fragment.size() >= 2) {
+            if(fragment.size() > 2) {
                 out += ',';
                 out.append(fragment, 1, fragment.size() - 2);
             }
@@ -423,6 +423,11 @@ private:
                     str(alt_name);
                     out += '}';
                     out += '}';
+                    out += ',';
+                    key("required");
+                    out += '[';
+                    str(vi->tag_field);
+                    out += ']';
                     out += '}';
                     out += ']';
                     out += '}';

@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "eventide/zest/zest.h"
@@ -82,6 +83,33 @@ struct SimpleStruct {
 
 struct NestedStruct {
     std::vector<SimpleStruct> items;
+};
+
+struct TaggedCircle {
+    int radius;
+};
+
+struct TaggedRect {
+    int width;
+    int height;
+};
+
+using ExternalTagged =
+    annotation<std::variant<int, std::string>,
+               schema::externally_tagged::names<"integer", "text">>;
+
+using InternalTagged =
+    annotation<std::variant<TaggedCircle, TaggedRect>,
+               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+
+using AdjacentTagged =
+    annotation<std::variant<int, std::string>,
+               schema::adjacently_tagged<"type", "value">::names<"integer", "text">>;
+
+struct TaggedFieldStruct {
+    ExternalTagged ext;
+    InternalTagged in;
+    AdjacentTagged adj;
 };
 
 }  // namespace test_schema
@@ -232,6 +260,35 @@ TEST_CASE(nested_field_type_info) {
 
     auto* arr = static_cast<const array_type_info*>(fields[0].type);
     EXPECT_EQ(arr->element->kind, type_kind::structure);
+}
+
+TEST_CASE(tagged_field_type_info) {
+    constexpr auto& fields = virtual_schema<test_schema::TaggedFieldStruct>::fields;
+    EXPECT_EQ(fields.size(), 3U);
+
+    auto* ext = static_cast<const schema::variant_type_info*>(fields[0].type);
+    EXPECT_EQ(ext->tagging, schema::tag_mode::external);
+    EXPECT_EQ(ext->tag_field, "");
+    EXPECT_EQ(ext->content_field, "");
+    EXPECT_EQ(ext->alt_names.size(), 2U);
+    EXPECT_EQ(ext->alt_names[0], "integer");
+    EXPECT_EQ(ext->alt_names[1], "text");
+
+    auto* in = static_cast<const schema::variant_type_info*>(fields[1].type);
+    EXPECT_EQ(in->tagging, schema::tag_mode::internal);
+    EXPECT_EQ(in->tag_field, "kind");
+    EXPECT_EQ(in->content_field, "");
+    EXPECT_EQ(in->alt_names.size(), 2U);
+    EXPECT_EQ(in->alt_names[0], "circle");
+    EXPECT_EQ(in->alt_names[1], "rect");
+
+    auto* adj = static_cast<const schema::variant_type_info*>(fields[2].type);
+    EXPECT_EQ(adj->tagging, schema::tag_mode::adjacent);
+    EXPECT_EQ(adj->tag_field, "type");
+    EXPECT_EQ(adj->content_field, "value");
+    EXPECT_EQ(adj->alt_names.size(), 2U);
+    EXPECT_EQ(adj->alt_names[0], "integer");
+    EXPECT_EQ(adj->alt_names[1], "text");
 }
 
 };  // TEST_SUITE(virtual_schema_schema_attrs)

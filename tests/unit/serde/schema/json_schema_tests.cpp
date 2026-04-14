@@ -50,6 +50,11 @@
 
 namespace eventide::serde {
 
+struct json_schema_opaque_root {};
+
+template <>
+constexpr inline bool schema::schema_opaque<json_schema_opaque_root> = true;
+
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -250,6 +255,27 @@ struct var_none {
 struct var_three {
     std::variant<std::int32_t, std::string, bool> v;
 };
+
+struct tagged_circle {
+    double radius;
+};
+
+struct tagged_rect {
+    double width;
+    double height;
+};
+
+using root_external_variant =
+    annotation<std::variant<std::int32_t, std::string>,
+               schema::externally_tagged::names<"integer", "text">>;
+
+using root_internal_variant =
+    annotation<std::variant<tagged_circle, tagged_rect>,
+               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+
+using root_adjacent_variant =
+    annotation<std::variant<std::int32_t, std::string>,
+               schema::adjacently_tagged<"type", "value">::names<"integer", "text">>;
 
 // ---------------------------------------------------------------------------
 // Combinations
@@ -1090,7 +1116,7 @@ TEST_CASE(variant_internal_tag) {
     const auto result = js::render(&int_wrap);
     EXPECT_EQ(
         result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/point2d"},)" R"({"properties":{)" R"("type":{"const":"point"}}}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/inner"},)" R"({"properties":{)" R"("type":{"const":"inner"}}}]}]}},)" R"("required":["v"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]},)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/point2d"},)" R"({"properties":{)" R"("type":{"const":"point"}},)" R"("required":["type"]}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/inner"},)" R"({"properties":{)" R"("type":{"const":"inner"}},)" R"("required":["type"]}]}]}},)" R"("required":["v"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]},)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,6 +1159,32 @@ TEST_CASE(variant_adjacent_tag) {
     };
     const auto result = js::render(&adj_wrap);
     EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("t":{"const":"num"},)" R"("c":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["t","c"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("t":{"const":"text"},)" R"("c":{"type":"string"}},)" R"("required":["t","c"],)" R"("additionalProperties":false}]}},)" R"("required":["v"]})");
+}
+
+TEST_CASE(root_external_tagged_variant_via_public_api) {
+    const auto result = js::render(schema::type_info_of<root_external_variant>());
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("integer":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["integer"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("text":{"type":"string"}},)" R"("required":["text"],)" R"("additionalProperties":false}]})");
+}
+
+TEST_CASE(root_internal_tagged_variant_via_public_api) {
+    const auto result = js::render(schema::type_info_of<root_internal_variant>());
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/tagged_circle"},)" R"({"properties":{)" R"("kind":{"const":"circle"}},)" R"("required":["kind"]}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/tagged_rect"},)" R"({"properties":{)" R"("kind":{"const":"rect"}},)" R"("required":["kind"]}]}],)" R"("$defs":{)" R"("tagged_circle":{"type":"object",)" R"("properties":{)" R"("radius":{"type":"number"}},)" R"("required":["radius"]},)" R"("tagged_rect":{"type":"object",)" R"("properties":{)" R"("width":{"type":"number"},)" R"("height":{"type":"number"}},)" R"("required":["width","height"]}}})");
+}
+
+TEST_CASE(root_adjacent_tagged_variant_via_public_api) {
+    const auto result = js::render(schema::type_info_of<root_adjacent_variant>());
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("type":{"const":"integer"},)" R"("value":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["type","value"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("type":{"const":"text"},)" R"("value":{"type":"string"}},)" R"("required":["type","value"],)" R"("additionalProperties":false}]})");
+}
+
+TEST_CASE(opaque_root_renders_valid_json) {
+    const auto result = js::render(schema::type_info_of<json_schema_opaque_root>());
+    EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema"})");
 }
 
 // ---------------------------------------------------------------------------
