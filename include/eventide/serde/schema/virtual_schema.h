@@ -29,7 +29,7 @@ template <typename T, typename Config = serde::config::default_config>
 constexpr const type_info* type_info_of();
 
 template <typename T, typename Config = serde::config::default_config>
-    requires refl::reflectable_class<std::remove_cvref_t<T>>
+    requires refl::reflectable_class<T>
 struct virtual_schema;
 
 namespace detail {
@@ -232,11 +232,8 @@ struct filter_behavior_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_behavior_attrs_t = typename filter_behavior_attrs<Tuple>::type;
 
-template <typename T, typename = void>
-struct adapter_has_wire_type : std::false_type {};
-
 template <typename T>
-struct adapter_has_wire_type<T, std::void_t<typename T::wire_type>> : std::true_type {};
+constexpr bool has_wire_type_v = requires { typename T::wire_type; };
 
 template <typename AttrsTuple>
 constexpr bool has_with_wire_type_v = [] {
@@ -244,8 +241,7 @@ constexpr bool has_with_wire_type_v = [] {
         return false;
     } else {
         using with_attr = serde::detail::tuple_find_spec_t<AttrsTuple, serde::behavior::with>;
-        using adapter_t = typename with_attr::adapter;
-        return adapter_has_wire_type<adapter_t>::value;
+        return has_wire_type_v<typename with_attr::adapter>;
     }
 }();
 
@@ -356,15 +352,14 @@ consteval std::size_t single_field_count() {
 }
 
 template <typename T>
-    requires refl::reflectable_class<std::remove_cvref_t<T>>
+    requires refl::reflectable_class<T>
 consteval std::size_t effective_field_count() {
-    using V = std::remove_cvref_t<T>;
-    constexpr std::size_t N = refl::field_count<V>();
+    constexpr std::size_t N = refl::field_count<T>();
     if constexpr(N == 0) {
         return 0;
     } else {
         return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-            return (single_field_count<V, Is>() + ...);
+            return (single_field_count<T, Is>() + ...);
         }(std::make_index_sequence<N>{});
     }
 }
@@ -524,38 +519,39 @@ struct struct_info_node;
 /// Returns a pointer to a static type descriptor for T.
 template <typename T, typename Config>
 constexpr const type_info* type_info_of() {
-    using V = std::remove_cvref_t<T>;
-
-    if constexpr(schema_opaque<V>) {
+    // Strip cv-qualifiers: T may carry const from refl::field_type.
+    if constexpr(!std::is_same_v<T, std::remove_cv_t<T>>) {
+        return type_info_of<std::remove_cv_t<T>, Config>();
+    } else if constexpr(schema_opaque<T>) {
         constexpr static type_info info = {type_kind::unknown, refl::type_name<T>()};
         return &info;
-    } else if constexpr(is_optional_v<V>) {
-        using inner_t = typename V::value_type;
+    } else if constexpr(is_optional_v<T>) {
+        using inner_t = typename T::value_type;
         constexpr static optional_type_info info = {
             {type_kind::optional, refl::type_name<T>()},
             type_info_of<inner_t, Config>(),
         };
         return &info;
-    } else if constexpr(is_specialization_of<std::unique_ptr, V>) {
-        using inner_t = typename V::element_type;
+    } else if constexpr(is_specialization_of<std::unique_ptr, T>) {
+        using inner_t = typename T::element_type;
         constexpr static optional_type_info info = {
             {type_kind::pointer, refl::type_name<T>()},
             type_info_of<inner_t, Config>(),
         };
         return &info;
-    } else if constexpr(is_specialization_of<std::shared_ptr, V>) {
-        using inner_t = typename V::element_type;
+    } else if constexpr(is_specialization_of<std::shared_ptr, T>) {
+        using inner_t = typename T::element_type;
         constexpr static optional_type_info info = {
             {type_kind::pointer, refl::type_name<T>()},
             type_info_of<inner_t, Config>(),
         };
         return &info;
-    } else if constexpr(is_specialization_of<std::variant, V>) {
+    } else if constexpr(is_specialization_of<std::variant, T>) {
         return []<typename... Ts>(std::type_identity<std::variant<Ts...>>) {
             constexpr static std::array<const type_info*, sizeof...(Ts)> alts = {
                 type_info_of<Ts, Config>()...};
             constexpr static variant_type_info info = {
-                {type_kind::variant, refl::type_name<V>()},
+                {type_kind::variant, refl::type_name<T>()},
                 {alts.data(), alts.size()},
                 tag_mode::none,
                 {},
@@ -563,32 +559,32 @@ constexpr const type_info* type_info_of() {
                 {},
             };
             return &info;
-        }(std::type_identity<V>{});
-    } else if constexpr(is_specialization_of<std::pair, V>) {
+        }(std::type_identity<T>{});
+    } else if constexpr(is_specialization_of<std::pair, T>) {
         constexpr static std::array<const type_info*, 2> elems = {
-            type_info_of<typename V::first_type, Config>(),
-            type_info_of<typename V::second_type, Config>(),
+            type_info_of<typename T::first_type, Config>(),
+            type_info_of<typename T::second_type, Config>(),
         };
         constexpr static tuple_type_info info = {
             {type_kind::tuple, refl::type_name<T>()},
             {elems.data(),     elems.size()        },
         };
         return &info;
-    } else if constexpr(is_specialization_of<std::tuple, V>) {
+    } else if constexpr(is_specialization_of<std::tuple, T>) {
         return []<typename... Ts>(std::type_identity<std::tuple<Ts...>>) {
             constexpr static std::array<const type_info*, sizeof...(Ts)> elems = {
                 type_info_of<Ts, Config>()...};
             constexpr static tuple_type_info info = {
-                {type_kind::tuple, refl::type_name<V>()},
+                {type_kind::tuple, refl::type_name<T>()},
                 {elems.data(),     elems.size()        },
             };
             return &info;
-        }(std::type_identity<V>{});
-    } else if constexpr(std::ranges::input_range<V> && !serde::str_like<V> &&
-                        !serde::bytes_like<V>) {
-        constexpr auto fmt = format_kind<V>;
+        }(std::type_identity<T>{});
+    } else if constexpr(std::ranges::input_range<T> && !serde::str_like<T> &&
+                        !serde::bytes_like<T>) {
+        constexpr auto fmt = format_kind<T>;
         if constexpr(fmt == range_format::map) {
-            using kv_t = std::ranges::range_value_t<V>;
+            using kv_t = std::ranges::range_value_t<T>;
             using key_t = std::remove_const_t<typename kv_t::first_type>;
             using mapped_t = typename kv_t::second_type;
             constexpr static map_type_info info = {
@@ -598,30 +594,30 @@ constexpr const type_info* type_info_of() {
             };
             return &info;
         } else if constexpr(fmt == range_format::set) {
-            using element_t = std::ranges::range_value_t<V>;
+            using element_t = std::ranges::range_value_t<T>;
             constexpr static array_type_info info = {
                 {type_kind::set, refl::type_name<T>()},
                 type_info_of<element_t, Config>(),
             };
             return &info;
         } else {
-            using element_t = std::ranges::range_value_t<V>;
+            using element_t = std::ranges::range_value_t<T>;
             constexpr static array_type_info info = {
                 {type_kind::array, refl::type_name<T>()},
                 type_info_of<element_t, Config>(),
             };
             return &info;
         }
-    } else if constexpr(refl::reflectable_class<V>) {
-        return &detail::struct_info_node<V, Config>::value;
-    } else if constexpr(std::is_enum_v<V>) {
-        constexpr static auto& names = refl::reflection<V>::member_names;
-        constexpr static auto& values = detail::enum_values_as_i64<V>::values;
+    } else if constexpr(refl::reflectable_class<T>) {
+        return &detail::struct_info_node<T, Config>::value;
+    } else if constexpr(std::is_enum_v<T>) {
+        constexpr static auto& names = refl::reflection<T>::member_names;
+        constexpr static auto& values = detail::enum_values_as_i64<T>::values;
         constexpr static enum_type_info info = {
             {type_kind::enumeration, refl::type_name<T>()},
             {names.data(),           names.size()        },
             {values.data(),          values.size()       },
-            kind_of<std::underlying_type_t<V>>(),
+            kind_of<std::underlying_type_t<T>>(),
         };
         return &info;
     } else {
@@ -631,16 +627,14 @@ constexpr const type_info* type_info_of() {
 }
 
 template <typename T, typename Config>
-    requires refl::reflectable_class<std::remove_cvref_t<T>>
+    requires refl::reflectable_class<T>
 struct virtual_schema {
-    using V = std::remove_cvref_t<T>;
-
-    constexpr static std::size_t count = detail::effective_field_count<V>();
-    constexpr static std::array<field_info, count> fields = detail::build_fields<V, Config>();
-    using slots = detail::build_slots_t<V, Config>;
+    constexpr static std::size_t count = detail::effective_field_count<T>();
+    constexpr static std::array<field_info, count> fields = detail::build_fields<T, Config>();
+    using slots = detail::build_slots_t<T, Config>;
     constexpr static bool is_trivially_copyable =
-        std::is_trivial_v<V> && std::is_standard_layout_v<V>;
-    constexpr static bool deny_unknown = detail::has_deny_unknown_fields<V>();
+        std::is_trivial_v<T> && std::is_standard_layout_v<T>;
+    constexpr static bool deny_unknown = detail::has_deny_unknown_fields<T>();
 };
 
 namespace detail {

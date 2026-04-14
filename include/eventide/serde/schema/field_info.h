@@ -185,41 +185,41 @@ consteval type_kind floating_kind() {
 
 template <typename T>
 consteval type_kind kind_of() {
-    using V = std::remove_cvref_t<T>;
-
-    if constexpr(serde::annotated_type<V>) {
-        return kind_of<typename V::annotated_type>();
-    } else if constexpr(schema_opaque<V>) {
+    if constexpr(!std::is_same_v<T, std::remove_cv_t<T>>) {
+        return kind_of<std::remove_cv_t<T>>();
+    } else if constexpr(serde::annotated_type<T>) {
+        return kind_of<typename T::annotated_type>();
+    } else if constexpr(schema_opaque<T>) {
         return type_kind::unknown;
-    } else if constexpr(std::is_enum_v<V>) {
+    } else if constexpr(std::is_enum_v<T>) {
         return type_kind::enumeration;
-    } else if constexpr(serde::bool_like<V>) {
+    } else if constexpr(serde::bool_like<T>) {
         return type_kind::boolean;
-    } else if constexpr(serde::int_like<V>) {
-        return detail::signed_int_kind<V>();
-    } else if constexpr(serde::uint_like<V>) {
-        return detail::unsigned_int_kind<V>();
-    } else if constexpr(serde::floating_like<V>) {
-        return detail::floating_kind<V>();
-    } else if constexpr(serde::char_like<V>) {
+    } else if constexpr(serde::int_like<T>) {
+        return detail::signed_int_kind<T>();
+    } else if constexpr(serde::uint_like<T>) {
+        return detail::unsigned_int_kind<T>();
+    } else if constexpr(serde::floating_like<T>) {
+        return detail::floating_kind<T>();
+    } else if constexpr(serde::char_like<T>) {
         return type_kind::character;
-    } else if constexpr(serde::str_like<V>) {
+    } else if constexpr(serde::str_like<T>) {
         return type_kind::string;
-    } else if constexpr(serde::bytes_like<V>) {
+    } else if constexpr(serde::bytes_like<T>) {
         return type_kind::bytes;
-    } else if constexpr(serde::null_like<V>) {
+    } else if constexpr(serde::null_like<T>) {
         return type_kind::null;
-    } else if constexpr(is_optional_v<V>) {
+    } else if constexpr(is_optional_v<T>) {
         return type_kind::optional;
-    } else if constexpr(is_specialization_of<std::unique_ptr, V> ||
-                        is_specialization_of<std::shared_ptr, V>) {
+    } else if constexpr(is_specialization_of<std::unique_ptr, T> ||
+                        is_specialization_of<std::shared_ptr, T>) {
         return type_kind::pointer;
-    } else if constexpr(is_specialization_of<std::variant, V>) {
+    } else if constexpr(is_specialization_of<std::variant, T>) {
         return type_kind::variant;
-    } else if constexpr(serde::tuple_like<V>) {
+    } else if constexpr(serde::tuple_like<T>) {
         return type_kind::tuple;
-    } else if constexpr(std::ranges::input_range<V>) {
-        constexpr auto fmt = format_kind<V>;
+    } else if constexpr(std::ranges::input_range<T>) {
+        constexpr auto fmt = format_kind<T>;
         if constexpr(fmt == range_format::map) {
             return type_kind::map;
         } else if constexpr(fmt == range_format::set) {
@@ -227,7 +227,7 @@ consteval type_kind kind_of() {
         } else {
             return type_kind::array;
         }
-    } else if constexpr(refl::reflectable_class<V>) {
+    } else if constexpr(refl::reflectable_class<T>) {
         return type_kind::structure;
     } else {
         return type_kind::unknown;
