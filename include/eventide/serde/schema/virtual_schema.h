@@ -13,6 +13,7 @@
 
 #include "eventide/common/meta.h"
 #include "eventide/common/ranges.h"
+#include "eventide/reflection/enum.h"
 #include "eventide/reflection/struct.h"
 #include "eventide/serde/schema/field_info.h"
 #include "eventide/serde/schema/field_slot.h"
@@ -28,7 +29,7 @@ namespace eventide::serde::schema {
 // Forward declarations
 // ===================================================================
 
-template <typename T, typename Config>
+template <typename T, typename Config = serde::config::default_config>
 constexpr const type_info* type_info_of();
 
 template <typename T, typename Config = serde::config::default_config>
@@ -357,23 +358,29 @@ struct alias_storage {
     }();
 
     constexpr static std::size_t count = [] {
-        if constexpr(!has_alias) {
+        using field_t = refl::field_type<T, I>;
+        if constexpr(!serde::has_attrs<field_t>) {
+            return std::size_t{0};
+        } else if constexpr(!serde::detail::tuple_any_of_v<typename field_t::attrs,
+                                                           serde::is_alias_attr>) {
             return std::size_t{0};
         } else {
-            using field_t = refl::field_type<T, I>;
-            using attrs_t = typename field_t::attrs;
-            using alias_attr = serde::detail::tuple_find_t<attrs_t, serde::is_alias_attr>;
+            using alias_attr =
+                serde::detail::tuple_find_t<typename field_t::attrs, serde::is_alias_attr>;
             return alias_attr::names.size();
         }
     }();
 
     constexpr static auto names = [] {
-        if constexpr(!has_alias) {
+        using field_t = refl::field_type<T, I>;
+        if constexpr(!serde::has_attrs<field_t>) {
+            return std::array<std::string_view, 0>{};
+        } else if constexpr(!serde::detail::tuple_any_of_v<typename field_t::attrs,
+                                                           serde::is_alias_attr>) {
             return std::array<std::string_view, 0>{};
         } else {
-            using field_t = refl::field_type<T, I>;
-            using attrs_t = typename field_t::attrs;
-            using alias_attr = serde::detail::tuple_find_t<attrs_t, serde::is_alias_attr>;
+            using alias_attr =
+                serde::detail::tuple_find_t<typename field_t::attrs, serde::is_alias_attr>;
             return alias_attr::names;
         }
     }();
@@ -617,6 +624,30 @@ consteval bool has_deny_unknown_fields() {
     }
 }
 
+// ===================================================================
+// enum_values_as_i64 — convert enum member values to int64 for runtime access
+// ===================================================================
+
+template <typename E>
+    requires std::is_enum_v<E>
+struct enum_values_as_i64 {
+    constexpr static auto values = [] {
+        constexpr auto& src = refl::reflection<E>::member_values;
+        std::array<std::int64_t, src.size()> out{};
+        for(std::size_t i = 0; i < src.size(); ++i) {
+            out[i] = static_cast<std::int64_t>(static_cast<std::underlying_type_t<E>>(src[i]));
+        }
+        return out;
+    }();
+};
+
+/// Declaration only — address known, value defined after virtual_schema.
+/// Breaks self-referential constexpr cycles via declaration/definition separation.
+template <typename V, typename Config>
+struct struct_info_node {
+    static const struct_type_info value;
+};
+
 }  // namespace detail
 
 // ===================================================================
@@ -716,9 +747,15 @@ constexpr const type_info* type_info_of() {
             return &info;
         }
     } else if constexpr(refl::reflectable_class<V>) {
-        constexpr static struct_type_info info = {
-            {type_kind::structure, refl::type_name<T>()},
-            {}, // fields: obtain via virtual_schema<T, Config>::fields
+        return &detail::struct_info_node<V, Config>::value;
+    } else if constexpr(std::is_enum_v<V>) {
+        constexpr static auto& names = refl::reflection<V>::member_names;
+        constexpr static auto& values = detail::enum_values_as_i64<V>::values;
+        constexpr static enum_type_info info = {
+            {type_kind::enumeration, refl::type_name<T>()},
+            {names.data(),           names.size()        },
+            {values.data(),          values.size()       },
+            kind_of<std::underlying_type_t<V>>(),
         };
         return &info;
     } else {
@@ -745,8 +782,23 @@ struct virtual_schema {
     /// Per-field type-level slots for compile-time dispatch.
     using slots = detail::build_slots_t<V, Config>;
 
+    /// Whether the struct is trivially copyable (POD-like, candidate for inline/fixed-size layout).
+    constexpr static bool is_trivially_copyable =
+        std::is_trivial_v<V> && std::is_standard_layout_v<V>;
+
     /// Whether unknown fields should be rejected during deserialization.
     constexpr static bool deny_unknown = detail::has_deny_unknown_fields<V>();
 };
+
+namespace detail {
+
+template <typename V, typename Config>
+const struct_type_info struct_info_node<V, Config>::value = {
+    {type_kind::structure, refl::type_name<V>()},
+    {virtual_schema<V, Config>::fields.data(), virtual_schema<V, Config>::count},
+    virtual_schema<V, Config>::is_trivially_copyable,
+};
+
+}  // namespace detail
 
 }  // namespace eventide::serde::schema

@@ -117,9 +117,17 @@ struct map_type_info : type_info {
     const type_info* value;
 };
 
-/// struct — fields is a span over the struct's field_info array
+/// struct
 struct struct_type_info : type_info {
     std::span<const field_info> fields;
+    bool is_trivial_layout;
+};
+
+/// enum — runtime-accessible enum metadata
+struct enum_type_info : type_info {
+    std::span<const std::string_view> member_names;
+    std::span<const std::int64_t> member_values;
+    type_kind underlying_kind;
 };
 
 /// tuple / pair
