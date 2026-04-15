@@ -90,8 +90,8 @@ private:
             if(ft->kind == tk::boolean || ft->kind == tk::int8 || ft->kind == tk::int16 ||
                ft->kind == tk::int32 || ft->kind == tk::int64 || ft->kind == tk::uint8 ||
                ft->kind == tk::uint16 || ft->kind == tk::uint32 || ft->kind == tk::uint64 ||
-               ft->kind == tk::float32 || ft->kind == tk::float64 ||
-               ft->kind == tk::character || ft->kind == tk::enumeration) {
+               ft->kind == tk::float32 || ft->kind == tk::float64 || ft->kind == tk::character ||
+               ft->kind == tk::enumeration) {
                 continue;
             }
             if(!is_fbs_struct(ft)) {

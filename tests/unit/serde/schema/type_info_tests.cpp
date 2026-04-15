@@ -72,14 +72,28 @@ struct disabled_range_iter {
     using difference_type = std::ptrdiff_t;
 
     auto operator*() const -> disabled_range;
-    auto operator++() -> disabled_range_iter& { return *this; }
-    auto operator++(int) -> disabled_range_iter { return *this; }
-    auto operator==(std::default_sentinel_t) const -> bool { return true; }
+
+    auto operator++() -> disabled_range_iter& {
+        return *this;
+    }
+
+    auto operator++(int) -> disabled_range_iter {
+        return *this;
+    }
+
+    auto operator==(std::default_sentinel_t) const -> bool {
+        return true;
+    }
 };
 
 struct disabled_range {
-    auto begin() const -> disabled_range_iter { return {}; }
-    auto end() const -> std::default_sentinel_t { return {}; }
+    auto begin() const -> disabled_range_iter {
+        return {};
+    }
+
+    auto end() const -> std::default_sentinel_t {
+        return {};
+    }
 };
 
 inline auto disabled_range_iter::operator*() const -> disabled_range {

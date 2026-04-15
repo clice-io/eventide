@@ -737,9 +737,9 @@ constexpr const type_info* type_info_of() {
             constexpr static auto& values = detail::enum_values_as_u64<T>::values;
             constexpr static enum_type_info info = {
                 {type_kind::enumeration, refl::type_name<T>()},
-                {names.data(),           names.size()        },
+                {names.data(), names.size()},
                 {},
-                {values.data(),          values.size()       },
+                {values.data(), values.size()},
                 kind_of<underlying_t>(),
             };
             return &info;
@@ -747,8 +747,8 @@ constexpr const type_info* type_info_of() {
             constexpr static auto& values = detail::enum_values_as_i64<T>::values;
             constexpr static enum_type_info info = {
                 {type_kind::enumeration, refl::type_name<T>()},
-                {names.data(),           names.size()        },
-                {values.data(),          values.size()       },
+                {names.data(), names.size()},
+                {values.data(), values.size()},
                 {},
                 kind_of<underlying_t>(),
             };
