@@ -458,11 +458,11 @@ struct enum_values_as_u64 {
 template <typename V, typename Config>
 struct struct_info_node {
     constexpr static std::size_t count = effective_field_count<V>();
+    const static struct_type_info value;
     const static std::array<field_info, count> fields;
     constexpr static bool is_trivially_copyable =
         std::is_trivial_v<V> && std::is_standard_layout_v<V>;
     constexpr static bool deny_unknown = has_deny_unknown_fields<V>();
-    const static struct_type_info value;
 };
 
 template <typename V, typename Config, typename AttrsTuple>
@@ -663,16 +663,16 @@ constexpr const type_info* type_info_of() {
 namespace detail {
 
 template <typename V, typename Config>
-constexpr inline std::array<field_info, struct_info_node<V, Config>::count>
-    struct_info_node<V, Config>::fields = build_fields<V, Config>();
-
-template <typename V, typename Config>
 constexpr inline struct_type_info struct_info_node<V, Config>::value = {
     {type_kind::structure, refl::type_name<V>()},
     {fields.data(),        count               },
     is_trivially_copyable,
     deny_unknown,
 };
+
+template <typename V, typename Config>
+constexpr inline std::array<field_info, struct_info_node<V, Config>::count>
+    struct_info_node<V, Config>::fields = build_fields<V, Config>();
 
 template <typename V, typename Config, typename AttrsTuple>
 constexpr inline std::array<field_info, annotated_struct_info_node<V, Config, AttrsTuple>::count>
