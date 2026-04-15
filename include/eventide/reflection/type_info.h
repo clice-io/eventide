@@ -405,14 +405,14 @@ consteval auto build_fields(std::size_t base_offset = 0) {
 
 template <typename T, typename Config, std::size_t I>
 consteval void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
-    using field_t_ = refl::field_type<T, I>;
-    using attrs_t_ = typename unwrap_annotated<field_t_>::attrs;
-    constexpr bool skipped = tuple_has_v<attrs_t_, attrs::skip>;
-    constexpr bool flattened = tuple_has_v<attrs_t_, attrs::flatten>;
+    using field_t = refl::field_type<T, I>;
+    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
+    constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
 
     if constexpr(skipped) {
     } else if constexpr(flattened) {
-        using inner_t = typename unwrap_annotated<field_t_>::raw_type;
+        using inner_t = typename unwrap_annotated<field_t>::raw_type;
         std::size_t inner_offset = base_offset + refl::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {

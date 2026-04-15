@@ -245,11 +245,11 @@ consteval bool is_field_excluded() {
 template <typename T, std::size_t I>
     requires reflectable_class<T>
 consteval bool is_field_skipped() {
-    using field_t_ = field_type<T, I>;
-    if constexpr(!annotated_type<field_t_>) {
+    using field_t = field_type<T, I>;
+    if constexpr(!annotated_type<field_t>) {
         return false;
     } else {
-        return tuple_has_v<typename field_t_::attrs, skip>;
+        return tuple_has_v<typename field_t::attrs, skip>;
     }
 }
 
@@ -257,11 +257,11 @@ consteval bool is_field_skipped() {
 template <typename T, std::size_t I>
     requires reflectable_class<T>
 consteval bool is_field_flattened() {
-    using field_t_ = field_type<T, I>;
-    if constexpr(!annotated_type<field_t_>) {
+    using field_t = field_type<T, I>;
+    if constexpr(!annotated_type<field_t>) {
         return false;
     } else {
-        return tuple_has_v<typename field_t_::attrs, flatten>;
+        return tuple_has_v<typename field_t::attrs, flatten>;
     }
 }
 
@@ -269,11 +269,11 @@ namespace detail {
 
 template <typename T, std::size_t I>
 consteval bool field_has_alias() {
-    using field_t_ = field_type<T, I>;
-    if constexpr(!annotated_type<field_t_>) {
+    using field_t = field_type<T, I>;
+    if constexpr(!annotated_type<field_t>) {
         return false;
     } else {
-        return tuple_any_of_v<typename field_t_::attrs, is_alias_attr>;
+        return tuple_any_of_v<typename field_t::attrs, is_alias_attr>;
     }
 }
 
@@ -282,8 +282,8 @@ consteval std::size_t alias_count() {
     if constexpr(!field_has_alias<T, I>()) {
         return 0;
     } else {
-        using field_t_ = field_type<T, I>;
-        using attrs_t = typename field_t_::attrs;
+        using field_t = field_type<T, I>;
+        using attrs_t = typename field_t::attrs;
         using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
         return alias_attr::names.size();
     }
@@ -322,9 +322,9 @@ consteval bool validate_field_schema() {
             if constexpr(!detail::field_has_alias<T, I>()) {
                 return true;
             } else {
-                using field_t_ = field_type<T, I>;
-                using attrs_t_ = typename field_t_::attrs;
-                using alias_attr = tuple_find_t<attrs_t_, is_alias_attr>;
+                using field_t = field_type<T, I>;
+                using attrs_t = typename field_t::attrs;
+                using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
                 for(auto alias_name: alias_attr::names) {
                     for(std::size_t j = 0; j < sizeof...(Is); ++j) {
                         if(j == I || excluded[j])
