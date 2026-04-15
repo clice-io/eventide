@@ -95,12 +95,10 @@ struct TaggedRect {
 };
 
 using ExternalTagged =
-    annotation<std::variant<int, std::string>,
-               schema::externally_tagged::names<"integer", "text">>;
+    annotation<std::variant<int, std::string>, schema::externally_tagged::names<"integer", "text">>;
 
-using InternalTagged =
-    annotation<std::variant<TaggedCircle, TaggedRect>,
-               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+using InternalTagged = annotation<std::variant<TaggedCircle, TaggedRect>,
+                                  schema::internally_tagged<"kind">::names<"circle", "rect">>;
 
 using AdjacentTagged =
     annotation<std::variant<int, std::string>,

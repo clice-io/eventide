@@ -65,7 +65,7 @@ public:
     }
 
 private:
-    static const type_info* unwrap(const type_info* ti) {
+    const static type_info* unwrap(const type_info* ti) {
         while(ti->kind == tk::optional || ti->kind == tk::pointer) {
             ti = static_cast<const optional_type_info*>(ti)->inner;
         }

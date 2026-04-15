@@ -299,8 +299,9 @@ struct unwrap_annotated<T> {
     using attrs = typename std::remove_cvref_t<T>::attrs;
 };
 
-template <typename BaseConfig, typename AttrsTuple, bool HasRenameAll =
-              serde::detail::tuple_has_spec_v<AttrsTuple, schema::rename_all>>
+template <typename BaseConfig,
+          typename AttrsTuple,
+          bool HasRenameAll = serde::detail::tuple_has_spec_v<AttrsTuple, schema::rename_all>>
 struct struct_schema_config {
     using type = BaseConfig;
 };
@@ -550,7 +551,7 @@ struct annotated_struct_info_node {
 
     const inline static struct_type_info value = {
         {type_kind::structure, refl::type_name<V>()},
-        {fields.data(), count},
+        {fields.data(),        count               },
         is_trivially_copyable,
         deny_unknown,
     };
@@ -586,12 +587,12 @@ struct annotated_variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
         tagging == tag_mode::adjacent ? tag_attr::field_names[1] : std::string_view{};
 
     const inline static variant_type_info value = {
-        {type_kind::variant, refl::type_name<variant_t>()},
-        {alternatives.data(), alternatives.size()},
+        {type_kind::variant,  refl::type_name<variant_t>()},
+        {alternatives.data(), alternatives.size()         },
         tagging,
         tag_field,
         content_field,
-        {alt_names.data(), alt_names.size()},
+        {alt_names.data(),    alt_names.size()            },
     };
 };
 

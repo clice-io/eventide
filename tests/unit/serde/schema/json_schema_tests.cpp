@@ -265,9 +265,8 @@ struct tagged_rect {
     double height;
 };
 
-using root_external_variant =
-    annotation<std::variant<std::int32_t, std::string>,
-               schema::externally_tagged::names<"integer", "text">>;
+using root_external_variant = annotation<std::variant<std::int32_t, std::string>,
+                                         schema::externally_tagged::names<"integer", "text">>;
 
 using root_internal_variant =
     annotation<std::variant<tagged_circle, tagged_rect>,
@@ -1114,9 +1113,8 @@ TEST_CASE(variant_internal_tag) {
         false,
     };
     const auto result = js::render(&int_wrap);
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/point2d"},)" R"({"properties":{)" R"("type":{"const":"point"}},)" R"("required":["type"]}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/inner"},)" R"({"properties":{)" R"("type":{"const":"inner"}},)" R"("required":["type"]}]}]}},)" R"("required":["v"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]},)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"allOf":[)" R"({"$ref":"#/$defs/point2d"},)" R"({"properties":{)" R"("type":{"const":"point"}},)" R"("required":["type"]}]},)" R"({"allOf":[)" R"({"$ref":"#/$defs/inner"},)" R"({"properties":{)" R"("type":{"const":"inner"}},)" R"("required":["type"]}]}]}},)" R"("required":["v"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]},)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
 }
 
 // ---------------------------------------------------------------------------

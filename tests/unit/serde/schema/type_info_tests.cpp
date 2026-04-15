@@ -52,9 +52,8 @@ struct Rect {
     double height;
 };
 
-using TaggedRoot =
-    annotation<std::variant<Circle, Rect>,
-               schema::internally_tagged<"kind">::names<"circle", "rect">>;
+using TaggedRoot = annotation<std::variant<Circle, Rect>,
+                              schema::internally_tagged<"kind">::names<"circle", "rect">>;
 
 }  // namespace test_schema
 
@@ -250,7 +249,8 @@ TEST_CASE(annotated_type_info) {
         constexpr auto& info = *type_info_of<test_schema::RenamedRoot, default_config>();
         EXPECT_EQ(info.kind, type_kind::structure);
 
-        auto* si = static_cast<const schema::struct_type_info*>(static_cast<const type_info*>(&info));
+        auto* si =
+            static_cast<const schema::struct_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(si->fields.size(), 2U);
         EXPECT_EQ(si->fields[0].name, "userName");
         EXPECT_EQ(si->fields[1].name, "displayName");
@@ -261,7 +261,8 @@ TEST_CASE(annotated_type_info) {
         constexpr auto& info = *type_info_of<test_schema::StrictRoot, default_config>();
         EXPECT_EQ(info.kind, type_kind::structure);
 
-        auto* si = static_cast<const schema::struct_type_info*>(static_cast<const type_info*>(&info));
+        auto* si =
+            static_cast<const schema::struct_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(si->fields.size(), 2U);
         EXPECT_TRUE(si->deny_unknown);
     }
@@ -270,8 +271,7 @@ TEST_CASE(annotated_type_info) {
         constexpr auto& info = *type_info_of<test_schema::TaggedRoot, default_config>();
         EXPECT_EQ(info.kind, type_kind::variant);
 
-        auto* var =
-            static_cast<const variant_type_info*>(static_cast<const type_info*>(&info));
+        auto* var = static_cast<const variant_type_info*>(static_cast<const type_info*>(&info));
         EXPECT_EQ(var->tagging, schema::tag_mode::internal);
         EXPECT_EQ(var->alternatives.size(), 2U);
         EXPECT_EQ(var->alternatives[0]->kind, type_kind::structure);
