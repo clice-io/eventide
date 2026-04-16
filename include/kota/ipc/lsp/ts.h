@@ -18,11 +18,11 @@
 namespace kota::ipc::protocol {
 
 /// For `undefined | bool` .
-using optional_bool = refl::skip_if_default<bool>;
+using optional_bool = meta::skip_if_default<bool>;
 
 /// For `undefined | T` .
 template <typename T>
-using optional = refl::skip_if_none<T>;
+using optional = meta::skip_if_none<T>;
 
 /// For `a: T | null`
 template <typename T>
@@ -36,10 +36,10 @@ template <typename... Ts>
 using optional_variant = optional<variant<Ts...>>;
 
 /// For multiple inherit.
-using refl::flatten;
+using meta::flatten;
 
 /// For closed string enum.
-using refl::enum_string;
+using meta::enum_string;
 
 /// For empty object literal.
 struct LspEmptyObject {};

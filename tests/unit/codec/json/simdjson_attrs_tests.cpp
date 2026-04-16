@@ -54,11 +54,11 @@ struct struct_level_payload {
 };
 
 using renamed_struct_level_payload =
-    annotation<struct_level_payload, refl::attrs::rename_all<refl::rename_policy::lower_camel>>;
+    annotation<struct_level_payload, meta::attrs::rename_all<meta::rename_policy::lower_camel>>;
 using strict_renamed_struct_level_payload =
     annotation<struct_level_payload,
-               refl::attrs::rename_all<refl::rename_policy::lower_camel>,
-               refl::attrs::deny_unknown_fields>;
+               meta::attrs::rename_all<meta::rename_policy::lower_camel>,
+               meta::attrs::deny_unknown_fields>;
 
 TEST_SUITE(serde_simdjson_attrs) {
 

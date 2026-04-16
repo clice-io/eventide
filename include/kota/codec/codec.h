@@ -29,32 +29,32 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
 
     if constexpr(requires { Serde::serialize(s, v); }) {
         return Serde::serialize(s, v);
-    } else if constexpr(refl::annotated_type<V>) {
+    } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = refl::annotated_value(v);
+        auto&& value = meta::annotated_value(v);
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         // Field-only attrs at value level are errors
-        static_assert(!tuple_has_v<attrs_t, refl::attrs::skip>,
+        static_assert(!tuple_has_v<attrs_t, meta::attrs::skip>,
                       "schema::skip is only valid for struct fields");
-        static_assert(!tuple_has_v<attrs_t, refl::attrs::flatten>,
+        static_assert(!tuple_has_v<attrs_t, meta::attrs::flatten>,
                       "schema::flatten is only valid for struct fields");
 
         // Tagged variant dispatch
         if constexpr(is_specialization_of<std::variant, value_t> &&
-                     tuple_any_of_v<attrs_t, refl::is_tagged_attr>) {
-            using tag_attr = tuple_find_t<attrs_t, refl::is_tagged_attr>;
-            constexpr auto strategy = refl::tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == refl::tagged_strategy::external) {
+                     tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
+            constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
+            if constexpr(strategy == meta::tagged_strategy::external) {
                 return detail::serialize_externally_tagged<E>(s, value, tag_attr{});
-            } else if constexpr(strategy == refl::tagged_strategy::internal) {
+            } else if constexpr(strategy == meta::tagged_strategy::internal) {
                 return detail::serialize_internally_tagged<E>(s, value, tag_attr{});
             } else {
                 return detail::serialize_adjacently_tagged<E>(s, value, tag_attr{});
             }
         }
         // Behavior: with/as/enum_string — delegate to apply_serialize_behavior
-        else if constexpr(tuple_count_of_v<attrs_t, refl::is_behavior_provider> > 0) {
+        else if constexpr(tuple_count_of_v<attrs_t, meta::is_behavior_provider> > 0) {
             return *detail::apply_serialize_behavior<attrs_t, value_t, E>(
                 value,
                 [&](const auto& v) { return serialize(s, v); },
@@ -64,9 +64,9 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                 });
         }
         // Struct-level schema attrs for annotated structs
-        else if constexpr(refl::reflectable_class<value_t> &&
-                          (tuple_has_spec_v<attrs_t, refl::attrs::rename_all> ||
-                           tuple_has_v<attrs_t, refl::attrs::deny_unknown_fields>)) {
+        else if constexpr(meta::reflectable_class<value_t> &&
+                          (tuple_has_spec_v<attrs_t, meta::attrs::rename_all> ||
+                           tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
             using base_config_t = config::config_of<S>;
             using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
             return detail::serialize_reflectable<struct_config_t, E>(s, value);
@@ -162,7 +162,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         } else {
             static_assert(dependent_false<V>, "cannot auto serialize the input range");
         }
-    } else if constexpr(refl::reflectable_class<V>) {
+    } else if constexpr(meta::reflectable_class<V>) {
         using config_t = config::config_of<S>;
         return detail::serialize_reflectable<config_t, E>(s, v);
     } else {
@@ -177,32 +177,32 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
 
     if constexpr(requires { Deserde::deserialize(d, v); }) {
         return Deserde::deserialize(d, v);
-    } else if constexpr(refl::annotated_type<V>) {
+    } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename std::remove_cvref_t<V>::attrs;
-        auto&& value = refl::annotated_value(v);
+        auto&& value = meta::annotated_value(v);
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         // Field-only attrs at value level are errors
-        static_assert(!tuple_has_v<attrs_t, refl::attrs::skip>,
+        static_assert(!tuple_has_v<attrs_t, meta::attrs::skip>,
                       "schema::skip is only valid for struct fields");
-        static_assert(!tuple_has_v<attrs_t, refl::attrs::flatten>,
+        static_assert(!tuple_has_v<attrs_t, meta::attrs::flatten>,
                       "schema::flatten is only valid for struct fields");
 
         // Tagged variant dispatch
         if constexpr(is_specialization_of<std::variant, value_t> &&
-                     tuple_any_of_v<attrs_t, refl::is_tagged_attr>) {
-            using tag_attr = tuple_find_t<attrs_t, refl::is_tagged_attr>;
-            constexpr auto strategy = refl::tagged_strategy_of<tag_attr>;
-            if constexpr(strategy == refl::tagged_strategy::external) {
+                     tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
+            constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
+            if constexpr(strategy == meta::tagged_strategy::external) {
                 return detail::deserialize_externally_tagged<E>(d, value, tag_attr{});
-            } else if constexpr(strategy == refl::tagged_strategy::internal) {
+            } else if constexpr(strategy == meta::tagged_strategy::internal) {
                 return detail::deserialize_internally_tagged<E>(d, value, tag_attr{});
             } else {
                 return detail::deserialize_adjacently_tagged<E>(d, value, tag_attr{});
             }
         }
         // Behavior: with/as/enum_string — delegate to apply_deserialize_behavior
-        else if constexpr(tuple_count_of_v<attrs_t, refl::is_behavior_provider> > 0) {
+        else if constexpr(tuple_count_of_v<attrs_t, meta::is_behavior_provider> > 0) {
             return *detail::apply_deserialize_behavior<attrs_t, value_t, E>(
                 value,
                 [&](auto& v) { return deserialize(d, v); },
@@ -212,12 +212,12 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 });
         }
         // Struct-level schema attrs for annotated structs
-        else if constexpr(refl::reflectable_class<value_t> &&
-                          (tuple_has_spec_v<attrs_t, refl::attrs::rename_all> ||
-                           tuple_has_v<attrs_t, refl::attrs::deny_unknown_fields>)) {
+        else if constexpr(meta::reflectable_class<value_t> &&
+                          (tuple_has_spec_v<attrs_t, meta::attrs::rename_all> ||
+                           tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
             using base_config_t = config::config_of<D>;
             using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
-            constexpr bool deny_unknown = tuple_has_v<attrs_t, refl::attrs::deny_unknown_fields>;
+            constexpr bool deny_unknown = tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>;
             return detail::deserialize_reflectable<struct_config_t, E, deny_unknown>(d, value);
         }
         // Default: deserialize the underlying value
@@ -439,7 +439,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         } else {
             static_assert(dependent_false<V>, "cannot auto deserialize the input range");
         }
-    } else if constexpr(refl::reflectable_class<V>) {
+    } else if constexpr(meta::reflectable_class<V>) {
         using config_t = config::config_of<D>;
         return detail::deserialize_reflectable<config_t, E, false>(d, v);
     } else {

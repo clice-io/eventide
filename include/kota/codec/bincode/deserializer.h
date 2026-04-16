@@ -483,25 +483,25 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
     -> std::expected<void, E> {
     using field_t = typename std::remove_cvref_t<decltype(field)>::type;
 
-    if constexpr(!refl::annotated_type<field_t>) {
+    if constexpr(!meta::annotated_type<field_t>) {
         KOTA_EXPECTED_TRY(serde::deserialize(deserializer, field.value()));
         return {};
     } else {
         using attrs_t = typename std::remove_cvref_t<field_t>::attrs;
-        auto&& value = refl::annotated_value(field.value());
+        auto&& value = meta::annotated_value(field.value());
         using value_t = std::remove_cvref_t<decltype(value)>;
 
         // schema::skip excludes the field from the wire format.
-        if constexpr(tuple_has_v<attrs_t, refl::attrs::skip>) {
+        if constexpr(tuple_has_v<attrs_t, meta::attrs::skip>) {
             return {};
         }
         // schema::flatten in bincode is equivalent to inlining nested field sequence.
-        else if constexpr(tuple_has_v<attrs_t, refl::attrs::flatten>) {
-            static_assert(refl::reflectable_class<value_t>,
+        else if constexpr(tuple_has_v<attrs_t, meta::attrs::flatten>) {
+            static_assert(meta::reflectable_class<value_t>,
                           "schema::flatten requires a reflectable class field type");
 
             std::expected<void, E> nested_status{};
-            refl::for_each(value, [&](auto nested_field) {
+            meta::for_each(value, [&](auto nested_field) {
                 auto status =
                     deserialize_sequential_struct_field<Config, E>(deserializer, nested_field);
                 if(!status) {
@@ -512,10 +512,10 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
             });
             return nested_status;
         } else {
-            if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::skip_if>) {
-                using skip_if_attr = tuple_find_spec_t<attrs_t, refl::behavior::skip_if>;
+            if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+                using skip_if_attr = tuple_find_spec_t<attrs_t, meta::behavior::skip_if>;
                 using Pred = typename skip_if_attr::predicate;
-                if(refl::evaluate_skip_predicate<Pred>(value, false)) {
+                if(meta::evaluate_skip_predicate<Pred>(value, false)) {
                     using consume_t = std::remove_cvref_t<decltype(field.value())>;
                     static_assert(std::default_initializable<consume_t>,
                                   "bincode behavior::skip_if requires default-initializable field");
@@ -535,7 +535,7 @@ constexpr auto deserialize_sequential_struct_field(D& deserializer, Field field)
 }  // namespace detail
 
 template <typename Config, typename T>
-    requires (refl::reflectable_class<std::remove_cvref_t<T>> &&
+    requires (meta::reflectable_class<std::remove_cvref_t<T>> &&
               !std::ranges::input_range<std::remove_cvref_t<T>>)
 struct deserialize_traits<bincode::Deserializer<Config>, T> {
     using deserializer_t = bincode::Deserializer<Config>;
@@ -545,7 +545,7 @@ struct deserialize_traits<bincode::Deserializer<Config>, T> {
         -> std::expected<void, error_type> {
         std::expected<void, error_type> field_status{};
 
-        refl::for_each(value, [&](auto field) {
+        meta::for_each(value, [&](auto field) {
             auto status =
                 detail::deserialize_sequential_struct_field<Config, error_type>(deserializer,
                                                                                 field);

@@ -3,7 +3,7 @@
 #include <source_location>
 #include <type_traits>
 
-#include "../common/string_ref.h"
+#include "../support/string_ref.h"
 
 namespace kota::meta::detail {
 

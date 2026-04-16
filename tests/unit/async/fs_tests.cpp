@@ -10,7 +10,7 @@
 #endif
 
 #include "loop_fixture.h"
-#include "../common/fd_helpers.h"
+#include "../support/fd_helpers.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

@@ -133,10 +133,10 @@ constexpr std::string apply_rename_cx(std::string_view input) {
 
 template <typename T, std::size_t I, typename Policy>
 struct wire_name_static {
-    constexpr static std::size_t len = apply_rename_cx<Policy>(refl::field_name<I, T>()).size();
+    constexpr static std::size_t len = apply_rename_cx<Policy>(meta::field_name<I, T>()).size();
 
     constexpr static auto storage = [] {
-        auto renamed = apply_rename_cx<Policy>(refl::field_name<I, T>());
+        auto renamed = apply_rename_cx<Policy>(meta::field_name<I, T>());
         std::array<char, len> arr{};
         for(std::size_t i = 0; i < len; ++i)
             arr[i] = renamed[i];
@@ -148,7 +148,7 @@ struct wire_name_static {
 
 template <typename T, std::size_t I>
 constexpr bool field_has_explicit_rename() {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     if constexpr(!annotated_type<field_t>) {
         return false;
     } else {
@@ -291,7 +291,7 @@ struct type_instance;
 
 template <typename T, std::size_t I>
 constexpr bool has_alias_attr() {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
     return tuple_any_of_v<attrs_t, is_alias_attr>;
 }
@@ -307,7 +307,7 @@ template <typename T, std::size_t I>
 struct alias_storage<T, I, true> {
     constexpr static bool has_alias = true;
 
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
     using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
 
@@ -319,9 +319,9 @@ template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();
 
 template <typename T>
-    requires refl::reflectable_class<T>
+    requires meta::reflectable_class<T>
 constexpr std::size_t effective_field_count() {
-    constexpr std::size_t N = refl::field_count<T>();
+    constexpr std::size_t N = meta::field_count<T>();
     if constexpr(N == 0) {
         return 0;
     } else {
@@ -333,7 +333,7 @@ constexpr std::size_t effective_field_count() {
 
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count() {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
     constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
     constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
@@ -342,7 +342,7 @@ constexpr std::size_t single_field_count() {
         return 0;
     } else if constexpr(flattened) {
         using inner_t = std::remove_cvref_t<typename unwrap_annotated<field_t>::raw_type>;
-        static_assert(refl::reflectable_class<inner_t>,
+        static_assert(meta::reflectable_class<inner_t>,
                       "flatten requires the field type to be a reflectable struct");
         return effective_field_count<inner_t>();
     } else {
@@ -352,7 +352,7 @@ constexpr std::size_t single_field_count() {
 
 template <typename T, std::size_t I>
 struct field_attr_flags {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
     constexpr static bool skipped = tuple_has_v<attrs_t, attrs::skip>;
     constexpr static bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
@@ -374,7 +374,7 @@ template <typename E, typename IntT>
     requires std::is_enum_v<E>
 struct enum_values_as {
     constexpr static auto values = [] {
-        constexpr auto& src = refl::reflection<E>::member_values;
+        constexpr auto& src = meta::reflection<E>::member_values;
         std::array<IntT, src.size()> out{};
         for(std::size_t i = 0; i < src.size(); ++i) {
             out[i] = static_cast<IntT>(static_cast<std::underlying_type_t<E>>(src[i]));
@@ -396,7 +396,7 @@ struct struct_info_node {
         build_fields<V, schema_config>();
 
     constexpr inline static struct_type_info value = {
-        {type_kind::structure, refl::type_name<V>()},
+        {type_kind::structure, meta::type_name<V>()},
         deny_unknown,
         is_trivially_copyable,
         {fields.data(),        count               },
@@ -466,7 +466,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     }();
 
     constexpr inline static variant_type_info value = {
-        {type_kind::variant,  refl::type_name<variant_t>()  },
+        {type_kind::variant,  meta::type_name<variant_t>()  },
         {alternatives.data(), alternatives.size()           },
         tagging,
         tag_field,
@@ -486,7 +486,7 @@ struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
         &type_instance<std::tuple_element_t<Is, Tuple>, Config>::value...};
 
     constexpr inline static tuple_type_info value = {
-        {type_kind::tuple, refl::type_name<Tuple>()},
+        {type_kind::tuple, meta::type_name<Tuple>()},
         {elements.data(),  elements.size()         },
     };
 };
@@ -498,7 +498,7 @@ struct type_instance {
 
     constexpr inline static type_info value = {
         kind_of<wire_t>(),
-        refl::type_name<wire_t>(),
+        meta::type_name<wire_t>(),
     };
 };
 
@@ -509,7 +509,7 @@ struct type_instance<T, Config, type_kind::optional> {
     using inner_t = typename wire_t::value_type;
 
     constexpr inline static optional_type_info value = {
-        {type_kind::optional, refl::type_name<wire_t>()},
+        {type_kind::optional, meta::type_name<wire_t>()},
         &type_instance<inner_t, Config>::value,
     };
 };
@@ -521,7 +521,7 @@ struct type_instance<T, Config, type_kind::pointer> {
     using inner_t = typename wire_t::element_type;
 
     constexpr inline static optional_type_info value = {
-        {type_kind::pointer, refl::type_name<wire_t>()},
+        {type_kind::pointer, meta::type_name<wire_t>()},
         &type_instance<inner_t, Config>::value,
     };
 };
@@ -551,7 +551,7 @@ struct type_instance<T, Config, type_kind::map> {
     using mapped_t = typename kv_t::second_type;
 
     constexpr inline static map_type_info value = {
-        {type_kind::map, refl::type_name<wire_t>()},
+        {type_kind::map, meta::type_name<wire_t>()},
         &type_instance<key_t, Config>::value,
         &type_instance<mapped_t, Config>::value,
     };
@@ -563,7 +563,7 @@ struct type_instance<T, Config, type_kind::set> {
     using element_t = std::ranges::range_value_t<wire_t>;
 
     constexpr inline static array_type_info value = {
-        {type_kind::set, refl::type_name<wire_t>()},
+        {type_kind::set, meta::type_name<wire_t>()},
         &type_instance<element_t, Config>::value,
     };
 };
@@ -574,7 +574,7 @@ struct type_instance<T, Config, type_kind::array> {
     using element_t = std::ranges::range_value_t<wire_t>;
 
     constexpr inline static array_type_info value = {
-        {type_kind::array, refl::type_name<wire_t>()},
+        {type_kind::array, meta::type_name<wire_t>()},
         &type_instance<element_t, Config>::value,
     };
 };
@@ -597,14 +597,14 @@ constexpr struct_type_info type_instance<T, Config, type_kind::structure>::value
 template <typename T, typename Config>
 struct type_instance<T, Config, type_kind::enumeration> {
     using wire_t = typename type_instance_subject<T>::wire_t;
-    constexpr static auto& names = refl::reflection<wire_t>::member_names;
+    constexpr static auto& names = meta::reflection<wire_t>::member_names;
     using underlying_t = std::underlying_type_t<wire_t>;
 
     constexpr inline static enum_type_info value = [] {
         if constexpr(std::is_unsigned_v<underlying_t> && sizeof(underlying_t) == 8) {
             constexpr auto& values = enum_values_as<wire_t, std::uint64_t>::values;
             return enum_type_info{
-                {type_kind::enumeration, refl::type_name<wire_t>()},
+                {type_kind::enumeration, meta::type_name<wire_t>()},
                 {names.data(), names.size()},
                 {},
                 {values.data(), values.size()},
@@ -613,7 +613,7 @@ struct type_instance<T, Config, type_kind::enumeration> {
         } else {
             constexpr auto& values = enum_values_as<wire_t, std::int64_t>::values;
             return enum_type_info{
-                {type_kind::enumeration, refl::type_name<wire_t>()},
+                {type_kind::enumeration, meta::type_name<wire_t>()},
                 {names.data(), names.size()},
                 {values.data(), values.size()},
                 {},
@@ -628,7 +628,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
 template <typename T, typename Config, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
 
     std::string_view name = resolve_wire_name<T, I, Config>();
@@ -636,7 +636,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     auto& alias_arr = alias_storage<T, I>::names;
     std::span<const std::string_view> aliases{alias_arr.data(), alias_arr.size()};
 
-    std::size_t offset = base_offset + refl::field_offset<T>(I);
+    std::size_t offset = base_offset + meta::field_offset<T>(I);
     constexpr bool has_default = tuple_has_v<attrs_t, attrs::default_value>;
     constexpr bool is_literal = tuple_any_of_v<attrs_t, is_literal_attr>;
     constexpr bool has_skip_if = tuple_has_spec_v<attrs_t, behavior::skip_if>;
@@ -660,7 +660,7 @@ constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset) {
     built_fields_t<T, Config> result{};
     std::size_t out = 0;
 
-    constexpr std::size_t N = refl::field_count<T>();
+    constexpr std::size_t N = meta::field_count<T>();
     if constexpr(N > 0) {
         [&]<std::size_t... Is>(std::index_sequence<Is...>) constexpr {
             (fill_field<T, Config, Is>(result, out, base_offset), ...);
@@ -672,7 +672,7 @@ constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset) {
 
 template <typename T, typename Config, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
     constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
     constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
@@ -680,7 +680,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
     if constexpr(skipped) {
     } else if constexpr(flattened) {
         using inner_t = typename unwrap_annotated<field_t>::raw_type;
-        std::size_t inner_offset = base_offset + refl::field_offset<T>(I);
+        std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {
             result[out++] = inner[i];

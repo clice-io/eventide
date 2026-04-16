@@ -117,8 +117,8 @@ using scalar_storage_t = typename scalar_storage<std::remove_cvref_t<T>>::type;
 template <typename Object>
 consteval auto field_offsets() {
     return []<std::size_t... I>(std::index_sequence<I...>) {
-        return std::array<std::size_t, sizeof...(I)>{refl::field_offset<Object>(I)...};
-    }(std::make_index_sequence<refl::field_count<Object>()>{});
+        return std::array<std::size_t, sizeof...(I)>{meta::field_offset<Object>(I)...};
+    }(std::make_index_sequence<meta::field_count<Object>()>{});
 }
 
 template <typename Object, typename Member>
@@ -741,27 +741,27 @@ public:
     }
 
     template <typename Member>
-        requires refl::reflectable_class<object_type>
+        requires meta::reflectable_class<object_type>
     auto has(Member object_type::* member) const -> bool {
         if(!valid()) {
             return false;
         }
 
         const auto index = proxy_detail::field_index(member);
-        if(index >= refl::field_count<object_type>()) {
+        if(index >= meta::field_count<object_type>()) {
             return false;
         }
         return table->GetOptionalFieldOffset(proxy_detail::voffset(index)) != 0;
     }
 
     template <typename Member>
-        requires refl::reflectable_class<object_type>
+        requires meta::reflectable_class<object_type>
     auto operator[](Member object_type::* member) const -> proxy_detail::member_return_t<Member> {
         return (*this)(member);
     }
 
     template <typename Member>
-        requires refl::reflectable_class<object_type>
+        requires meta::reflectable_class<object_type>
     auto operator()(Member object_type::* member) const -> proxy_detail::member_return_t<Member> {
         using member_type = proxy_detail::deep_clean_t<Member>;
         using return_t = proxy_detail::member_return_t<Member>;
@@ -771,7 +771,7 @@ public:
         }
 
         const auto index = proxy_detail::field_index(member);
-        if(index >= refl::field_count<object_type>()) {
+        if(index >= meta::field_count<object_type>()) {
             return return_t{};
         }
 

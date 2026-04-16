@@ -22,7 +22,7 @@ template <typename T,
           bool Skipped = field_attr_flags<T, I>::skipped,
           bool Flattened = field_attr_flags<T, I>::flattened>
 struct single_field_slots {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using unwrap = unwrap_annotated<field_t>;
     using raw_type = typename unwrap::raw_type;
     using attrs_t = typename unwrap::attrs;
@@ -55,13 +55,13 @@ struct build_slots_from_seq<T, Config, std::index_sequence<>> {
 
 template <typename T, typename Config>
 using build_slots_t =
-    typename build_slots_from_seq<T, Config, std::make_index_sequence<refl::field_count<T>()>>::
+    typename build_slots_from_seq<T, Config, std::make_index_sequence<meta::field_count<T>()>>::
         type;
 
 }  // namespace detail
 
 template <typename T, typename Config = default_config>
-    requires refl::reflectable_class<T>
+    requires meta::reflectable_class<T>
 struct virtual_schema {
     constexpr static std::size_t count = detail::struct_info_node<T, Config>::count;
     constexpr static auto& fields = detail::struct_info_node<T, Config>::fields;
@@ -75,7 +75,7 @@ namespace detail {
 
 template <typename T, typename Config, std::size_t I>
 struct single_field_slots<T, Config, I, /*Skipped=*/false, /*Flattened=*/true> {
-    using field_t = refl::field_type<T, I>;
+    using field_t = meta::field_type<T, I>;
     using inner_t = typename unwrap_annotated<field_t>::raw_type;
     using type = typename virtual_schema<inner_t, Config>::slots;
 };

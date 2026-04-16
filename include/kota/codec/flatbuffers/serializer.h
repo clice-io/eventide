@@ -342,7 +342,7 @@ private:
     template <typename T>
     auto encode_table(const T& value) -> result_t<value_type> {
         using U = detail::remove_annotation_t<T>;
-        static_assert(refl::reflectable_class<U>, "encode_table requires reflectable class");
+        static_assert(meta::reflectable_class<U>, "encode_table requires reflectable class");
 
         std::vector<std::function<void()>> writers;
         TableFieldCollector collector{
@@ -352,7 +352,7 @@ private:
         };
 
         std::expected<void, object_error_code> field_result;
-        refl::for_each(value, [&](auto field) {
+        meta::for_each(value, [&](auto field) {
             collector.current_index = field.index();
             auto status =
                 serde::detail::serialize_struct_field<Config, object_error_code>(collector, field);
@@ -576,7 +576,7 @@ private:
             auto offset = builder.CreateVectorOfStructs(elements);
             push_add_offset(writers, field, offset.o);
             return {};
-        } else if constexpr(refl::reflectable_class<element_clean_t>) {
+        } else if constexpr(meta::reflectable_class<element_clean_t>) {
             std::vector<value_type> elements;
             if constexpr(requires { value.size(); }) {
                 elements.reserve(value.size());
@@ -610,8 +610,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_t = detail::clean_t<U>;
 
-        if constexpr(refl::annotated_type<U>) {
-            return collect_field(writers, field, refl::annotated_value(value));
+        if constexpr(meta::annotated_type<U>) {
+            return collect_field(writers, field, meta::annotated_value(value));
         } else if constexpr(is_specialization_of<std::optional, U>) {
             if(!value.has_value()) {
                 return {};
@@ -686,7 +686,7 @@ private:
             const clean_t copy = static_cast<clean_t>(value);
             writers.push_back([this, field, copy] { builder.AddStruct(field, &copy); });
             return {};
-        } else if constexpr(refl::reflectable_class<clean_t>) {
+        } else if constexpr(meta::reflectable_class<clean_t>) {
             KOTA_EXPECTED_TRY_V(auto offset, encode_table(value));
             push_add_offset(writers, field, offset.o);
             return {};
@@ -713,7 +713,7 @@ static_assert(serde::serializer_like<Serializer<>>);
 namespace kota::codec {
 
 template <typename Config, typename T>
-    requires refl::reflectable_class<std::remove_cvref_t<T>>
+    requires meta::reflectable_class<std::remove_cvref_t<T>>
 struct serialize_traits<flatbuffers::Serializer<Config>, T> {
     using serializer_t = flatbuffers::Serializer<Config>;
 
@@ -724,7 +724,7 @@ struct serialize_traits<flatbuffers::Serializer<Config>, T> {
 };
 
 template <typename Config, typename T>
-    requires (!refl::reflectable_class<std::remove_cvref_t<T>> &&
+    requires (!meta::reflectable_class<std::remove_cvref_t<T>> &&
               !std::ranges::input_range<std::remove_cvref_t<T>> &&
               !is_pair_v<std::remove_cvref_t<T>> && !is_tuple_v<std::remove_cvref_t<T>> &&
               !is_specialization_of<std::variant, std::remove_cvref_t<T>> &&
@@ -748,7 +748,7 @@ struct serialize_traits<flatbuffers::Serializer<Config>, T> {
 
 template <typename Config, typename T>
     requires (std::ranges::input_range<std::remove_cvref_t<T>> &&
-              !refl::reflectable_class<std::remove_cvref_t<T>>)
+              !meta::reflectable_class<std::remove_cvref_t<T>>)
 struct serialize_traits<flatbuffers::Serializer<Config>, T> {
     using serializer_t = flatbuffers::Serializer<Config>;
 

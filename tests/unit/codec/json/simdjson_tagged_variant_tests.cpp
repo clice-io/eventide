@@ -25,7 +25,7 @@ struct Basic {
 // ── Externally tagged ──────────────────────────────────────────────
 
 using ExtVariant = annotation<std::variant<int, std::string, Basic>,
-                              refl::attrs::externally_tagged::names<"integer", "text", "basic">>;
+                              meta::attrs::externally_tagged::names<"integer", "text", "basic">>;
 
 struct ExtTaggedHolder {
     std::string name;
@@ -38,7 +38,7 @@ struct ExtTaggedHolder {
 
 using AdjVariant =
     annotation<std::variant<int, std::string, Basic>,
-               refl::attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
+               meta::attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
 
 struct AdjTaggedHolder {
     std::string name;
@@ -50,7 +50,7 @@ struct AdjTaggedHolder {
 // ── Variant with monostate ─────────────────────────────────────────
 
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               refl::attrs::externally_tagged::names<"none", "integer", "text">>;
+                               meta::attrs::externally_tagged::names<"none", "integer", "text">>;
 
 // ── Internally tagged ─────────────────────────────────────────────
 
@@ -74,15 +74,15 @@ struct ShapeLine {
 };
 
 using IntTagVariant = annotation<std::variant<ShapeCircle, ShapeRect>,
-                                 refl::attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+                                 meta::attrs::internally_tagged<"kind">::names<"circle", "rect">>;
 
 using IntTagRenamedVariant =
     annotation<std::variant<ShapeLine, ShapeRect>,
-               refl::attrs::internally_tagged<"kind">::names<"line", "rect">>;
+               meta::attrs::internally_tagged<"kind">::names<"line", "rect">>;
 
 using AdjShapeVariant =
     annotation<std::variant<ShapeCircle, ShapeRect>,
-               refl::attrs::adjacently_tagged<"type", "value">::names<"circle", "rect">>;
+               meta::attrs::adjacently_tagged<"type", "value">::names<"circle", "rect">>;
 
 struct IntTagHolder {
     std::string label;

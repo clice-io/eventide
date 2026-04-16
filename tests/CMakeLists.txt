@@ -13,7 +13,7 @@ file(GLOB_RECURSE TEST_SOURCES RELATIVE "${PROJECT_SOURCE_DIR}" CONFIGURE_DEPEND
 )
 
 set(TEST_BASE_SOURCES ${TEST_SOURCES})
-list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/unit/(main\\.cpp|common/.*\\.cpp|reflection/.*\\.cpp|zest/.*\\.cpp)$")
+list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/unit/(main\\.cpp|support/.*\\.cpp|meta/.*\\.cpp|zest/.*\\.cpp)$")
 list(TRANSFORM TEST_BASE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
 
@@ -42,65 +42,65 @@ else()
 endif()
 
 if(KOTA_ENABLE_ASYNC)
-    set(TEST_EVENTIDE_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_EVENTIDE_SOURCES INCLUDE REGEX "^tests/unit/async/.*\\.cpp$")
-    list(TRANSFORM TEST_EVENTIDE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    set(TEST_ASYNC_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_ASYNC_SOURCES INCLUDE REGEX "^tests/unit/async/.*\\.cpp$")
+    list(TRANSFORM TEST_ASYNC_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
-        ${TEST_EVENTIDE_SOURCES}
+        ${TEST_ASYNC_SOURCES}
     )
 else()
     message(STATUS "KOTA_ENABLE_ASYNC=OFF: skipping tests/unit/async/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_SIMDJSON)
-    set(TEST_SERDE_SIMDJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_SIMDJSON_SOURCES INCLUDE REGEX "^tests/unit/serde/json/simdjson_.*\\.cpp$")
-    list(TRANSFORM TEST_SERDE_SIMDJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    set(TEST_CODEC_SIMDJSON_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_CODEC_SIMDJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/json/simdjson_.*\\.cpp$")
+    list(TRANSFORM TEST_CODEC_SIMDJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
-        ${TEST_SERDE_SIMDJSON_SOURCES}
+        ${TEST_CODEC_SIMDJSON_SOURCES}
     )
 else()
-    message(STATUS "KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/serde/json/*")
+    message(STATUS "KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/codec/json/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_YYJSON)
-    set(TEST_SERDE_YYJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_YYJSON_SOURCES INCLUDE REGEX "^tests/unit/serde/content/.*\\.cpp$")
-    list(TRANSFORM TEST_SERDE_YYJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    set(TEST_CODEC_YYJSON_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_CODEC_YYJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/content/.*\\.cpp$")
+    list(TRANSFORM TEST_CODEC_YYJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
-        ${TEST_SERDE_YYJSON_SOURCES}
+        ${TEST_CODEC_YYJSON_SOURCES}
     )
 else()
-    message(STATUS "KOTA_CODEC_ENABLE_YYJSON=OFF: skipping tests/unit/serde/content/*")
+    message(STATUS "KOTA_CODEC_ENABLE_YYJSON=OFF: skipping tests/unit/codec/content/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_FLATBUFFERS)
-    set(TEST_SERDE_FLATBUFFERS_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_FLATBUFFERS_SOURCES INCLUDE REGEX "^tests/unit/serde/flatbuffers/.*\\.cpp$")
-    list(TRANSFORM TEST_SERDE_FLATBUFFERS_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    set(TEST_CODEC_FLATBUFFERS_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_CODEC_FLATBUFFERS_SOURCES INCLUDE REGEX "^tests/unit/codec/flatbuffers/.*\\.cpp$")
+    list(TRANSFORM TEST_CODEC_FLATBUFFERS_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
-        ${TEST_SERDE_FLATBUFFERS_SOURCES}
+        ${TEST_CODEC_FLATBUFFERS_SOURCES}
     )
 else()
-    message(STATUS "KOTA_CODEC_ENABLE_FLATBUFFERS=OFF: skipping tests/unit/serde/flatbuffers/*")
+    message(STATUS "KOTA_CODEC_ENABLE_FLATBUFFERS=OFF: skipping tests/unit/codec/flatbuffers/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_TOML)
-    set(TEST_SERDE_TOML_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_SERDE_TOML_SOURCES INCLUDE REGEX "^tests/unit/serde/toml/.*\\.cpp$")
-    list(TRANSFORM TEST_SERDE_TOML_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    set(TEST_CODEC_TOML_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_CODEC_TOML_SOURCES INCLUDE REGEX "^tests/unit/codec/toml/.*\\.cpp$")
+    list(TRANSFORM TEST_CODEC_TOML_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
-        ${TEST_SERDE_TOML_SOURCES}
+        ${TEST_CODEC_TOML_SOURCES}
     )
 else()
-    message(STATUS "KOTA_CODEC_ENABLE_TOML=OFF: skipping tests/unit/serde/toml/*")
+    message(STATUS "KOTA_CODEC_ENABLE_TOML=OFF: skipping tests/unit/codec/toml/*")
 endif()
 
-set(TEST_SERDE_BINCODE_SOURCES ${TEST_SOURCES})
-list(FILTER TEST_SERDE_BINCODE_SOURCES INCLUDE REGEX "^tests/unit/serde/bincode/.*\\.cpp$")
-list(TRANSFORM TEST_SERDE_BINCODE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+set(TEST_CODEC_BINCODE_SOURCES ${TEST_SOURCES})
+list(FILTER TEST_CODEC_BINCODE_SOURCES INCLUDE REGEX "^tests/unit/codec/bincode/.*\\.cpp$")
+list(TRANSFORM TEST_CODEC_BINCODE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE
-    ${TEST_SERDE_BINCODE_SOURCES}
+    ${TEST_CODEC_BINCODE_SOURCES}
 )
 
 if(KOTA_ENABLE_ASYNC AND KOTA_CODEC_ENABLE_SIMDJSON)

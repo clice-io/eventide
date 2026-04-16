@@ -82,7 +82,7 @@ constexpr auto visit_variant_alt(const std::variant<Ts...>& value, Emitter&& emi
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
     KOTA_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 1));
 
@@ -98,7 +98,7 @@ constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& valu
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
     KOTA_EXPECTED_TRY_V(auto s_struct, s.serialize_struct("", 2));
 
@@ -116,7 +116,7 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
     KOTA_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 1));
 
@@ -135,7 +135,7 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
 
     KOTA_EXPECTED_TRY_V(auto d_struct, d.deserialize_struct("", 2));
 
@@ -231,18 +231,18 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
 template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E> {
-    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
     return std::visit(
         [&](const auto& item) -> std::expected<typename S::value_type, E> {
             using alt_t = std::remove_cvref_t<decltype(item)>;
-            static_assert(refl::reflectable_class<alt_t>,
+            static_assert(meta::reflectable_class<alt_t>,
                           "internally_tagged requires struct alternatives");
 
             using config_t = config::config_of<S>;
             KOTA_EXPECTED_TRY_V(auto s_struct,
-                               s.serialize_struct("", refl::field_count<alt_t>() + 1));
+                               s.serialize_struct("", meta::field_count<alt_t>() + 1));
 
             // tag field first
             auto tag_name = names[value.index()];
@@ -250,7 +250,7 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
 
             // struct fields
             std::expected<void, E> field_result;
-            refl::for_each(item, [&](auto field) {
+            meta::for_each(item, [&](auto field) {
                 auto r = serialize_struct_field<config_t, E>(s_struct, field);
                 if(!r) {
                     field_result = std::unexpected(r.error());
@@ -274,7 +274,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     // Requires capture_dom_value() — buffer to content DOM, then two-pass dispatch
     KOTA_EXPECTED_TRY_V(auto dom_result, d.capture_dom_value());
 
-    constexpr auto names = refl::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
     auto obj_ref = dom_result.as_ref();
@@ -308,7 +308,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
                                         [&](auto& alt) -> std::expected<void, E> {
                                             using alt_t = std::remove_cvref_t<decltype(alt)>;
                                             static_assert(
-                                                refl::reflectable_class<alt_t>,
+                                                meta::reflectable_class<alt_t>,
                                                 "internally_tagged requires struct alternatives");
 
                                             content::Deserializer<config_t> deser(obj_ref);
@@ -349,7 +349,7 @@ template <typename T>
 constexpr type_hint expected_type_hints() {
     using U = std::remove_cvref_t<T>;
 
-    if constexpr(refl::annotated_type<U>) {
+    if constexpr(meta::annotated_type<U>) {
         return expected_type_hints<typename U::annotated_type>();
     } else if constexpr(kota::is_specialization_of<std::optional, U>) {
         return type_hint::null_like | expected_type_hints<typename U::value_type>();
@@ -378,7 +378,7 @@ constexpr type_hint expected_type_hints() {
         } else {
             return type_hint::any;
         }
-    } else if constexpr(refl::reflectable_class<U>) {
+    } else if constexpr(meta::reflectable_class<U>) {
         return type_hint::object;
     } else {
         return type_hint::any;

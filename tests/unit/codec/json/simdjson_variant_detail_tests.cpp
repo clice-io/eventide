@@ -56,25 +56,25 @@ struct Empty {
 
 // External
 using ExtSimple =
-    annotation<std::variant<int, std::string>, refl::attrs::externally_tagged::names<"num", "str">>;
+    annotation<std::variant<int, std::string>, meta::attrs::externally_tagged::names<"num", "str">>;
 
 using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               refl::attrs::externally_tagged::names<"none", "num", "str">>;
+                               meta::attrs::externally_tagged::names<"none", "num", "str">>;
 
 using ExtWithStruct = annotation<std::variant<int, Point, Color>,
-                                 refl::attrs::externally_tagged::names<"int", "point", "color">>;
+                                 meta::attrs::externally_tagged::names<"int", "point", "color">>;
 
 // Adjacent
 using AdjSimple = annotation<std::variant<int, std::string>,
-                             refl::attrs::adjacently_tagged<"t", "v">::names<"num", "str">>;
+                             meta::attrs::adjacently_tagged<"t", "v">::names<"num", "str">>;
 
 using AdjWithMono =
     annotation<std::variant<std::monostate, int, std::string>,
-               refl::attrs::adjacently_tagged<"tag", "data">::names<"nil", "num", "str">>;
+               meta::attrs::adjacently_tagged<"tag", "data">::names<"nil", "num", "str">>;
 
 using AdjWithStruct =
     annotation<std::variant<int, Point>,
-               refl::attrs::adjacently_tagged<"type", "value">::names<"int", "point">>;
+               meta::attrs::adjacently_tagged<"type", "value">::names<"int", "point">>;
 
 // Internal
 struct Circle {
@@ -98,11 +98,11 @@ struct Triangle {
 };
 
 using IntTagShape = annotation<std::variant<Circle, Rect>,
-                               refl::attrs::internally_tagged<"type">::names<"circle", "rect">>;
+                               meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
 
 using IntTagTriShape =
     annotation<std::variant<Circle, Rect, Triangle>,
-               refl::attrs::internally_tagged<"kind">::names<"circle", "rect", "triangle">>;
+               meta::attrs::internally_tagged<"kind">::names<"circle", "rect", "triangle">>;
 
 // ── Containers with tagged variants ──────────────────────────────────
 
@@ -752,7 +752,7 @@ TEST_SUITE(serde_variant_nested) {
 TEST_CASE(variant_in_struct_in_variant) {
     // An externally tagged variant whose struct alternative contains another ext variant
     using Inner =
-        annotation<std::variant<int, std::string>, refl::attrs::externally_tagged::names<"i", "s">>;
+        annotation<std::variant<int, std::string>, meta::attrs::externally_tagged::names<"i", "s">>;
 
     struct Wrapper {
         std::string id;
@@ -762,7 +762,7 @@ TEST_CASE(variant_in_struct_in_variant) {
     };
 
     using Outer = annotation<std::variant<int, Wrapper>,
-                             refl::attrs::externally_tagged::names<"plain", "wrapped">>;
+                             meta::attrs::externally_tagged::names<"plain", "wrapped">>;
 
     Outer v = Wrapper{.id = "w1", .val = std::string("inner")};
     auto encoded = to_json(v);
@@ -776,7 +776,7 @@ TEST_CASE(variant_in_struct_in_variant) {
 
 TEST_CASE(vector_of_tagged_variants) {
     using V = annotation<std::variant<int, std::string>,
-                         refl::attrs::adjacently_tagged<"t", "v">::names<"i", "s">>;
+                         meta::attrs::adjacently_tagged<"t", "v">::names<"i", "s">>;
 
     std::vector<V> vec = {V{1}, V{std::string("a")}, V{2}, V{std::string("b")}};
     auto encoded = to_json(vec);

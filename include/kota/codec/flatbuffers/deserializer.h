@@ -47,7 +47,7 @@ using serde::detail::remove_optional_t;
 
 template <typename T>
 constexpr bool root_unboxed_v =
-    (refl::reflectable_class<T> && !can_inline_struct_v<T>) || is_pair_v<T> || is_tuple_v<T> ||
+    (meta::reflectable_class<T> && !can_inline_struct_v<T>) || is_pair_v<T> || is_tuple_v<T> ||
     is_specialization_of<std::variant, T>;
 
 inline auto field_voffset(std::size_t index) -> ::flatbuffers::voffset_t {
@@ -92,8 +92,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_u_t = clean_t<U>;
 
-        if constexpr(refl::annotated_type<U>) {
-            return decode_root_value(refl::annotated_value(out));
+        if constexpr(meta::annotated_type<U>) {
+            return decode_root_value(meta::annotated_value(out));
         } else if constexpr(is_specialization_of<std::optional, U>) {
             using value_t = typename U::value_type;
             using clean_value_t = clean_t<value_t>;
@@ -149,7 +149,7 @@ private:
     template <typename T>
     auto decode_unboxed(const ::flatbuffers::Table* table, T& out) const -> status_t {
         using U = clean_t<T>;
-        if constexpr(refl::reflectable_class<U> && !can_inline_struct_v<U>) {
+        if constexpr(meta::reflectable_class<U> && !can_inline_struct_v<U>) {
             return decode_table(table, out);
         } else if constexpr(is_pair_v<U> || is_tuple_v<U>) {
             return decode_tuple(table, out);
@@ -163,14 +163,14 @@ private:
     template <typename T>
     auto decode_table(const ::flatbuffers::Table* table, T& out) const -> status_t {
         using U = std::remove_cvref_t<T>;
-        static_assert(refl::reflectable_class<U>, "decode_table requires reflectable class");
+        static_assert(meta::reflectable_class<U>, "decode_table requires reflectable class");
 
         if(table == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
 
         std::expected<void, object_error_code> result{};
-        refl::for_each(out, [&](auto field) {
+        meta::for_each(out, [&](auto field) {
             const auto field_id = field_voffset(field.index());
             auto status = decode_field(table, field_id, field.value(), false);
             if(!status) {
@@ -448,7 +448,7 @@ private:
                 KOTA_EXPECTED_TRY(store_element(*element));
             }
             return finalize_sequence();
-        } else if constexpr(refl::reflectable_class<element_clean_t>) {
+        } else if constexpr(meta::reflectable_class<element_clean_t>) {
             const auto* vector = table->GetPointer<
                 const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
             if(vector == nullptr) {
@@ -546,8 +546,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_u_t = clean_t<U>;
 
-        if constexpr(refl::annotated_type<U>) {
-            return decode_field(table, field, refl::annotated_value(out), required);
+        if constexpr(meta::annotated_type<U>) {
+            return decode_field(table, field, meta::annotated_value(out), required);
         } else if constexpr(is_specialization_of<std::optional, U>) {
             using value_t = typename U::value_type;
             if(!has_field(table, field)) {
@@ -685,7 +685,7 @@ private:
                 }
                 out = static_cast<U>(*value);
                 return {};
-            } else if constexpr(refl::reflectable_class<clean_u_t>) {
+            } else if constexpr(meta::reflectable_class<clean_u_t>) {
                 const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
                 return decode_table(nested, out);
             } else {
@@ -699,8 +699,8 @@ private:
         using U = std::remove_cvref_t<T>;
         using clean_u_t = clean_t<U>;
 
-        if constexpr(refl::annotated_type<U>) {
-            return decode_root_value_from_table(table, refl::annotated_value(out));
+        if constexpr(meta::annotated_type<U>) {
+            return decode_root_value_from_table(table, meta::annotated_value(out));
         } else if constexpr(root_unboxed_v<clean_u_t>) {
             return decode_unboxed(table, out);
         } else {

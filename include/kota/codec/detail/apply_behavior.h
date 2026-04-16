@@ -22,18 +22,18 @@ namespace kota::codec::detail {
 template <typename attrs_t, typename value_t, typename E, typename Emitter, typename WithFn>
 constexpr auto apply_serialize_behavior(const value_t& value, Emitter&& emit, WithFn&& with_fn)
     -> std::optional<decltype(emit(value))> {
-    if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::with>) {
-        using Adapter = typename tuple_find_spec_t<attrs_t, refl::behavior::with>::adapter;
+    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+        using Adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
         return with_fn(std::type_identity<Adapter>{}, value);
-    } else if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::as>) {
-        using Target = typename tuple_find_spec_t<attrs_t, refl::behavior::as>::target;
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+        using Target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
         static_assert(
             std::is_constructible_v<Target, const value_t&>,
             "behavior::as<Target> requires Target to be constructible from the value type");
         Target converted(value);
         return emit(converted);
-    } else if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::enum_string>) {
-        using Policy = typename tuple_find_spec_t<attrs_t, refl::behavior::enum_string>::policy;
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
+        using Policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
         static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
         auto enum_text = spelling::map_enum_to_string<value_t, Policy>(value);
         return emit(enum_text);
@@ -53,11 +53,11 @@ constexpr auto apply_serialize_behavior(const value_t& value, Emitter&& emit, Wi
 template <typename attrs_t, typename value_t, typename E, typename Reader, typename WithFn>
 constexpr auto apply_deserialize_behavior(value_t& value, Reader&& read, WithFn&& with_fn)
     -> std::optional<std::expected<void, E>> {
-    if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::with>) {
-        using Adapter = typename tuple_find_spec_t<attrs_t, refl::behavior::with>::adapter;
+    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+        using Adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
         return with_fn(std::type_identity<Adapter>{}, value);
-    } else if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::as>) {
-        using Target = typename tuple_find_spec_t<attrs_t, refl::behavior::as>::target;
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+        using Target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
         static_assert(
             std::is_constructible_v<value_t, Target&&>,
             "behavior::as<Target> requires the value type to be constructible from Target");
@@ -68,8 +68,8 @@ constexpr auto apply_deserialize_behavior(value_t& value, Reader&& read, WithFn&
         }
         value = value_t(std::move(temp));
         return std::expected<void, E>{};
-    } else if constexpr(tuple_has_spec_v<attrs_t, refl::behavior::enum_string>) {
-        using Policy = typename tuple_find_spec_t<attrs_t, refl::behavior::enum_string>::policy;
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
+        using Policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
         static_assert(std::is_enum_v<value_t>, "behavior::enum_string requires an enum type");
         std::string enum_text;
         auto status = read(enum_text);

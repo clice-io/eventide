@@ -58,7 +58,7 @@ inline std::string normalize_identifier(std::string_view text) {
 
 template <typename T>
 std::string type_identifier() {
-    return normalize_identifier(refl::type_name<T>());
+    return normalize_identifier(meta::type_name<T>());
 }
 
 template <typename T>
@@ -104,7 +104,7 @@ constexpr bool is_schema_struct_field_v = [] {
     using U = remove_optional_t<T>;
     if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
         return true;
-    } else if constexpr(refl::reflectable_class<U>) {
+    } else if constexpr(meta::reflectable_class<U>) {
         return schema_struct_trait<U>::value;
     } else {
         return false;
@@ -114,16 +114,16 @@ constexpr bool is_schema_struct_field_v = [] {
 template <typename T>
 struct schema_struct_trait {
     static consteval bool fields_supported() {
-        if constexpr(!refl::reflectable_class<T>) {
+        if constexpr(!meta::reflectable_class<T>) {
             return false;
         } else {
             return []<std::size_t... I>(std::index_sequence<I...>) {
-                return (is_schema_struct_field_v<refl::field_type<T, I>> && ...);
-            }(std::make_index_sequence<refl::field_count<T>()>{});
+                return (is_schema_struct_field_v<meta::field_type<T, I>> && ...);
+            }(std::make_index_sequence<meta::field_count<T>()>{});
         }
     }
 
-    constexpr static bool value = refl::reflectable_class<T> && std::is_trivial_v<T> &&
+    constexpr static bool value = meta::reflectable_class<T> && std::is_trivial_v<T> &&
                                   std::is_standard_layout_v<T> && fields_supported();
 };
 
@@ -162,7 +162,7 @@ private:
             using mapped_t = typename U::mapped_type;
             emit_dependencies<key_t>();
             emit_dependencies<mapped_t>();
-        } else if constexpr(refl::reflectable_class<U>) {
+        } else if constexpr(meta::reflectable_class<U>) {
             emit_object_if_needed<U>();
         }
     }
@@ -177,8 +177,8 @@ private:
 
         out += "enum " + enum_name + ":" + scalar_schema_name<std::underlying_type_t<E>>() + " {\n";
 
-        const auto& names = refl::reflection<E>::member_names;
-        const auto& values = refl::reflection<E>::member_values;
+        const auto& names = meta::reflection<E>::member_names;
+        const auto& values = meta::reflection<E>::member_values;
         for(std::size_t i = 0; i < names.size(); ++i) {
             const auto member_name = normalize_identifier(names[i]);
             const auto member_value =
@@ -191,11 +191,11 @@ private:
 
     template <typename Owner, std::size_t I>
     void emit_map_entry_if_needed() {
-        using field_t = remove_optional_t<refl::field_type<Owner, I>>;
+        using field_t = remove_optional_t<meta::field_type<Owner, I>>;
         if constexpr(!is_std_map_v<field_t>) {
             return;
         } else {
-            constexpr auto field_name = refl::field_name<I, Owner>();
+            constexpr auto field_name = meta::field_name<I, Owner>();
             const auto owner_name = type_identifier<Owner>();
             const auto entry_name = map_entry_identifier(owner_name, field_name);
             if(!emitted_entries.insert(entry_name).second) {
@@ -226,9 +226,9 @@ private:
             return "[" + field_schema_type<element_t, Owner, FieldIndex>() + "]";
         } else if constexpr(is_std_map_v<U>) {
             const auto owner_name = type_identifier<Owner>();
-            constexpr auto field_name = refl::field_name<FieldIndex, Owner>();
+            constexpr auto field_name = meta::field_name<FieldIndex, Owner>();
             return "[" + map_entry_identifier(owner_name, field_name) + "]";
-        } else if constexpr(refl::reflectable_class<U>) {
+        } else if constexpr(meta::reflectable_class<U>) {
             return type_identifier<U>();
         } else {
             static_assert(dependent_false<U>, "unsupported field type for schema emission");
@@ -237,7 +237,7 @@ private:
 
     template <typename T>
     void emit_object_if_needed() {
-        static_assert(refl::reflectable_class<T>, "reflectable type required");
+        static_assert(meta::reflectable_class<T>, "reflectable type required");
 
         const auto object_name = type_identifier<T>();
         if(!emitted_objects.insert(object_name).second) {
@@ -245,22 +245,22 @@ private:
         }
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
-            (self->template emit_dependencies<refl::field_type<T, I>>(), ...);
-        }(this, std::make_index_sequence<refl::field_count<T>()>{});
+            (self->template emit_dependencies<meta::field_type<T, I>>(), ...);
+        }(this, std::make_index_sequence<meta::field_count<T>()>{});
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
             (self->template emit_map_entry_if_needed<T, I>(), ...);
-        }(this, std::make_index_sequence<refl::field_count<T>()>{});
+        }(this, std::make_index_sequence<meta::field_count<T>()>{});
 
         out += (is_schema_struct_v<T> ? "struct " : "table ");
         out += object_name + " {\n";
 
         []<std::size_t... I>(schema_emitter* self, std::index_sequence<I...>) {
-            ((self->out += "  " + normalize_identifier(refl::field_name<I, T>()) + ":" +
-                           self->template field_schema_type<refl::field_type<T, I>, T, I>() +
+            ((self->out += "  " + normalize_identifier(meta::field_name<I, T>()) + ":" +
+                           self->template field_schema_type<meta::field_type<T, I>, T, I>() +
                            ";\n"),
              ...);
-        }(this, std::make_index_sequence<refl::field_count<T>()>{});
+        }(this, std::make_index_sequence<meta::field_count<T>()>{});
 
         out += "}\n\n";
     }
@@ -280,18 +280,18 @@ constexpr bool is_schema_struct_v = schema_detail::is_schema_struct_v<T>;
 template <typename T>
 consteval bool has_annotated_fields() {
     using U = std::remove_cvref_t<T>;
-    if constexpr(!refl::reflectable_class<U>) {
+    if constexpr(!meta::reflectable_class<U>) {
         return false;
     } else {
         return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (refl::annotated_type<refl::field_type<U, I>> || ...);
-        }(std::make_index_sequence<refl::field_count<U>()>{});
+            return (meta::annotated_type<meta::field_type<U, I>> || ...);
+        }(std::make_index_sequence<meta::field_count<U>()>{});
     }
 }
 
 template <typename T>
 constexpr bool can_inline_struct_v =
-    refl::reflectable_class<T> && is_schema_struct_v<T> && !has_annotated_fields<T>();
+    meta::reflectable_class<T> && is_schema_struct_v<T> && !has_annotated_fields<T>();
 
 template <typename T>
 std::string type_identifier() {
@@ -300,7 +300,7 @@ std::string type_identifier() {
 
 template <typename Root>
 std::string render() {
-    static_assert(refl::reflectable_class<Root>, "render requires a reflectable root type");
+    static_assert(meta::reflectable_class<Root>, "render requires a reflectable root type");
     return schema_detail::schema_emitter{}.template emit<Root>();
 }
 

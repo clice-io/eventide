@@ -8,7 +8,7 @@
 
 namespace kota::codec::config {
 
-using default_config = refl::default_config;
+using default_config = meta::default_config;
 
 /// Extract the config type from a serializer/deserializer.
 /// Falls back to default_config if S::config_type is not defined.

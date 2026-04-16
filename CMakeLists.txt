@@ -277,8 +277,8 @@ if(KOTA_ENABLE_ZEST)
     endif()
 endif()
 
-add_subdirectory(src/reflection)
-add_subdirectory(src/serde)
+add_subdirectory(src/meta)
+add_subdirectory(src/codec)
 
 if(KOTA_ENABLE_OPTION)
     add_subdirectory(src/option)

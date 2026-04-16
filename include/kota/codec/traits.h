@@ -25,37 +25,37 @@ namespace kota::codec {
 // (type_kind.h).  These aliases keep existing serde code compiling unchanged.
 
 template <typename T>
-concept null_like = refl::null_like<T>;
+concept null_like = meta::null_like<T>;
 
 template <typename T>
-concept bool_like = refl::bool_like<T>;
+concept bool_like = meta::bool_like<T>;
 
 template <typename T>
-concept int_like = refl::int_like<T>;
+concept int_like = meta::int_like<T>;
 
 template <typename T>
-concept uint_like = refl::uint_like<T>;
+concept uint_like = meta::uint_like<T>;
 
 template <typename T>
-concept floating_like = refl::floating_like<T>;
+concept floating_like = meta::floating_like<T>;
 
 template <typename T>
-concept char_like = refl::char_like<T>;
+concept char_like = meta::char_like<T>;
 
 template <typename T>
-concept str_like = refl::str_like<T>;
+concept str_like = meta::str_like<T>;
 
 template <typename T>
-concept bytes_like = refl::bytes_like<T>;
+concept bytes_like = meta::bytes_like<T>;
 
 template <typename T>
-constexpr inline bool is_pair_v = refl::is_pair_v<T>;
+constexpr inline bool is_pair_v = meta::is_pair_v<T>;
 
 template <typename T>
-constexpr inline bool is_tuple_v = refl::is_tuple_v<T>;
+constexpr inline bool is_tuple_v = meta::is_tuple_v<T>;
 
 template <typename T>
-concept tuple_like = refl::tuple_like<T>;
+concept tuple_like = meta::tuple_like<T>;
 
 template <typename A, typename T, typename E>
 concept result_as = std::same_as<A, std::expected<T, E>>;

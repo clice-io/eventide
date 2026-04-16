@@ -33,7 +33,7 @@ struct strict_struct {
     std::string name;
 };
 
-using strict_payload = annotation<strict_struct, refl::attrs::deny_unknown_fields>;
+using strict_payload = annotation<strict_struct, meta::attrs::deny_unknown_fields>;
 
 enum class color { red, green, blue };
 

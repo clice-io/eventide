@@ -111,7 +111,7 @@ struct deny_unknown_fields {};
 /// - tagged<Tag, Content> = adjacently tagged  (separate tag and content fields)
 ///
 /// Use ::names<...> to provide custom tag names for each alternative.
-/// Without ::names, defaults to refl::type_name<Alt>() for each alternative.
+/// Without ::names, defaults to meta::type_name<Alt>() for each alternative.
 template <fixed_string... FieldNames>
 struct tagged {
     static_assert(sizeof...(FieldNames) <= 2, "tagged: 0=external, 1=internal, 2=adjacent");
@@ -188,7 +188,7 @@ constexpr tagged_strategy tagged_strategy_of =
 
 /// Resolve tag names for variant alternatives.
 /// With ::names, uses the user-provided names (static_assert on count match).
-/// Without ::names, uses refl::type_name<Alt>() for each alternative.
+/// Without ::names, uses meta::type_name<Alt>() for each alternative.
 template <typename TagAttr, typename... Ts>
 constexpr auto resolve_tag_names() {
     if constexpr(TagAttr::has_custom_names) {

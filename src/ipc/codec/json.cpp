@@ -52,7 +52,7 @@ struct json_rpc_incoming {
     // Not optional<RawValue> because "result": null is a valid success
     // response — optional would lose it as nullopt. defaulted<RawValue>
     // keeps absent → empty(), null → "null" text.
-    refl::defaulted<serde::RawValue> result;
+    meta::defaulted<serde::RawValue> result;
     std::optional<Error> error;
 };
 

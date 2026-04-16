@@ -50,7 +50,7 @@ template <typename T>
 constexpr bool is_map_like_v = is_map_like<T>();
 
 template <typename T>
-constexpr bool root_table_v = (refl::reflectable_class<T> && !is_pair_v<T> && !is_tuple_v<T> &&
+constexpr bool root_table_v = (meta::reflectable_class<T> && !is_pair_v<T> && !is_tuple_v<T> &&
                                !std::ranges::input_range<T>) ||
                               is_map_like_v<T> || std::same_as<T, ::toml::table>;
 
