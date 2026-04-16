@@ -13,8 +13,9 @@
 
 #include "annotation.h"
 #include "struct.h"
-#include "eventide/common/meta.h"
 #include "eventide/common/ranges.h"
+#include "eventide/common/type_list.h"
+#include "eventide/common/type_traits.h"
 
 namespace eventide::refl {
 

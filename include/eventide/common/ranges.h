@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "meta.h"
+#include "type_traits.h"
 
 namespace eventide {
 

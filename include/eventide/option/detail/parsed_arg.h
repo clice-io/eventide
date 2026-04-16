@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "opt_specifier.h"
-#include "eventide/common/meta.h"
+#include "eventide/common/type_traits.h"
 
 namespace eventide::option {
 

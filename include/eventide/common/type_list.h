@@ -6,6 +6,9 @@
 
 namespace eventide {
 
+template <typename T, typename... Ts>
+concept is_one_of = (std::same_as<T, Ts> || ...);
+
 template <typename... Ts>
 struct type_list {};
 

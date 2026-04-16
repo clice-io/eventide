@@ -16,7 +16,7 @@
 #include <utility>
 
 #include "uv.h"
-#include "eventide/common/meta.h"
+#include "eventide/common/type_list.h"
 #include "eventide/async/runtime/frame.h"
 #include "eventide/async/vocab/error.h"
 #include "eventide/async/vocab/owned.h"

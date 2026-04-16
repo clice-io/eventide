@@ -11,8 +11,8 @@
 
 #include "struct.h"
 #include "eventide/common/fixed_string.h"
-#include "eventide/common/meta.h"
 #include "eventide/common/tuple_traits.h"
+#include "eventide/common/type_traits.h"
 
 namespace eventide::refl {
 

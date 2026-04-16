@@ -15,8 +15,8 @@
 #include <variant>
 #include <vector>
 
-#include "eventide/common/meta.h"
 #include "eventide/common/ranges.h"
+#include "eventide/common/type_traits.h"
 #include "eventide/reflection/type_kind.h"
 
 namespace eventide::serde {

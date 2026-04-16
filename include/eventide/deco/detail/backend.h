@@ -17,7 +17,7 @@
 #include "./ty.h"
 #include "eventide/common/comptime.h"
 #include "eventide/common/memory.h"
-#include "eventide/common/meta.h"
+#include "eventide/common/type_traits.h"
 
 namespace deco::detail {
 

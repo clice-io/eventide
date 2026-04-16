@@ -17,10 +17,10 @@
 #include "enum.h"
 #include "struct.h"
 #include "type_kind.h"
-#include "eventide/common/meta.h"
 #include "eventide/common/naming.h"
 #include "eventide/common/ranges.h"
 #include "eventide/common/tuple_traits.h"
+#include "eventide/common/type_traits.h"
 
 namespace eventide::refl {
 

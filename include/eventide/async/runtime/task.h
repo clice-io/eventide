@@ -12,7 +12,7 @@
 #include <utility>
 
 #include "eventide/common/config.h"
-#include "eventide/common/meta.h"
+#include "eventide/common/type_traits.h"
 #include "eventide/async/io/loop.h"
 #include "eventide/async/runtime/frame.h"
 #include "eventide/async/vocab/awaitable.h"

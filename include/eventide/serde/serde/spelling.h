@@ -11,8 +11,8 @@
 #include <utility>
 #include <vector>
 
-#include "eventide/common/meta.h"
 #include "eventide/common/naming.h"
+#include "eventide/common/type_traits.h"
 #include "eventide/reflection/enum.h"
 
 namespace eventide::serde {
