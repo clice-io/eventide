@@ -54,7 +54,9 @@ jobs:
           ${{ matrix.target.config_args }}
           --dev=y
           --serde_simdjson=y
+          --serde_yyjson=y
           --serde_flatbuffers=y
+          --serde_toml=y
 
       - name: Build
         run: xmake --all --verbose --diagnosis
