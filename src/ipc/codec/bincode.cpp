@@ -1,10 +1,10 @@
-#include "eventide/ipc/bincode_codec.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <variant>
+
+#include "eventide/ipc/bincode_codec.h"
 
 namespace eventide::ipc {
 

@@ -1,9 +1,9 @@
-#include "eventide/ipc/json_codec.h"
+#include "eventide/serde/json/json.h"
 
 #include <string>
 #include <string_view>
 
-#include "eventide/serde/json/json.h"
+#include "eventide/ipc/json_codec.h"
 
 namespace eventide::ipc {
 
