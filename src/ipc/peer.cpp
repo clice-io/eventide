@@ -2,7 +2,7 @@
 
 namespace eventide::ipc {
 
-#if ENABLE_JSON
+#if ETD_IPC_ENABLE_JSON
 template class Peer<JsonCodec>;
 #endif
 template class Peer<BincodeCodec>;

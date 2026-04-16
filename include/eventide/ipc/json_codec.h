@@ -1,6 +1,6 @@
 #pragma once
 
-#if !ENABLE_JSON
+#if !ETD_IPC_ENABLE_JSON
 #error "eventide/ipc/json_codec.h requires JSON IPC support. Enable ETD_SERDE_ENABLE_SIMDJSON."
 #endif
 

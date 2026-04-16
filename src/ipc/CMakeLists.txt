@@ -16,7 +16,7 @@ target_link_libraries(eventide_ipc PUBLIC
 )
 
 target_compile_definitions(eventide_ipc PUBLIC
-    ENABLE_JSON=$<IF:$<BOOL:${ETD_SERDE_ENABLE_SIMDJSON}>,1,0>
+    ETD_IPC_ENABLE_JSON=$<IF:$<BOOL:${ETD_SERDE_ENABLE_SIMDJSON}>,1,0>
 )
 
 eventide_apply_project_options(eventide_ipc)
