@@ -72,6 +72,8 @@ if has_config("ztest") then
 end
 if has_config("serde") and has_config("serde_simdjson") then
 	add_requires("simdjson v4.2.4")
+end
+if has_config("serde") and has_config("serde_yyjson") then
 	add_requires("yyjson 0.12.0")
 end
 if has_config("serde") and has_config("serde_flatbuffers") then
@@ -118,7 +120,9 @@ if has_config("serde") and has_config("serde_simdjson") then
 		add_rules("cl-flags")
 		add_deps("reflection")
 		add_packages("simdjson", { public = true })
-		add_packages("yyjson", { public = true })
+		if has_config("serde_yyjson") then
+			add_packages("yyjson", { public = true })
+		end
 	end)
 end
 
@@ -223,14 +227,19 @@ if has_config("deco") and has_config("option") then
 	end)
 end
 
-if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+if has_config("async") then
 	target("ipc", function()
 		set_kind("$(kind)")
 		add_rules("cl-flags")
 		add_files("src/ipc/*.cpp")
+		add_files("src/ipc/codec/bincode.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(eventide/ipc/*)")
-		add_deps("async", "serde_json")
+		if has_config("serde") and has_config("serde_simdjson") then
+			add_files("src/ipc/codec/json.cpp")
+			add_deps("serde_json")
+		end
+		add_deps("async")
 	end)
 
 	target("language", function()
@@ -256,7 +265,10 @@ target("eventide", function()
 		add_deps("serde", { public = true })
 		if has_config("serde_simdjson") then
 			add_deps("serde_json", { public = true })
-			add_packages("simdjson", "yyjson", { public = true })
+			add_packages("simdjson", { public = true })
+		end
+		if has_config("serde_yyjson") then
+			add_packages("yyjson", { public = true })
 		end
 		if has_config("serde_flatbuffers") then
 			add_deps("serde_flatbuffers", { public = true })
@@ -282,7 +294,7 @@ target("eventide", function()
 		add_deps("async", { public = true })
 		add_packages("libuv", { public = true })
 	end
-	if has_config("async") and has_config("serde") and has_config("serde_simdjson") then
+	if has_config("async") then
 		add_deps("ipc", "language", { public = true })
 	end
 

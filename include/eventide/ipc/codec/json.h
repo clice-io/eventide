@@ -3,6 +3,7 @@
 #include <type_traits>
 
 #include "eventide/ipc/codec.h"
+#include "eventide/ipc/peer.h"
 #include "eventide/serde/json/json.h"
 #include "eventide/serde/serde/config.h"
 #include "eventide/serde/serde/raw_value.h"
@@ -56,5 +57,9 @@ public:
         return std::move(*parsed);
     }
 };
+
+using JsonPeer = Peer<JsonCodec>;
+
+extern template class Peer<JsonCodec>;
 
 }  // namespace eventide::ipc

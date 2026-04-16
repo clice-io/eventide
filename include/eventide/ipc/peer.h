@@ -8,12 +8,11 @@
 #include <string_view>
 #include <utility>
 
-#include "eventide/ipc/bincode_codec.h"
 #include "eventide/ipc/codec.h"
-#include "eventide/ipc/json_codec.h"
 #include "eventide/ipc/logger.h"
 #include "eventide/ipc/transport.h"
 #include "eventide/async/async.h"
+#include "eventide/serde/serde/raw_value.h"
 
 namespace eventide::ipc {
 
@@ -161,18 +160,8 @@ private:
     std::unique_ptr<Self> self;
 };
 
-using JsonPeer = Peer<JsonCodec>;
-using BincodePeer = Peer<BincodeCodec>;
-
 }  // namespace eventide::ipc
 
 #define ETD_IPC_PEER_INL_FROM_HEADER
 #include "eventide/ipc/peer.inl"
 #undef ETD_IPC_PEER_INL_FROM_HEADER
-
-namespace eventide::ipc {
-
-extern template class Peer<JsonCodec>;
-extern template class Peer<BincodeCodec>;
-
-}  // namespace eventide::ipc

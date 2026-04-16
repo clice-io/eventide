@@ -1,9 +1,9 @@
-#include "eventide/ipc/json_codec.h"
+#include "eventide/serde/json/json.h"
 
 #include <string>
 #include <string_view>
 
-#include "eventide/serde/json/json.h"
+#include "eventide/ipc/codec/json.h"
 
 namespace eventide::ipc {
 
@@ -132,5 +132,7 @@ Result<std::string> JsonCodec::encode_error_response(const protocol::RequestID& 
         .error = error,
     });
 }
+
+template class Peer<JsonCodec>;
 
 }  // namespace eventide::ipc

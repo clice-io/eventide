@@ -1,4 +1,4 @@
-#include "eventide/ipc/bincode_codec.h"
+#include "eventide/ipc/codec/bincode.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -104,5 +104,7 @@ Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestI
         serde::RawValue{},
     });
 }
+
+template class Peer<BincodeCodec>;
 
 }  // namespace eventide::ipc
