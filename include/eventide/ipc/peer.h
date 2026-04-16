@@ -10,7 +10,9 @@
 
 #include "eventide/ipc/bincode_codec.h"
 #include "eventide/ipc/codec.h"
+#if ENABLE_JSON
 #include "eventide/ipc/json_codec.h"
+#endif
 #include "eventide/ipc/logger.h"
 #include "eventide/ipc/transport.h"
 #include "eventide/async/async.h"
@@ -161,7 +163,9 @@ private:
     std::unique_ptr<Self> self;
 };
 
+#if ENABLE_JSON
 using JsonPeer = Peer<JsonCodec>;
+#endif
 using BincodePeer = Peer<BincodeCodec>;
 
 }  // namespace eventide::ipc
@@ -172,7 +176,9 @@ using BincodePeer = Peer<BincodeCodec>;
 
 namespace eventide::ipc {
 
+#if ENABLE_JSON
 extern template class Peer<JsonCodec>;
+#endif
 extern template class Peer<BincodeCodec>;
 
 }  // namespace eventide::ipc

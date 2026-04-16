@@ -292,7 +292,7 @@ if(ETD_ENABLE_ASYNC)
     add_subdirectory(src/async)
 endif()
 
-if(ETD_ENABLE_ASYNC AND ETD_SERDE_ENABLE_SIMDJSON)
+if(ETD_ENABLE_ASYNC)
     add_subdirectory(src/ipc)
 endif()
 
