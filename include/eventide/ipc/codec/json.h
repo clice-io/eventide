@@ -1,8 +1,8 @@
 #pragma once
 
-#if !ETD_IPC_ENABLE_JSON
-#error "eventide/ipc/codec/json.h requires JSON IPC support. Enable ETD_SERDE_ENABLE_SIMDJSON."
-#endif
+`#if` !ETD_IPC_ENABLE_JSON
+`#error` "eventide/ipc/codec/json.h requires JSON IPC support. Enable ETD_IPC_ENABLE_JSON via ETD_SERDE_ENABLE_SIMDJSON (CMake) or serde_simdjson (xmake)."
+`#endif`
 
 #include <type_traits>
 
