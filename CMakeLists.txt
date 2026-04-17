@@ -90,15 +90,9 @@ endif()
 if(KOTA_SANITIZE_ADDRESS)
     if(MSVC)
         # /fsanitize=address disables __forceinline; suppress C4714 so /WX does not trip on it.
-        # Disable MSVC STL's container annotations: third-party libs (simdjson, yyjson, ...) are
-        # not rebuilt with ASan instrumentation, so their TUs emit annotate_string/vector=0 while
-        # ours emit =1, tripping lld-link's /failifmismatch. Turning annotations off on both sides
-        # costs container-overflow detection but keeps heap/stack/use-after-free intact.
         set(kota_sanitizer_compile_options
             "/fsanitize=address"
             "/wd4714"
-            "/D_DISABLE_STRING_ANNOTATION"
-            "/D_DISABLE_VECTOR_ANNOTATION"
         )
         set(kota_sanitizer_link_options "")
 

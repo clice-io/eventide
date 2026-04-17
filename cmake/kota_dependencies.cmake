@@ -82,13 +82,13 @@ function(kota_silence_third_party_target target)
         return()
     endif()
 
-    # Wipe the target's direct COMPILE_OPTIONS (including generator expressions
-    # like cpptrace's `$<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->`) so /W4 or
-    # -Wall from the dependency does not land on the command line alongside the
-    # /W0 / -w we add below. Directory-level or CMAKE_*_FLAGS-level options are
-    # untouched; we only need to neutralize the dependency's own warning opt-ins.
-    set_target_properties(${target} PROPERTIES COMPILE_OPTIONS "")
-
+    # Do NOT clear the target's existing COMPILE_OPTIONS: it was initialized
+    # from directory COMPILE_OPTIONS at target creation and includes the
+    # sanitizer flags (/fsanitize=address, -fsanitize=thread, ...) we pushed
+    # via add_compile_options at the top level. Clearing would strip those
+    # and leave dependencies uninstrumented. Instead, append /W0 / -w below;
+    # MSVC/GCC/Clang all honour last-wins so the dependency's own /W4 / -Wall
+    # gets overridden.
     target_compile_options(${target} PRIVATE
         $<$<BOOL:${MSVC}>:/W0>
         $<$<BOOL:${MSVC}>:/WX->
