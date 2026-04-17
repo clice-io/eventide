@@ -226,7 +226,8 @@ endif()
 target_compile_definitions(kota_project_options INTERFACE
     KOTA_ENABLE_EXCEPTIONS=$<IF:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>,1,0>
     KOTA_ENABLE_RTTI=$<IF:$<BOOL:${KOTA_ENABLE_RTTI}>,1,0>
-    $<$<BOOL:${MSVC}>:_CRT_SECURE_NO_WARNINGS>
+    # WIN32, not MSVC: clang-native on Windows also uses MSVC CRT headers.
+    $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>
     $<$<AND:$<BOOL:${MSVC}>,$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>>:_HAS_EXCEPTIONS=0>
 )
 
