@@ -93,7 +93,7 @@ static result<int> to_uv_copyfile_flags(const fs::copyfile_options& options) {
 template <typename Result, typename Submit, typename Populate>
 static task<Result, error> run_fs(Submit submit,
                                   Populate populate,
-                                  event_loop& loop = event_loop::current()) {
+                                  [[maybe_unused]] event_loop& loop = event_loop::current()) {
     fs_op<Result> op;
     op.populate = populate;
 
@@ -126,7 +126,7 @@ static task<Result, error> run_fs(Submit submit,
 }
 
 template <typename Submit>
-static task<void, error> run_void_fs(Submit submit, event_loop& loop) {
+static task<void, error> run_void_fs(Submit submit, [[maybe_unused]] event_loop& loop) {
     if(auto res = co_await run_fs<int>(std::move(submit), [](uv_fs_t&) { return 0; }, loop); !res) {
         co_await fail(res.error());
     }

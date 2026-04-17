@@ -74,7 +74,7 @@ inline int global_overload(int) {
     return 0;
 }
 
-inline int global_overload(double) {
+[[maybe_unused]] inline int global_overload(double) {
     return 0;
 }
 
@@ -91,7 +91,7 @@ inline void namespaced_fn() {}
 
 inline int namespaced_array[2] = {0, 1};
 
-inline long overloaded_fn(int) {
+[[maybe_unused]] inline long overloaded_fn(int) {
     return 0;
 }
 

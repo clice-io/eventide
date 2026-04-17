@@ -139,7 +139,7 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
 }
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
-    spawn_result out{process(Self::make())};
+    spawn_result out{process(Self::make()), {}, {}, {}};
 
     std::vector<std::string> argv_storage;
     if(opts.args.empty()) {

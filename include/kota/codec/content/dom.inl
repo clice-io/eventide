@@ -233,7 +233,7 @@ inline void ValueRef::assert_valid() const {
     assert(valid());
 }
 
-inline void ValueRef::assert_kind(ValueKind expected) const {
+inline void ValueRef::assert_kind([[maybe_unused]] ValueKind expected) const {
     assert(kind() == expected);
 }
 
@@ -924,7 +924,7 @@ inline auto Value::set(T&& value) -> status_t {
 template <typename T>
     requires (dom_writable_value<T> && !std::same_as<std::remove_cvref_t<T>, Value>)
 inline auto Value::operator=(T&& value) -> Value& {
-    auto status = set(std::forward<T>(value));
+    [[maybe_unused]] auto status = set(std::forward<T>(value));
     assert(status.has_value());
     return *this;
 }

@@ -11,7 +11,7 @@
 #define ZEST_MAKE_ATTRS(...)                                                                       \
     [] constexpr {                                                                                 \
         ::kota::zest::TestAttrs _a{};                                                          \
-        auto& [skip, focus, serial] = _a;                                                          \
+        [[maybe_unused]] auto& [skip, focus, serial] = _a;                                         \
         __VA_ARGS__;                                                                               \
         return _a;                                                                                 \
     }()

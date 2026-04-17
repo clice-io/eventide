@@ -273,7 +273,8 @@ TEST_CASE(self_assignment) {
     cow_string s = cow_string::owned(string_ref{"self"});
     const char* data = s.data();
 
-    s = s;
+    auto& alias = s;
+    s = alias;
 
     EXPECT_EQ(s.ref(), "self");
     EXPECT_EQ(s.data(), data);

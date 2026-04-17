@@ -166,6 +166,8 @@ add_library(kota::project_options ALIAS kota_project_options)
 if(MSVC)
     target_compile_options(kota_project_options INTERFACE
         /utf-8
+        /W4
+        /WX
         $<$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>:/EHsc>
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/EHs-c->
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/wd4530>
@@ -176,6 +178,10 @@ if(MSVC)
     )
 else()
     target_compile_options(kota_project_options INTERFACE
+        -Wall
+        -Wextra
+        -Werror
+        $<$<CXX_COMPILER_ID:GNU>:-Wno-error=maybe-uninitialized>
         $<$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>:-fexceptions>
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:-fno-exceptions>
         $<$<BOOL:${KOTA_ENABLE_RTTI}>:-frtti>

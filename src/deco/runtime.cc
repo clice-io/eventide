@@ -95,6 +95,7 @@ void SubCommander::usage(std::ostream& os) const {
         .overview = overview,
         .usage_line = commandOverview,
         .has_usage_line = defaultHandler.has_value(),
+        .entries = {},
     };
     document.entries.reserve(handlers.size());
     for(const auto& item: handlers) {

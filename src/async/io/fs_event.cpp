@@ -48,7 +48,7 @@ static result<unsigned int> to_uv_fs_event_flags(const fs_event::watch_options& 
     return out;
 }
 
-static fs_event::change_flags to_fs_change_flags(int events) {
+static fs_event::change_flags to_fs_change_flags([[maybe_unused]] int events) {
     fs_event::change_flags out{};
 #ifdef UV_RENAME
     if((events & UV_RENAME) != 0) {

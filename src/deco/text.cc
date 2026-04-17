@@ -577,7 +577,7 @@ auto mutable_explicit_default_renderer() -> std::optional<Renderer>& {
 
 }  // namespace detail
 
-auto looks_like_rendered_diagnostic(std::string_view text) -> bool {
+auto looks_like_rendered_diagnostic([[maybe_unused]] std::string_view text) -> bool {
     return false;
 }
 

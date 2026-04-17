@@ -87,7 +87,7 @@ static result<unsigned int> to_uv_udp_bind_flags(const udp::bind_options& option
     return out;
 }
 
-static udp::recv_flags to_udp_recv_flags(unsigned flags) {
+static udp::recv_flags to_udp_recv_flags([[maybe_unused]] unsigned flags) {
     udp::recv_flags out{};
 #ifdef UV_UDP_PARTIAL
     if((flags & UV_UDP_PARTIAL) != 0) {

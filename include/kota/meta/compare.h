@@ -5,11 +5,24 @@
 #include <cstddef>
 #include <ranges>
 #include <type_traits>
+#include <utility>
 
 #include "struct.h"
 #include "kota/support/ranges.h"
 
 namespace kota::meta::detail {
+
+template <typename T>
+concept standard_integer = std::same_as<std::remove_cv_t<T>, signed char> ||
+                           std::same_as<std::remove_cv_t<T>, short> ||
+                           std::same_as<std::remove_cv_t<T>, int> ||
+                           std::same_as<std::remove_cv_t<T>, long> ||
+                           std::same_as<std::remove_cv_t<T>, long long> ||
+                           std::same_as<std::remove_cv_t<T>, unsigned char> ||
+                           std::same_as<std::remove_cv_t<T>, unsigned short> ||
+                           std::same_as<std::remove_cv_t<T>, unsigned int> ||
+                           std::same_as<std::remove_cv_t<T>, unsigned long> ||
+                           std::same_as<std::remove_cv_t<T>, unsigned long long>;
 
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;
@@ -305,7 +318,11 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
             return false;
         }
     } else if constexpr(eq_comparable_with<L, R>) {
-        return static_cast<bool>(lhs == rhs);
+        if constexpr(standard_integer<L> && standard_integer<R>) {
+            return std::cmp_equal(lhs, rhs);
+        } else {
+            return static_cast<bool>(lhs == rhs);
+        }
     } else if constexpr(reflectable_pair<L, R>) {
         constexpr std::size_t lhs_count = reflection<L>::field_count;
         constexpr std::size_t rhs_count = reflection<R>::field_count;

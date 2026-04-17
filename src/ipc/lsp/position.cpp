@@ -214,7 +214,7 @@ std::uint32_t PositionMapper::measure(std::string_view text) const {
 
 std::uint32_t PositionMapper::character(std::uint32_t line, std::uint32_t byte_column) const {
     auto start = line_start(line);
-    auto end = line_end_exclusive(line);
+    [[maybe_unused]] auto end = line_end_exclusive(line);
     assert(start + byte_column <= end && "byte column out of range");
     return measure(content.substr(start, byte_column));
 }
@@ -223,7 +223,7 @@ std::uint32_t PositionMapper::length(std::uint32_t line,
                                      std::uint32_t begin_byte_column,
                                      std::uint32_t end_byte_column) const {
     auto start = line_start(line);
-    auto end = line_end_exclusive(line);
+    [[maybe_unused]] auto end = line_end_exclusive(line);
     assert(start + begin_byte_column <= end && "begin byte column out of range");
     assert(start + end_byte_column <= end && "end byte column out of range");
 

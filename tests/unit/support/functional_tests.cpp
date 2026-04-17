@@ -575,6 +575,7 @@ TEST_CASE(self_move_assign_heap) {
     [[maybe_unused]] char padding[32]{};
     int capture = 10;
     auto lambda = [capture, padding](int x) -> int {
+        (void)padding;
         return capture + x;
     };
     static_assert(sizeof(lambda) > function<int(int)>::sbo_size);

@@ -408,12 +408,12 @@ public:
 
     auto serialize_dom(const ::toml::table& value) -> result_t<value_type> {
         KOTA_EXPECTED_TRY_V(auto converted, detail::table_to_value(value));
-        return std::move(converted);
+        return converted;
     }
 
     auto serialize_dom(const ::toml::array& value) -> result_t<value_type> {
         KOTA_EXPECTED_TRY_V(auto converted, detail::array_to_value(value));
-        return std::move(converted);
+        return converted;
     }
 
     template <typename T>

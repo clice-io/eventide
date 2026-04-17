@@ -44,7 +44,6 @@ namespace {
 #ifdef _WIN32
 using socket_t = SOCKET;
 constexpr socket_t invalid_socket = INVALID_SOCKET;
-constexpr int socket_error = SOCKET_ERROR;
 
 inline int close_socket(socket_t sock) {
     return ::closesocket(sock);
@@ -52,7 +51,6 @@ inline int close_socket(socket_t sock) {
 #else
 using socket_t = int;
 constexpr socket_t invalid_socket = -1;
-constexpr int socket_error = -1;
 
 inline int close_socket(socket_t sock) {
     return ::close(sock);

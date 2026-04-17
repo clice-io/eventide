@@ -279,7 +279,7 @@ private:
 
     constexpr void assert_safe_to_reference_after_resize(const_pointer ptr,
                                                          size_type new_size) const noexcept {
-        auto safe = [&]() noexcept {
+        [[maybe_unused]] auto safe = [&]() noexcept {
             if(!references_storage(ptr)) {
                 return true;
             }

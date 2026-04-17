@@ -508,7 +508,7 @@ TEST_CASE(bad_response_silent) {
             channel.push_incoming(R"({"jsonrpc":"2.0","id":1,"\uD800":0})");
             channel.close();
         });
-    auto* transport_ptr = transport.get();
+    [[maybe_unused]] auto* transport_ptr = transport.get();
 
     event_loop loop;
     JsonPeer peer(loop, std::move(transport));

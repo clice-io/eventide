@@ -26,7 +26,8 @@ constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
 
 struct ZestCliOptions {
-    DecoKVStyled(style = kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate,
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                   kota::deco::decl::KVStyle::Separate),
                  names = {"--test-filter"};
                  meta_var = "<PATTERN>";
                  help = "test name filters, SUITE or SUITE.TEST or SUITE.* or *";
@@ -44,7 +45,7 @@ struct ZestCliOptions {
     parallel = false;
 
     DecoKVStyled(
-        style = kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate,
+        static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
         names = {"--parallel-workers"};
         meta_var = "<N>";
         help = "Number of worker threads for parallel mode (default: hardware_concurrency)";

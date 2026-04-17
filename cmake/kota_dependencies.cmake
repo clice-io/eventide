@@ -73,9 +73,17 @@ function(kota_silence_third_party_target target)
         return()
     endif()
 
+    get_target_property(existing_opts ${target} COMPILE_OPTIONS)
+    if(existing_opts)
+        list(FILTER existing_opts EXCLUDE REGEX "^[-/](W[0-4X]|Wall|Wextra|Wpedantic|Werror)$")
+        set_target_properties(${target} PROPERTIES COMPILE_OPTIONS "${existing_opts}")
+    endif()
+
     target_compile_options(${target} PRIVATE
         $<$<BOOL:${MSVC}>:/W0>
+        $<$<BOOL:${MSVC}>:/WX->
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-error>
     )
 endfunction()
 

@@ -48,16 +48,16 @@ concept StringOrVariant = std::is_convertible_v<T, std::string_view> ||
 template <typename SpellingTy, typename ValueTy>
 struct ParsedArgumentBase {
     /// The unique identifier for the option, related to the index in option table.
-    OptSpecifier option_id;
+    OptSpecifier option_id{};
     /// the spelling of the argument, eg. "-I", "--optimize"
     /// Usually it is a string_view pointing to the original argv,
     /// but in some cases (eg. grouped short options) it may be a temporary string,
     /// therefore we should store it.
-    SpellingTy spelling;
+    SpellingTy spelling{};
     /// the values associated with the argument, eg. -I/usr/include would have value "/usr/include"
     std::vector<ValueTy> values;
     /// the index of the argument in the original argv list.
-    unsigned index;
+    unsigned index = 0;
 
     /// If this argument is an alias of another argument, this points to the original argument.
     /// eg. input an option "-O2", is an alias of "-O" with value "2".

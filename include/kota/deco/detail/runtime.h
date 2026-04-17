@@ -248,6 +248,7 @@ auto make_usage_document(std::string_view command_overview,
                          const config::Config* usage_config = nullptr) -> text::UsageDocument {
     text::UsageDocument document{
         .overview = std::string(command_overview),
+        .groups = {},
     };
     std::vector<const decl::Category*> seen_categories;
     const auto& storage = ::kota::deco::detail::build_storage<T>();
@@ -268,6 +269,7 @@ auto make_usage_document(std::string_view command_overview,
                 .title = desc::detail::category_desc(*category),
                 .exclusive = category->exclusive,
                 .is_default = category == &decl::default_category,
+                .entries = {},
             });
             group_index = document.groups.size() - 1;
         }

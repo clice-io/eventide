@@ -77,7 +77,7 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
 #endif
 
 #if KOTA_CODEC_JSON_ERROR_HAS_YYJSON
-constexpr auto make_read_error(yyjson_read_code error) noexcept -> error_kind {
+constexpr auto make_read_error([[maybe_unused]] yyjson_read_code error) noexcept -> error_kind {
 #ifdef YYJSON_READ_SUCCESS
     if(error == YYJSON_READ_SUCCESS) {
         return error_kind::ok;
@@ -86,7 +86,7 @@ constexpr auto make_read_error(yyjson_read_code error) noexcept -> error_kind {
     return error_kind::parse_error;
 }
 
-constexpr auto make_write_error(yyjson_write_code error) noexcept -> error_kind {
+constexpr auto make_write_error([[maybe_unused]] yyjson_write_code error) noexcept -> error_kind {
 #ifdef YYJSON_WRITE_SUCCESS
     if(error == YYJSON_WRITE_SUCCESS) {
         return error_kind::ok;
