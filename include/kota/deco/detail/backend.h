@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef EVENTIDE_DECO_DETAIL_BACKEND_H
-#define EVENTIDE_DECO_DETAIL_BACKEND_H
+#ifndef KOTA_DECO_DETAIL_BACKEND_H
+#define KOTA_DECO_DETAIL_BACKEND_H
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
@@ -1336,4 +1336,4 @@ const auto& build_storage() {
 
 }  // namespace deco::detail
 
-#endif  // EVENTIDE_DECO_DETAIL_BACKEND_H
+#endif  // KOTA_DECO_DETAIL_BACKEND_H
