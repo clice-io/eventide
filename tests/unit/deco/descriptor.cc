@@ -25,8 +25,7 @@ struct DescOpt {
                  required = false;)
     <std::string> include_dir;
 
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
-                                   kota::deco::decl::KVStyle::Separate),
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
                  names = {"--filter"};
                  meta_var = "PATTERN";
                  help = "Filter tests";

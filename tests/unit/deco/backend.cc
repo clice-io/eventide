@@ -104,31 +104,26 @@ struct RequiredOpt {
 };
 
 struct KVSplitStyleByNameOpt {
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
-                                   kota::deco::decl::KVStyle::Separate),
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
                  names = {"--test=", "--a"};
                  required = false;)
     <int> level;
 };
 
 struct KVDefaultNameSplitStyleOpt {
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
-                                   kota::deco::decl::KVStyle::Separate),
-                 required = false;)
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, required = false;)
     <int> level;
 };
 
 struct KVAliasSplitStyleByNameOpt {
-    DecoKVAliasStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
-                                        kota::deco::decl::KVStyle::Separate),
+    DecoKVAliasStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
                       names = {"--target=", "--target-alias"};
                       required = false;
                       forward = std::vector<std::string_view>{"--target"};) _;
 };
 
 struct KVAliasDefaultNameSplitStyleOpt {
-    DecoKVAliasStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
-                                        kota::deco::decl::KVStyle::Separate),
+    DecoKVAliasStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
                       required = false;
                       forward = std::vector<std::string_view>{"--target"};) target_alias;
 };
