@@ -89,7 +89,8 @@ endif()
 
 if(KOTA_SANITIZE_ADDRESS)
     if(MSVC)
-        set(kota_sanitizer_compile_options "/fsanitize=address")
+        # /fsanitize=address disables __forceinline; suppress C4714 so /WX does not trip on it.
+        set(kota_sanitizer_compile_options "/fsanitize=address" "/wd4714")
         set(kota_sanitizer_link_options "")
 
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
