@@ -13,8 +13,9 @@
 #include "kota/codec/spelling.h"
 
 /*
- * generate string that describes the structure of options declared in kota::deco::desc namespace, and
- * provide utilities to access the fields of the options by their corresponding option specifiers.
+ * generate string that describes the structure of options declared in kota::deco::desc namespace,
+ * and provide utilities to access the fields of the options by their corresponding option
+ * specifiers.
  */
 
 namespace kota::deco::desc {

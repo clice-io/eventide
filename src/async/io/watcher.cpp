@@ -171,7 +171,7 @@ struct signal_await : uv::await_op<signal_await> {
 
 }  // namespace
 
-#define KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                            \
+#define KOTA_DEFINE_WATCHER_SPECIAL_MEMBERS(WatcherType)                                           \
     WatcherType::WatcherType() noexcept = default;                                                 \
     WatcherType::WatcherType(unique_handle<Self> self) noexcept : self(std::move(self)) {}         \
     WatcherType::~WatcherType() = default;                                                         \
@@ -296,13 +296,13 @@ task<void, error> signal::wait() {
     }
 }
 
-#define KOTA_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                               \
-                                        HandleType,                                                \
-                                        AwaiterType,                                               \
-                                        INIT_FN,                                                   \
-                                        START_FN,                                                  \
-                                        STOP_FN,                                                   \
-                                        NameLiteral)                                               \
+#define KOTA_DEFINE_TICK_WATCHER_METHODS(WatcherType,                                              \
+                                         HandleType,                                               \
+                                         AwaiterType,                                              \
+                                         INIT_FN,                                                  \
+                                         START_FN,                                                 \
+                                         STOP_FN,                                                  \
+                                         NameLiteral)                                              \
     WatcherType WatcherType::create(event_loop& loop) {                                            \
         auto self = Self::make();                                                                  \
         auto& handle = self->handle;                                                               \
@@ -347,28 +347,28 @@ task<void, error> signal::wait() {
     }
 
 KOTA_DEFINE_TICK_WATCHER_METHODS(idle,
-                                uv_idle_t,
-                                idle_await,
-                                uv::idle_init,
-                                uv::idle_start,
-                                uv::idle_stop,
-                                "idle")
+                                 uv_idle_t,
+                                 idle_await,
+                                 uv::idle_init,
+                                 uv::idle_start,
+                                 uv::idle_stop,
+                                 "idle")
 
 KOTA_DEFINE_TICK_WATCHER_METHODS(prepare,
-                                uv_prepare_t,
-                                prepare_await,
-                                uv::prepare_init,
-                                uv::prepare_start,
-                                uv::prepare_stop,
-                                "prepare")
+                                 uv_prepare_t,
+                                 prepare_await,
+                                 uv::prepare_init,
+                                 uv::prepare_start,
+                                 uv::prepare_stop,
+                                 "prepare")
 
 KOTA_DEFINE_TICK_WATCHER_METHODS(check,
-                                uv_check_t,
-                                check_await,
-                                uv::check_init,
-                                uv::check_start,
-                                uv::check_stop,
-                                "check")
+                                 uv_check_t,
+                                 check_await,
+                                 uv::check_init,
+                                 uv::check_start,
+                                 uv::check_stop,
+                                 "check")
 
 #undef KOTA_DEFINE_TICK_WATCHER_METHODS
 

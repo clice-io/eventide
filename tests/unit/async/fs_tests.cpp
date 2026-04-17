@@ -125,8 +125,7 @@ TEST_CASE(mkstemp_and_access) {
 
 TEST_CASE(async_open_read_write_close) {
     auto worker = [](event_loop& loop) -> task<int, error> {
-        auto dir_template =
-            (std::filesystem::temp_directory_path() / "kotatsu-rw-XXXXXX").string();
+        auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-rw-XXXXXX").string();
         std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
         std::string file = (std::filesystem::path(dir) / "rw_test.txt").string();
 

@@ -15,8 +15,8 @@
 #include <variant>
 #include <vector>
 
-#include "kota/codec/flatbuffers/schema.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/flatbuffers/schema.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>

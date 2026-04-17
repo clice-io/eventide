@@ -16,8 +16,8 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/codec/bincode/error.h"
-#include "kota/codec/config.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/config.h"
 
 namespace kota::codec::bincode {
 

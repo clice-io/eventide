@@ -17,7 +17,7 @@
 //
 // Reported fixed in VS 2026 toolset v145, still reproducible in v143.
 // We treat _MSC_VER < 1950 as affected.
-#if KOTA_COMPILER_MSVC && (KOTA_COMPILER_MSVC_VERSION < 1950) &&                                     \
+#if KOTA_COMPILER_MSVC && (KOTA_COMPILER_MSVC_VERSION < 1950) &&                                   \
     (defined(_CRT_USE_ADDRESS_SANITIZER) || defined(__SANITIZE_ADDRESS__))
 #define KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 1
 #else
@@ -53,7 +53,7 @@
 #define KOTA_CATCH_ALL() catch(...)
 #define KOTA_RETHROW() throw
 #else
-#define KOTA_THROW(exception_expr)                                                                  \
+#define KOTA_THROW(exception_expr)                                                                 \
     do {                                                                                           \
         static_cast<void>(sizeof(exception_expr));                                                 \
         std::abort();                                                                              \

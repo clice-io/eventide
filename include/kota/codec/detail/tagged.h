@@ -242,7 +242,7 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
 
             using config_t = config::config_of<S>;
             KOTA_EXPECTED_TRY_V(auto s_struct,
-                               s.serialize_struct("", meta::field_count<alt_t>() + 1));
+                                s.serialize_struct("", meta::field_count<alt_t>() + 1));
 
             // tag field first
             auto tag_name = names[value.index()];

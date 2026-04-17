@@ -15,8 +15,8 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/config.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/config.h"
 #include "kota/codec/toml/error.h"
 
 #if __has_include(<toml++/toml.hpp>)

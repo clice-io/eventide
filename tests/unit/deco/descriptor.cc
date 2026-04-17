@@ -26,7 +26,8 @@ struct DescOpt {
                  required = false;)
     <std::string> include_dir;
 
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                   kota::deco::decl::KVStyle::Separate),
                  names = {"--filter"};
                  meta_var = "PATTERN";
                  help = "Filter tests";
@@ -89,7 +90,8 @@ TEST_CASE(from_deco_option_renders_usage_style_text) {
     EXPECT_TRUE(kota::deco::desc::from_deco_option(opt.trailing) == "-- <ARG>...");
     EXPECT_TRUE(kota::deco::desc::from_deco_option(opt.unnamed) == "--<flag>");
     EXPECT_TRUE(kota::deco::desc::from_deco_option(opt.unnamed, false, "u") == "-u");
-    EXPECT_TRUE(kota::deco::desc::from_deco_option(opt.unnamed, false, "long_name") == "--long-name");
+    EXPECT_TRUE(kota::deco::desc::from_deco_option(opt.unnamed, false, "long_name") ==
+                "--long-name");
 }
 
 TEST_CASE(from_deco_option_renders_help_style_text) {
@@ -130,7 +132,8 @@ TEST_CASE(from_deco_option_uses_configured_help_layout_and_default_help) {
     EXPECT_TRUE(verbose_help.find("\n") != std::string::npos);
     EXPECT_TRUE(verbose_help.find("Show version and exit") != std::string::npos);
 
-    const auto no_help = kota::deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
+    const auto no_help =
+        kota::deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
     EXPECT_TRUE(no_help.find("configured help text") != std::string::npos);
 }
 
@@ -139,7 +142,8 @@ TEST_CASE(from_deco_option_uses_override_config_for_non_option_help) {
     auto config = kota::deco::config::get();
     config.render.compatible.usage.default_help = "fallback from override";
 
-    const auto no_help = kota::deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
+    const auto no_help =
+        kota::deco::desc::from_deco_option(no_help_opt.no_help_flag, true, {}, &config);
     EXPECT_TRUE(no_help.find("fallback from override") != std::string::npos);
 }
 

@@ -114,7 +114,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
         return s.serialize_variant(v);
     } else if constexpr(tuple_like<V>) {
         KOTA_EXPECTED_TRY_V(auto s_tuple,
-                           s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
+                            s.serialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
         auto for_each = [&](const auto& element) -> bool {
@@ -331,7 +331,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
         return d.deserialize_variant(v);
     } else if constexpr(tuple_like<V>) {
         KOTA_EXPECTED_TRY_V(auto d_tuple,
-                           d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
+                            d.deserialize_tuple(std::tuple_size_v<std::remove_cvref_t<V>>));
 
         std::expected<void, E> element_result;
         std::size_t tuple_index = 0;

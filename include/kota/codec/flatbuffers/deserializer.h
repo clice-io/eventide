@@ -17,10 +17,10 @@
 
 #include "kota/support/expected_try.h"
 #include "kota/support/ranges.h"
-#include "kota/codec/flatbuffers/schema.h"
-#include "kota/codec/flatbuffers/serializer.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/common.h"
+#include "kota/codec/flatbuffers/schema.h"
+#include "kota/codec/flatbuffers/serializer.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include <flatbuffers/flatbuffers.h>

@@ -7,13 +7,13 @@
 #include <string_view>
 #include <utility>
 
+#include "kota/codec/config.h"
 #include "kota/codec/content/deserializer.h"
 #include "kota/codec/content/dom.h"
 #include "kota/codec/content/serializer.h"
 #include "kota/codec/json/deserializer.h"
 #include "kota/codec/json/error.h"
 #include "kota/codec/json/serializer.h"
-#include "kota/codec/config.h"
 #include "kota/codec/raw_value.h"
 
 namespace kota::codec::json {

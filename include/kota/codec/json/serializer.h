@@ -14,10 +14,10 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/json/error.h"
-#include "kota/codec/config.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/config.h"
 #include "kota/codec/detail/backend_helpers.h"
+#include "kota/codec/json/error.h"
 
 namespace kota::codec::json {
 

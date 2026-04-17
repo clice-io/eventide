@@ -223,7 +223,8 @@ TEST_CASE(alias_declaration_has_expected_shape) {
     ctx_cfg.names = {"--ctx"};
     ctx_cfg.forward = alias_decl_forward_with_context_fn;
 
-    static_assert(!std::is_base_of_v<kota::deco::decl::DecoOptionBase, kota::deco::decl::FlagAliasFields>);
+    static_assert(
+        !std::is_base_of_v<kota::deco::decl::DecoOptionBase, kota::deco::decl::FlagAliasFields>);
 
     EXPECT_TRUE(flag_cfg.names.size() == 1);
     EXPECT_TRUE(flag_cfg.names[0] == "-O1");
@@ -245,7 +246,8 @@ TEST_CASE(alias_declaration_has_expected_shape) {
     EXPECT_TRUE(multi_cfg.forward.dynamic != nullptr);
     EXPECT_TRUE(multi_cfg.arg_num == 2);
 
-    EXPECT_TRUE(ctx_cfg.forward.kind == kota::deco::decl::AliasForwardField::Kind::DynamicWithContext);
+    EXPECT_TRUE(ctx_cfg.forward.kind ==
+                kota::deco::decl::AliasForwardField::Kind::DynamicWithContext);
     EXPECT_TRUE(ctx_cfg.forward.dynamic_with_context != nullptr);
 }
 

@@ -348,7 +348,8 @@ std::span<std::string> into_deco_args(Args&&... args) {
 }
 
 struct ScopedDefaultRenderer {
-    const kota::deco::cli::text::Renderer* saved = kota::deco::cli::text::explicit_default_renderer();
+    const kota::deco::cli::text::Renderer* saved =
+        kota::deco::cli::text::explicit_default_renderer();
     std::optional<kota::deco::cli::text::Renderer> saved_copy =
         saved != nullptr ? std::optional<kota::deco::cli::text::Renderer>(*saved) : std::nullopt;
 
@@ -484,21 +485,24 @@ TEST_CASE(parsing_builtin_enum) {
 }
 
 TEST_CASE(parsing_builtin_enum_with_serde_spelling) {
-    auto snake = kota::deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "my_value"));
+    auto snake =
+        kota::deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "my_value"));
     EXPECT_TRUE(snake.has_value());
     if(!snake.has_value()) {
         return;
     }
     EXPECT_TRUE(snake->options.mode.value() == BuiltinCliSpelledMode::myValue);
 
-    auto keyword = kota::deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "Delete"));
+    auto keyword =
+        kota::deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "Delete"));
     EXPECT_TRUE(keyword.has_value());
     if(!keyword.has_value()) {
         return;
     }
     EXPECT_TRUE(keyword->options.mode.value() == BuiltinCliSpelledMode::Delete_);
 
-    auto numeric = kota::deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "123"));
+    auto numeric =
+        kota::deco::cli::parse<BuiltinSpelledEnumCliOpt>(into_deco_args("--mode", "123"));
     EXPECT_TRUE(numeric.has_value());
     if(!numeric.has_value()) {
         return;
@@ -675,9 +679,9 @@ TEST_CASE(modern_renderer_highlights_usage_and_diagnostic) {
     auto argv = into_deco_args("webcli", "--unknown");
     const auto diagnostic = kota::deco::cli::text::render_diagnostic(
         kota::deco::cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
-                                       1,
-                                       2,
-                                       "boom"),
+                                             1,
+                                             2,
+                                             "boom"),
         &renderer);
     EXPECT_TRUE(diagnostic.contains("\033["));
     EXPECT_TRUE(diagnostic.contains("╰─▶"));
@@ -692,9 +696,9 @@ TEST_CASE(modern_renderer_crops_long_diagnostic_source_line) {
     auto argv = into_deco_args("-s", very_long_a, very_long_b, "--", "make");
     const auto diagnostic = kota::deco::cli::text::render_diagnostic(
         kota::deco::cli::text::diagnostic_at(std::span<const std::string>(argv.data(), argv.size()),
-                                       1,
-                                       2,
-                                       "too long"),
+                                             1,
+                                             2,
+                                             "too long"),
         &renderer);
 
     EXPECT_TRUE(diagnostic.contains("..."));
@@ -710,7 +714,8 @@ TEST_CASE(with_cont_parse) {
         [](const CatterSelf& opt, kota::deco::decl::DecoOptionBase* ptr) {
             return !(&opt.s == ptr || &opt.script_internal == ptr);
         });
-    auto res2 = kota::deco::cli::parse<CatterTrailing>({args.begin() + res->next_index, args.end()});
+    auto res2 =
+        kota::deco::cli::parse<CatterTrailing>({args.begin() + res->next_index, args.end()});
     EXPECT_EQ(res->next_index, 2);
     EXPECT_EQ(*res->options.script_internal, "script::cdb");
     EXPECT_EQ(res2->options.cmd->size(), 1);
@@ -758,8 +763,8 @@ TEST_CASE(option_callback_can_stop_early_with_current_result) {
 TEST_CASE(option_callback_can_restart_with_new_span) {
     CallbackRestartState::reset();
 
-    auto res =
-        kota::deco::cli::parse<CallbackRestartOpt>(into_deco_args("entry.cc", "--skip", "ignored", "-v"));
+    auto res = kota::deco::cli::parse<CallbackRestartOpt>(
+        into_deco_args("entry.cc", "--skip", "ignored", "-v"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;
@@ -796,8 +801,8 @@ TEST_CASE(option_callback_can_restart_with_owned_argv) {
 }
 
 TEST_CASE(alias_can_forward_and_restart_without_replaying_prefix) {
-    auto res =
-        kota::deco::cli::parse<AliasRuntimeOpt>(into_deco_args("-v", "-O1", "--target-alias", "dst"));
+    auto res = kota::deco::cli::parse<AliasRuntimeOpt>(
+        into_deco_args("-v", "-O1", "--target-alias", "dst"));
     EXPECT_TRUE(res.has_value());
     if(!res.has_value()) {
         return;

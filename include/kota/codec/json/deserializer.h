@@ -14,11 +14,11 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/content/deserializer.h"
-#include "kota/codec/json/error.h"
-#include "kota/codec/config.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/config.h"
+#include "kota/codec/content/deserializer.h"
 #include "kota/codec/detail/narrow.h"
+#include "kota/codec/json/error.h"
 
 namespace kota::codec::json {
 
@@ -707,9 +707,10 @@ private:
     }
 
     result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        KOTA_EXPECTED_TRY_V(auto raw,
-                           read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                                         [](auto& val) { return val.raw_json(); }));
+        KOTA_EXPECTED_TRY_V(
+            auto raw,
+            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
+                                          [](auto& val) { return val.raw_json(); }));
         return to_padded_subview(raw);
     }
 

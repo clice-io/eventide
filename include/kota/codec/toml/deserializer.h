@@ -15,8 +15,8 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/config.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/config.h"
 #include "kota/codec/detail/backend_helpers.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/narrow.h"

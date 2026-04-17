@@ -34,8 +34,7 @@ struct deserialize_traits<bincode::Deserializer<Config>, kota::ipc::protocol::Re
     using error_type = typename bincode::Deserializer<Config>::error_type;
 
     static auto deserialize(bincode::Deserializer<Config>& deserializer,
-                            kota::ipc::protocol::RequestID& id)
-        -> std::expected<void, error_type> {
+                            kota::ipc::protocol::RequestID& id) -> std::expected<void, error_type> {
         std::int64_t v = 0;
         auto status = codec::deserialize(deserializer, v);
         if(!status) {

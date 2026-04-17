@@ -2,9 +2,9 @@
 
 #include "../standard_case_suite.h"
 #include "kota/zest/zest.h"
+#include "kota/codec/codec.h"
 #include "kota/codec/json/error.h"
 #include "kota/codec/json/json.h"
-#include "kota/codec/codec.h"
 
 namespace kota::codec {
 

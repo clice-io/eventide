@@ -4,8 +4,8 @@
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
-#include "kota/codec/json/json.h"
 #include "kota/codec/config.h"
+#include "kota/codec/json/json.h"
 #include "kota/codec/raw_value.h"
 #include "kota/codec/spelling.h"
 

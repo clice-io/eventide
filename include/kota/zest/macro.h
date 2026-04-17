@@ -28,7 +28,7 @@
         constexpr auto _zest_attrs_ = ZEST_MAKE_ATTRS(__VA_OPT__(__VA_ARGS__));                    \
         (void)_register_test_case<#name,                                                           \
                                   &Self::test_##name,                                              \
-                                  ::kota::fixed_string<file_len>(file_name),                   \
+                                  ::kota::fixed_string<file_len>(file_name),                       \
                                   std::source_location::current().line(),                          \
                                   _zest_attrs_>;                                                   \
     }                                                                                              \
@@ -37,8 +37,8 @@
 #define ZEST_CHECK_IMPL(condition, return_action)                                                  \
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
-            ::kota::zest::print_trace(std::source_location::current());                        \
-            ::kota::zest::failure();                                                           \
+            ::kota::zest::print_trace(std::source_location::current());                            \
+            ::kota::zest::failure();                                                               \
             return_action;                                                                         \
         }                                                                                          \
     } while(0)
@@ -46,10 +46,10 @@
 #define ZEST_EXPECT_UNARY(expectation, failure_pred, return_action, ...)                           \
     do {                                                                                           \
         auto failed = ([&](auto&& value) {                                                         \
-            return ::kota::zest::check_unary_failure((failure_pred),                           \
-                                                         #__VA_ARGS__,                             \
-                                                         (expectation),                            \
-                                                         value);                                   \
+            return ::kota::zest::check_unary_failure((failure_pred),                               \
+                                                     #__VA_ARGS__,                                 \
+                                                     (expectation),                                \
+                                                     value);                                       \
         }(__VA_ARGS__));                                                                           \
         ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
@@ -57,13 +57,13 @@
 #define ZEST_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                            \
     do {                                                                                           \
         auto failed = ([&](auto&& lhs, auto&& rhs) {                                               \
-            const auto exprs = ::kota::zest::parse_binary_exprs(#__VA_ARGS__);                 \
-            return ::kota::zest::check_binary_failure((failure_pred),                          \
-                                                          #op_string,                              \
-                                                          exprs.lhs,                               \
-                                                          exprs.rhs,                               \
-                                                          lhs,                                     \
-                                                          rhs);                                    \
+            const auto exprs = ::kota::zest::parse_binary_exprs(#__VA_ARGS__);                     \
+            return ::kota::zest::check_binary_failure((failure_pred),                              \
+                                                      #op_string,                                  \
+                                                      exprs.lhs,                                   \
+                                                      exprs.rhs,                                   \
+                                                      lhs,                                         \
+                                                      rhs);                                        \
         }(__VA_ARGS__));                                                                           \
         ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
@@ -112,9 +112,9 @@
 #define ZEST_EXPECT_THROWS(expectation, failure_pred, return_action, ...)                          \
     do {                                                                                           \
         auto failed = ([&]() {                                                                     \
-            return ::kota::zest::check_throws_failure((failure_pred),                          \
-                                                          #__VA_ARGS__,                            \
-                                                          (expectation));                          \
+            return ::kota::zest::check_throws_failure((failure_pred),                              \
+                                                      #__VA_ARGS__,                                \
+                                                      (expectation));                              \
         }());                                                                                      \
         ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)

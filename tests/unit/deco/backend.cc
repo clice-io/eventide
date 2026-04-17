@@ -104,14 +104,16 @@ struct RequiredOpt {
 };
 
 struct KVSplitStyleByNameOpt {
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                   kota::deco::decl::KVStyle::Separate),
                  names = {"--test=", "--a"};
                  required = false;)
     <int> level;
 };
 
 struct KVDefaultNameSplitStyleOpt {
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                   kota::deco::decl::KVStyle::Separate),
                  required = false;)
     <int> level;
 };
@@ -198,15 +200,17 @@ struct AliasBackendOpt {
                    forward = backend_alias_forward_fn;) ___;
 };
 
-using ParseAllStorage = std::remove_cvref_t<decltype(kota::deco::detail::build_storage<ParseAllOpt>())>;
-static_assert(std::is_base_of_v<kota::deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
-                                ParseAllStorage>);
+using ParseAllStorage =
+    std::remove_cvref_t<decltype(kota::deco::detail::build_storage<ParseAllOpt>())>;
+static_assert(
+    std::is_base_of_v<kota::deco::detail::DecoStructConsumer<ParseAllStorage, ParseAllOpt>,
+                      ParseAllStorage>);
 static_assert(!std::is_copy_constructible_v<ParseAllStorage>);
 static_assert(!std::is_move_constructible_v<ParseAllStorage>);
-static_assert(std::is_same_v<
-              ParseAllStorage,
-              kota::deco::detail::LLVMOptGenerator<ParseAllOpt,
-                                             kota::deco::detail::BuildStorage<ParseAllOpt>::record>>);
+static_assert(std::is_same_v<ParseAllStorage,
+                             kota::deco::detail::LLVMOptGenerator<
+                                 ParseAllOpt,
+                                 kota::deco::detail::BuildStorage<ParseAllOpt>::record>>);
 
 using Parsed = kota::option::ParsedArgument;
 
@@ -731,21 +735,21 @@ TEST_CASE(visit_fields_applies_next_cfg_to_nested_struct_fields) {
     NextOnNestedOpt default_opt{};
     std::size_t nested_cfg_count = 0;
     std::size_t tail_cfg_count = 0;
-    const bool visited =
-        built.visit_fields(default_opt,
-                           [&](const auto&, const auto& cfg, std::string_view field_name, auto) {
-                               if(field_name == "left" || field_name == "right") {
-                                   EXPECT_TRUE(cfg.required == false);
-                                   EXPECT_TRUE(cfg.category.ptr() == &sharedCategory);
-                                   nested_cfg_count += 1;
-                               }
-                               if(field_name == "tail") {
-                                   EXPECT_TRUE(cfg.required == false);
-                                   EXPECT_TRUE(cfg.category.ptr() == &kota::deco::decl::default_category);
-                                   tail_cfg_count += 1;
-                               }
-                               return true;
-                           });
+    const bool visited = built.visit_fields(
+        default_opt,
+        [&](const auto&, const auto& cfg, std::string_view field_name, auto) {
+            if(field_name == "left" || field_name == "right") {
+                EXPECT_TRUE(cfg.required == false);
+                EXPECT_TRUE(cfg.category.ptr() == &sharedCategory);
+                nested_cfg_count += 1;
+            }
+            if(field_name == "tail") {
+                EXPECT_TRUE(cfg.required == false);
+                EXPECT_TRUE(cfg.category.ptr() == &kota::deco::decl::default_category);
+                tail_cfg_count += 1;
+            }
+            return true;
+        });
     EXPECT_TRUE(visited);
     EXPECT_TRUE(nested_cfg_count == 2);
     EXPECT_TRUE(tail_cfg_count == 1);

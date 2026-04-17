@@ -63,7 +63,7 @@ TEST_CASE(usage_lists_git_style_subcommands) {
     clone_command.matchAll([](GitCloneOpt) {});
 
     kota::deco::cli::SubCommander git("git [--version] [--help] <command> [<args>]",
-                                "A fast, scalable, distributed version control system");
+                                      "A fast, scalable, distributed version control system");
     git.add(
            kota::deco::decl::SubCommand{
                .name = "commit",

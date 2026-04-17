@@ -13,10 +13,10 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/codec.h"
+#include "kota/codec/config.h"
 #include "kota/codec/content/dom.h"
 #include "kota/codec/content/error.h"
-#include "kota/codec/config.h"
-#include "kota/codec/codec.h"
 #include "kota/codec/detail/backend_helpers.h"
 
 namespace kota::codec::content {

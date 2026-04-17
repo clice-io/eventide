@@ -474,12 +474,10 @@ private:
     using resource_ty = kota::comptime::ComptimeMemoryResource<record>;
     using item_pool_type = kota::comptime::ComptimeVector<info_item, resource_ty, 0>;
     using id_map_type = kota::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
-    using category_map_type =
-        kota::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
+    using category_map_type = kota::comptime::ComptimeVector<const decl::Category*, resource_ty, 2>;
     using callback_map_type = kota::comptime::ComptimeVector<parse_callback_t, resource_ty, 3>;
 
-    using alias_meta_map_type =
-        kota::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
+    using alias_meta_map_type = kota::comptime::ComptimeVector<AliasRuntimeMeta, resource_ty, 4>;
     using string_pool_type = kota::comptime::ComptimeVector<std::string_view, resource_ty, 5>;
 
     // Keep a dummy at index 0 so item.id can be used as direct index.

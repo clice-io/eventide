@@ -43,7 +43,8 @@ struct SerializeOpt {
                  category = primary_category;)
     <int> joined_only;
 
-    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined | kota::deco::decl::KVStyle::Separate),
+    DecoKVStyled(static_cast<char>(kota::deco::decl::KVStyle::Joined |
+                                   kota::deco::decl::KVStyle::Separate),
                  names = {"--split="};
                  required = false;
                  category = secondary_category;)
