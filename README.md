@@ -3,6 +3,8 @@
 `kotatsu` is a C++23 toolkit extracted from the `clice` ecosystem.
 It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, codec utilities, a typed IPC layer, generated LSP protocol bindings, a lightweight test framework, an LLVM-compatible option parsing library, and a declarative option library built on it.
 
+All public APIs live under the `kota::` namespace, public headers under `include/kota/`, and CMake/xmake options use the `KOTA_` prefix.
+
 ## Feature Coverage
 
 ### `async` runtime (`include/kota/async/*`)
@@ -126,8 +128,9 @@ tests/
     meta/        # Reflection behavior tests
     async/       # Runtime/event-loop/IO/process/fs/sync tests
     ipc/         # IPC peer and transport tests
-    codec/       # JSON/FlatBuffers codec tests
     ipc/lsp/     # LSP utility, progress, and jsonrpc-trait tests
+    codec/       # JSON/FlatBuffers codec tests
+    support/     # Shared utility tests (cow_string, small_vector, etc.)
 
 examples/
   ipc/       # IPC stdio, scripted, and multi-process examples
