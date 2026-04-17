@@ -13,16 +13,15 @@
 namespace kota::meta::detail {
 
 template <typename T>
-concept standard_integer = std::same_as<std::remove_cv_t<T>, signed char> ||
-                           std::same_as<std::remove_cv_t<T>, short> ||
-                           std::same_as<std::remove_cv_t<T>, int> ||
-                           std::same_as<std::remove_cv_t<T>, long> ||
-                           std::same_as<std::remove_cv_t<T>, long long> ||
-                           std::same_as<std::remove_cv_t<T>, unsigned char> ||
-                           std::same_as<std::remove_cv_t<T>, unsigned short> ||
-                           std::same_as<std::remove_cv_t<T>, unsigned int> ||
-                           std::same_as<std::remove_cv_t<T>, unsigned long> ||
-                           std::same_as<std::remove_cv_t<T>, unsigned long long>;
+concept standard_integer =
+    std::same_as<std::remove_cv_t<T>, signed char> || std::same_as<std::remove_cv_t<T>, short> ||
+    std::same_as<std::remove_cv_t<T>, int> || std::same_as<std::remove_cv_t<T>, long> ||
+    std::same_as<std::remove_cv_t<T>, long long> ||
+    std::same_as<std::remove_cv_t<T>, unsigned char> ||
+    std::same_as<std::remove_cv_t<T>, unsigned short> ||
+    std::same_as<std::remove_cv_t<T>, unsigned int> ||
+    std::same_as<std::remove_cv_t<T>, unsigned long> ||
+    std::same_as<std::remove_cv_t<T>, unsigned long long>;
 
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;

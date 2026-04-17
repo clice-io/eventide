@@ -390,7 +390,8 @@ ALWAYS_INLINE uv_handle_type guess_handle(uv_file file) noexcept {
 template <stream_like S>
 ALWAYS_INLINE result<std::size_t> try_write(S& stream, std::span<const uv_buf_t> bufs) noexcept {
     assert(!bufs.empty() && "uv::try_write requires a non-empty buffer span");
-    [[maybe_unused]] int rc = ::uv_try_write(as_stream(stream), bufs.data(), static_cast<unsigned>(bufs.size()));
+    [[maybe_unused]] int rc =
+        ::uv_try_write(as_stream(stream), bufs.data(), static_cast<unsigned>(bufs.size()));
     if(rc < 0) {
         return outcome_error(error(rc));
     }
@@ -487,7 +488,8 @@ ALWAYS_INLINE result<std::size_t> udp_try_send(uv_udp_t& handle,
                                                std::span<const uv_buf_t> bufs,
                                                const sockaddr* addr) noexcept {
     assert(!bufs.empty() && "uv::udp_try_send requires a non-empty buffer span");
-    [[maybe_unused]] int rc = ::uv_udp_try_send(&handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr);
+    [[maybe_unused]] int rc =
+        ::uv_udp_try_send(&handle, bufs.data(), static_cast<unsigned>(bufs.size()), addr);
     if(rc < 0) {
         return outcome_error(error(rc));
     }
