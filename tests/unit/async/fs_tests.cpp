@@ -124,31 +124,31 @@ TEST_CASE(mkstemp_and_access) {
 }
 
 TEST_CASE(async_open_read_write_close) {
-    auto worker = [](event_loop& loop) -> task<int, error> {
+    auto worker = [](event_loop& ev) -> task<int, error> {
         auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-rw-XXXXXX").string();
-        std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+        std::string dir = co_await fs::mkdtemp(dir_template, ev).or_fail();
         std::string file = (std::filesystem::path(dir) / "rw_test.txt").string();
 
-        int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+        int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, ev).or_fail();
 
         constexpr std::string_view payload = "hello-async-io";
         auto written =
-            co_await fs::write(fd, std::span<const char>(payload.data(), payload.size()), -1, loop)
+            co_await fs::write(fd, std::span<const char>(payload.data(), payload.size()), -1, ev)
                 .or_fail();
         if(written != payload.size()) {
             co_await fail(error::io_error);
         }
 
-        co_await fs::close(fd, loop).or_fail();
+        co_await fs::close(fd, ev).or_fail();
 
-        fd = co_await fs::open(file, O_RDONLY, 0, loop).or_fail();
+        fd = co_await fs::open(file, O_RDONLY, 0, ev).or_fail();
 
         char buf[64]{};
-        auto nread = co_await fs::read(fd, std::span<char>(buf, sizeof(buf)), -1, loop).or_fail();
-        co_await fs::close(fd, loop).or_fail();
+        auto nread = co_await fs::read(fd, std::span<char>(buf, sizeof(buf)), -1, ev).or_fail();
+        co_await fs::close(fd, ev).or_fail();
 
-        co_await fs::unlink(file, loop).or_fail();
-        co_await fs::rmdir(dir, loop).or_fail();
+        co_await fs::unlink(file, ev).or_fail();
+        co_await fs::rmdir(dir, ev).or_fail();
 
         std::string_view got(buf, nread);
         co_return got == payload ? 1 : 0;
@@ -284,9 +284,9 @@ TEST_CASE(fchmod) {
 #endif  // !_WIN32
 
 TEST_CASE(statfs_basic) {
-    auto worker = [](event_loop& loop) -> task<int, error> {
+    auto worker = [](event_loop& ev) -> task<int, error> {
         auto statfs_path = std::filesystem::temp_directory_path().string();
-        auto stats = co_await fs::statfs(statfs_path, loop).or_fail();
+        auto stats = co_await fs::statfs(statfs_path, ev).or_fail();
         // Block size should be nonzero on any real filesystem.
         co_return stats.bsize > 0 ? 1 : 0;
     }(loop);

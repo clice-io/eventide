@@ -24,6 +24,7 @@ task<process::wait_result> wait_for_exit(process& proc, int& done, int target) {
     co_return status;
 }
 
+#ifndef _WIN32
 task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p) {
     auto first = co_await p.read_chunk();
     result<std::string> first_out = outcome_error(error::invalid_argument);
@@ -46,6 +47,7 @@ task<std::pair<result<std::string>, result<std::string>>> read_two_chunks(pipe p
     event_loop::current().stop();
     co_return std::pair{std::move(first_out), std::move(second_out)};
 }
+#endif
 
 }  // namespace
 

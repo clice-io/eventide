@@ -1,3 +1,9 @@
+#if defined(_MSC_VER)
+// Test fixtures hold thread_local members inside anonymous-namespace structs;
+// MSVC emits C5046 for the synthesized thread-local destructor registration.
+#pragma warning(disable : 5046)
+#endif
+
 #include "kota/deco/detail/runtime.h"
 
 #include <filesystem>
@@ -1003,7 +1009,7 @@ TEST_CASE(match_can_observe_invocation_context) {
     command.match(WebCliOpt::Cate::request_category,
                   [&](const kota::deco::cli::Invocation<WebCliOpt>& invocation) {
                       EXPECT_TRUE(invocation.matched(WebCliOpt::Cate::request_category));
-                      seen_trace_size = invocation.trace().size();
+                      seen_trace_size = static_cast<unsigned>(invocation.trace().size());
                       seen_url = invocation.options.request.url->url;
                   });
 

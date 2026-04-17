@@ -489,7 +489,7 @@ TEST_CASE(accept_and_read) {
     ASSERT_EQ(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
 
     const std::string message = "kotatsu-tcp";
-    ASSERT_EQ(::send(client_fd, message.data(), message.size(), 0),
+    ASSERT_EQ(::send(client_fd, message.data(), static_cast<int>(message.size()), 0),
               static_cast<ssize_t>(message.size()));
     close_socket(client_fd);
 
