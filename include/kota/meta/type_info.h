@@ -56,28 +56,29 @@ struct type_info {
     }
 };
 
+using type_info_fn = const type_info& (*)();
+
 struct array_type_info : type_info {
-    const type_info* element;
+    type_info_fn element;
 };
 
 struct map_type_info : type_info {
-    const type_info* key;
-    const type_info* value;
+    type_info_fn key;
+    type_info_fn value;
 };
 
 struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
-    std::span<const std::int64_t> member_values;
-    std::span<const std::uint64_t> member_u64_values;
+    const void* member_values;
     type_kind underlying_kind;
 };
 
 struct tuple_type_info : type_info {
-    std::span<const type_info* const> elements;
+    std::span<const type_info_fn> elements;
 };
 
 struct variant_type_info : type_info {
-    std::span<const type_info* const> alternatives;
+    std::span<const type_info_fn> alternatives;
     tag_mode tagging = tag_mode::none;
     std::string_view tag_field;
     std::string_view content_field;
@@ -85,7 +86,7 @@ struct variant_type_info : type_info {
 };
 
 struct optional_type_info : type_info {
-    const type_info* inner;
+    type_info_fn inner;
 };
 
 struct field_info {
@@ -93,7 +94,7 @@ struct field_info {
     std::span<const std::string_view> aliases;
     std::size_t offset;
     std::size_t physical_index;
-    const type_info* type;
+    type_info_fn type;
 
     bool has_default;
     bool is_literal;
@@ -108,7 +109,7 @@ struct struct_type_info : type_info {
 };
 
 template <typename T, typename Config = default_config>
-constexpr const type_info* type_info_of();
+constexpr const type_info& type_info_of();
 
 namespace detail {
 
@@ -274,19 +275,15 @@ using tagged_schema_attr_t = tuple_find_t<AttrsTuple, is_tagged_attr>;
 template <typename AttrsTuple>
 constexpr bool has_tagged_schema_attr_v = !std::is_void_v<tagged_schema_attr_t<AttrsTuple>>;
 
-template <typename T>
-struct type_instance_subject {
-    using normalized_t = std::remove_cv_t<T>;
-    using unwrap = unwrap_annotated<normalized_t>;
-    using raw_t = typename unwrap::raw_type;
-    using attrs_t = typename unwrap::attrs;
-    using wire_t = resolve_wire_type_t<raw_t, attrs_t>;
+template <typename WireT, typename AttrsT, typename Config, type_kind Kind = kind_of<WireT>()>
+struct type_instance_impl;
 
-    constexpr static type_kind kind = kind_of<wire_t>();
-};
-
-template <typename T, typename Config, type_kind Kind = type_instance_subject<T>::kind>
-struct type_instance;
+template <typename T, typename Config = default_config>
+struct type_instance :
+    type_instance_impl<resolve_wire_type_t<typename unwrap_annotated<std::remove_cv_t<T>>::raw_type,
+                                           typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
+                       typename unwrap_annotated<std::remove_cv_t<T>>::attrs,
+                       Config> {};
 
 template <typename T, std::size_t I>
 constexpr bool has_alias_attr() {
@@ -369,39 +366,6 @@ constexpr bool has_deny_unknown_fields() {
     return tuple_has_v<attrs_t, attrs::deny_unknown_fields>;
 }
 
-template <typename E, typename IntT>
-    requires std::is_enum_v<E>
-struct enum_values_as {
-    constexpr static auto values = [] {
-        constexpr auto& src = meta::reflection<E>::member_values;
-        std::array<IntT, src.size()> out{};
-        for(std::size_t i = 0; i < src.size(); ++i) {
-            out[i] = static_cast<IntT>(static_cast<std::underlying_type_t<E>>(src[i]));
-        }
-        return out;
-    }();
-};
-
-template <typename V, typename Config, typename AttrsTuple = std::tuple<>>
-struct struct_info_node {
-    using schema_config = struct_schema_config_t<Config, AttrsTuple>;
-    constexpr static std::size_t count = effective_field_count<V>();
-    constexpr static bool deny_unknown =
-        has_deny_unknown_fields<V>() || tuple_has_v<AttrsTuple, attrs::deny_unknown_fields>;
-
-    constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<V>;
-
-    constexpr inline static built_fields_t<V, schema_config> fields =
-        build_fields<V, schema_config>();
-
-    constexpr inline static struct_type_info value = {
-        {type_kind::structure, meta::type_name<V>()},
-        deny_unknown,
-        is_trivially_copyable,
-        {fields.data(),        count               },
-    };
-};
-
 template <typename TagAttr>
 constexpr tag_mode tagged_mode_for() {
     constexpr auto strategy = tagged_strategy_of<TagAttr>;
@@ -422,8 +386,8 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     using variant_t = std::variant<Ts...>;
     constexpr static bool has_tag = has_tagged_schema_attr_v<AttrsTuple>;
 
-    constexpr static std::array<const type_info*, sizeof...(Ts)> alternatives = {
-        &type_instance<Ts, Config>::value...};
+    constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
+        type_info_of<Ts, Config>...};
 
     // Backing storage is always sizeof...(Ts) (>=1 since variant must have alternatives);
     // for non-tagged variants the elements stay default-constructed and the consumer
@@ -481,8 +445,8 @@ struct tuple_info_node;
 
 template <typename Tuple, typename Config, std::size_t... Is>
 struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
-    constexpr inline static std::array<const type_info*, sizeof...(Is)> elements = {
-        &type_instance<std::tuple_element_t<Is, Tuple>, Config>::value...};
+    constexpr inline static std::array<type_info_fn, sizeof...(Is)> elements = {
+        type_info_of<std::tuple_element_t<Is, Tuple>, Config>...};
 
     constexpr inline static tuple_type_info value = {
         {type_kind::tuple, meta::type_name<Tuple>()},
@@ -490,136 +454,109 @@ struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
     };
 };
 
-template <typename T, typename Config, type_kind Kind>
-struct type_instance {
-    using subject = type_instance_subject<T>;
-    using wire_t = typename subject::wire_t;
-
+template <typename WireT, typename AttrsT, typename Config, type_kind Kind>
+struct type_instance_impl {
     constexpr inline static type_info value = {
-        kind_of<wire_t>(),
-        meta::type_name<wire_t>(),
+        kind_of<WireT>(),
+        meta::type_name<WireT>(),
     };
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::optional> {
-    using subject = type_instance_subject<T>;
-    using wire_t = typename subject::wire_t;
-    using inner_t = typename wire_t::value_type;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::optional> {
+    using inner_t = typename WireT::value_type;
 
     constexpr inline static optional_type_info value = {
-        {type_kind::optional, meta::type_name<wire_t>()},
-        &type_instance<inner_t, Config>::value,
+        {type_kind::optional, meta::type_name<WireT>()},
+        type_info_of<inner_t, Config>,
     };
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::pointer> {
-    using subject = type_instance_subject<T>;
-    using wire_t = typename subject::wire_t;
-    using inner_t = typename wire_t::element_type;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::pointer> {
+    using inner_t = typename WireT::element_type;
 
     constexpr inline static optional_type_info value = {
-        {type_kind::pointer, meta::type_name<wire_t>()},
-        &type_instance<inner_t, Config>::value,
+        {type_kind::pointer, meta::type_name<WireT>()},
+        type_info_of<inner_t, Config>,
     };
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::variant> {
-    using subject = type_instance_subject<T>;
-    using attrs_t = typename subject::attrs_t;
-    using wire_t = typename subject::wire_t;
-
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::variant> {
     constexpr inline static variant_type_info value =
-        variant_info_node<wire_t, Config, attrs_t>::value;
+        variant_info_node<WireT, Config, AttrsT>::value;
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::tuple> {
-    using wire_t = typename type_instance_subject<T>::wire_t;
-
-    constexpr inline static tuple_type_info value = tuple_info_node<wire_t, Config>::value;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::tuple> {
+    constexpr inline static tuple_type_info value = tuple_info_node<WireT, Config>::value;
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::map> {
-    using wire_t = typename type_instance_subject<T>::wire_t;
-    using kv_t = std::ranges::range_value_t<wire_t>;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::map> {
+    using kv_t = std::ranges::range_value_t<WireT>;
     using key_t = std::remove_const_t<typename kv_t::first_type>;
     using mapped_t = typename kv_t::second_type;
 
     constexpr inline static map_type_info value = {
-        {type_kind::map, meta::type_name<wire_t>()},
-        &type_instance<key_t, Config>::value,
-        &type_instance<mapped_t, Config>::value,
+        {type_kind::map, meta::type_name<WireT>()},
+        type_info_of<key_t, Config>,
+        type_info_of<mapped_t, Config>,
     };
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::set> {
-    using wire_t = typename type_instance_subject<T>::wire_t;
-    using element_t = std::ranges::range_value_t<wire_t>;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::set> {
+    using element_t = std::ranges::range_value_t<WireT>;
 
     constexpr inline static array_type_info value = {
-        {type_kind::set, meta::type_name<wire_t>()},
-        &type_instance<element_t, Config>::value,
+        {type_kind::set, meta::type_name<WireT>()},
+        type_info_of<element_t, Config>,
     };
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::array> {
-    using wire_t = typename type_instance_subject<T>::wire_t;
-    using element_t = std::ranges::range_value_t<wire_t>;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::array> {
+    using element_t = std::ranges::range_value_t<WireT>;
 
     constexpr inline static array_type_info value = {
-        {type_kind::array, meta::type_name<wire_t>()},
-        &type_instance<element_t, Config>::value,
+        {type_kind::array, meta::type_name<WireT>()},
+        type_info_of<element_t, Config>,
     };
 };
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::structure> {
-    using subject = type_instance_subject<T>;
-    using attrs_t = typename subject::attrs_t;
-    using wire_t = typename subject::wire_t;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::structure> {
+    using schema_config = struct_schema_config_t<Config, AttrsT>;
+    constexpr static std::size_t count = effective_field_count<WireT>();
+    constexpr static bool deny_unknown =
+        has_deny_unknown_fields<WireT>() || tuple_has_v<AttrsT, attrs::deny_unknown_fields>;
+    constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<WireT>;
 
-    const static struct_type_info value;
+    constexpr inline static built_fields_t<WireT, schema_config> fields =
+        build_fields<WireT, schema_config>();
+
+    constexpr inline static struct_type_info value = {
+        {type_kind::structure, meta::type_name<WireT>()},
+        deny_unknown,
+        is_trivially_copyable,
+        {fields.data(),        count                   },
+    };
 };
 
-template <typename T, typename Config>
-constexpr struct_type_info type_instance<T, Config, type_kind::structure>::value =
-    struct_info_node<typename type_instance_subject<T>::wire_t,
-                     Config,
-                     typename type_instance_subject<T>::attrs_t>::value;
+template <typename WireT, typename AttrsT, typename Config>
+struct type_instance_impl<WireT, AttrsT, Config, type_kind::enumeration> {
+    constexpr static auto& names = meta::reflection<WireT>::member_names;
+    constexpr static auto& values = meta::reflection<WireT>::member_values;
+    using underlying_t = std::underlying_type_t<WireT>;
 
-template <typename T, typename Config>
-struct type_instance<T, Config, type_kind::enumeration> {
-    using wire_t = typename type_instance_subject<T>::wire_t;
-    constexpr static auto& names = meta::reflection<wire_t>::member_names;
-    using underlying_t = std::underlying_type_t<wire_t>;
-
-    constexpr inline static enum_type_info value = [] {
-        if constexpr(std::is_unsigned_v<underlying_t> && sizeof(underlying_t) == 8) {
-            constexpr auto& values = enum_values_as<wire_t, std::uint64_t>::values;
-            return enum_type_info{
-                {type_kind::enumeration, meta::type_name<wire_t>()},
-                {names.data(), names.size()},
-                {},
-                {values.data(), values.size()},
-                kind_of<underlying_t>(),
-            };
-        } else {
-            constexpr auto& values = enum_values_as<wire_t, std::int64_t>::values;
-            return enum_type_info{
-                {type_kind::enumeration, meta::type_name<wire_t>()},
-                {names.data(), names.size()},
-                {values.data(), values.size()},
-                {},
-                kind_of<underlying_t>(),
-            };
-        }
-    }();
+    constexpr inline static enum_type_info value = {
+        {type_kind::enumeration, meta::type_name<WireT>()},
+        {names.data(),           names.size()            },
+        static_cast<const void*>(values.data()),
+        kind_of<underlying_t>(),
+    };
 };
 
 template <typename T, typename Config, std::size_t I>
@@ -646,7 +583,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .aliases = aliases,
         .offset = offset,
         .physical_index = I,
-        .type = &type_instance<field_t, Config>::value,
+        .type = type_info_of<field_t, Config>,
         .has_default = has_default,
         .is_literal = is_literal,
         .has_skip_if = has_skip_if,
@@ -692,8 +629,8 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 }  // namespace detail
 
 template <typename T, typename Config>
-constexpr const type_info* type_info_of() {
-    return &detail::type_instance<T, Config>::value;
+constexpr const type_info& type_info_of() {
+    return detail::type_instance<T, Config>::value;
 }
 
 }  // namespace kota::meta
