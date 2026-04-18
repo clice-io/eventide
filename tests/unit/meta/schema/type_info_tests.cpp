@@ -382,12 +382,11 @@ TEST_CASE(annotated_type_info) {
             type_info_of<test_schema::HugeUnsignedEnum, default_config>());
         EXPECT_EQ(ei.kind, type_kind::enumeration);
         EXPECT_EQ(ei.underlying_kind, type_kind::uint64);
-        EXPECT_EQ(ei.member_values.size(), 0U);
-        EXPECT_EQ(ei.member_u64_values.size(), 2U);
-        EXPECT_TRUE((ei.member_u64_values[0] == 0U &&
-                     ei.member_u64_values[1] == std::numeric_limits<std::uint64_t>::max()) ||
-                    (ei.member_u64_values[1] == 0U &&
-                     ei.member_u64_values[0] == std::numeric_limits<std::uint64_t>::max()));
+        EXPECT_EQ(ei.member_names.size(), 2U);
+        const auto* u64_vals = static_cast<const std::uint64_t*>(ei.member_values);
+        const std::span<const std::uint64_t> values{u64_vals, ei.member_names.size()};
+        EXPECT_TRUE((values[0] == 0U && values[1] == std::numeric_limits<std::uint64_t>::max()) ||
+                    (values[1] == 0U && values[0] == std::numeric_limits<std::uint64_t>::max()));
     }
 }
 

@@ -69,8 +69,7 @@ struct map_type_info : type_info {
 
 struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
-    std::span<const std::int64_t> member_values;
-    std::span<const std::uint64_t> member_u64_values;
+    const void* member_values;
     type_kind underlying_kind;
 };
 
@@ -367,19 +366,6 @@ constexpr bool has_deny_unknown_fields() {
     return tuple_has_v<attrs_t, attrs::deny_unknown_fields>;
 }
 
-template <typename E, typename IntT>
-    requires std::is_enum_v<E>
-struct enum_values_as {
-    constexpr static auto values = [] {
-        constexpr auto& src = meta::reflection<E>::member_values;
-        std::array<IntT, src.size()> out{};
-        for(std::size_t i = 0; i < src.size(); ++i) {
-            out[i] = static_cast<IntT>(static_cast<std::underlying_type_t<E>>(src[i]));
-        }
-        return out;
-    }();
-};
-
 template <typename TagAttr>
 constexpr tag_mode tagged_mode_for() {
     constexpr auto strategy = tagged_strategy_of<TagAttr>;
@@ -562,29 +548,15 @@ struct type_instance_impl<WireT, AttrsT, Config, type_kind::structure> {
 template <typename WireT, typename AttrsT, typename Config>
 struct type_instance_impl<WireT, AttrsT, Config, type_kind::enumeration> {
     constexpr static auto& names = meta::reflection<WireT>::member_names;
+    constexpr static auto& values = meta::reflection<WireT>::member_values;
     using underlying_t = std::underlying_type_t<WireT>;
 
-    constexpr inline static enum_type_info value = [] {
-        if constexpr(std::is_unsigned_v<underlying_t> && sizeof(underlying_t) == 8) {
-            constexpr auto& values = enum_values_as<WireT, std::uint64_t>::values;
-            return enum_type_info{
-                {type_kind::enumeration, meta::type_name<WireT>()},
-                {names.data(), names.size()},
-                {},
-                {values.data(), values.size()},
-                kind_of<underlying_t>(),
-            };
-        } else {
-            constexpr auto& values = enum_values_as<WireT, std::int64_t>::values;
-            return enum_type_info{
-                {type_kind::enumeration, meta::type_name<WireT>()},
-                {names.data(), names.size()},
-                {values.data(), values.size()},
-                {},
-                kind_of<underlying_t>(),
-            };
-        }
-    }();
+    constexpr inline static enum_type_info value = {
+        {type_kind::enumeration, meta::type_name<WireT>()},
+        {names.data(),           names.size()            },
+        static_cast<const void*>(values.data()),
+        kind_of<underlying_t>(),
+    };
 };
 
 template <typename T, typename Config, std::size_t I>
