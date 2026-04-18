@@ -12,8 +12,8 @@
 
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
-#include "kota/meta/codegen/fbs.h"
 #include "kota/meta/schema.h"
+#include "kota/codec/schema/fbs.h"
 
 namespace kota::meta {
 
@@ -422,7 +422,7 @@ struct set_of_struct {
     std::string name;
 };
 
-namespace fbs = codegen::fbs;
+namespace fbs = kota::codec::schema::fbs;
 
 // ===========================================================================
 TEST_SUITE(serde_fbs_schema) {
