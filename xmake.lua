@@ -156,6 +156,7 @@ if has_config("codec") then
 		add_headerfiles(
 			"include/(kota/codec/bincode.h)",
 			"include/(kota/codec/bincode/**.h)",
+			"include/(kota/codec/flatcode/**.h)",
 			"include/(kota/codec/*.h)",
 			"include/(kota/codec/detail/**.h)"
 		)
@@ -363,6 +364,7 @@ if has_config("test") and has_config("ztest") then
 		end
 		if has_config("codec") then
 			add_files("tests/unit/codec/bincode/**.cpp")
+			add_files("tests/unit/codec/flatcode/**.cpp")
 		end
 		if has_config("async") and has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/ipc/**.cpp")
