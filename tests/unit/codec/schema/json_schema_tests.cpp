@@ -2,7 +2,7 @@
 // json_schema_tests.cpp
 //
 // Unit tests for the JSON Schema codegen module. Each test renders a C++ type
-// through virtual_schema::type_info_of<T>() and json_schema::render(), then
+// through meta::type_info_of<T>() and json_schema::render(), then
 // compares the output against the exact expected JSON string.
 //
 // Test groups:

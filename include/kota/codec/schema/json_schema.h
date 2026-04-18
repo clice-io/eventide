@@ -4,9 +4,10 @@
 #include <format>
 #include <iterator>
 #include <limits>
-#include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -20,6 +21,11 @@ class emitter {
 
 public:
     std::string emit(const meta::type_info& root) {
+        root_ti = unwrap(&root);
+        if(root_ti->kind == tk::structure) {
+            used_names.insert(kota::naming::normalize_identifier(root_ti->type_name));
+        }
+
         out += '{';
         key("$schema");
         str("https://json-schema.org/draft/2020-12/schema");
@@ -45,7 +51,7 @@ public:
     }
 
 private:
-    const static meta::type_info* unwrap(const meta::type_info* ti) {
+    static const meta::type_info* unwrap(const meta::type_info* ti) {
         while(ti->kind == tk::optional || ti->kind == tk::pointer) {
             ti = &static_cast<const meta::optional_type_info*>(ti)->inner();
         }
@@ -63,7 +69,15 @@ private:
                 case '\n': buf += "\\n"; break;
                 case '\r': buf += "\\r"; break;
                 case '\t': buf += "\\t"; break;
-                default: buf += c; break;
+                default:
+                    if(static_cast<unsigned char>(c) < 0x20) {
+                        std::format_to(std::back_inserter(buf),
+                                       R"(\u{:04x})",
+                                       static_cast<unsigned char>(c));
+                    } else {
+                        buf += c;
+                    }
+                    break;
             }
         }
         buf += '"';
@@ -85,6 +99,30 @@ private:
         return kota::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
+    const std::string& canonical_name(const meta::type_info* ti) {
+        auto it = def_names.find(ti);
+        if(it != def_names.end()) {
+            return it->second;
+        }
+        auto base = kota::naming::normalize_identifier(ti->type_name);
+        auto name = base;
+        for(std::size_t counter = 2; used_names.contains(name); ++counter) {
+            name = std::format("{}_{}", base, counter);
+        }
+        used_names.insert(name);
+        return def_names.emplace(ti, std::move(name)).first->second;
+    }
+
+    template <typename F>
+    std::string render_fragment(F&& f) {
+        auto saved = std::move(out);
+        out.clear();
+        f();
+        auto fragment = std::move(out);
+        out = std::move(saved);
+        return fragment;
+    }
+
     void write_schema(const meta::type_info* ti) {
         ti = unwrap(ti);
 
@@ -96,8 +134,14 @@ private:
             case tk::bytes: write_type("string"); return;
             case tk::float32:
             case tk::float64: write_type("number"); return;
-            case tk::int8: write_integer(-128, 127); return;
-            case tk::int16: write_integer(-32768, 32767); return;
+            case tk::int8:
+                write_integer(std::numeric_limits<std::int8_t>::min(),
+                              std::numeric_limits<std::int8_t>::max());
+                return;
+            case tk::int16:
+                write_integer(std::numeric_limits<std::int16_t>::min(),
+                              std::numeric_limits<std::int16_t>::max());
+                return;
             case tk::int32:
                 write_integer(std::numeric_limits<std::int32_t>::min(),
                               std::numeric_limits<std::int32_t>::max());
@@ -106,8 +150,8 @@ private:
                 write_integer(std::numeric_limits<std::int64_t>::min(),
                               std::numeric_limits<std::int64_t>::max());
                 return;
-            case tk::uint8: write_unsigned(255); return;
-            case tk::uint16: write_unsigned(65535); return;
+            case tk::uint8: write_unsigned(std::numeric_limits<std::uint8_t>::max()); return;
+            case tk::uint16: write_unsigned(std::numeric_limits<std::uint16_t>::max()); return;
             case tk::uint32: write_unsigned(std::numeric_limits<std::uint32_t>::max()); return;
             case tk::uint64: write_unsigned(std::numeric_limits<std::uint64_t>::max()); return;
             case tk::enumeration: write_enum(ti); return;
@@ -123,23 +167,19 @@ private:
 
     void write_schema_fields(const meta::type_info* ti) {
         ti = unwrap(ti);
-        if(ti->kind != tk::structure) {
-            auto saved = std::move(out);
-            out.clear();
-            write_schema(ti);
-            auto fragment = std::move(out);
-            out = std::move(saved);
-            if(fragment.size() > 2) {
-                out += ',';
-                out.append(fragment, 1, fragment.size() - 2);
-            }
+        if(ti->kind == tk::structure) {
+            out += ',';
+            write_struct_body(static_cast<const meta::struct_type_info*>(ti));
             return;
         }
-        auto* si = static_cast<const meta::struct_type_info*>(ti);
-        auto name = kota::naming::normalize_identifier(ti->type_name);
-        visited.insert(name);
+        auto fragment = render_fragment([&] { write_schema(ti); });
+        if(fragment.size() > 2) {
+            out += ',';
+            out.append(fragment, 1, fragment.size() - 2);
+        }
+    }
 
-        out += ',';
+    void write_struct_body(const meta::struct_type_info* si) {
         key("type");
         str("object");
         out += ',';
@@ -234,40 +274,32 @@ private:
     }
 
     void write_struct_ref(const meta::type_info* ti) {
-        auto name = kota::naming::normalize_identifier(ti->type_name);
-        ensure_struct_def(ti, name);
+        if(ti == root_ti) {
+            out += '{';
+            key("$ref");
+            str("#");
+            out += '}';
+            return;
+        }
+        const auto& name = canonical_name(ti);
+        ensure_struct_def(ti);
         out += '{';
         key("$ref");
         str(std::format("#/$defs/{}", name));
         out += '}';
     }
 
-    void ensure_struct_def(const meta::type_info* ti, const std::string& name) {
-        if(!visited.insert(name).second) {
+    void ensure_struct_def(const meta::type_info* ti) {
+        if(!emitted.insert(ti).second) {
             return;
         }
-
         auto* si = static_cast<const meta::struct_type_info*>(ti);
-
-        auto saved = std::move(out);
-        out.clear();
-
-        out += '{';
-        key("type");
-        str("object");
-        out += ',';
-        key("properties");
-        write_properties(si);
-        write_required(si);
-        if(si->deny_unknown) {
-            out += ',';
-            key("additionalProperties");
-            out += "false";
-        }
-        out += '}';
-
-        defs.emplace_back(name, std::move(out));
-        out = std::move(saved);
+        auto body = render_fragment([&] {
+            out += '{';
+            write_struct_body(si);
+            out += '}';
+        });
+        defs.emplace_back(canonical_name(ti), std::move(body));
     }
 
     void write_properties(const meta::struct_type_info* si) {
@@ -412,7 +444,10 @@ private:
 
     std::string out;
     std::vector<std::pair<std::string, std::string>> defs;
-    std::set<std::string> visited;
+    std::unordered_map<const meta::type_info*, std::string> def_names;
+    std::unordered_set<std::string> used_names;
+    std::unordered_set<const meta::type_info*> emitted;
+    const meta::type_info* root_ti = nullptr;
 };
 
 inline std::string render(const meta::type_info& root) {
