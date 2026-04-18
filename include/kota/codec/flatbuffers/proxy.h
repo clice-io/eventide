@@ -15,7 +15,9 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/schema.h"
 #include "kota/codec/codec.h"
+#include "kota/codec/flatbuffers/deserializer.h"
 #include "kota/codec/flatbuffers/schema.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -44,8 +46,11 @@ class map_view;
 
 namespace proxy_detail {
 
-constexpr ::flatbuffers::voffset_t first_field = 4;
-constexpr ::flatbuffers::voffset_t field_step = 2;
+// Backend alias — the proxy layer operates through the Deserializer's
+// TableView / slot-id abstraction rather than raw flatbuffers pointers.
+using backend = Deserializer<>;
+using table_view_type = backend::TableView;
+using slot_id = backend::slot_id;
 
 using codec::detail::remove_annotation_t;
 using codec::detail::remove_optional_t;
@@ -115,12 +120,14 @@ template <typename T>
 using scalar_storage_t = typename scalar_storage<std::remove_cvref_t<T>>::type;
 
 template <typename Object>
-consteval auto field_offsets() {
-    return []<std::size_t... I>(std::index_sequence<I...>) {
-        return std::array<std::size_t, sizeof...(I)>{meta::field_offset<Object>(I)...};
-    }(std::make_index_sequence<meta::field_count<Object>()>{});
+consteval std::size_t field_slot_count() {
+    return meta::virtual_schema<Object>::fields.size();
 }
 
+// Map a pointer-to-member to its slot loop-index in virtual_schema::slots —
+// which is the same index the codec uses to derive voffsets. Skipped fields
+// are absent from the slot list, so accessing a skipped member returns the
+// slot count (a "not-found" sentinel).
 template <typename Object, typename Member>
 auto field_index(Member Object::* member) -> std::size_t {
     static_assert(std::default_initializable<Object>,
@@ -131,18 +138,30 @@ auto field_index(Member Object::* member) -> std::size_t {
     const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(sample.*member));
     const auto offset = static_cast<std::size_t>(field - base);
 
-    constexpr auto offsets = field_offsets<Object>();
-    for(std::size_t i = 0; i < offsets.size(); ++i) {
-        if(offsets[i] == offset) {
+    constexpr auto& fields = meta::virtual_schema<Object>::fields;
+    for(std::size_t i = 0; i < fields.size(); ++i) {
+        if(fields[i].offset == offset) {
             return i;
         }
     }
-    return offsets.size();
+    return fields.size();
 }
 
-inline auto voffset(std::size_t index) -> ::flatbuffers::voffset_t {
-    return static_cast<::flatbuffers::voffset_t>(static_cast<std::size_t>(first_field) +
-                                                 index * static_cast<std::size_t>(field_step));
+// Slot-id helpers — delegate to the Deserializer's static helpers so the
+// proxy and arena decode layer stay in sync. Errors are ignored here (the
+// proxy uses unchecked reads and returns empty values on miss).
+inline auto field_slot(std::size_t index) -> slot_id {
+    auto r = backend::field_slot_id(index);
+    return r.has_value() ? *r : slot_id{0};
+}
+
+inline auto variant_tag_slot() -> slot_id {
+    return backend::variant_tag_slot_id();
+}
+
+inline auto variant_payload_slot(std::size_t index) -> slot_id {
+    auto r = backend::variant_payload_slot_id(index);
+    return r.has_value() ? *r : slot_id{0};
 }
 
 template <typename Element,
@@ -331,60 +350,63 @@ public:
 template <typename Element>
 using array_element_return_t = typename array_element_return<Element>::type;
 
-// Shared helper: read a typed value from a flatbuffers::Table at a given voffset.
-// Returns the appropriate proxy type (scalar by value, string_view, table_view, etc.)
+// Shared helper: read a typed value from a TableView at a given slot id.
+// Returns the appropriate proxy type (scalar by value, string_view, table_view, etc.).
+// Uses the underlying flatbuffers pointer (via view.raw()) for the actual read —
+// the proxy deliberately uses unchecked semantics (returns {} on miss) rather than
+// the Deserializer's expected-returning accessors.
 template <typename T>
-auto read_field(const std::uint8_t* root,
-                const ::flatbuffers::Table* table,
-                ::flatbuffers::voffset_t field) -> field_return_type_t<T> {
+auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
     using return_t = field_return_type_t<T>;
 
+    const auto* table = view.raw();
+
     if constexpr(std::same_as<T, std::byte>) {
-        return std::byte{table->GetField<std::uint8_t>(field, std::uint8_t{})};
+        return std::byte{view.template get_scalar<std::uint8_t>(field)};
     } else if constexpr(std::is_enum_v<T>) {
         using storage_t = std::underlying_type_t<T>;
-        return static_cast<T>(table->GetField<storage_t>(field, storage_t{}));
+        return static_cast<T>(view.template get_scalar<storage_t>(field));
     } else if constexpr(codec::char_like<T>) {
-        return static_cast<T>(table->GetField<std::int8_t>(field, std::int8_t{}));
+        return static_cast<T>(view.template get_scalar<std::int8_t>(field));
     } else if constexpr(codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T>) {
-        return table->GetField<T>(field, T{});
+        return view.template get_scalar<T>(field);
     } else if constexpr(codec::floating_like<T>) {
         if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
-            return table->GetField<T>(field, T{});
+            return view.template get_scalar<T>(field);
         } else {
-            return static_cast<T>(table->GetField<double>(field, 0.0));
+            return static_cast<T>(view.template get_scalar<double>(field));
         }
     } else if constexpr(is_string_like_v<T>) {
-        const auto* text = table->GetPointer<const ::flatbuffers::String*>(field);
+        const auto* text = table->template GetPointer<const ::flatbuffers::String*>(field);
         if(text == nullptr) {
             return {};
         }
         return std::string_view(text->data(), text->size());
     } else if constexpr(can_inline_struct_v<T>) {
-        const auto* value = table->GetStruct<const T*>(field);
+        const auto* value = table->template GetStruct<const T*>(field);
         if(value == nullptr) {
             return {};
         }
         return *value;
     } else if constexpr(is_specialization_of<std::variant, T>) {
-        const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
-        return return_t(root, nested);
+        const auto* nested = table->template GetPointer<const ::flatbuffers::Table*>(field);
+        return return_t(table_view_type(nested));
     } else if constexpr(is_pair_v<T> || is_tuple_v<T>) {
-        const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
-        return return_t(root, nested);
+        const auto* nested = table->template GetPointer<const ::flatbuffers::Table*>(field);
+        return return_t(table_view_type(nested));
     } else if constexpr(is_map_range_v<T>) {
-        const auto* vec = table->GetPointer<
+        const auto* vec = table->template GetPointer<
             const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
-        return return_t(root, vec);
+        return return_t(vec);
     } else if constexpr(is_range_like_v<T>) {
         using element_type = clean_t<std::ranges::range_value_t<T>>;
         using vector_ptr_t = array_vector_ptr_t<element_type>;
-        const auto* value = table->GetPointer<vector_ptr_t>(field);
-        return return_t(root, value);
+        const auto* value = table->template GetPointer<vector_ptr_t>(field);
+        return return_t(value);
     } else {
         // reflectable struct -> table_view
-        const auto* nested = table->GetPointer<const ::flatbuffers::Table*>(field);
-        return return_t(root, nested);
+        const auto* nested = table->template GetPointer<const ::flatbuffers::Table*>(field);
+        return return_t(table_view_type(nested));
     }
 }
 
@@ -399,8 +421,7 @@ public:
 
     constexpr array_view() = default;
 
-    constexpr array_view(const std::uint8_t* root, vector_ptr_type vector) noexcept :
-        root(root), vector(vector) {}
+    constexpr explicit array_view(vector_ptr_type vector) noexcept : vector(vector) {}
 
     constexpr auto valid() const noexcept -> bool {
         return vector != nullptr;
@@ -457,12 +478,8 @@ public:
         } else {
             const auto* nested = vector->template GetAs<::flatbuffers::Table>(
                 static_cast<::flatbuffers::uoffset_t>(index));
-            return value_type(root, nested);
+            return value_type(proxy_detail::table_view_type(nested));
         }
-    }
-
-    constexpr auto root_data() const noexcept -> const std::uint8_t* {
-        return root;
     }
 
     constexpr auto raw() const noexcept -> vector_ptr_type {
@@ -470,22 +487,20 @@ public:
     }
 
 private:
-    const std::uint8_t* root = nullptr;
     vector_ptr_type vector = nullptr;
 };
 
 template <typename... Ts>
 class variant_view {
 public:
-    using table_type = ::flatbuffers::Table;
+    using view_type = proxy_detail::table_view_type;
 
     constexpr variant_view() = default;
 
-    constexpr variant_view(const std::uint8_t* root, const table_type* table) noexcept :
-        root(root), table(table) {}
+    constexpr explicit variant_view(view_type view) noexcept : view(view) {}
 
     constexpr auto valid() const noexcept -> bool {
-        return table != nullptr;
+        return view.valid();
     }
 
     constexpr explicit operator bool() const noexcept {
@@ -497,7 +512,7 @@ public:
             return sizeof...(Ts);
         }
         return static_cast<std::size_t>(
-            table->GetField<std::uint32_t>(proxy_detail::first_field, 0U));
+            view.template get_scalar<std::uint32_t>(proxy_detail::variant_tag_slot()));
     }
 
     template <std::size_t I>
@@ -512,36 +527,28 @@ public:
             return return_t{};
         }
 
-        // variant field I is at voffset 6 + I*2 = first_field + (I+1) * field_step
-        const auto field = proxy_detail::voffset(I + 1);
-        return proxy_detail::read_field<clean_alt_t>(root, table, field);
+        return proxy_detail::read_field<clean_alt_t>(view, proxy_detail::variant_payload_slot(I));
     }
 
-    constexpr auto root_data() const noexcept -> const std::uint8_t* {
-        return root;
-    }
-
-    constexpr auto raw() const noexcept -> const table_type* {
-        return table;
+    constexpr auto raw() const noexcept -> const ::flatbuffers::Table* {
+        return view.raw();
     }
 
 private:
-    const std::uint8_t* root = nullptr;
-    const table_type* table = nullptr;
+    view_type view;
 };
 
 template <typename... Ts>
 class tuple_view {
 public:
-    using table_type = ::flatbuffers::Table;
+    using view_type = proxy_detail::table_view_type;
 
     constexpr tuple_view() = default;
 
-    constexpr tuple_view(const std::uint8_t* root, const table_type* table) noexcept :
-        root(root), table(table) {}
+    constexpr explicit tuple_view(view_type view) noexcept : view(view) {}
 
     constexpr auto valid() const noexcept -> bool {
-        return table != nullptr;
+        return view.valid();
     }
 
     constexpr explicit operator bool() const noexcept {
@@ -560,33 +567,25 @@ public:
             return return_t{};
         }
 
-        const auto field = proxy_detail::voffset(I);
-        return proxy_detail::read_field<clean_element_t>(root, table, field);
+        return proxy_detail::read_field<clean_element_t>(view, proxy_detail::field_slot(I));
     }
 
-    constexpr auto root_data() const noexcept -> const std::uint8_t* {
-        return root;
-    }
-
-    constexpr auto raw() const noexcept -> const table_type* {
-        return table;
+    constexpr auto raw() const noexcept -> const ::flatbuffers::Table* {
+        return view.raw();
     }
 
 private:
-    const std::uint8_t* root = nullptr;
-    const table_type* table = nullptr;
+    view_type view;
 };
 
 template <typename K, typename V>
 class map_view {
 public:
-    using table_type = ::flatbuffers::Table;
     using vector_type = const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*;
 
     constexpr map_view() = default;
 
-    constexpr map_view(const std::uint8_t* root, vector_type vector) noexcept :
-        root(root), vector(vector) {}
+    constexpr explicit map_view(vector_type vector) noexcept : vector(vector) {}
 
     constexpr auto valid() const noexcept -> bool {
         return vector != nullptr;
@@ -610,7 +609,7 @@ public:
         }
         const auto* entry = vector->template GetAs<::flatbuffers::Table>(
             static_cast<::flatbuffers::uoffset_t>(index));
-        return tuple_view<K, V>(root, entry);
+        return tuple_view<K, V>(proxy_detail::table_view_type(entry));
     }
 
     template <typename U = K>
@@ -623,10 +622,10 @@ public:
         using value_return_t = proxy_detail::field_return_type_t<clean_v>;
 
         auto entry = find_entry(key);
-        if(entry == nullptr) {
+        if(!entry.valid()) {
             return value_return_t{};
         }
-        return proxy_detail::read_field<clean_v>(root, entry, proxy_detail::voffset(1));
+        return proxy_detail::read_field<clean_v>(entry, proxy_detail::field_slot(1));
     }
 
     template <typename U = K>
@@ -635,10 +634,10 @@ public:
             const U&>
     auto find(const U& key) const -> std::optional<tuple_view<K, V>> {
         auto entry = find_entry(key);
-        if(entry == nullptr) {
+        if(!entry.valid()) {
             return std::nullopt;
         }
-        return tuple_view<K, V>(root, entry);
+        return tuple_view<K, V>(entry);
     }
 
     template <typename U = K>
@@ -646,11 +645,7 @@ public:
             proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
             const U&>
     auto contains(const U& key) const -> bool {
-        return find_entry(key) != nullptr;
-    }
-
-    constexpr auto root_data() const noexcept -> const std::uint8_t* {
-        return root;
+        return find_entry(key).valid();
     }
 
     constexpr auto raw() const noexcept -> vector_type {
@@ -659,11 +654,11 @@ public:
 
 private:
     template <typename U>
-    auto find_entry(const U& key) const -> const ::flatbuffers::Table* {
+    auto find_entry(const U& key) const -> proxy_detail::table_view_type {
         using clean_k = proxy_detail::deep_clean_t<K>;
 
         if(!valid()) {
-            return nullptr;
+            return {};
         }
 
         std::size_t lo = 0;
@@ -672,8 +667,8 @@ private:
             auto mid = lo + (hi - lo) / 2;
             const auto* entry = vector->template GetAs<::flatbuffers::Table>(
                 static_cast<::flatbuffers::uoffset_t>(mid));
-            auto entry_key =
-                proxy_detail::read_field<clean_k>(root, entry, proxy_detail::first_field);
+            auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_view_type(entry),
+                                                               proxy_detail::field_slot(0));
             if(entry_key < key) {
                 lo = mid + 1;
             } else {
@@ -682,19 +677,19 @@ private:
         }
 
         if(lo >= size()) {
-            return nullptr;
+            return {};
         }
 
         const auto* entry =
             vector->template GetAs<::flatbuffers::Table>(static_cast<::flatbuffers::uoffset_t>(lo));
-        auto entry_key = proxy_detail::read_field<clean_k>(root, entry, proxy_detail::first_field);
+        auto entry_view = proxy_detail::table_view_type(entry);
+        auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
         if(entry_key == key) {
-            return entry;
+            return entry_view;
         }
-        return nullptr;
+        return {};
     }
 
-    const std::uint8_t* root = nullptr;
     vector_type vector = nullptr;
 };
 
@@ -702,18 +697,17 @@ template <typename T>
 class table_view {
 public:
     using object_type = std::remove_cvref_t<T>;
-    using table_type = ::flatbuffers::Table;
+    using view_type = proxy_detail::table_view_type;
 
     constexpr table_view() = default;
 
-    constexpr table_view(const std::uint8_t* root, const table_type* table) noexcept :
-        root(root), table(table) {}
+    constexpr explicit table_view(view_type view) noexcept : view(view) {}
 
     static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
         if(bytes.empty()) {
             return {};
         }
-        return table_view(bytes.data(), ::flatbuffers::GetRoot<table_type>(bytes.data()));
+        return table_view(view_type(::flatbuffers::GetRoot<::flatbuffers::Table>(bytes.data())));
     }
 
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
@@ -721,23 +715,19 @@ public:
             return {};
         }
         const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
-        return table_view(data, ::flatbuffers::GetRoot<table_type>(data));
+        return table_view(view_type(::flatbuffers::GetRoot<::flatbuffers::Table>(data)));
     }
 
     constexpr auto valid() const noexcept -> bool {
-        return table != nullptr;
+        return view.valid();
     }
 
     constexpr explicit operator bool() const noexcept {
         return valid();
     }
 
-    constexpr auto root_data() const noexcept -> const std::uint8_t* {
-        return root;
-    }
-
-    constexpr auto raw() const noexcept -> const table_type* {
-        return table;
+    constexpr auto raw() const noexcept -> const ::flatbuffers::Table* {
+        return view.raw();
     }
 
     template <typename Member>
@@ -748,10 +738,10 @@ public:
         }
 
         const auto index = proxy_detail::field_index(member);
-        if(index >= meta::field_count<object_type>()) {
+        if(index >= proxy_detail::field_slot_count<object_type>()) {
             return false;
         }
-        return table->GetOptionalFieldOffset(proxy_detail::voffset(index)) != 0;
+        return view.has(proxy_detail::field_slot(index));
     }
 
     template <typename Member>
@@ -771,17 +761,15 @@ public:
         }
 
         const auto index = proxy_detail::field_index(member);
-        if(index >= meta::field_count<object_type>()) {
+        if(index >= proxy_detail::field_slot_count<object_type>()) {
             return return_t{};
         }
 
-        const auto field = proxy_detail::voffset(index);
-        return proxy_detail::read_field<member_type>(root, table, field);
+        return proxy_detail::read_field<member_type>(view, proxy_detail::field_slot(index));
     }
 
 private:
-    const std::uint8_t* root = nullptr;
-    const table_type* table = nullptr;
+    view_type view;
 };
 
 }  // namespace kota::codec::flatbuffers

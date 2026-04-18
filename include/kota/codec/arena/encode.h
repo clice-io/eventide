@@ -1,0 +1,518 @@
+#pragma once
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <span>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "kota/support/expected_try.h"
+#include "kota/support/ranges.h"
+#include "kota/support/type_list.h"
+#include "kota/support/type_traits.h"
+#include "kota/meta/attrs.h"
+#include "kota/meta/schema.h"
+#include "kota/codec/arena/traits.h"
+#include "kota/codec/config.h"
+#include "kota/codec/detail/common.h"
+#include "kota/codec/traits.h"
+
+namespace kota::codec::arena {
+
+namespace detail {
+
+using codec::detail::clean_t;
+
+// Types are routed through the "inline struct" path iff the backend's
+// `can_inline_struct_v<T>` predicate is satisfied. To keep this free layer
+// backend-agnostic, we accept it as a trait the backend provides.
+template <typename B, typename T>
+concept backend_can_inline_struct = B::template can_inline_struct<T>;
+
+// Forward declarations.
+template <typename Config, typename B, typename Raw, typename Attrs, typename V>
+auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid, const V& value)
+    -> std::expected<void, typename B::error_type>;
+
+template <typename Config, typename B, typename T>
+auto encode_table(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type>;
+
+template <typename Config, typename B, typename T>
+auto encode_tuple_like(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type>;
+
+template <typename Config, typename B, typename T>
+auto encode_variant(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type>;
+
+template <typename Config, typename B, typename T>
+auto encode_sequence(B& b, const T& range)
+    -> std::expected<typename B::vector_ref, typename B::error_type>;
+
+template <typename Config, typename B, typename T>
+auto encode_map(B& b, const T& map)
+    -> std::expected<typename B::vector_ref, typename B::error_type>;
+
+template <typename Config, typename B, typename T>
+auto encode_boxed(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type>;
+
+template <typename T>
+constexpr bool root_unboxed_v =
+    (meta::reflectable_class<T> && !std::ranges::input_range<T> && !is_pair_v<T> &&
+     !is_tuple_v<T>) ||
+    is_pair_v<T> || is_tuple_v<T> || is_specialization_of<std::variant, T>;
+
+template <typename Config, typename B, typename T>
+auto encode_root(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type> {
+    using U = std::remove_cvref_t<T>;
+
+    if constexpr(meta::annotated_type<U>) {
+        return encode_root<Config>(b, meta::annotated_value(value));
+    } else if constexpr(is_specialization_of<std::optional, U>) {
+        if(!value.has_value()) {
+            return encode_boxed<Config>(b, value);
+        }
+        return encode_root<Config>(b, *value);
+    } else if constexpr(meta::reflectable_class<U> && !B::template can_inline_struct<U> &&
+                        !std::ranges::input_range<U> && !is_pair_v<U> && !is_tuple_v<U>) {
+        return encode_table<Config>(b, value);
+    } else if constexpr(is_specialization_of<std::variant, U>) {
+        return encode_variant<Config>(b, value);
+    } else if constexpr(is_pair_v<U> || is_tuple_v<U>) {
+        return encode_tuple_like<Config>(b, value);
+    } else {
+        return encode_boxed<Config>(b, value);
+    }
+}
+
+template <typename Config, typename B, typename T>
+auto encode_boxed(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type> {
+    auto tb = b.start_table();
+    KOTA_EXPECTED_TRY_V(auto sid, B::field_slot_id(0));
+    KOTA_EXPECTED_TRY(
+        (encode_value_at<Config, B, std::remove_cvref_t<T>, std::tuple<>>(b, tb, sid, value)));
+    return tb.finalize();
+}
+
+// Struct encoding via virtual_schema.
+template <typename Config, typename B, typename T, std::size_t I>
+auto encode_struct_slot(B& b, typename B::TableBuilder& tb, const T& value)
+    -> std::expected<void, typename B::error_type> {
+    using schema = meta::virtual_schema<T, Config>;
+    using slot_t = kota::type_list_element_t<I, typename schema::slots>;
+    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
+    using attrs_t = typename slot_t::attrs;
+
+    constexpr std::size_t offset = schema::fields[I].offset;
+    const auto* base = reinterpret_cast<const std::byte*>(std::addressof(value));
+    const auto& field_value = *reinterpret_cast<const raw_t*>(base + offset);
+
+    // skip_if short-circuit before we compute a slot id.
+    if constexpr(kota::tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+        using pred = typename kota::tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
+        if(meta::evaluate_skip_predicate<pred>(field_value, /*is_serialize=*/true)) {
+            return {};
+        }
+    }
+
+    KOTA_EXPECTED_TRY_V(auto sid, B::field_slot_id(I));
+    return encode_value_at<Config, B, raw_t, attrs_t>(b, tb, sid, field_value);
+}
+
+template <typename Config, typename B, typename T>
+auto encode_table(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type> {
+    using E = typename B::error_type;
+    using schema = meta::virtual_schema<T, Config>;
+    using slots = typename schema::slots;
+    constexpr std::size_t N = kota::type_list_size_v<slots>;
+
+    auto tb = b.start_table();
+
+    std::expected<void, E> status{};
+    bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        return ([&] {
+            auto r = encode_struct_slot<Config, B, T, Is>(b, tb, value);
+            if(!r) {
+                status = std::unexpected(r.error());
+                return false;
+            }
+            return true;
+        }() && ...);
+    }(std::make_index_sequence<N>{});
+
+    if(!ok) {
+        return std::unexpected(status.error());
+    }
+    return tb.finalize();
+}
+
+template <typename Config, typename B, typename T>
+auto encode_tuple_like(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type> {
+    using E = typename B::error_type;
+    using U = std::remove_cvref_t<T>;
+
+    auto tb = b.start_table();
+
+    std::expected<void, E> status{};
+    bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        return ([&] {
+            auto sid_r = B::field_slot_id(Is);
+            if(!sid_r) {
+                status = std::unexpected(sid_r.error());
+                return false;
+            }
+            using element_t = std::tuple_element_t<Is, U>;
+            auto r = encode_value_at<Config, B, element_t, std::tuple<>>(b,
+                                                                         tb,
+                                                                         *sid_r,
+                                                                         std::get<Is>(value));
+            if(!r) {
+                status = std::unexpected(r.error());
+                return false;
+            }
+            return true;
+        }() && ...);
+    }(std::make_index_sequence<std::tuple_size_v<U>>{});
+
+    if(!ok) {
+        return std::unexpected(status.error());
+    }
+    return tb.finalize();
+}
+
+template <typename Config, typename B, typename T>
+auto encode_variant(B& b, const T& value)
+    -> std::expected<typename B::table_ref, typename B::error_type> {
+    using E = typename B::error_type;
+    using U = std::remove_cvref_t<T>;
+    static_assert(is_specialization_of<std::variant, U>, "variant required");
+
+    auto tb = b.start_table();
+    tb.add_scalar(B::variant_tag_slot_id(), static_cast<std::uint32_t>(value.index()));
+
+    std::expected<void, E> status{};
+    bool matched = false;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (([&] {
+             if(value.index() != Is) {
+                 return;
+             }
+             matched = true;
+             auto sid_r = B::variant_payload_slot_id(Is);
+             if(!sid_r) {
+                 status = std::unexpected(sid_r.error());
+                 return;
+             }
+             using alt_t = std::variant_alternative_t<Is, U>;
+             auto r = encode_value_at<Config, B, alt_t, std::tuple<>>(b,
+                                                                      tb,
+                                                                      *sid_r,
+                                                                      std::get<Is>(value));
+             if(!r) {
+                 status = std::unexpected(r.error());
+             }
+         }()),
+         ...);
+    }(std::make_index_sequence<std::variant_size_v<U>>{});
+
+    if(!matched) {
+        return std::unexpected(E::invalid_state);
+    }
+    if(!status) {
+        return std::unexpected(status.error());
+    }
+    return tb.finalize();
+}
+
+// Field-level dispatch: apply annotation + behavior attrs, then route by type.
+template <typename Config, typename B, typename Raw, typename Attrs, typename V>
+auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid, const V& value)
+    -> std::expected<void, typename B::error_type> {
+    using E = typename B::error_type;
+    using U = std::remove_cvref_t<V>;
+
+    if constexpr(meta::annotated_type<U>) {
+        using inner = typename U::annotated_type;
+        return encode_value_at<Config, B, inner, Attrs>(b, tb, sid, meta::annotated_value(value));
+    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::as>) {
+        using target = typename kota::tuple_find_spec_t<Attrs, meta::behavior::as>::target;
+        target tmp = static_cast<target>(value);
+        return encode_value_at<Config, B, target, std::tuple<>>(b, tb, sid, tmp);
+    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
+        using clean_u = detail::clean_t<U>;
+        static_assert(std::is_enum_v<clean_u>, "enum_string requires an enum type");
+        std::string_view name = meta::enum_name(static_cast<clean_u>(value));
+        KOTA_EXPECTED_TRY_V(auto r, b.alloc_string(name));
+        tb.add_offset(sid, r);
+        return {};
+    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::with>) {
+        using adapter = typename kota::tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+        using wire_t = typename adapter::wire_type;
+        wire_t wire = adapter::to_wire(value);
+        return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
+    } else {
+        using clean_u = detail::clean_t<U>;
+
+        if constexpr(is_specialization_of<std::optional, U>) {
+            if(!value.has_value()) {
+                return {};
+            }
+            using inner = typename U::value_type;
+            return encode_value_at<Config, B, inner, std::tuple<>>(b, tb, sid, *value);
+        } else if constexpr(is_specialization_of<std::unique_ptr, U> ||
+                            is_specialization_of<std::shared_ptr, U>) {
+            if(!value) {
+                return {};
+            }
+            using inner = typename U::element_type;
+            return encode_value_at<Config, B, inner, std::tuple<>>(b, tb, sid, *value);
+        } else if constexpr(std::same_as<clean_u, std::nullptr_t>) {
+            return {};
+        } else if constexpr(std::is_enum_v<clean_u>) {
+            using underlying = std::underlying_type_t<clean_u>;
+            return encode_value_at<Config, B, underlying, std::tuple<>>(
+                b,
+                tb,
+                sid,
+                static_cast<underlying>(value));
+        } else if constexpr(codec::bool_like<clean_u>) {
+            tb.add_scalar(sid, static_cast<bool>(value));
+            return {};
+        } else if constexpr(codec::int_like<clean_u> || codec::uint_like<clean_u>) {
+            tb.add_scalar(sid, static_cast<clean_u>(value));
+            return {};
+        } else if constexpr(codec::floating_like<clean_u>) {
+            if constexpr(std::same_as<clean_u, float> || std::same_as<clean_u, double>) {
+                tb.add_scalar(sid, static_cast<clean_u>(value));
+            } else {
+                tb.add_scalar(sid, static_cast<double>(value));
+            }
+            return {};
+        } else if constexpr(codec::char_like<clean_u>) {
+            tb.add_scalar(sid, static_cast<std::int8_t>(value));
+            return {};
+        } else if constexpr(codec::str_like<clean_u>) {
+            const std::string_view text = value;
+            KOTA_EXPECTED_TRY_V(auto r, b.alloc_string(text));
+            tb.add_offset(sid, r);
+            return {};
+        } else if constexpr(codec::bytes_like<clean_u>) {
+            const std::span<const std::byte> bytes = value;
+            KOTA_EXPECTED_TRY_V(auto r, b.alloc_bytes(bytes));
+            tb.add_offset(sid, r);
+            return {};
+        } else if constexpr(is_specialization_of<std::variant, U>) {
+            KOTA_EXPECTED_TRY_V(auto r, encode_variant<Config>(b, value));
+            tb.add_offset(sid, r);
+            return {};
+        } else if constexpr(std::ranges::input_range<clean_u>) {
+            constexpr auto kind = kota::format_kind<clean_u>;
+            if constexpr(kind == kota::range_format::map) {
+                KOTA_EXPECTED_TRY_V(auto r, encode_map<Config>(b, value));
+                tb.add_offset(sid, r);
+                return {};
+            } else {
+                KOTA_EXPECTED_TRY_V(auto r, encode_sequence<Config>(b, value));
+                tb.add_offset(sid, r);
+                return {};
+            }
+        } else if constexpr(is_pair_v<clean_u> || is_tuple_v<clean_u>) {
+            KOTA_EXPECTED_TRY_V(auto r, encode_tuple_like<Config>(b, value));
+            tb.add_offset(sid, r);
+            return {};
+        } else if constexpr(B::template can_inline_struct<clean_u>) {
+            tb.add_inline_struct(sid, static_cast<clean_u>(value));
+            return {};
+        } else if constexpr(meta::reflectable_class<clean_u>) {
+            KOTA_EXPECTED_TRY_V(auto r, encode_table<Config>(b, value));
+            tb.add_offset(sid, r);
+            return {};
+        } else {
+            return std::unexpected(E::unsupported_type);
+        }
+    }
+}
+
+template <typename Config, typename B, typename T>
+auto encode_sequence(B& b, const T& range)
+    -> std::expected<typename B::vector_ref, typename B::error_type> {
+    using U = std::remove_cvref_t<T>;
+    using element_t = std::ranges::range_value_t<U>;
+    using element_clean_t = detail::clean_t<element_t>;
+
+    if constexpr(std::same_as<element_clean_t, std::byte>) {
+        std::vector<std::byte> bytes;
+        if constexpr(requires { range.size(); }) {
+            bytes.reserve(range.size());
+        }
+        for(auto bt: range) {
+            bytes.push_back(bt);
+        }
+        return b.alloc_bytes(std::span<const std::byte>(bytes.data(), bytes.size()));
+    } else if constexpr(codec::bool_like<element_clean_t> || codec::int_like<element_clean_t> ||
+                        codec::uint_like<element_clean_t>) {
+        std::vector<element_clean_t> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            elements.push_back(static_cast<element_clean_t>(e));
+        }
+        return b.template alloc_scalar_vector<element_clean_t>(
+            std::span<const element_clean_t>(elements.data(), elements.size()));
+    } else if constexpr(codec::floating_like<element_clean_t>) {
+        if constexpr(std::same_as<element_clean_t, float> ||
+                     std::same_as<element_clean_t, double>) {
+            std::vector<element_clean_t> elements;
+            if constexpr(requires { range.size(); }) {
+                elements.reserve(range.size());
+            }
+            for(const auto& e: range) {
+                elements.push_back(static_cast<element_clean_t>(e));
+            }
+            return b.template alloc_scalar_vector<element_clean_t>(
+                std::span<const element_clean_t>(elements.data(), elements.size()));
+        } else {
+            std::vector<double> elements;
+            if constexpr(requires { range.size(); }) {
+                elements.reserve(range.size());
+            }
+            for(const auto& e: range) {
+                elements.push_back(static_cast<double>(e));
+            }
+            return b.template alloc_scalar_vector<double>(
+                std::span<const double>(elements.data(), elements.size()));
+        }
+    } else if constexpr(codec::char_like<element_clean_t>) {
+        std::vector<std::int8_t> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            elements.push_back(static_cast<std::int8_t>(e));
+        }
+        return b.template alloc_scalar_vector<std::int8_t>(
+            std::span<const std::int8_t>(elements.data(), elements.size()));
+    } else if constexpr(codec::str_like<element_clean_t>) {
+        std::vector<typename B::string_ref> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            const std::string_view text = e;
+            KOTA_EXPECTED_TRY_V(auto r, b.alloc_string(text));
+            elements.push_back(r);
+        }
+        return b.alloc_string_vector(
+            std::span<const typename B::string_ref>(elements.data(), elements.size()));
+    } else if constexpr(is_pair_v<element_clean_t> || is_tuple_v<element_clean_t>) {
+        std::vector<typename B::table_ref> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            KOTA_EXPECTED_TRY_V(auto r, encode_tuple_like<Config>(b, e));
+            elements.push_back(r);
+        }
+        return b.alloc_table_vector(
+            std::span<const typename B::table_ref>(elements.data(), elements.size()));
+    } else if constexpr(B::template can_inline_struct<element_clean_t>) {
+        std::vector<element_clean_t> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            elements.push_back(static_cast<element_clean_t>(e));
+        }
+        return b.template alloc_inline_struct_vector<element_clean_t>(
+            std::span<const element_clean_t>(elements.data(), elements.size()));
+    } else if constexpr(meta::reflectable_class<element_clean_t>) {
+        std::vector<typename B::table_ref> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            KOTA_EXPECTED_TRY_V(auto r, encode_table<Config>(b, e));
+            elements.push_back(r);
+        }
+        return b.alloc_table_vector(
+            std::span<const typename B::table_ref>(elements.data(), elements.size()));
+    } else {
+        std::vector<typename B::table_ref> elements;
+        if constexpr(requires { range.size(); }) {
+            elements.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            KOTA_EXPECTED_TRY_V(auto r, encode_boxed<Config>(b, e));
+            elements.push_back(r);
+        }
+        return b.alloc_table_vector(
+            std::span<const typename B::table_ref>(elements.data(), elements.size()));
+    }
+}
+
+template <typename Config, typename B, typename T>
+auto encode_map(B& b, const T& map)
+    -> std::expected<typename B::vector_ref, typename B::error_type> {
+    using U = std::remove_cvref_t<T>;
+    using key_t = typename U::key_type;
+    using mapped_t = typename U::mapped_type;
+
+    std::vector<std::pair<key_t, mapped_t>> entries;
+    entries.reserve(map.size());
+    for(const auto& [k, v]: map) {
+        entries.emplace_back(k, v);
+    }
+    if constexpr(requires(const key_t& a, const key_t& b) {
+                     { a < b } -> std::convertible_to<bool>;
+                 }) {
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+    }
+
+    std::vector<typename B::table_ref> offsets;
+    offsets.reserve(entries.size());
+    for(const auto& [k, v]: entries) {
+        auto tb = b.start_table();
+        KOTA_EXPECTED_TRY_V(auto key_sid, B::field_slot_id(0));
+        KOTA_EXPECTED_TRY((encode_value_at<Config, B, key_t, std::tuple<>>(b, tb, key_sid, k)));
+        KOTA_EXPECTED_TRY_V(auto val_sid, B::field_slot_id(1));
+        KOTA_EXPECTED_TRY((encode_value_at<Config, B, mapped_t, std::tuple<>>(b, tb, val_sid, v)));
+        KOTA_EXPECTED_TRY_V(auto entry_ref, tb.finalize());
+        offsets.push_back(entry_ref);
+    }
+    return b.alloc_table_vector(
+        std::span<const typename B::table_ref>(offsets.data(), offsets.size()));
+}
+
+}  // namespace detail
+
+// Public re-exports.
+using detail::encode_boxed;
+using detail::encode_map;
+using detail::encode_root;
+using detail::encode_sequence;
+using detail::encode_table;
+using detail::encode_tuple_like;
+using detail::encode_value_at;
+using detail::encode_variant;
+using detail::root_unboxed_v;
+
+}  // namespace kota::codec::arena
