@@ -18,7 +18,7 @@
 #include "kota/meta/schema.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/flatbuffers/deserializer.h"
-#include "kota/codec/flatbuffers/schema.h"
+#include "kota/codec/flatbuffers/struct_layout.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"
