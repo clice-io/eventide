@@ -86,6 +86,11 @@ public:
         }
     }
 
+    Deserializer(const Deserializer&) = delete;
+    Deserializer(Deserializer&&) = delete;
+    auto operator=(const Deserializer&) -> Deserializer& = delete;
+    auto operator=(Deserializer&&) -> Deserializer& = delete;
+
     [[nodiscard]] bool valid() const noexcept {
         return is_valid;
     }
@@ -297,11 +302,11 @@ public:
 
     result_t<content::Value> capture_dom_value() {
         KOTA_EXPECTED_TRY_V(auto source, consume_value_ref());
-        auto copied = content::Value::copy_of(source);
-        if(!copied.has_value()) {
-            return mark_invalid(copied.error());
+        const content::Value* ptr = source.unwrap();
+        if(ptr == nullptr) {
+            return mark_invalid();
         }
-        return std::move(*copied);
+        return *ptr;
     }
 
 private:
@@ -501,3 +506,60 @@ private:
 static_assert(codec::deserializer_like<Deserializer<>>);
 
 }  // namespace kota::codec::content
+
+namespace kota::codec {
+
+template <typename Config>
+struct deserialize_traits<content::Deserializer<Config>, content::Value> {
+    using error_type = typename content::Deserializer<Config>::error_type;
+
+    static auto deserialize(content::Deserializer<Config>& d, content::Value& value)
+        -> std::expected<void, error_type> {
+        auto dom = d.capture_dom_value();
+        if(!dom) {
+            return std::unexpected(dom.error());
+        }
+        value = std::move(*dom);
+        return {};
+    }
+};
+
+template <typename Config>
+struct deserialize_traits<content::Deserializer<Config>, content::Array> {
+    using error_type = typename content::Deserializer<Config>::error_type;
+
+    static auto deserialize(content::Deserializer<Config>& d, content::Array& value)
+        -> std::expected<void, error_type> {
+        auto dom = d.capture_dom_value();
+        if(!dom) {
+            return std::unexpected(dom.error());
+        }
+        content::Array* arr = dom->try_array();
+        if(arr == nullptr) {
+            return std::unexpected(content::error::type_mismatch);
+        }
+        value = std::move(*arr);
+        return {};
+    }
+};
+
+template <typename Config>
+struct deserialize_traits<content::Deserializer<Config>, content::Object> {
+    using error_type = typename content::Deserializer<Config>::error_type;
+
+    static auto deserialize(content::Deserializer<Config>& d, content::Object& value)
+        -> std::expected<void, error_type> {
+        auto dom = d.capture_dom_value();
+        if(!dom) {
+            return std::unexpected(dom.error());
+        }
+        content::Object* obj = dom->try_object();
+        if(obj == nullptr) {
+            return std::unexpected(content::error::type_mismatch);
+        }
+        value = std::move(*obj);
+        return {};
+    }
+};
+
+}  // namespace kota::codec
