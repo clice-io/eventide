@@ -17,6 +17,33 @@
 
 namespace kota::codec {
 
+/// Type-level serialization adapter. Specialize for user types that should
+/// be (de)serialized as a different wire representation everywhere, without
+/// requiring field-level `annotation<T, with<...>>` at every usage site.
+///
+/// Specializations must provide:
+///   using wire_type = ...;
+///   static wire_type to_wire(const T&);
+///   static T from_wire(wire_type);
+///
+/// Honored by the arena codec (`encode_value_at` / `decode_value_at`) and the
+/// flatbuffers proxy read path, so adapters propagate into map values,
+/// sequence elements, and nested containers without per-field annotation.
+template <typename T>
+struct type_adapter;
+
+namespace detail {
+
+template <typename T>
+concept has_type_adapter_impl = requires {
+    typename type_adapter<T>::wire_type;
+};
+
+}  // namespace detail
+
+template <typename T>
+concept has_type_adapter = detail::has_type_adapter_impl<std::remove_cvref_t<T>>;
+
 // Type-classification concepts — canonical definitions live in kota::meta
 // (type_kind.h).  These aliases keep existing serde code compiling unchanged.
 

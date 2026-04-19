@@ -266,6 +266,14 @@ auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid
         using wire_t = typename adapter::wire_type;
         wire_t wire = adapter::to_wire(value);
         return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
+    } else if constexpr(codec::has_type_adapter<U>) {
+        // Type-level adapter: user specialized codec::type_adapter<T> to
+        // declare a wire representation for T. Propagates into map values,
+        // sequence elements, and nested containers without per-field attrs.
+        using adapter = codec::type_adapter<std::remove_cvref_t<U>>;
+        using wire_t = typename adapter::wire_type;
+        wire_t wire = adapter::to_wire(value);
+        return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
     } else {
         using clean_u = detail::clean_t<U>;
 
@@ -356,7 +364,22 @@ auto encode_sequence(B& b, const T& range)
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
 
-    if constexpr(std::same_as<element_clean_t, std::byte>) {
+    // If elements carry a type-level adapter, lower them element-wise
+    // to the adapter's wire_type before delegating to the structural
+    // sequence encoder. This keeps `vector<T_with_adapter>` flat rather
+    // than boxing each element in a wrapper table.
+    if constexpr(codec::has_type_adapter<element_clean_t>) {
+        using adapter = codec::type_adapter<element_clean_t>;
+        using wire_t = typename adapter::wire_type;
+        std::vector<wire_t> transformed;
+        if constexpr(requires { range.size(); }) {
+            transformed.reserve(range.size());
+        }
+        for(const auto& e: range) {
+            transformed.push_back(adapter::to_wire(e));
+        }
+        return encode_sequence<Config>(b, transformed);
+    } else if constexpr(std::same_as<element_clean_t, std::byte>) {
         std::vector<std::byte> bytes;
         if constexpr(requires { range.size(); }) {
             bytes.reserve(range.size());

@@ -86,9 +86,28 @@ struct remove_smart_ptr<std::shared_ptr<T>> {
 template <typename T>
 using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
 
-// Full cleaning: annotation -> optional -> smart_ptr
+// Type-adapter substitution: if the user specialized `codec::type_adapter<T>`,
+// the proxy sees the wire representation rather than T itself. Ensures
+// `root[&Struct::field]` and `map_view<K, V>` return views shaped by the
+// adapter's wire_type, keeping the lazy read path consistent with the
+// arena encode path (which also substitutes wire_type via the same trait).
 template <typename T>
-using deep_clean_t = remove_smart_ptr_t<clean_t<T>>;
+struct apply_type_adapter {
+    using type = T;
+};
+
+template <typename T>
+    requires codec::has_type_adapter<T>
+struct apply_type_adapter<T> {
+    using type = typename codec::type_adapter<T>::wire_type;
+};
+
+template <typename T>
+using apply_type_adapter_t = typename apply_type_adapter<T>::type;
+
+// Full cleaning: annotation -> optional -> smart_ptr -> type_adapter
+template <typename T>
+using deep_clean_t = apply_type_adapter_t<remove_smart_ptr_t<clean_t<T>>>;
 
 template <typename T>
 struct scalar_storage {

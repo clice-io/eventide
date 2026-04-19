@@ -396,6 +396,26 @@ auto decode_value_at(const B& d,
                                                                             /*required=*/true)));
         out = static_cast<U>(adapter::from_wire(std::move(wire)));
         return {};
+    } else if constexpr(codec::has_type_adapter<U>) {
+        // Type-level adapter: user specialized codec::type_adapter<T>.
+        // Mirrors the `with<>` branch but sourced from the type rather
+        // than from field-level attrs.
+        using adapter = codec::type_adapter<std::remove_cvref_t<U>>;
+        using wire_t = typename adapter::wire_type;
+        if(!view.has(sid)) {
+            if(required) {
+                return std::unexpected(E::invalid_state);
+            }
+            return {};
+        }
+        wire_t wire{};
+        KOTA_EXPECTED_TRY((decode_value_at<Config, B, wire_t, std::tuple<>>(d,
+                                                                            view,
+                                                                            sid,
+                                                                            wire,
+                                                                            /*required=*/true)));
+        out = static_cast<U>(adapter::from_wire(std::move(wire)));
+        return {};
     } else {
         using clean_u_t = detail::clean_t<U>;
 
@@ -562,6 +582,35 @@ auto decode_sequence(const B& d,
     using U = std::remove_cvref_t<T>;
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
+
+    // Element-level type-adapter: decode into a scratch vector<wire_t>
+    // and lift back into the destination via adapter::from_wire. Mirrors
+    // the encode path in encode_sequence.
+    if constexpr(codec::has_type_adapter<element_clean_t>) {
+        using adapter = codec::type_adapter<element_clean_t>;
+        using wire_t = typename adapter::wire_type;
+        if(!view.has(sid)) {
+            if(required) {
+                return std::unexpected(E::invalid_state);
+            }
+            return {};
+        }
+        std::vector<wire_t> scratch;
+        KOTA_EXPECTED_TRY(
+            (decode_sequence<Config>(d, view, sid, scratch, /*required=*/true)));
+        if constexpr(requires { out.clear(); }) {
+            out.clear();
+        }
+        for(auto& w: scratch) {
+            auto ok = kota::detail::append_sequence_element(
+                out,
+                static_cast<element_t>(adapter::from_wire(std::move(w))));
+            if(!ok) {
+                return std::unexpected(E::unsupported_type);
+            }
+        }
+        return {};
+    }
 
     if(!view.has(sid)) {
         if(required) {
