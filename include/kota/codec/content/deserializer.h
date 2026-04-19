@@ -46,8 +46,8 @@ public:
     };
 
     class DeserializeObject :
-        public codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef> {
-        using Base = codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
+        public codec::detail::IndexedObjectDeserializer<Deserializer, content::Cursor> {
+        using Base = codec::detail::IndexedObjectDeserializer<Deserializer, content::Cursor>;
         friend class Deserializer;
 
         DeserializeObject(Deserializer& deserializer, const content::Object* object) :
@@ -80,7 +80,7 @@ public:
         }
     }
 
-    explicit Deserializer(content::ValueRef value) : root_value(value) {
+    explicit Deserializer(content::Cursor value) : root_value(value) {
         if(!root_value.valid()) {
             (void)mark_invalid();
         }
@@ -149,7 +149,7 @@ public:
     }
 
     status_t deserialize_bool(bool& value) {
-        return read_scalar(value, [](content::ValueRef ref) -> result_t<bool> {
+        return read_scalar(value, [](content::Cursor ref) -> result_t<bool> {
             auto parsed = ref.get_bool();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -161,7 +161,7 @@ public:
     template <codec::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<std::int64_t> {
+        auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<std::int64_t> {
             auto parsed = ref.get_int();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -184,7 +184,7 @@ public:
     template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
-        auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<std::uint64_t> {
+        auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<std::uint64_t> {
             auto parsed = ref.get_uint();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -207,7 +207,7 @@ public:
     template <codec::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
-        auto status = read_scalar(parsed, [](content::ValueRef ref) -> result_t<double> {
+        auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<double> {
             auto parsed = ref.get_double();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -229,7 +229,7 @@ public:
 
     status_t deserialize_char(char& value) {
         std::string_view text;
-        auto status = read_scalar(text, [](content::ValueRef ref) -> result_t<std::string_view> {
+        auto status = read_scalar(text, [](content::Cursor ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -251,7 +251,7 @@ public:
 
     status_t deserialize_str(std::string& value) {
         std::string_view text;
-        auto status = read_scalar(text, [](content::ValueRef ref) -> result_t<std::string_view> {
+        auto status = read_scalar(text, [](content::Cursor ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -311,7 +311,7 @@ public:
 
 private:
     friend class codec::detail::IndexedArrayDeserializer<Deserializer, const content::Array*>;
-    friend class codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
+    friend class codec::detail::IndexedObjectDeserializer<Deserializer, content::Cursor>;
 
     enum class value_kind : std::uint8_t {
         null,
@@ -346,9 +346,9 @@ private:
     }
 
     template <typename T>
-    status_t deserialize_from_value_ref(content::ValueRef input, T& out) {
+    status_t deserialize_from_value_ref(content::Cursor input, T& out) {
         struct value_scope {
-            value_scope(Deserializer& deserializer, content::ValueRef input) :
+            value_scope(Deserializer& deserializer, content::Cursor input) :
                 deserializer(deserializer),
                 previous_has_current_value(deserializer.has_current_value),
                 previous_current_value(deserializer.current_value) {
@@ -363,7 +363,7 @@ private:
 
             Deserializer& deserializer;
             bool previous_has_current_value;
-            content::ValueRef previous_current_value;
+            content::Cursor previous_current_value;
         };
 
         value_scope scope(*this, input);
@@ -372,11 +372,11 @@ private:
 
     template <typename T>
     status_t deserialize_element_value(const content::Array* array, std::size_t index, T& out) {
-        return deserialize_from_value_ref(content::ValueRef((*array)[index]), out);
+        return deserialize_from_value_ref(content::Cursor((*array)[index]), out);
     }
 
     template <typename T>
-    status_t deserialize_entry_value(content::ValueRef value, T& out) {
+    status_t deserialize_entry_value(content::Cursor value, T& out) {
         return deserialize_from_value_ref(value, out);
     }
 
@@ -428,14 +428,14 @@ private:
         for(const auto& entry: object) {
             entries.push_back(typename DeserializeObject::entry{
                 .key = std::string_view(entry.key),
-                .value = content::ValueRef(entry.value),
+                .value = content::Cursor(entry.value),
             });
         }
 
         return entries;
     }
 
-    result_t<content::ValueRef> access_value_ref(bool consume) {
+    result_t<content::Cursor> access_value_ref(bool consume) {
         if(!is_valid) {
             return std::unexpected(last_error);
         }
@@ -451,11 +451,11 @@ private:
         return root_value;
     }
 
-    result_t<content::ValueRef> peek_value_ref() {
+    result_t<content::Cursor> peek_value_ref() {
         return access_value_ref(false);
     }
 
-    result_t<content::ValueRef> consume_value_ref() {
+    result_t<content::Cursor> consume_value_ref() {
         return access_value_ref(true);
     }
 
@@ -498,9 +498,9 @@ private:
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
     std::optional<content::Value> owned_root_value{};
-    content::ValueRef root_value{};
+    content::Cursor root_value{};
     bool has_current_value = false;
-    content::ValueRef current_value{};
+    content::Cursor current_value{};
 };
 
 static_assert(codec::deserializer_like<Deserializer<>>);

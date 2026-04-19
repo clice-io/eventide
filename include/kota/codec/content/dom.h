@@ -25,7 +25,7 @@ namespace kota::codec::content {
 class Value;
 class Array;
 class Object;
-class ValueRef;
+class Cursor;
 
 enum class ValueKind : std::uint8_t {
     invalid = 0,
@@ -221,10 +221,10 @@ public:
     [[nodiscard]] const Object& as_object() const;
     [[nodiscard]] Object& as_object();
 
-    [[nodiscard]] ValueRef as_ref() const noexcept;
+    [[nodiscard]] Cursor as_ref() const noexcept;
 
-    [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
-    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
+    [[nodiscard]] Cursor operator[](std::string_view key) const;
+    [[nodiscard]] Cursor operator[](std::size_t index) const;
 
     [[nodiscard]] const storage_t& storage() const noexcept;
 
@@ -241,13 +241,15 @@ struct Object::entry {
     bool operator==(const entry& other) const = default;
 };
 
-class ValueRef {
+class Cursor {
 public:
-    ValueRef() noexcept = default;
-    explicit ValueRef(const Value& value) noexcept;
-    explicit ValueRef(const Value* value) noexcept;
+    Cursor() noexcept = default;
+    explicit Cursor(const Value& value) noexcept;
+    explicit Cursor(const Value* value) noexcept;
 
     [[nodiscard]] bool valid() const noexcept;
+    [[nodiscard]] bool has_error() const noexcept;
+    [[nodiscard]] std::string_view error() const noexcept;
     [[nodiscard]] ValueKind kind() const noexcept;
 
     [[nodiscard]] bool is_null() const noexcept;
@@ -275,8 +277,8 @@ public:
     [[nodiscard]] const Array& as_array() const;
     [[nodiscard]] const Object& as_object() const;
 
-    [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
-    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
+    [[nodiscard]] Cursor operator[](std::string_view key) const;
+    [[nodiscard]] Cursor operator[](std::size_t index) const;
 
     void assert_valid() const;
     void assert_kind(ValueKind expected) const;
@@ -284,7 +286,12 @@ public:
     [[nodiscard]] const Value* unwrap() const noexcept;
 
 private:
+    friend class Value;
+
+    static Cursor make_error(std::string message) noexcept;
+
     const Value* ptr_ = nullptr;
+    std::string error_;
 };
 
 // --- Array special members (defined after Value is complete) ---
@@ -735,26 +742,58 @@ inline Object& Value::as_object() {
     return std::get<Object>(storage_);
 }
 
-inline ValueRef Value::as_ref() const noexcept {
-    return ValueRef(*this);
+namespace detail {
+
+inline std::string_view kind_name(ValueKind kind) noexcept {
+    switch(kind) {
+        case ValueKind::null_value: return "null";
+        case ValueKind::boolean: return "boolean";
+        case ValueKind::signed_int: return "signed_int";
+        case ValueKind::unsigned_int: return "unsigned_int";
+        case ValueKind::floating: return "float";
+        case ValueKind::string: return "string";
+        case ValueKind::array: return "array";
+        case ValueKind::object: return "object";
+        default: return "invalid";
+    }
 }
 
-inline ValueRef Value::operator[](std::string_view key) const noexcept {
+}  // namespace detail
+
+inline Cursor Value::as_ref() const noexcept {
+    return Cursor(*this);
+}
+
+inline Cursor Value::operator[](std::string_view key) const {
     if(const Object* obj = try_object()) {
         if(const Value* v = obj->find(key)) {
-            return ValueRef(*v);
+            return Cursor(*v);
         }
+        std::string msg = "missing key \"";
+        msg.append(key);
+        msg.push_back('"');
+        return Cursor::make_error(std::move(msg));
     }
-    return ValueRef{};
+    std::string msg = "expected object, got ";
+    msg.append(detail::kind_name(kind()));
+    return Cursor::make_error(std::move(msg));
 }
 
-inline ValueRef Value::operator[](std::size_t index) const noexcept {
+inline Cursor Value::operator[](std::size_t index) const {
     if(const Array* arr = try_array()) {
         if(index < arr->size()) {
-            return ValueRef((*arr)[index]);
+            return Cursor((*arr)[index]);
         }
+        std::string msg = "index ";
+        msg.append(std::to_string(index));
+        msg.append(" out of range (size ");
+        msg.append(std::to_string(arr->size()));
+        msg.push_back(')');
+        return Cursor::make_error(std::move(msg));
     }
-    return ValueRef{};
+    std::string msg = "expected array, got ";
+    msg.append(detail::kind_name(kind()));
+    return Cursor::make_error(std::move(msg));
 }
 
 const inline Value::storage_t& Value::storage() const noexcept {
@@ -765,129 +804,157 @@ inline bool Value::operator==(const Value& other) const {
     return storage_ == other.storage_;
 }
 
-// --- ValueRef ---
+// --- Cursor ---
 
-inline ValueRef::ValueRef(const Value& value) noexcept : ptr_(&value) {}
+inline Cursor::Cursor(const Value& value) noexcept : ptr_(&value) {}
 
-inline ValueRef::ValueRef(const Value* value) noexcept : ptr_(value) {}
+inline Cursor::Cursor(const Value* value) noexcept : ptr_(value) {}
 
-inline bool ValueRef::valid() const noexcept {
+inline Cursor Cursor::make_error(std::string message) noexcept {
+    Cursor c;
+    c.error_ = std::move(message);
+    return c;
+}
+
+inline bool Cursor::valid() const noexcept {
     return ptr_ != nullptr;
 }
 
-inline ValueKind ValueRef::kind() const noexcept {
+inline bool Cursor::has_error() const noexcept {
+    return !error_.empty();
+}
+
+inline std::string_view Cursor::error() const noexcept {
+    return error_;
+}
+
+inline ValueKind Cursor::kind() const noexcept {
     return ptr_ != nullptr ? ptr_->kind() : ValueKind::invalid;
 }
 
-inline bool ValueRef::is_null() const noexcept {
+inline bool Cursor::is_null() const noexcept {
     return ptr_ != nullptr && ptr_->is_null();
 }
 
-inline bool ValueRef::is_bool() const noexcept {
+inline bool Cursor::is_bool() const noexcept {
     return ptr_ != nullptr && ptr_->is_bool();
 }
 
-inline bool ValueRef::is_int() const noexcept {
+inline bool Cursor::is_int() const noexcept {
     return ptr_ != nullptr && ptr_->is_int();
 }
 
-inline bool ValueRef::is_number() const noexcept {
+inline bool Cursor::is_number() const noexcept {
     return ptr_ != nullptr && ptr_->is_number();
 }
 
-inline bool ValueRef::is_string() const noexcept {
+inline bool Cursor::is_string() const noexcept {
     return ptr_ != nullptr && ptr_->is_string();
 }
 
-inline bool ValueRef::is_array() const noexcept {
+inline bool Cursor::is_array() const noexcept {
     return ptr_ != nullptr && ptr_->is_array();
 }
 
-inline bool ValueRef::is_object() const noexcept {
+inline bool Cursor::is_object() const noexcept {
     return ptr_ != nullptr && ptr_->is_object();
 }
 
-inline std::optional<bool> ValueRef::get_bool() const noexcept {
+inline std::optional<bool> Cursor::get_bool() const noexcept {
     return ptr_ != nullptr ? ptr_->get_bool() : std::nullopt;
 }
 
-inline std::optional<std::int64_t> ValueRef::get_int() const noexcept {
+inline std::optional<std::int64_t> Cursor::get_int() const noexcept {
     return ptr_ != nullptr ? ptr_->get_int() : std::nullopt;
 }
 
-inline std::optional<std::uint64_t> ValueRef::get_uint() const noexcept {
+inline std::optional<std::uint64_t> Cursor::get_uint() const noexcept {
     return ptr_ != nullptr ? ptr_->get_uint() : std::nullopt;
 }
 
-inline std::optional<double> ValueRef::get_double() const noexcept {
+inline std::optional<double> Cursor::get_double() const noexcept {
     return ptr_ != nullptr ? ptr_->get_double() : std::nullopt;
 }
 
-inline std::optional<std::string_view> ValueRef::get_string() const noexcept {
+inline std::optional<std::string_view> Cursor::get_string() const noexcept {
     return ptr_ != nullptr ? ptr_->get_string() : std::nullopt;
 }
 
-const inline Array* ValueRef::try_array() const noexcept {
+const inline Array* Cursor::try_array() const noexcept {
     return ptr_ != nullptr ? ptr_->try_array() : nullptr;
 }
 
-const inline Object* ValueRef::try_object() const noexcept {
+const inline Object* Cursor::try_object() const noexcept {
     return ptr_ != nullptr ? ptr_->try_object() : nullptr;
 }
 
-inline bool ValueRef::as_bool() const {
+inline bool Cursor::as_bool() const {
     return ptr_->as_bool();
 }
 
-inline std::int64_t ValueRef::as_int() const {
+inline std::int64_t Cursor::as_int() const {
     return ptr_->as_int();
 }
 
-inline std::uint64_t ValueRef::as_uint() const {
+inline std::uint64_t Cursor::as_uint() const {
     return ptr_->as_uint();
 }
 
-inline double ValueRef::as_double() const {
+inline double Cursor::as_double() const {
     return ptr_->as_double();
 }
 
-inline std::string_view ValueRef::as_string() const {
+inline std::string_view Cursor::as_string() const {
     return ptr_->as_string();
 }
 
-const inline Array& ValueRef::as_array() const {
+const inline Array& Cursor::as_array() const {
     return ptr_->as_array();
 }
 
-const inline Object& ValueRef::as_object() const {
+const inline Object& Cursor::as_object() const {
     return ptr_->as_object();
 }
 
-inline ValueRef ValueRef::operator[](std::string_view key) const noexcept {
-    if(ptr_ == nullptr) {
-        return ValueRef{};
+inline Cursor Cursor::operator[](std::string_view key) const {
+    if(ptr_ != nullptr) {
+        return (*ptr_)[key];
     }
-    return (*ptr_)[key];
+    std::string msg = error_;
+    if(!msg.empty()) {
+        msg.append(" -> ");
+    }
+    msg.append("[\"");
+    msg.append(key);
+    msg.append("\"]");
+    return Cursor::make_error(std::move(msg));
 }
 
-inline ValueRef ValueRef::operator[](std::size_t index) const noexcept {
-    if(ptr_ == nullptr) {
-        return ValueRef{};
+inline Cursor Cursor::operator[](std::size_t index) const {
+    if(ptr_ != nullptr) {
+        return (*ptr_)[index];
     }
-    return (*ptr_)[index];
+    std::string msg = error_;
+    if(!msg.empty()) {
+        msg.append(" -> ");
+    }
+    msg.append("[");
+    msg.append(std::to_string(index));
+    msg.append("]");
+    return Cursor::make_error(std::move(msg));
 }
 
-inline void ValueRef::assert_valid() const {
+inline void Cursor::assert_valid() const {
     assert(ptr_ != nullptr);
 }
 
-inline void ValueRef::assert_kind(ValueKind expected) const {
+inline void Cursor::assert_kind(ValueKind expected) const {
     assert_valid();
     assert(kind() == expected);
     (void)expected;
 }
 
-const inline Value* ValueRef::unwrap() const noexcept {
+const inline Value* Cursor::unwrap() const noexcept {
     return ptr_;
 }
 

@@ -418,7 +418,7 @@ auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& val
 /// deserialization via the probe-deserialize-finish pattern.
 ///
 /// D: the Deserializer type (must be constructible from Source)
-/// Source: the captured value (e.g., json::ValueRef, const toml::node*)
+/// Source: the captured value (e.g., json::Cursor, const toml::node*)
 /// hint: the codec::type_hint for the current value
 /// mismatch_error: the error value to use when no alternative matches
 template <typename D, typename Source, typename... Ts>
