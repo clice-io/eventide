@@ -94,7 +94,7 @@ TEST_CASE(cursor_miss_describes_failure) {
     auto missing_key = (*parsed)["zzz"];
     EXPECT_FALSE(missing_key.valid());
     EXPECT_TRUE(missing_key.has_error());
-    EXPECT_EQ(missing_key.error(), std::string_view("missing key \"zzz\""));
+    EXPECT_EQ(missing_key.error(), std::string_view(R"(missing key "zzz")"));
 
     auto out_of_range = (*parsed)["a"]["b"][5];
     EXPECT_FALSE(out_of_range.valid());
@@ -105,14 +105,13 @@ TEST_CASE(cursor_miss_describes_failure) {
     EXPECT_EQ(wrong_kind.error(), std::string_view("expected object, got array"));
 }
 
-TEST_CASE(cursor_chain_appends_error_path) {
+TEST_CASE(cursor_chain_appends_path) {
     auto parsed = json::parse<json::Value>(R"({"a":1})");
     ASSERT_TRUE(parsed.has_value());
 
     auto deep = (*parsed)["missing"]["x"][3]["y"];
     ASSERT_FALSE(deep.valid());
-    EXPECT_EQ(deep.error(),
-              std::string_view("missing key \"missing\" -> [\"x\"] -> [3] -> [\"y\"]"));
+    EXPECT_EQ(deep.error(), std::string_view(R"(missing key "missing" -> ["x"] -> [3] -> ["y"])"));
 }
 
 TEST_CASE(object_lookup_builds_lazy_index) {
