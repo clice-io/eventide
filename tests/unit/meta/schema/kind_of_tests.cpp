@@ -8,7 +8,6 @@
 #include <variant>
 #include <vector>
 
-#include "static_expect.h"
 #include "fixtures/schema/enums.h"
 #include "fixtures/schema/primitives.h"
 #include "kota/zest/zest.h"
@@ -48,13 +47,13 @@ TEST_CASE(enums) {
 TEST_CASE(compounds) {
     STATIC_EXPECT_EQ(kind_of<std::vector<int>>(), type_kind::array);
     STATIC_EXPECT_EQ(kind_of<std::set<int>>(), type_kind::set);
-    STATIC_EXPECT_EQ((kind_of<std::map<std::string, int>>()), type_kind::map);
+    STATIC_EXPECT_EQ(kind_of<std::map<std::string, int>>(), type_kind::map);
     STATIC_EXPECT_EQ(kind_of<std::optional<int>>(), type_kind::optional);
     STATIC_EXPECT_EQ(kind_of<std::unique_ptr<int>>(), type_kind::pointer);
     STATIC_EXPECT_EQ(kind_of<std::shared_ptr<int>>(), type_kind::pointer);
-    STATIC_EXPECT_EQ((kind_of<std::variant<int, std::string>>()), type_kind::variant);
-    STATIC_EXPECT_EQ((kind_of<std::tuple<int, float>>()), type_kind::tuple);
-    STATIC_EXPECT_EQ((kind_of<std::pair<int, std::string>>()), type_kind::tuple);
+    STATIC_EXPECT_EQ(kind_of<std::variant<int, std::string>>(), type_kind::variant);
+    STATIC_EXPECT_EQ(kind_of<std::tuple<int, float>>(), type_kind::tuple);
+    STATIC_EXPECT_EQ(kind_of<std::pair<int, std::string>>(), type_kind::tuple);
     STATIC_EXPECT_EQ(kind_of<fx::SimpleStruct>(), type_kind::structure);
 }
 

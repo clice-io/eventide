@@ -1,6 +1,5 @@
 #include <string>
 
-#include "static_expect.h"
 #include "fixtures/schema/rename.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"

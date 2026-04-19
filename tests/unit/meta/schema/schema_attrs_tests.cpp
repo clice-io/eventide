@@ -1,4 +1,3 @@
-#include "static_expect.h"
 #include "fixtures/schema/containers.h"
 #include "fixtures/schema/primitives.h"
 #include "fixtures/schema/schema_attrs.h"

@@ -4,7 +4,6 @@
 #include <type_traits>
 #include <variant>
 
-#include "static_expect.h"
 #include "fixtures/schema/behavior_attrs.h"
 #include "fixtures/schema/enums.h"
 #include "fixtures/schema/primitives.h"

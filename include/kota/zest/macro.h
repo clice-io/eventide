@@ -68,6 +68,31 @@
         ZEST_CHECK_IMPL(failed, return_action);                                                    \
     } while(0)
 
+// STATIC variants skip the lambda forwarding so that the raw macro args stay
+// usable in constant expressions (lambda parameters never are, regardless of
+// how they were initialized). Args are therefore evaluated twice — once for
+// the constexpr failure predicate, once for the runtime diagnostic — but both
+// evaluations are constant-evaluated so the duplication is free.
+#define ZEST_STATIC_EXPECT_UNARY(expectation, failure_pred, return_action, ...)                    \
+    do {                                                                                           \
+        ZEST_CHECK_IMPL(::kota::zest::check_unary_failure((failure_pred),                          \
+                                                          #__VA_ARGS__,                            \
+                                                          (expectation),                           \
+                                                          __VA_ARGS__),                            \
+                        return_action);                                                            \
+    } while(false)
+
+#define ZEST_STATIC_EXPECT_BINARY(op_string, failure_pred, return_action, ...)                     \
+    do {                                                                                           \
+        const auto exprs = ::kota::zest::parse_binary_exprs(#__VA_ARGS__);                         \
+        ZEST_CHECK_IMPL(::kota::zest::check_binary_failure((failure_pred),                         \
+                                                           #op_string,                             \
+                                                           exprs.lhs,                              \
+                                                           exprs.rhs,                              \
+                                                           __VA_ARGS__),                           \
+                        return_action);                                                            \
+    } while(false)
+
 // clang-format off
 #define EXPECT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), (void)0, __VA_ARGS__)
 #define EXPECT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), (void)0, __VA_ARGS__)
@@ -77,6 +102,17 @@
 #define EXPECT_LE(...) ZEST_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), (void)0, __VA_ARGS__)
 #define EXPECT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), (void)0, __VA_ARGS__)
 #define EXPECT_GE(...) ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), (void)0, __VA_ARGS__)
+
+// clang-format off
+#define STATIC_EXPECT_TRUE(...)  ZEST_STATIC_EXPECT_UNARY("true",  std::bool_constant<!static_cast<bool>(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_FALSE(...) ZEST_STATIC_EXPECT_UNARY("false", std::bool_constant< static_cast<bool>(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_EQ(...) ZEST_STATIC_EXPECT_BINARY(==, std::bool_constant<!::kota::meta::eq(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_NE(...) ZEST_STATIC_EXPECT_BINARY(!=, std::bool_constant< ::kota::meta::eq(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_LT(...) ZEST_STATIC_EXPECT_BINARY(<,  std::bool_constant<!::kota::meta::lt(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_LE(...) ZEST_STATIC_EXPECT_BINARY(<=, std::bool_constant<!::kota::meta::le(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_GT(...) ZEST_STATIC_EXPECT_BINARY(>,  std::bool_constant<!::kota::meta::gt(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+#define STATIC_EXPECT_GE(...) ZEST_STATIC_EXPECT_BINARY(>=, std::bool_constant<!::kota::meta::ge(__VA_ARGS__)>(), (void)0, __VA_ARGS__)
+// clang-format on
 
 #define ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), return, __VA_ARGS__)
 #define ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), return, __VA_ARGS__)
@@ -89,12 +125,15 @@
 
 #define CO_ASSERT_TRUE(...) ZEST_EXPECT_UNARY("true", !(value), co_return, __VA_ARGS__)
 #define CO_ASSERT_FALSE(...) ZEST_EXPECT_UNARY("false", (value), co_return, __VA_ARGS__)
-#define CO_ASSERT_EQ(...) ZEST_EXPECT_BINARY(==, !::kota::meta::eq(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_EQ(...)                                                                          \
+    ZEST_EXPECT_BINARY(==, !::kota::meta::eq(lhs, rhs), co_return, __VA_ARGS__)
 #define CO_ASSERT_NE(...) ZEST_EXPECT_BINARY(!=, ::kota::meta::eq(lhs, rhs), co_return, __VA_ARGS__)
 #define CO_ASSERT_LT(...) ZEST_EXPECT_BINARY(<, !::kota::meta::lt(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_LE(...) ZEST_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_LE(...)                                                                          \
+    ZEST_EXPECT_BINARY(<=, !::kota::meta::le(lhs, rhs), co_return, __VA_ARGS__)
 #define CO_ASSERT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), co_return, __VA_ARGS__)
-#define CO_ASSERT_GE(...) ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), co_return, __VA_ARGS__)
+#define CO_ASSERT_GE(...)                                                                          \
+    ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), co_return, __VA_ARGS__)
 // clang-format on
 
 #ifdef __cpp_exceptions
