@@ -100,6 +100,11 @@
 #define EXPECT_GT(...) ZEST_EXPECT_BINARY(>, !::kota::meta::gt(lhs, rhs), (void)0, __VA_ARGS__)
 #define EXPECT_GE(...) ZEST_EXPECT_BINARY(>=, !::kota::meta::ge(lhs, rhs), (void)0, __VA_ARGS__)
 
+// EXPECT_TYPE_EQ(L, R) — forwards two type args to std::is_same_v; on mismatch,
+// prints both sides' type names via kota::meta::type_name for diagnostics.
+#define EXPECT_TYPE_EQ(...)                                                                        \
+    ZEST_CHECK_IMPL((::kota::zest::check_type_eq_failure<__VA_ARGS__>(#__VA_ARGS__)), (void)0)
+
 // clang-format off
 #define STATIC_EXPECT_TRUE(...) ZEST_STATIC_EXPECT_UNARY("true", !(__VA_ARGS__), (void)0, __VA_ARGS__)
 #define STATIC_EXPECT_FALSE(...) ZEST_STATIC_EXPECT_UNARY("false", (__VA_ARGS__), (void)0, __VA_ARGS__)
