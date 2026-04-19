@@ -34,15 +34,15 @@ public:
     using status_t = result_t<void>;
 
     class DeserializeArray :
-        public codec::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef> {
-        using Base = codec::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
+        public codec::detail::IndexedArrayDeserializer<Deserializer, const content::Array*> {
+        using Base = codec::detail::IndexedArrayDeserializer<Deserializer, const content::Array*>;
         friend class Deserializer;
 
         DeserializeArray(Deserializer& deserializer,
-                         content::ArrayRef array,
+                         const content::Array* array,
                          std::size_t expectedLength,
                          bool isStrictLength) :
-            Base(deserializer, array, array.size(), expectedLength, isStrictLength) {}
+            Base(deserializer, array, array->size(), expectedLength, isStrictLength) {}
     };
 
     class DeserializeObject :
@@ -50,9 +50,9 @@ public:
         using Base = codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
         friend class Deserializer;
 
-        DeserializeObject(Deserializer& deserializer, content::ObjectRef object) :
+        DeserializeObject(Deserializer& deserializer, const content::Object* object) :
             Base(deserializer) {
-            auto collected = deserializer.collect_object_entries(object);
+            auto collected = deserializer.collect_object_entries(*object);
             if(!collected) {
                 (void)deserializer.mark_invalid(collected.error());
                 return;
@@ -310,7 +310,7 @@ public:
     }
 
 private:
-    friend class codec::detail::IndexedArrayDeserializer<Deserializer, content::ArrayRef>;
+    friend class codec::detail::IndexedArrayDeserializer<Deserializer, const content::Array*>;
     friend class codec::detail::IndexedObjectDeserializer<Deserializer, content::ValueRef>;
 
     enum class value_kind : std::uint8_t {
@@ -371,8 +371,8 @@ private:
     }
 
     template <typename T>
-    status_t deserialize_element_value(content::ArrayRef array, std::size_t index, T& out) {
-        return deserialize_from_value_ref(array[index], out);
+    status_t deserialize_element_value(const content::Array* array, std::size_t index, T& out) {
+        return deserialize_from_value_ref(content::ValueRef((*array)[index]), out);
     }
 
     template <typename T>
@@ -421,14 +421,14 @@ private:
     }
 
     result_t<std::vector<typename DeserializeObject::entry>>
-        collect_object_entries(content::ObjectRef object) {
+        collect_object_entries(const content::Object& object) {
         std::vector<typename DeserializeObject::entry> entries;
         entries.reserve(object.size());
 
-        for(auto entry: object) {
+        for(const auto& entry: object) {
             entries.push_back(typename DeserializeObject::entry{
-                .key = entry.key,
-                .value = entry.value,
+                .key = std::string_view(entry.key),
+                .value = content::ValueRef(entry.value),
             });
         }
 
@@ -459,27 +459,27 @@ private:
         return access_value_ref(true);
     }
 
-    result_t<content::ArrayRef> open_array() {
+    result_t<const content::Array*> open_array() {
         auto ref = consume_value_ref();
         if(!ref) {
             return std::unexpected(ref.error());
         }
 
-        auto array = ref->get_array();
-        if(!array.valid()) {
+        const content::Array* array = ref->try_array();
+        if(array == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
         return array;
     }
 
-    result_t<content::ObjectRef> open_object() {
+    result_t<const content::Object*> open_object() {
         auto ref = consume_value_ref();
         if(!ref) {
             return std::unexpected(ref.error());
         }
 
-        auto object = ref->get_object();
-        if(!object.valid()) {
+        const content::Object* object = ref->try_object();
+        if(object == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
         return object;

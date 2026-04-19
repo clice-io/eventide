@@ -16,6 +16,7 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/struct.h"
 #include "kota/codec/config.h"
+#include "kota/codec/content/dom.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/field_dispatch.h"
 #include "kota/codec/detail/fwd.h"
@@ -278,15 +279,15 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
     auto obj_ref = dom_result.as_ref();
-    auto obj = obj_ref.get_object();
-    if(!obj.valid()) {
+    const content::Object* obj = obj_ref.try_object();
+    if(obj == nullptr) {
         return std::unexpected(E::invalid_type("object", "non-object"));
     }
 
     // Pass 1: find tag
     std::string_view tag_value;
     bool found = false;
-    for(auto entry: obj) {
+    for(const auto& entry: *obj) {
         if(entry.key == tag_field) {
             auto s = entry.value.get_string();
             if(!s) {

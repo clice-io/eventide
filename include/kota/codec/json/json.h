@@ -21,8 +21,6 @@ namespace kota::codec::json {
 // DOM type aliases (shared with content backend)
 using ValueKind = content::ValueKind;
 using ValueRef = content::ValueRef;
-using ArrayRef = content::ArrayRef;
-using ObjectRef = content::ObjectRef;
 using Value = content::Value;
 using Array = content::Array;
 using Object = content::Object;

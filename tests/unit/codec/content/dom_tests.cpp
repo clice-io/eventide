@@ -80,16 +80,11 @@ TEST_CASE(parse_and_view_basic_via_json) {
     auto parsed = json::parse<json::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
     ASSERT_TRUE(parsed.has_value());
 
-    auto root = parsed->as_ref();
-    auto object = root.get_object();
-    ASSERT_TRUE(object.valid());
-    ASSERT_EQ(object.at("a").as_int(), 1);
-    ASSERT_EQ(object.at("b").as_string(), std::string_view("x"));
-
-    auto array = object["arr"].get_array();
-    ASSERT_TRUE(array.valid());
-    ASSERT_EQ(array[1].as_int(), 2);
-    EXPECT_FALSE(object.contains("missing"));
+    ASSERT_TRUE(parsed->is_object());
+    ASSERT_EQ((*parsed)["a"].as_int(), 1);
+    ASSERT_EQ((*parsed)["b"].as_string(), std::string_view("x"));
+    ASSERT_EQ((*parsed)["arr"][1].as_int(), 2);
+    EXPECT_FALSE((*parsed)["missing"].valid());
 }
 
 TEST_CASE(object_lookup_builds_lazy_index) {
@@ -97,11 +92,10 @@ TEST_CASE(object_lookup_builds_lazy_index) {
     auto parsed = json::parse<json::Value>(json_text);
     ASSERT_TRUE(parsed.has_value());
 
-    auto object = parsed->as_ref().get_object();
-    ASSERT_TRUE(object.valid());
+    ASSERT_TRUE(parsed->is_object());
     for(int i = 0; i < 32; ++i) {
         std::string key = "k" + std::to_string(i);
-        ASSERT_EQ(object[key].as_int(), i);
+        ASSERT_EQ((*parsed)[key].as_int(), i);
     }
 }
 
@@ -147,10 +141,9 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     auto reparsed = json::parse<mixed_payload>(*encoded);
     ASSERT_TRUE(reparsed.has_value());
     EXPECT_EQ(reparsed->id, 7);
-    auto reparsed_extra_object = reparsed->extra.as_ref().get_object();
-    ASSERT_TRUE(reparsed_extra_object.valid());
-    EXPECT_EQ(reparsed_extra_object["name"].as_string(), std::string_view("alice"));
-    EXPECT_EQ(reparsed_extra_object["n"].as_int(), 2);
+    ASSERT_TRUE(reparsed->extra.is_object());
+    EXPECT_EQ(reparsed->extra["name"].as_string(), std::string_view("alice"));
+    EXPECT_EQ(reparsed->extra["n"].as_int(), 2);
 }
 
 TEST_CASE(deep_nested_array_via_json_roundtrip) {
@@ -164,10 +157,9 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
 
     content::ValueRef cursor = parsed->as_ref();
     for(int i = 0; i < depth; ++i) {
-        auto array = cursor.get_array();
-        ASSERT_TRUE(array.valid());
-        ASSERT_EQ(array.size(), std::size_t(1));
-        cursor = array[0];
+        ASSERT_TRUE(cursor.is_array());
+        ASSERT_EQ(cursor.as_array().size(), std::size_t(1));
+        cursor = cursor[0];
     }
     ASSERT_TRUE(cursor.is_int());
     EXPECT_EQ(cursor.as_int(), 1);

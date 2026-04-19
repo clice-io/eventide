@@ -26,8 +26,6 @@ class Value;
 class Array;
 class Object;
 class ValueRef;
-class ArrayRef;
-class ObjectRef;
 
 enum class ValueKind : std::uint8_t {
     invalid = 0,
@@ -96,8 +94,6 @@ public:
     [[nodiscard]] const_iterator cbegin() const noexcept;
     [[nodiscard]] const_iterator cend() const noexcept;
 
-    [[nodiscard]] ArrayRef as_ref() const noexcept;
-
     [[nodiscard]] const std::vector<Value>& items() const noexcept;
     [[nodiscard]] std::vector<Value>& items() noexcept;
 
@@ -147,8 +143,6 @@ public:
     [[nodiscard]] iterator end() noexcept;
     [[nodiscard]] const_iterator begin() const noexcept;
     [[nodiscard]] const_iterator end() const noexcept;
-
-    [[nodiscard]] ObjectRef as_ref() const noexcept;
 
     [[nodiscard]] const container_t& entries() const noexcept;
 
@@ -229,6 +223,9 @@ public:
 
     [[nodiscard]] ValueRef as_ref() const noexcept;
 
+    [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
+    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
+
     [[nodiscard]] const storage_t& storage() const noexcept;
 
     bool operator==(const Value& other) const;
@@ -266,16 +263,20 @@ public:
     [[nodiscard]] std::optional<std::uint64_t> get_uint() const noexcept;
     [[nodiscard]] std::optional<double> get_double() const noexcept;
     [[nodiscard]] std::optional<std::string_view> get_string() const noexcept;
-    [[nodiscard]] ArrayRef get_array() const noexcept;
-    [[nodiscard]] ObjectRef get_object() const noexcept;
+
+    [[nodiscard]] const Array* try_array() const noexcept;
+    [[nodiscard]] const Object* try_object() const noexcept;
 
     [[nodiscard]] bool as_bool() const;
     [[nodiscard]] std::int64_t as_int() const;
     [[nodiscard]] std::uint64_t as_uint() const;
     [[nodiscard]] double as_double() const;
     [[nodiscard]] std::string_view as_string() const;
-    [[nodiscard]] ArrayRef as_array() const;
-    [[nodiscard]] ObjectRef as_object() const;
+    [[nodiscard]] const Array& as_array() const;
+    [[nodiscard]] const Object& as_object() const;
+
+    [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
+    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
 
     void assert_valid() const;
     void assert_kind(ValueKind expected) const;
@@ -284,110 +285,6 @@ public:
 
 private:
     const Value* ptr_ = nullptr;
-};
-
-class ArrayRef {
-public:
-    class iterator;
-
-    ArrayRef() noexcept = default;
-    explicit ArrayRef(const Array& array) noexcept;
-    explicit ArrayRef(const Array* array) noexcept;
-
-    [[nodiscard]] bool valid() const noexcept;
-    [[nodiscard]] std::size_t size() const noexcept;
-    [[nodiscard]] bool empty() const noexcept;
-
-    [[nodiscard]] ValueRef at(std::size_t index) const;
-    [[nodiscard]] ValueRef operator[](std::size_t index) const noexcept;
-
-    [[nodiscard]] iterator begin() const noexcept;
-    [[nodiscard]] iterator end() const noexcept;
-
-    void assert_valid() const;
-
-    [[nodiscard]] const Array* unwrap() const noexcept;
-
-private:
-    const Array* ptr_ = nullptr;
-};
-
-class ArrayRef::iterator {
-public:
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = ValueRef;
-    using reference = ValueRef;
-    using pointer = void;
-    using difference_type = std::ptrdiff_t;
-
-    iterator() = default;
-
-    [[nodiscard]] value_type operator*() const noexcept;
-    auto operator++() noexcept -> iterator&;
-    auto operator++(int) noexcept -> iterator;
-    bool operator==(const iterator&) const noexcept = default;
-
-private:
-    iterator(const ArrayRef* owner, std::size_t index) noexcept : owner_(owner), index_(index) {}
-    friend class ArrayRef;
-
-    const ArrayRef* owner_ = nullptr;
-    std::size_t index_ = 0;
-};
-
-class ObjectRef {
-public:
-    struct entry {
-        std::string_view key;
-        ValueRef value;
-    };
-
-    class iterator;
-
-    ObjectRef() noexcept = default;
-    explicit ObjectRef(const Object& object) noexcept;
-    explicit ObjectRef(const Object* object) noexcept;
-
-    [[nodiscard]] bool valid() const noexcept;
-    [[nodiscard]] std::size_t size() const noexcept;
-    [[nodiscard]] bool empty() const noexcept;
-
-    [[nodiscard]] bool contains(std::string_view key) const noexcept;
-    [[nodiscard]] ValueRef at(std::string_view key) const;
-    [[nodiscard]] ValueRef operator[](std::string_view key) const noexcept;
-
-    [[nodiscard]] iterator begin() const noexcept;
-    [[nodiscard]] iterator end() const noexcept;
-
-    void assert_valid() const;
-
-    [[nodiscard]] const Object* unwrap() const noexcept;
-
-private:
-    const Object* ptr_ = nullptr;
-};
-
-class ObjectRef::iterator {
-public:
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = entry;
-    using reference = entry;
-    using pointer = void;
-    using difference_type = std::ptrdiff_t;
-
-    iterator() = default;
-
-    [[nodiscard]] value_type operator*() const noexcept;
-    auto operator++() noexcept -> iterator&;
-    auto operator++(int) noexcept -> iterator;
-    bool operator==(const iterator&) const noexcept = default;
-
-private:
-    iterator(const ObjectRef* owner, std::size_t index) noexcept : owner_(owner), index_(index) {}
-    friend class ObjectRef;
-
-    const ObjectRef* owner_ = nullptr;
-    std::size_t index_ = 0;
 };
 
 // --- Array special members (defined after Value is complete) ---
@@ -466,10 +363,6 @@ inline auto Array::cbegin() const noexcept -> const_iterator {
 
 inline auto Array::cend() const noexcept -> const_iterator {
     return items_.cend();
-}
-
-inline ArrayRef Array::as_ref() const noexcept {
-    return ArrayRef(*this);
 }
 
 const inline std::vector<Value>& Array::items() const noexcept {
@@ -625,10 +518,6 @@ inline auto Object::begin() const noexcept -> const_iterator {
 
 inline auto Object::end() const noexcept -> const_iterator {
     return entries_.end();
-}
-
-inline ObjectRef Object::as_ref() const noexcept {
-    return ObjectRef(*this);
 }
 
 const inline Object::container_t& Object::entries() const noexcept {
@@ -850,6 +739,24 @@ inline ValueRef Value::as_ref() const noexcept {
     return ValueRef(*this);
 }
 
+inline ValueRef Value::operator[](std::string_view key) const noexcept {
+    if(const Object* obj = try_object()) {
+        if(const Value* v = obj->find(key)) {
+            return ValueRef(*v);
+        }
+    }
+    return ValueRef{};
+}
+
+inline ValueRef Value::operator[](std::size_t index) const noexcept {
+    if(const Array* arr = try_array()) {
+        if(index < arr->size()) {
+            return ValueRef((*arr)[index]);
+        }
+    }
+    return ValueRef{};
+}
+
 const inline Value::storage_t& Value::storage() const noexcept {
     return storage_;
 }
@@ -920,18 +827,12 @@ inline std::optional<std::string_view> ValueRef::get_string() const noexcept {
     return ptr_ != nullptr ? ptr_->get_string() : std::nullopt;
 }
 
-inline ArrayRef ValueRef::get_array() const noexcept {
-    if(ptr_ == nullptr) {
-        return ArrayRef{};
-    }
-    return ArrayRef(ptr_->try_array());
+const inline Array* ValueRef::try_array() const noexcept {
+    return ptr_ != nullptr ? ptr_->try_array() : nullptr;
 }
 
-inline ObjectRef ValueRef::get_object() const noexcept {
-    if(ptr_ == nullptr) {
-        return ObjectRef{};
-    }
-    return ObjectRef(ptr_->try_object());
+const inline Object* ValueRef::try_object() const noexcept {
+    return ptr_ != nullptr ? ptr_->try_object() : nullptr;
 }
 
 inline bool ValueRef::as_bool() const {
@@ -954,12 +855,26 @@ inline std::string_view ValueRef::as_string() const {
     return ptr_->as_string();
 }
 
-inline ArrayRef ValueRef::as_array() const {
-    return ArrayRef(ptr_->as_array());
+const inline Array& ValueRef::as_array() const {
+    return ptr_->as_array();
 }
 
-inline ObjectRef ValueRef::as_object() const {
-    return ObjectRef(ptr_->as_object());
+const inline Object& ValueRef::as_object() const {
+    return ptr_->as_object();
+}
+
+inline ValueRef ValueRef::operator[](std::string_view key) const noexcept {
+    if(ptr_ == nullptr) {
+        return ValueRef{};
+    }
+    return (*ptr_)[key];
+}
+
+inline ValueRef ValueRef::operator[](std::size_t index) const noexcept {
+    if(ptr_ == nullptr) {
+        return ValueRef{};
+    }
+    return (*ptr_)[index];
 }
 
 inline void ValueRef::assert_valid() const {
@@ -974,137 +889,6 @@ inline void ValueRef::assert_kind(ValueKind expected) const {
 
 const inline Value* ValueRef::unwrap() const noexcept {
     return ptr_;
-}
-
-// --- ArrayRef ---
-
-inline ArrayRef::ArrayRef(const Array& array) noexcept : ptr_(&array) {}
-
-inline ArrayRef::ArrayRef(const Array* array) noexcept : ptr_(array) {}
-
-inline bool ArrayRef::valid() const noexcept {
-    return ptr_ != nullptr;
-}
-
-inline std::size_t ArrayRef::size() const noexcept {
-    return ptr_ != nullptr ? ptr_->size() : 0;
-}
-
-inline bool ArrayRef::empty() const noexcept {
-    return ptr_ == nullptr || ptr_->empty();
-}
-
-inline ValueRef ArrayRef::at(std::size_t index) const {
-    assert_valid();
-    assert(index < ptr_->size());
-    return ValueRef((*ptr_)[index]);
-}
-
-inline ValueRef ArrayRef::operator[](std::size_t index) const noexcept {
-    if(ptr_ == nullptr || index >= ptr_->size()) {
-        return ValueRef{};
-    }
-    return ValueRef((*ptr_)[index]);
-}
-
-inline auto ArrayRef::begin() const noexcept -> iterator {
-    return iterator(this, 0);
-}
-
-inline auto ArrayRef::end() const noexcept -> iterator {
-    return iterator(this, size());
-}
-
-inline void ArrayRef::assert_valid() const {
-    assert(ptr_ != nullptr);
-}
-
-const inline Array* ArrayRef::unwrap() const noexcept {
-    return ptr_;
-}
-
-inline auto ArrayRef::iterator::operator*() const noexcept -> value_type {
-    return (*owner_)[index_];
-}
-
-inline auto ArrayRef::iterator::operator++() noexcept -> iterator& {
-    ++index_;
-    return *this;
-}
-
-inline auto ArrayRef::iterator::operator++(int) noexcept -> iterator {
-    iterator copy = *this;
-    ++index_;
-    return copy;
-}
-
-// --- ObjectRef ---
-
-inline ObjectRef::ObjectRef(const Object& object) noexcept : ptr_(&object) {}
-
-inline ObjectRef::ObjectRef(const Object* object) noexcept : ptr_(object) {}
-
-inline bool ObjectRef::valid() const noexcept {
-    return ptr_ != nullptr;
-}
-
-inline std::size_t ObjectRef::size() const noexcept {
-    return ptr_ != nullptr ? ptr_->size() : 0;
-}
-
-inline bool ObjectRef::empty() const noexcept {
-    return ptr_ == nullptr || ptr_->empty();
-}
-
-inline bool ObjectRef::contains(std::string_view key) const noexcept {
-    return ptr_ != nullptr && ptr_->contains(key);
-}
-
-inline ValueRef ObjectRef::at(std::string_view key) const {
-    assert_valid();
-    return ValueRef(ptr_->at(key));
-}
-
-inline ValueRef ObjectRef::operator[](std::string_view key) const noexcept {
-    if(ptr_ == nullptr) {
-        return ValueRef{};
-    }
-    if(const Value* v = ptr_->find(key)) {
-        return ValueRef(*v);
-    }
-    return ValueRef{};
-}
-
-inline auto ObjectRef::begin() const noexcept -> iterator {
-    return iterator(this, 0);
-}
-
-inline auto ObjectRef::end() const noexcept -> iterator {
-    return iterator(this, size());
-}
-
-inline void ObjectRef::assert_valid() const {
-    assert(ptr_ != nullptr);
-}
-
-const inline Object* ObjectRef::unwrap() const noexcept {
-    return ptr_;
-}
-
-inline auto ObjectRef::iterator::operator*() const noexcept -> value_type {
-    const auto& e = owner_->unwrap()->entries()[index_];
-    return entry{std::string_view(e.key), ValueRef(e.value)};
-}
-
-inline auto ObjectRef::iterator::operator++() noexcept -> iterator& {
-    ++index_;
-    return *this;
-}
-
-inline auto ObjectRef::iterator::operator++(int) noexcept -> iterator {
-    iterator copy = *this;
-    ++index_;
-    return copy;
 }
 
 }  // namespace kota::codec::content
