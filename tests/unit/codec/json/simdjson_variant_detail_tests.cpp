@@ -5,6 +5,9 @@
 #include <variant>
 #include <vector>
 
+#include "fixtures/schema/common.h"
+#include "fixtures/schema/primitives.h"
+#include "fixtures/schema/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/json/deserializer.h"
@@ -21,36 +24,11 @@ using json::to_json;
 
 // ── Helper types ─────────────────────────────────────────────────────
 
-struct Point {
-    double x{};
-    double y{};
-
-    auto operator==(const Point&) const -> bool = default;
-};
-
-struct Color {
-    std::int32_t r{};
-    std::int32_t g{};
-    std::int32_t b{};
-
-    auto operator==(const Color&) const -> bool = default;
-};
-
-struct IntHolder {
-    std::int32_t value{};
-
-    auto operator==(const IntHolder&) const -> bool = default;
-};
-
-struct StringHolder {
-    std::string value;
-
-    auto operator==(const StringHolder&) const -> bool = default;
-};
-
-struct Empty {
-    auto operator==(const Empty&) const -> bool = default;
-};
+using Point = meta::fixtures::Point2d;
+using Color = meta::fixtures::Color3;
+using IntHolder = meta::fixtures::IntHolder;
+using StringHolder = meta::fixtures::StringHolder;
+using Empty = meta::fixtures::EmptyStruct;
 
 // ── Tagged variant type aliases ──────────────────────────────────────
 
@@ -77,25 +55,9 @@ using AdjWithStruct =
                meta::attrs::adjacently_tagged<"type", "value">::names<"int", "point">>;
 
 // Internal
-struct Circle {
-    double radius{};
-
-    auto operator==(const Circle&) const -> bool = default;
-};
-
-struct Rect {
-    double width{};
-    double height{};
-
-    auto operator==(const Rect&) const -> bool = default;
-};
-
-struct Triangle {
-    double base{};
-    double height{};
-
-    auto operator==(const Triangle&) const -> bool = default;
-};
+using Circle = meta::fixtures::Circle;
+using Rect = meta::fixtures::Rect;
+using Triangle = meta::fixtures::Triangle;
 
 using IntTagShape = annotation<std::variant<Circle, Rect>,
                                meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
@@ -109,22 +71,16 @@ using IntTagTriShape =
 struct ExtHolder {
     std::string label;
     ExtWithStruct item;
-
-    auto operator==(const ExtHolder&) const -> bool = default;
 };
 
 struct AdjHolder {
     std::string name;
     AdjSimple data;
-
-    auto operator==(const AdjHolder&) const -> bool = default;
 };
 
 struct IntTagHolder {
     std::string name;
     IntTagShape shape;
-
-    auto operator==(const IntTagHolder&) const -> bool = default;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -757,8 +713,6 @@ TEST_CASE(variant_in_struct_in_variant) {
     struct Wrapper {
         std::string id;
         Inner val;
-
-        auto operator==(const Wrapper&) const -> bool = default;
     };
 
     using Outer = annotation<std::variant<int, Wrapper>,

@@ -1,7 +1,5 @@
 #pragma once
 
-// Tagged-variant fixtures — external / internal / adjacent tagging.
-
 #include <string>
 #include <variant>
 
@@ -19,11 +17,11 @@ struct Rect {
     double height;
 };
 
-struct TaggedCircle {
+struct TaggedIntCircle {
     int radius;
 };
 
-struct TaggedRect {
+struct TaggedIntRect {
     int width;
     int height;
 };
@@ -31,7 +29,7 @@ struct TaggedRect {
 using ExternalTagged =
     annotation<std::variant<int, std::string>, attrs::externally_tagged::names<"integer", "text">>;
 
-using InternalTagged = annotation<std::variant<TaggedCircle, TaggedRect>,
+using InternalTagged = annotation<std::variant<TaggedIntCircle, TaggedIntRect>,
                                   attrs::internally_tagged<"kind">::names<"circle", "rect">>;
 
 using AdjacentTagged =
@@ -40,17 +38,6 @@ using AdjacentTagged =
 
 using TaggedRoot = annotation<std::variant<Circle, Rect>,
                               attrs::internally_tagged<"kind">::names<"circle", "rect">>;
-
-using ExternalTaggedDefault = annotation<std::variant<int, std::string>, attrs::externally_tagged>;
-using InternalTaggedDefault =
-    annotation<std::variant<TaggedCircle, TaggedRect>, attrs::internally_tagged<"kind">>;
-using AdjacentTaggedDefault =
-    annotation<std::variant<int, std::string>, attrs::adjacently_tagged<"type", "value">>;
-
-using SingleAltTagged = annotation<std::variant<int>, attrs::externally_tagged>;
-
-using NestedTagged = annotation<std::variant<std::variant<int, std::string>, bool>,
-                                attrs::externally_tagged::names<"inner", "flag">>;
 
 struct TaggedFieldStruct {
     ExternalTagged ext;

@@ -3,6 +3,7 @@
 // Umbrella header — pulls in the whole schema fixture catalogue.
 
 #include "fixtures/schema/behavior_attrs.h"
+#include "fixtures/schema/common.h"
 #include "fixtures/schema/containers.h"
 #include "fixtures/schema/enums.h"
 #include "fixtures/schema/golden.h"
