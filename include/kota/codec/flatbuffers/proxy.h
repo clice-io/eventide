@@ -147,14 +147,14 @@ consteval std::size_t field_slot_count() {
 // which is the same index the codec uses to derive voffsets. Skipped fields
 // are absent from the slot list, so accessing a skipped member returns the
 // slot count (a "not-found" sentinel).
+//
+// Computes offsets via a union-wrapped storage rather than a live Object,
+// so it works for aggregates whose members have explicit default constructors.
 template <typename Object, typename Member>
 auto field_index(Member Object::* member) -> std::size_t {
-    static_assert(std::default_initializable<Object>,
-                  "table_view member access requires default-constructible object type");
-
-    Object sample{};
-    const auto base = reinterpret_cast<std::uintptr_t>(std::addressof(sample));
-    const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(sample.*member));
+    meta::detail::uninitialized<Object> storage;
+    const auto base = reinterpret_cast<std::uintptr_t>(std::addressof(storage.value));
+    const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(storage.value.*member));
     const auto offset = static_cast<std::size_t>(field - base);
 
     constexpr auto& fields = meta::virtual_schema<Object>::fields;

@@ -494,13 +494,16 @@ template <typename Config, typename B, typename T>
 auto encode_map(B& b, const T& map)
     -> std::expected<typename B::vector_ref, typename B::error_type> {
     using U = std::remove_cvref_t<T>;
-    // Derive key/mapped types from the iterator's reference rather than
-    // U::key_type / U::mapped_type: some containers (e.g. llvm::StringMap)
-    // expose key_type=const char* while the iterator yields StringRef, so
-    // the reference-derived types match what structured binding gives us.
+    // Derive key/mapped types from the iterator's reference so types like
+    // llvm::StringMap (whose iterator yields StringMapEntry whose structured
+    // binding gives StringRef rather than the container's key_type=const char*)
+    // round-trip correctly. `map_entry_key_t` / `map_entry_mapped_t` prefer
+    // std::tuple_element and fall back to .first/.second, which covers
+    // entries like llvm::detail::DenseMapPair that inherit from std::pair
+    // without re-specializing std::tuple_size.
     using ref_t = std::remove_cvref_t<std::ranges::range_reference_t<U>>;
-    using key_t = std::remove_cvref_t<std::tuple_element_t<0, ref_t>>;
-    using mapped_t = std::remove_cvref_t<std::tuple_element_t<1, ref_t>>;
+    using key_t = map_entry_key_t<ref_t>;
+    using mapped_t = map_entry_mapped_t<ref_t>;
 
     std::vector<std::pair<key_t, mapped_t>> entries;
     entries.reserve(map.size());

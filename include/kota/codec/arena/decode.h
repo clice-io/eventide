@@ -800,8 +800,8 @@ auto decode_map(const B& d,
     // (e.g. llvm::StringMap where key_type=const char* but the reference
     // yields StringRef via StringMapEntry's tuple protocol).
     using ref_t = std::remove_cvref_t<std::ranges::range_reference_t<U>>;
-    using key_t = std::remove_cvref_t<std::tuple_element_t<0, ref_t>>;
-    using mapped_t = std::remove_cvref_t<std::tuple_element_t<1, ref_t>>;
+    using key_t = map_entry_key_t<ref_t>;
+    using mapped_t = map_entry_mapped_t<ref_t>;
 
     if(!view.has(sid)) {
         if(required) {
@@ -824,8 +824,28 @@ auto decode_map(const B& d,
             return std::unexpected(E::invalid_state);
         }
 
-        key_t key{};
-        mapped_t mapped{};
+        // Scalars: value-initialize (zero). Class types: default-initialize,
+        // so aggregates whose members have explicit default constructors
+        // (e.g. llvm::DenseMap) can be instantiated — copy-list-init via `{}`
+        // is rejected for an explicit default ctor, even inside aggregate init.
+        auto make_key = [] {
+            if constexpr(std::is_class_v<key_t>) {
+                key_t k;
+                return k;
+            } else {
+                return key_t{};
+            }
+        };
+        auto make_mapped = [] {
+            if constexpr(std::is_class_v<mapped_t>) {
+                mapped_t m;
+                return m;
+            } else {
+                return mapped_t{};
+            }
+        };
+        key_t key = make_key();
+        mapped_t mapped = make_mapped();
         auto key_sid = B::field_slot_id(0);
         if(!key_sid) {
             return std::unexpected(key_sid.error());

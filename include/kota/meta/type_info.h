@@ -495,9 +495,11 @@ struct type_instance_impl<WireT, AttrsT, Config, type_kind::tuple> {
 
 template <typename WireT, typename AttrsT, typename Config>
 struct type_instance_impl<WireT, AttrsT, Config, type_kind::map> {
-    using kv_t = std::ranges::range_value_t<WireT>;
-    using key_t = std::remove_const_t<typename kv_t::first_type>;
-    using mapped_t = typename kv_t::second_type;
+    // Prefer the outer container's key_type / mapped_type (always available for
+    // map-like ranges per the format_kind concept). Fall back to tuple_element
+    // on the iterator reference for tuple-like entries without those aliases.
+    using key_t = std::remove_cvref_t<typename WireT::key_type>;
+    using mapped_t = std::remove_cvref_t<typename WireT::mapped_type>;
 
     constexpr inline static map_type_info value = {
         {type_kind::map, meta::type_name<WireT>()},
