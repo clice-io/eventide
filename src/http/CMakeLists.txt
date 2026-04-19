@@ -1,0 +1,42 @@
+kota_add_git_dependency(
+    curl
+    GIT_REPOSITORY https://github.com/curl/curl.git
+    GIT_TAG curl-8_17_0
+    OPTIONS
+        BUILD_CURL_EXE OFF
+        BUILD_SHARED_LIBS OFF
+        BUILD_STATIC_LIBS ON
+        CURL_DISABLE_INSTALL ON
+        CURL_ENABLE_EXPORT_TARGET ON
+        CURL_USE_LIBPSL OFF
+        ENABLE_ARES OFF
+        HTTP_ONLY ON
+)
+
+add_library(kota_http STATIC)
+add_library(kota::http ALIAS kota_http)
+
+target_sources(kota_http PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/curl.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/request.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/response.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/util.cpp"
+)
+
+target_include_directories(kota_http PUBLIC
+    "${PROJECT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(kota_http PUBLIC
+    kota::async
+    CURL::libcurl
+)
+
+if(KOTA_CODEC_ENABLE_SIMDJSON)
+    target_link_libraries(kota_http PUBLIC
+        kota::codec::json
+    )
+endif()
+
+kota_apply_project_options(kota_http)

@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 option(KOTA_ENABLE_ASYNC "Enable async kotatsu target and libuv dependency" ON)
+option(KOTA_ENABLE_HTTP "Enable http target and libcurl dependency" OFF)
 option(KOTA_ENABLE_OPTION "Enable option parser target" ON)
 option(KOTA_ENABLE_DECO "Enable deco target" ON)
 option(KOTA_ENABLE_TEST "Build unit tests" OFF)
@@ -307,6 +308,10 @@ if(KOTA_ENABLE_ZEST)
     endif()
 endif()
 
+if(KOTA_ENABLE_HTTP AND NOT KOTA_ENABLE_ASYNC)
+    message(FATAL_ERROR "KOTA_ENABLE_HTTP requires KOTA_ENABLE_ASYNC=ON")
+endif()
+
 add_subdirectory(src/meta)
 add_subdirectory(src/codec)
 
@@ -320,6 +325,10 @@ endif()
 
 if(KOTA_ENABLE_ASYNC)
     add_subdirectory(src/async)
+endif()
+
+if(KOTA_ENABLE_HTTP)
+    add_subdirectory(src/http)
 endif()
 
 if(KOTA_ENABLE_ASYNC)
