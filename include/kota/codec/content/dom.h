@@ -374,7 +374,7 @@ public:
         return std::get<Object>(storage_);
     }
 
-    [[nodiscard]] Cursor as_ref() const noexcept;
+    [[nodiscard]] Cursor cursor() const noexcept;
 
     [[nodiscard]] Cursor operator[](std::string_view key) const;
     [[nodiscard]] Cursor operator[](std::size_t index) const;
@@ -548,7 +548,7 @@ private:
     std::string message;
 };
 
-inline Cursor Value::as_ref() const noexcept {
+inline Cursor Value::cursor() const noexcept {
     return Cursor(*this);
 }
 

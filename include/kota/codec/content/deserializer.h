@@ -67,14 +67,14 @@ public:
     using DeserializeStruct = DeserializeObject;
 
     explicit Deserializer(const content::Value& value) :
-        owned_root_value(value), root_value(owned_root_value->as_ref()) {
+        owned_root_value(value), root_value(owned_root_value->cursor()) {
         if(!root_value.valid()) {
             (void)mark_invalid();
         }
     }
 
     explicit Deserializer(content::Value&& value) :
-        owned_root_value(std::move(value)), root_value(owned_root_value->as_ref()) {
+        owned_root_value(std::move(value)), root_value(owned_root_value->cursor()) {
         if(!root_value.valid()) {
             (void)mark_invalid();
         }

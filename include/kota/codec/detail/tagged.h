@@ -278,8 +278,8 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    auto obj_ref = dom_result.as_ref();
-    const content::Object* obj = obj_ref.try_object();
+    auto dom_cursor = dom_result.cursor();
+    const content::Object* obj = dom_cursor.try_object();
     if(obj == nullptr) {
         return std::unexpected(E::invalid_type("object", "non-object"));
     }
@@ -312,7 +312,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
                                                 meta::reflectable_class<alt_t>,
                                                 "internally_tagged requires struct alternatives");
 
-                                            content::Deserializer<config_t> deser(obj_ref);
+                                            content::Deserializer<config_t> deser(dom_cursor);
                                             KOTA_EXPECTED_TRY(codec::deserialize(deser, alt));
                                             KOTA_EXPECTED_TRY(deser.finish());
                                             return {};

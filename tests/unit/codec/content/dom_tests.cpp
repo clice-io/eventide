@@ -182,7 +182,7 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
     auto parsed = json::parse<json::Value>(text);
     ASSERT_TRUE(parsed.has_value());
 
-    content::Cursor cursor = parsed->as_ref();
+    content::Cursor cursor = parsed->cursor();
     for(int i = 0; i < depth; ++i) {
         ASSERT_TRUE(cursor.is_array());
         ASSERT_EQ(cursor.as_array().size(), std::size_t(1));
