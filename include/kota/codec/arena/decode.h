@@ -396,12 +396,19 @@ auto decode_value_at(const B& d,
                                                                             /*required=*/true)));
         out = static_cast<U>(adapter::from_wire(std::move(wire)));
         return {};
-    } else if constexpr(codec::has_type_adapter<U>) {
-        // Type-level adapter: user specialized codec::type_adapter<T>.
-        // Mirrors the `with<>` branch but sourced from the type rather
-        // than from field-level attrs.
-        using adapter = codec::type_adapter<std::remove_cvref_t<U>>;
-        using wire_t = typename adapter::wire_type;
+    } else if constexpr(arena::streaming_deserialize_traits<B, U>) {
+        // Streaming-mode deserialize_traits: hand view+slot directly to the
+        // user's `deserialize(d, view, sid, out)` so it can read off the
+        // arena without materializing an intermediate `wire_type`. The
+        // trait is responsible for missing-slot semantics.
+        using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
+        return traits::deserialize(d, view, sid, out);
+    } else if constexpr(arena::value_deserialize_traits<B, U>) {
+        // Value-mode deserialize_traits: read as wire_type, then lift via
+        // `deserialize`. Mirrors the `with<>` branch but sourced from the
+        // type rather than from field-level attrs.
+        using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
+        using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {
                 return std::unexpected(E::invalid_state);
@@ -414,7 +421,7 @@ auto decode_value_at(const B& d,
                                                                             sid,
                                                                             wire,
                                                                             /*required=*/true)));
-        out = static_cast<U>(adapter::from_wire(std::move(wire)));
+        out = static_cast<U>(traits::deserialize(d, std::move(wire)));
         return {};
     } else {
         using clean_u_t = detail::clean_t<U>;
@@ -583,12 +590,12 @@ auto decode_sequence(const B& d,
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
 
-    // Element-level type-adapter: decode into a scratch vector<wire_t>
-    // and lift back into the destination via adapter::from_wire. Mirrors
+    // Element-level deserialize_traits: decode into a scratch vector<wire_t>
+    // and lift back into the destination via traits::deserialize. Mirrors
     // the encode path in encode_sequence.
-    if constexpr(codec::has_type_adapter<element_clean_t>) {
-        using adapter = codec::type_adapter<element_clean_t>;
-        using wire_t = typename adapter::wire_type;
+    if constexpr(arena::value_deserialize_traits<B, element_clean_t>) {
+        using traits = kota::codec::deserialize_traits<B, element_clean_t>;
+        using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {
                 return std::unexpected(E::invalid_state);
@@ -604,7 +611,7 @@ auto decode_sequence(const B& d,
         for(auto& w: scratch) {
             auto ok = kota::detail::append_sequence_element(
                 out,
-                static_cast<element_t>(adapter::from_wire(std::move(w))));
+                static_cast<element_t>(traits::deserialize(d, std::move(w))));
             if(!ok) {
                 return std::unexpected(E::unsupported_type);
             }

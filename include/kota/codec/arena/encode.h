@@ -266,13 +266,21 @@ auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid
         using wire_t = typename adapter::wire_type;
         wire_t wire = adapter::to_wire(value);
         return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
-    } else if constexpr(codec::has_type_adapter<U>) {
-        // Type-level adapter: user specialized codec::type_adapter<T> to
-        // declare a wire representation for T. Propagates into map values,
-        // sequence elements, and nested containers without per-field attrs.
-        using adapter = codec::type_adapter<std::remove_cvref_t<U>>;
-        using wire_t = typename adapter::wire_type;
-        wire_t wire = adapter::to_wire(value);
+    } else if constexpr(arena::streaming_serialize_traits<B, U>) {
+        // Streaming-mode traits: hand the builder directly to the user's
+        // `serialize(b, value)` so it can write offsets into the arena
+        // without materializing an intermediate `wire_type` value.
+        using traits = kota::codec::serialize_traits<B, std::remove_cvref_t<U>>;
+        KOTA_EXPECTED_TRY_V(auto r, traits::serialize(b, value));
+        tb.add_offset(sid, r);
+        return {};
+    } else if constexpr(arena::value_serialize_traits<B, U>) {
+        // Value-mode traits: convert to the declared wire type and recurse
+        // so the wire representation propagates into maps / sequences /
+        // nested containers without per-field annotation.
+        using traits = kota::codec::serialize_traits<B, std::remove_cvref_t<U>>;
+        using wire_t = typename traits::wire_type;
+        wire_t wire = traits::serialize(b, value);
         return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
     } else {
         using clean_u = detail::clean_t<U>;
@@ -364,19 +372,20 @@ auto encode_sequence(B& b, const T& range)
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
 
-    // If elements carry a type-level adapter, lower them element-wise
-    // to the adapter's wire_type before delegating to the structural
-    // sequence encoder. This keeps `vector<T_with_adapter>` flat rather
-    // than boxing each element in a wrapper table.
-    if constexpr(codec::has_type_adapter<element_clean_t>) {
-        using adapter = codec::type_adapter<element_clean_t>;
-        using wire_t = typename adapter::wire_type;
+    // If elements have value-mode serialize_traits, lower them element-wise
+    // to the declared wire_type before delegating to the structural sequence
+    // encoder. This keeps `vector<T_with_traits>` flat rather than boxing each
+    // element in a wrapper table. Streaming-mode traits are not supported for
+    // sequence elements — use them at the field level instead.
+    if constexpr(arena::value_serialize_traits<B, element_clean_t>) {
+        using traits = kota::codec::serialize_traits<B, element_clean_t>;
+        using wire_t = typename traits::wire_type;
         std::vector<wire_t> transformed;
         if constexpr(requires { range.size(); }) {
             transformed.reserve(range.size());
         }
         for(const auto& e: range) {
-            transformed.push_back(adapter::to_wire(e));
+            transformed.push_back(traits::serialize(b, e));
         }
         return encode_sequence<Config>(b, transformed);
     } else if constexpr(std::same_as<element_clean_t, std::byte>) {

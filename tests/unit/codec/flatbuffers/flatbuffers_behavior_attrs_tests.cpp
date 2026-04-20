@@ -148,9 +148,9 @@ TEST_CASE(with_adapter_roundtrip_empty_optional) {
 }  // namespace kota::codec
 
 // ============================================================================
-// Type-level adapter tests: codec::type_adapter<T>
+// Type-level traits tests: codec::serialize_traits<T> / deserialize_traits<T>
 // ----------------------------------------------------------------------------
-// Verifies that a type-level adapter specialization propagates through the
+// Verifies that a type-level traits specialization propagates through the
 // arena codec dispatch AND the flatbuffers proxy layer, without requiring
 // per-field `annotation<T, with<...>>`. Covers:
 //   - direct field use
@@ -159,7 +159,7 @@ TEST_CASE(with_adapter_roundtrip_empty_optional) {
 //   - lazy proxy access via table_view / map_view
 // ============================================================================
 
-namespace kota_test_type_adapter {
+namespace kota_test_type_traits {
 
 // A value-class wrapping an integer — not trivially reflectable, not an
 // enum, and final (so kota's meta::annotation wrap_type path would apply).
@@ -189,35 +189,52 @@ private:
     std::vector<std::byte> bytes_;
 };
 
-}  // namespace kota_test_type_adapter
+}  // namespace kota_test_type_traits
 
-// Type-level adapter specializations (placed in kota::codec namespace as
-// required by the trait's declaration).
+// Type-level traits specializations — partially specialize the primary
+// `kota::codec::serialize_traits<S, T>` / `deserialize_traits<D, T>`,
+// constrained so only arena backends pick up these specializations.
 namespace kota::codec {
 
-template <>
-struct type_adapter<kota_test_type_adapter::Tag> {
+template <typename S>
+    requires arena::arena_serializer_like<S>
+struct serialize_traits<S, kota_test_type_traits::Tag> {
     using wire_type = std::uint32_t;
 
-    static auto to_wire(const kota_test_type_adapter::Tag& tag) -> std::uint32_t {
+    static auto serialize(S&, const kota_test_type_traits::Tag& tag) -> std::uint32_t {
         return tag.value();
-    }
-
-    static auto from_wire(std::uint32_t wire) -> kota_test_type_adapter::Tag {
-        return kota_test_type_adapter::Tag{wire};
     }
 };
 
-template <>
-struct type_adapter<kota_test_type_adapter::ByteBag> {
+template <typename D>
+    requires arena::arena_deserializer_like<D>
+struct deserialize_traits<D, kota_test_type_traits::Tag> {
+    using wire_type = std::uint32_t;
+
+    static auto deserialize(const D&, std::uint32_t wire) -> kota_test_type_traits::Tag {
+        return kota_test_type_traits::Tag{wire};
+    }
+};
+
+template <typename S>
+    requires arena::arena_serializer_like<S>
+struct serialize_traits<S, kota_test_type_traits::ByteBag> {
     using wire_type = std::vector<std::byte>;
 
-    static auto to_wire(const kota_test_type_adapter::ByteBag& bag) -> std::vector<std::byte> {
+    static auto serialize(S&, const kota_test_type_traits::ByteBag& bag)
+        -> std::vector<std::byte> {
         return bag.bytes();
     }
+};
 
-    static auto from_wire(std::vector<std::byte> wire) -> kota_test_type_adapter::ByteBag {
-        return kota_test_type_adapter::ByteBag{std::move(wire)};
+template <typename D>
+    requires arena::arena_deserializer_like<D>
+struct deserialize_traits<D, kota_test_type_traits::ByteBag> {
+    using wire_type = std::vector<std::byte>;
+
+    static auto deserialize(const D&,
+                            std::vector<std::byte> wire) -> kota_test_type_traits::ByteBag {
+        return kota_test_type_traits::ByteBag{std::move(wire)};
     }
 };
 
@@ -227,53 +244,53 @@ namespace kota::codec {
 
 namespace {
 
-using kota_test_type_adapter::Tag;
-using kota_test_type_adapter::ByteBag;
+using kota_test_type_traits::Tag;
+using kota_test_type_traits::ByteBag;
 
-struct TypeAdapterPlainField {
+struct TypeTraitsPlainField {
     Tag tag;
     std::string label;
 
-    auto operator==(const TypeAdapterPlainField&) const -> bool = default;
+    auto operator==(const TypeTraitsPlainField&) const -> bool = default;
 };
 
-struct TypeAdapterMapField {
+struct TypeTraitsMapField {
     std::map<std::uint32_t, Tag> tags_by_id;
     std::map<std::uint32_t, ByteBag> blobs_by_id;
 
-    auto operator==(const TypeAdapterMapField&) const -> bool = default;
+    auto operator==(const TypeTraitsMapField&) const -> bool = default;
 };
 
-struct TypeAdapterSequenceField {
+struct TypeTraitsSequenceField {
     std::vector<Tag> tags;
 
-    auto operator==(const TypeAdapterSequenceField&) const -> bool = default;
+    auto operator==(const TypeTraitsSequenceField&) const -> bool = default;
 };
 
-struct TypeAdapterRoot {
+struct TypeTraitsRoot {
     Tag root_tag;
     std::map<std::uint32_t, ByteBag> blobs;
     std::string content;
 
-    auto operator==(const TypeAdapterRoot&) const -> bool = default;
+    auto operator==(const TypeTraitsRoot&) const -> bool = default;
 };
 
-TEST_SUITE(serde_flatbuffers_type_adapter) {
+TEST_SUITE(serde_flatbuffers_type_traits) {
 
-TEST_CASE(type_adapter_plain_field_roundtrip) {
-    const TypeAdapterPlainField input{.tag = Tag{42}, .label = "hello"};
+TEST_CASE(type_traits_plain_field_roundtrip) {
+    const TypeTraitsPlainField input{.tag = Tag{42}, .label = "hello"};
 
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    TypeAdapterPlainField output{};
+    TypeTraitsPlainField output{};
     auto status = flatbuffers::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
 
-TEST_CASE(type_adapter_map_value_roundtrip) {
-    TypeAdapterMapField input;
+TEST_CASE(type_traits_map_value_roundtrip) {
+    TypeTraitsMapField input;
     input.tags_by_id[1] = Tag{100};
     input.tags_by_id[2] = Tag{200};
     input.blobs_by_id[10] = ByteBag{{std::byte{0xAA}, std::byte{0xBB}, std::byte{0xCC}}};
@@ -282,48 +299,48 @@ TEST_CASE(type_adapter_map_value_roundtrip) {
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    TypeAdapterMapField output{};
+    TypeTraitsMapField output{};
     auto status = flatbuffers::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
 
-TEST_CASE(type_adapter_sequence_element_roundtrip) {
-    TypeAdapterSequenceField input;
+TEST_CASE(type_traits_sequence_element_roundtrip) {
+    TypeTraitsSequenceField input;
     input.tags = {Tag{1}, Tag{2}, Tag{3}};
 
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    TypeAdapterSequenceField output{};
+    TypeTraitsSequenceField output{};
     auto status = flatbuffers::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
 
-TEST_CASE(type_adapter_proxy_lazy_scalar_access) {
-    const TypeAdapterRoot input{.root_tag = Tag{777},
-                                .blobs = {},
-                                .content = "lazy"};
+TEST_CASE(type_traits_proxy_lazy_scalar_access) {
+    const TypeTraitsRoot input{.root_tag = Tag{777},
+                               .blobs = {},
+                               .content = "lazy"};
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    auto root = flatbuffers::table_view<TypeAdapterRoot>::from_bytes(
+    auto root = flatbuffers::table_view<TypeTraitsRoot>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
 
-    // Proxy sees the wire type (uint32_t) — the user calls from_wire
+    // Proxy sees the wire type (uint32_t) — the user calls deserialize
     // themselves when they need the adapted type. Equivalent to:
-    //   adapter::from_wire(root[&TypeAdapterRoot::root_tag])
-    const std::uint32_t wire_tag = root[&TypeAdapterRoot::root_tag];
+    //   deserialize_traits<Tag>::deserialize(root[&TypeTraitsRoot::root_tag])
+    const std::uint32_t wire_tag = root[&TypeTraitsRoot::root_tag];
     EXPECT_EQ(wire_tag, 777U);
 
-    const std::string_view content = root[&TypeAdapterRoot::content];
+    const std::string_view content = root[&TypeTraitsRoot::content];
     EXPECT_EQ(content, std::string_view{"lazy"});
 }
 
-TEST_CASE(type_adapter_proxy_lazy_map_value_access) {
-    TypeAdapterRoot input;
+TEST_CASE(type_traits_proxy_lazy_map_value_access) {
+    TypeTraitsRoot input;
     input.root_tag = Tag{1};
     input.blobs[5] = ByteBag{{std::byte{0xDE}, std::byte{0xAD}}};
     input.blobs[9] = ByteBag{{std::byte{0xBE}, std::byte{0xEF}}};
@@ -331,11 +348,11 @@ TEST_CASE(type_adapter_proxy_lazy_map_value_access) {
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    auto root = flatbuffers::table_view<TypeAdapterRoot>::from_bytes(
+    auto root = flatbuffers::table_view<TypeTraitsRoot>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
 
-    auto blobs = root[&TypeAdapterRoot::blobs];
+    auto blobs = root[&TypeTraitsRoot::blobs];
     ASSERT_TRUE(blobs.valid());
     EXPECT_EQ(blobs.size(), 2U);
 
@@ -354,7 +371,7 @@ TEST_CASE(type_adapter_proxy_lazy_map_value_access) {
     EXPECT_EQ(blob9[1], std::byte{0xEF});
 }
 
-};  // TEST_SUITE(serde_flatbuffers_type_adapter)
+};  // TEST_SUITE(serde_flatbuffers_type_traits)
 
 }  // namespace
 
