@@ -55,8 +55,7 @@ struct map_entry_types<E, std::enable_if_t<map_entry_tuple_like<E>>> {
 };
 
 template <typename E>
-struct map_entry_types<E,
-                       std::enable_if_t<!map_entry_tuple_like<E> && map_entry_pair_like<E>>> {
+struct map_entry_types<E, std::enable_if_t<!map_entry_tuple_like<E> && map_entry_pair_like<E>>> {
     using key_type = std::remove_cvref_t<decltype(std::declval<E&>().first)>;
     using mapped_type = std::remove_cvref_t<decltype(std::declval<E&>().second)>;
 };

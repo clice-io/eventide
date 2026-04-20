@@ -12,8 +12,8 @@
 #include "kota/codec/arena/decode.h"
 #include "kota/codec/arena/traits.h"
 #include "kota/codec/config.h"
-#include "kota/codec/flatbuffers/struct_layout.h"
 #include "kota/codec/flatbuffers/serializer.h"
+#include "kota/codec/flatbuffers/struct_layout.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"

@@ -165,11 +165,11 @@ concept has_deserialize_wire_impl =
 // Value-mode serialize: `static wire_type serialize(S&, const T&)` returning
 // a value convertible to the declared wire_type.
 template <typename S, typename T>
-concept value_serialize_traits_impl =
-    has_serialize_wire_impl<S, T> && requires(S& s, const T& v) {
-        { kota::codec::serialize_traits<S, T>::serialize(s, v) }
-            -> std::convertible_to<typename kota::codec::serialize_traits<S, T>::wire_type>;
-    };
+concept value_serialize_traits_impl = has_serialize_wire_impl<S, T> && requires(S& s, const T& v) {
+    {
+        kota::codec::serialize_traits<S, T>::serialize(s, v)
+    } -> std::convertible_to<typename kota::codec::serialize_traits<S, T>::wire_type>;
+};
 
 // Streaming serialize: `static expected<Ref, E> serialize(S&, const T&)`
 // where Ref is one of the backend's offset handles. Distinguished from
@@ -186,8 +186,9 @@ template <typename D, typename T>
 concept value_deserialize_traits_impl =
     has_deserialize_wire_impl<D, T> &&
     requires(const D& d, typename kota::codec::deserialize_traits<D, T>::wire_type w) {
-        { kota::codec::deserialize_traits<D, T>::deserialize(d, std::move(w)) }
-            -> std::convertible_to<T>;
+        {
+            kota::codec::deserialize_traits<D, T>::deserialize(d, std::move(w))
+        } -> std::convertible_to<T>;
     };
 
 // Streaming deserialize: `static expected<void, E> deserialize(const D&,
@@ -195,10 +196,8 @@ concept value_deserialize_traits_impl =
 // view / slot, handling missing-field semantics itself.
 template <typename D, typename T>
 concept streaming_deserialize_traits_impl =
-    has_deserialize_wire_impl<D, T> && requires(const D& d,
-                                                typename D::TableView view,
-                                                typename D::slot_id sid,
-                                                T& out) {
+    has_deserialize_wire_impl<D, T> &&
+    requires(const D& d, typename D::TableView view, typename D::slot_id sid, T& out) {
         {
             kota::codec::deserialize_traits<D, T>::deserialize(d, view, sid, out)
         } -> std::same_as<std::expected<void, typename D::error_type>>;

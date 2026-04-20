@@ -1,7 +1,7 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -167,8 +167,13 @@ namespace kota_test_type_traits {
 class Tag final {
 public:
     Tag() = default;
+
     explicit Tag(std::uint32_t v) : value_(v) {}
-    auto value() const -> std::uint32_t { return value_; }
+
+    auto value() const -> std::uint32_t {
+        return value_;
+    }
+
     auto operator==(const Tag&) const -> bool = default;
     auto operator<=>(const Tag&) const = default;
 
@@ -181,8 +186,13 @@ private:
 class ByteBag {
 public:
     ByteBag() = default;
+
     explicit ByteBag(std::vector<std::byte> bytes) : bytes_(std::move(bytes)) {}
-    auto bytes() const -> const std::vector<std::byte>& { return bytes_; }
+
+    auto bytes() const -> const std::vector<std::byte>& {
+        return bytes_;
+    }
+
     auto operator==(const ByteBag&) const -> bool = default;
 
 private:
@@ -221,8 +231,7 @@ template <typename S>
 struct serialize_traits<S, kota_test_type_traits::ByteBag> {
     using wire_type = std::vector<std::byte>;
 
-    static auto serialize(S&, const kota_test_type_traits::ByteBag& bag)
-        -> std::vector<std::byte> {
+    static auto serialize(S&, const kota_test_type_traits::ByteBag& bag) -> std::vector<std::byte> {
         return bag.bytes();
     }
 };
@@ -232,8 +241,8 @@ template <typename D>
 struct deserialize_traits<D, kota_test_type_traits::ByteBag> {
     using wire_type = std::vector<std::byte>;
 
-    static auto deserialize(const D&,
-                            std::vector<std::byte> wire) -> kota_test_type_traits::ByteBag {
+    static auto deserialize(const D&, std::vector<std::byte> wire)
+        -> kota_test_type_traits::ByteBag {
         return kota_test_type_traits::ByteBag{std::move(wire)};
     }
 };
@@ -293,7 +302,9 @@ TEST_CASE(type_traits_map_value_roundtrip) {
     TypeTraitsMapField input;
     input.tags_by_id[1] = Tag{100};
     input.tags_by_id[2] = Tag{200};
-    input.blobs_by_id[10] = ByteBag{{std::byte{0xAA}, std::byte{0xBB}, std::byte{0xCC}}};
+    input.blobs_by_id[10] = ByteBag{
+        {std::byte{0xAA}, std::byte{0xBB}, std::byte{0xCC}}
+    };
     input.blobs_by_id[20] = ByteBag{{std::byte{0x11}}};
 
     auto encoded = flatbuffers::to_flatbuffer(input);
@@ -319,9 +330,7 @@ TEST_CASE(type_traits_sequence_element_roundtrip) {
 }
 
 TEST_CASE(type_traits_proxy_lazy_scalar_access) {
-    const TypeTraitsRoot input{.root_tag = Tag{777},
-                               .blobs = {},
-                               .content = "lazy"};
+    const TypeTraitsRoot input{.root_tag = Tag{777}, .blobs = {}, .content = "lazy"};
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
@@ -342,8 +351,12 @@ TEST_CASE(type_traits_proxy_lazy_scalar_access) {
 TEST_CASE(type_traits_proxy_lazy_map_value_access) {
     TypeTraitsRoot input;
     input.root_tag = Tag{1};
-    input.blobs[5] = ByteBag{{std::byte{0xDE}, std::byte{0xAD}}};
-    input.blobs[9] = ByteBag{{std::byte{0xBE}, std::byte{0xEF}}};
+    input.blobs[5] = ByteBag{
+        {std::byte{0xDE}, std::byte{0xAD}}
+    };
+    input.blobs[9] = ByteBag{
+        {std::byte{0xBE}, std::byte{0xEF}}
+    };
 
     auto encoded = flatbuffers::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());

@@ -603,8 +603,7 @@ auto decode_sequence(const B& d,
             return {};
         }
         std::vector<wire_t> scratch;
-        KOTA_EXPECTED_TRY(
-            (decode_sequence<Config>(d, view, sid, scratch, /*required=*/true)));
+        KOTA_EXPECTED_TRY((decode_sequence<Config>(d, view, sid, scratch, /*required=*/true)));
         if constexpr(requires { out.clear(); }) {
             out.clear();
         }
