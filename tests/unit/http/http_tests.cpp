@@ -298,6 +298,29 @@ auto run_task(http_loop_fixture& fixture, Task& task) {
     return task.result();
 }
 
+task<std::string, http::error>
+    when_all_fetch(http::bound_client api, std::string left_url, std::string right_url) {
+    auto both =
+        co_await when_all(api.get(std::move(left_url)).send(), api.get(std::move(right_url)).send());
+    if(both.has_error()) {
+        co_await fail(std::move(both).error());
+    }
+
+    auto [left, right] = *both;
+    co_return left.text_copy() + "|" + right.text_copy();
+}
+
+task<std::string, http::error>
+    interleaved_fetch(http::bound_client api,
+                      std::string first_url,
+                      std::string second_url,
+                      event& gate) {
+    auto first = co_await api.get(std::move(first_url)).send().or_fail();
+    co_await gate.wait();
+    auto second = co_await api.get(std::move(second_url)).send().or_fail();
+    co_return first.text_copy() + "|" + second.text_copy();
+}
+
 }  // namespace
 
 TEST_SUITE(http_client, http_loop_fixture) {
@@ -350,6 +373,42 @@ TEST_CASE(unbound_client_can_dispatch_via_on) {
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->text(), "/via-on");
+}
+
+TEST_CASE(request_builder_keeps_client_state_alive_after_client_destruction) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = std::string(request.header("cookie"))};
+    });
+    ASSERT_TRUE(server.valid());
+
+    auto builder = [&]() {
+        http::client client(loop);
+        client.store_cookie(server.url("/echo"), "Set-Cookie: builder_cookie=1; Path=/");
+        return client.get(server.url("/echo"));
+    }();
+
+    auto req = std::move(builder).send();
+    auto result = run_task(*this, req);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->text(), "builder_cookie=1");
+}
+
+TEST_CASE(bound_client_keeps_client_state_alive_after_client_destruction) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = std::string(request.header("cookie"))};
+    });
+    ASSERT_TRUE(server.valid());
+
+    auto api = [&]() {
+        http::client client(loop);
+        client.store_cookie(server.url("/echo"), "Set-Cookie: bound_cookie=1; Path=/");
+        return client.on(loop);
+    }();
+
+    auto req = api.get(server.url("/echo")).send();
+    auto result = run_task(*this, req);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->text(), "bound_cookie=1");
 }
 
 #if KOTA_HTTP_HAS_CODEC_JSON
@@ -744,6 +803,61 @@ TEST_CASE(many_concurrent_requests_complete) {
         ASSERT_TRUE(target.has_value());
         EXPECT_EQ(*target, "/req/" + std::to_string(i));
     }
+}
+
+TEST_CASE(in_flight_request_survives_client_destruction) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = std::string(request.header("cookie")), .delay = 25ms};
+    });
+    ASSERT_TRUE(server.valid());
+
+    std::optional<http::client> client(std::in_place, loop);
+    client->store_cookie(server.url("/slow-cookie"), "Set-Cookie: in_flight=1; Path=/");
+
+    auto req = client->get(server.url("/slow-cookie")).send();
+    client.reset();
+
+    auto result = run_task(*this, req);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->text(), "in_flight=1");
+    EXPECT_EQ(http::manager::for_loop(loop).pending_requests(), std::size_t(0));
+}
+
+TEST_CASE(multiple_http_requests_can_be_coawaited_with_when_all) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = request.target};
+    });
+    ASSERT_TRUE(server.valid());
+
+    http::client client(loop);
+    auto flow = when_all_fetch(client.on(loop), server.url("/left"), server.url("/right"));
+    auto result = run_task(*this, flow);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, "/left|/right");
+}
+
+TEST_CASE(http_requests_can_interleave_with_uv_events) {
+    test_http_server server(loop, [](const server_request& request) -> server_response {
+        return {.body = request.target};
+    });
+    ASSERT_TRUE(server.valid());
+
+    http::client client(loop);
+    event gate;
+    auto flow = interleaved_fetch(client.on(loop), server.url("/first"), server.url("/second"), gate);
+    auto release_gate = [&]() -> task<> {
+        co_await sleep(1ms, loop);
+        gate.set();
+    }();
+
+    loop.schedule(flow);
+    loop.schedule(release_gate);
+    loop.run();
+
+    auto result = flow.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, "/first|/second");
+    EXPECT_EQ(http::manager::for_loop(loop).pending_requests(), std::size_t(0));
 }
 
 TEST_CASE(cancelled_request_does_not_break_following_requests) {

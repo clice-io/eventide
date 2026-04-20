@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "kota/http/detail/client_state.h"
@@ -11,15 +12,18 @@
 namespace kota::http::detail {
 
 struct prepared_request {
-    client_state* owner = nullptr;
+    std::shared_ptr<client_state> owner;
     request spec{};
     curl::easy_handle easy;
     curl::slist header_lines;
     response out{};
     error result{};
     std::string final_url;
-    bool prepared = false;
     bool runtime_bound = false;
+
+    prepared_request() = default;
+
+    prepared_request(request req, std::shared_ptr<client_state> owner) noexcept;
 
     static std::size_t on_write(char* data, std::size_t size, std::size_t count, void* userdata);
 
@@ -49,7 +53,7 @@ struct prepared_request {
 
     bool apply_timeout() noexcept;
 
-    static prepared_request prepare(request req, client_state* owner) noexcept;
+    bool ready() const noexcept;
 
     bool bind_runtime(void* opaque) noexcept;
 

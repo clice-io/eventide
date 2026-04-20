@@ -31,13 +31,16 @@ class bound_client;
 
 namespace detail {
 
-task<response, error> execute_with_state(request req, event_loop& loop, client_state* owner);
+task<response, error>
+    execute_with_state(request req, event_loop& loop, std::shared_ptr<client_state> owner);
 
 }  // namespace detail
 
 class request_builder {
 public:
-    request_builder(client_state* owner, event_loop* dispatch_loop, request req) noexcept;
+    request_builder(std::shared_ptr<client_state> owner,
+                    event_loop* dispatch_loop,
+                    request req) noexcept;
 
     request_builder& header(std::string name, std::string value);
 
@@ -109,9 +112,10 @@ public:
 private:
     static task<response, error> failed(error err);
     static std::optional<std::reference_wrapper<event_loop>>
-        resolve_loop(client_state* owner, event_loop* dispatch_loop) noexcept;
+        resolve_loop(const std::shared_ptr<client_state>& owner,
+                     event_loop* dispatch_loop) noexcept;
 
-    client_state* owner = nullptr;
+    std::shared_ptr<client_state> owner;
     event_loop* dispatch_loop = nullptr;
     request spec{};
 };
@@ -172,12 +176,12 @@ public:
     const client_options& options() const noexcept;
 
 private:
-    std::unique_ptr<client_state> state;
+    std::shared_ptr<client_state> state;
 };
 
 class bound_client {
 public:
-    bound_client(client_state* state, event_loop& loop) noexcept :
+    bound_client(std::shared_ptr<client_state> state, event_loop& loop) noexcept :
         state(state), dispatch_loop(&loop) {}
 
     request_builder request(method verb, std::string url) const noexcept;
@@ -200,7 +204,7 @@ public:
         return *dispatch_loop;
     }
 
-    client_state* state = nullptr;
+    std::shared_ptr<client_state> state;
     event_loop* dispatch_loop = nullptr;
 };
 

@@ -9,6 +9,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "../async/io/awaiter.h"
 #include "../async/libuv.h"
@@ -133,7 +134,7 @@ struct request_op : uv::await_op<request_op> {
             return;
         }
 
-        if(!prepared->prepared || !prepared->easy) {
+        if(!prepared->ready()) {
             completed = true;
             return;
         }
@@ -468,45 +469,43 @@ bool prepared_request::apply_timeout() noexcept {
     return easy_setopt(*this, CURLOPT_TIMEOUT_MS, static_cast<long>(spec.timeout->count()));
 }
 
-prepared_request prepared_request::prepare(request req, client_state* owner) noexcept {
-    prepared_request prepared;
-    prepared.owner = owner;
-    prepared.spec = std::move(req);
-    prepared.easy = curl::easy_handle::create();
-    if(!prepared.easy) {
-        prepared.fail(CURLE_FAILED_INIT);
-        return prepared;
+prepared_request::prepared_request(request req, std::shared_ptr<client_state> owner) noexcept :
+    owner(std::move(owner)), spec(std::move(req)) {
+    easy = curl::easy_handle::create();
+    if(!easy) {
+        fail(CURLE_FAILED_INIT);
+        return;
     }
 
-    if(owner && !owner->bind_easy(prepared.easy.get(), prepared.spec.use_cookie_store)) {
-        prepared.fail(error::invalid_request("failed to bind curl easy to client state"));
-        return prepared;
+    if(this->owner && !this->owner->bind_easy(easy.get(), spec.use_cookie_store)) {
+        fail(error::invalid_request("failed to bind curl easy to client state"));
+        return;
     }
 
-    if(!easy_setopt(prepared, CURLOPT_WRITEFUNCTION, &prepared_request::on_write) ||
-       !easy_setopt(prepared, CURLOPT_HEADERFUNCTION, &prepared_request::on_header)) {
-        return prepared;
+    if(!easy_setopt(*this, CURLOPT_WRITEFUNCTION, &prepared_request::on_write) ||
+       !easy_setopt(*this, CURLOPT_WRITEDATA, this) ||
+       !easy_setopt(*this, CURLOPT_HEADERFUNCTION, &prepared_request::on_header) ||
+       !easy_setopt(*this, CURLOPT_HEADERDATA, this)) {
+        return;
     }
 
-    if(!prepared.apply_url() || !prepared.apply_method() || !prepared.apply_body() ||
-       !prepared.apply_headers() || !prepared.apply_cookies() || !prepared.apply_user_agent() ||
-       !prepared.apply_redirect() || !prepared.apply_tls() || !prepared.apply_proxy() ||
-       !prepared.apply_timeout()) {
-        return prepared;
+    if(!apply_url() || !apply_method() || !apply_body() || !apply_headers() || !apply_cookies() ||
+       !apply_user_agent() || !apply_redirect() || !apply_tls() || !apply_proxy() ||
+       !apply_timeout()) {
+        return;
     }
+}
 
-    prepared.prepared = true;
-    return prepared;
+bool prepared_request::ready() const noexcept {
+    return easy && result.kind == error_kind::curl && curl::ok(result.curl_code);
 }
 
 bool prepared_request::bind_runtime(void* opaque) noexcept {
-    if(!prepared || !easy) {
+    if(!ready()) {
         return false;
     }
 
-    if(!easy_setopt(*this, CURLOPT_WRITEDATA, this) ||
-       !easy_setopt(*this, CURLOPT_HEADERDATA, this) ||
-       !easy_setopt(*this, CURLOPT_PRIVATE, opaque)) {
+    if(!easy_setopt(*this, CURLOPT_PRIVATE, opaque)) {
         return false;
     }
 
@@ -652,6 +651,7 @@ void manager::drain_completed_arming(void* arming_request) noexcept {
 }
 
 void manager::drain_completed_impl(void* arming_request) noexcept {
+    std::vector<std::pair<request_op*, curl::easy_error>> deferred;
     int pending = 0;
     while(auto* msg = curl::multi_info_read(multi.get(), &pending)) {
         if(msg->msg != CURLMSG_DONE) {
@@ -672,7 +672,11 @@ void manager::drain_completed_impl(void* arming_request) noexcept {
             continue;
         }
 
-        req->finish(msg->data.result);
+        deferred.emplace_back(req, msg->data.result);
+    }
+
+    for(auto& [req, result]: deferred) {
+        req->finish(result);
     }
 }
 
@@ -857,8 +861,8 @@ void manager::on_uv_timer_close(uv_handle_t* handle) noexcept {
 
 task<response, error> detail::execute_with_state(request req,
                                                  event_loop& loop,
-                                                 client_state* owner) {
-    auto prepared = detail::prepared_request::prepare(std::move(req), owner);
+                                                 std::shared_ptr<client_state> owner) {
+    detail::prepared_request prepared(std::move(req), owner);
     request_op op(manager::for_loop(loop));
     op.attach(prepared);
     if(!prepared.bind_runtime(&op) && prepared.result.kind == error_kind::curl &&

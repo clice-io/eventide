@@ -62,12 +62,12 @@ void require_share_setopt(CURLSH* share,
 
 }  // namespace
 
-client_state::client_state(client_options opts) :
-    defaults(std::move(opts)), share(curl::share_handle::create()) {
+client_state::client_state(client_options opts) : defaults(std::move(opts)) {
     if(auto code = detail::ensure_curl_runtime(); !curl::ok(code)) {
         std::abort();
     }
 
+    share = curl::share_handle::create();
     if(!share) {
         std::abort();
     }
@@ -204,7 +204,7 @@ std::mutex& client_state::mutex_for(curl_lock_data data) noexcept {
     }
 }
 
-request_builder::request_builder(client_state* owner,
+request_builder::request_builder(std::shared_ptr<client_state> owner,
                                  event_loop* dispatch_loop,
                                  request req) noexcept :
     owner(owner), dispatch_loop(dispatch_loop), spec(std::move(req)) {}
@@ -285,7 +285,8 @@ task<response, error> request_builder::failed(error err) {
 }
 
 std::optional<std::reference_wrapper<event_loop>>
-    request_builder::resolve_loop(client_state* owner, event_loop* dispatch_loop) noexcept {
+    request_builder::resolve_loop(const std::shared_ptr<client_state>& owner,
+                                  event_loop* dispatch_loop) noexcept {
     if(dispatch_loop) {
         return *dispatch_loop;
     }
@@ -415,7 +416,7 @@ std::expected<client, error> client_builder::build() && {
 }
 
 client::client(client_options options) :
-    state(std::make_unique<client_state>(std::move(options))) {}
+    state(std::make_shared<client_state>(std::move(options))) {}
 
 client::client(event_loop& loop, client_options options) : client(std::move(options)) {
     bind(loop);
@@ -445,11 +446,11 @@ bool client::is_bound() const noexcept {
 }
 
 bound_client client::on(event_loop& loop) & noexcept {
-    return bound_client(state.get(), loop);
+    return bound_client(state, loop);
 }
 
 request_builder client::request(method verb, std::string url) const& {
-    return request_builder(state.get(),
+    return request_builder(state,
                            nullptr,
                            make_request(verb, std::move(url), state->options()));
 }
@@ -484,7 +485,7 @@ task<response, error> client::execute(http::request req) const& {
         return make_failed_response(
             error::invalid_request("client::execute requires a bound loop"));
     }
-    return detail::execute_with_state(std::move(req), bound->get(), state.get());
+    return detail::execute_with_state(std::move(req), bound->get(), state);
 }
 
 client& client::store_cookie(std::string url, std::string value) {
