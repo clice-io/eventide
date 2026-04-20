@@ -97,9 +97,14 @@ public:
     template <typename T>
     using result_t = std::expected<T, error_type>;
 
-    // Expose the inline-struct predicate to the backend-agnostic encode layer.
+    // FlatBuffers supports inline structs both as table fields (CreateStruct
+    // in a table slot) and as list elements (CreateVectorOfStructs), so both
+    // predicates resolve to the same underlying trait.
     template <typename T>
-    constexpr static bool can_inline_struct = flatbuffers::can_inline_struct_v<T>;
+    constexpr static bool can_inline_struct_field = flatbuffers::can_inline_struct_v<T>;
+
+    template <typename T>
+    constexpr static bool can_inline_struct_element = flatbuffers::can_inline_struct_v<T>;
 
     // Slot-id helpers: derive an on-wire slot id from a loop index.
     static auto field_slot_id(std::size_t index) -> result_t<slot_id> {

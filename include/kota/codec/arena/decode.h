@@ -38,7 +38,7 @@ using codec::detail::clean_t;
 // through the inline-struct path.
 template <typename B, typename T>
 constexpr bool root_unboxed_for =
-    (meta::reflectable_class<T> && !B::template can_inline_struct<T> &&
+    (meta::reflectable_class<T> && !B::template can_inline_struct_field<T> &&
      !std::ranges::input_range<T> && !is_pair_v<T> && !is_tuple_v<T>) ||
     is_pair_v<T> || is_tuple_v<T> || is_specialization_of<std::variant, T>;
 
@@ -84,7 +84,7 @@ auto decode_unboxed(const B& d, typename B::TableView view, T& out)
         return decode_tuple_like<Config>(d, view, out);
     } else if constexpr(is_specialization_of<std::variant, U>) {
         return decode_variant<Config>(d, view, out);
-    } else if constexpr(meta::reflectable_class<U> && !B::template can_inline_struct<U> &&
+    } else if constexpr(meta::reflectable_class<U> && !B::template can_inline_struct_field<U> &&
                         !std::ranges::input_range<U>) {
         return decode_table<Config>(d, view, out);
     } else {
@@ -564,7 +564,7 @@ auto decode_value_at(const B& d,
             } else if constexpr(is_pair_v<clean_u_t> || is_tuple_v<clean_u_t>) {
                 KOTA_EXPECTED_TRY_V(auto nested, d.get_table(view, sid));
                 return decode_tuple_like<Config>(d, nested, out);
-            } else if constexpr(B::template can_inline_struct<clean_u_t>) {
+            } else if constexpr(B::template can_inline_struct_field<clean_u_t>) {
                 KOTA_EXPECTED_TRY_V(auto value,
                                     (d.template get_inline_struct<clean_u_t>(view, sid)));
                 out = static_cast<U>(value);
@@ -739,7 +739,7 @@ auto decode_sequence(const B& d,
             }
         }
         return finalize_sequence();
-    } else if constexpr(B::template can_inline_struct<element_clean_t>) {
+    } else if constexpr(B::template can_inline_struct_element<element_clean_t>) {
         KOTA_EXPECTED_TRY_V(auto vec,
                             (d.template get_inline_struct_vector<element_clean_t>(view, sid)));
         for(std::size_t i = 0; i < vec.size(); ++i) {

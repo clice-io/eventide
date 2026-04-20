@@ -33,11 +33,21 @@ namespace detail {
 
 using codec::detail::clean_t;
 
-// Types are routed through the "inline struct" path iff the backend's
-// `can_inline_struct_v<T>` predicate is satisfied. To keep this free layer
-// backend-agnostic, we accept it as a trait the backend provides.
+// Inline-struct routing is split into two backend predicates:
+//  * `can_inline_struct_field<T>` — the backend supports storing a whole
+//    struct inside a parent table's slot (no pointer indirection). FlatBuffers
+//    supports this; Cap'n Proto cannot (its struct fields always go through
+//    the pointer section).
+//  * `can_inline_struct_element<T>` — the backend supports laying out a
+//    vector of structs inline (one contiguous region, no per-element
+//    pointer). FlatBuffers' `CreateVectorOfStructs` qualifies; Cap'n Proto's
+//    composite list also qualifies, even though `can_inline_struct_field`
+//    is false there.
 template <typename B, typename T>
-concept backend_can_inline_struct = B::template can_inline_struct<T>;
+concept backend_can_inline_struct_field = B::template can_inline_struct_field<T>;
+
+template <typename B, typename T>
+concept backend_can_inline_struct_element = B::template can_inline_struct_element<T>;
 
 // Forward declarations.
 template <typename Config, typename B, typename Raw, typename Attrs, typename V>
@@ -86,7 +96,7 @@ auto encode_root(B& b, const T& value)
             return encode_boxed<Config>(b, value);
         }
         return encode_root<Config>(b, *value);
-    } else if constexpr(meta::reflectable_class<U> && !B::template can_inline_struct<U> &&
+    } else if constexpr(meta::reflectable_class<U> && !B::template can_inline_struct_field<U> &&
                         !std::ranges::input_range<U> && !is_pair_v<U> && !is_tuple_v<U>) {
         return encode_table<Config>(b, value);
     } else if constexpr(is_specialization_of<std::variant, U>) {
@@ -352,7 +362,7 @@ auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid
             KOTA_EXPECTED_TRY_V(auto r, encode_tuple_like<Config>(b, value));
             tb.add_offset(sid, r);
             return {};
-        } else if constexpr(B::template can_inline_struct<clean_u>) {
+        } else if constexpr(B::template can_inline_struct_field<clean_u>) {
             tb.add_inline_struct(sid, static_cast<clean_u>(value));
             return {};
         } else if constexpr(meta::reflectable_class<clean_u>) {
@@ -464,7 +474,7 @@ auto encode_sequence(B& b, const T& range)
         }
         return b.alloc_table_vector(
             std::span<const typename B::table_ref>(elements.data(), elements.size()));
-    } else if constexpr(B::template can_inline_struct<element_clean_t>) {
+    } else if constexpr(B::template can_inline_struct_element<element_clean_t>) {
         std::vector<element_clean_t> elements;
         if constexpr(requires { range.size(); }) {
             elements.reserve(range.size());

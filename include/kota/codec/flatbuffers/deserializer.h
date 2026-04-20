@@ -134,9 +134,12 @@ public:
     template <typename T>
     using result_t = std::expected<T, error_type>;
 
-    // Expose the inline-struct predicate to the backend-agnostic decode layer.
+    // Mirror of the serializer-side predicates; both resolve identically.
     template <typename T>
-    constexpr static bool can_inline_struct = flatbuffers::can_inline_struct_v<T>;
+    constexpr static bool can_inline_struct_field = flatbuffers::can_inline_struct_v<T>;
+
+    template <typename T>
+    constexpr static bool can_inline_struct_element = flatbuffers::can_inline_struct_v<T>;
 
     // Slot-id helpers (mirror of the serializer side).
     static auto field_slot_id(std::size_t index) -> result_t<slot_id> {
