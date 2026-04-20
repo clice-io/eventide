@@ -1,8 +1,8 @@
 #include <iostream>
 #include <string>
 
-#include "kota/async/async.h"
 #include "kota/http/http.h"
+#include "kota/async/async.h"
 
 using namespace kota;
 
@@ -28,8 +28,8 @@ task<> run_demo(event_loop& loop) {
 
     std::cout << "\n2) let httpbin set two cookies into the jar\n";
     auto seeded = co_await client.get("https://httpbin.io/cookies/set?session=jar-demo&theme=light")
-                          .send()
-                          .catch_cancel();
+                      .send()
+                      .catch_cancel();
     if(seeded.is_cancelled()) {
         std::cout << "seed request cancelled\n";
         co_return;
@@ -43,8 +43,9 @@ task<> run_demo(event_loop& loop) {
     print_cookie_jar(client);
 
     std::cout << "\n3) inject one more cookie locally with store_cookie(...)\n";
-    client.store_cookie("https://httpbin.io/cookies",
-                        "Set-Cookie: local_pref=from-store-cookie; Domain=httpbin.io; Path=/; Secure");
+    client.store_cookie(
+        "https://httpbin.io/cookies",
+        "Set-Cookie: local_pref=from-store-cookie; Domain=httpbin.io; Path=/; Secure");
     print_cookie_jar(client);
 
     std::cout << "\n4) ask httpbin which cookies it sees from the jar\n";
@@ -62,10 +63,10 @@ task<> run_demo(event_loop& loop) {
 
     std::cout << "\n5) override cookies for a single request and bypass the jar\n";
     auto manual = co_await client.get("https://httpbin.io/cookies")
-                          .cookie("session=manual-demo; theme=manual-only")
-                          .no_cookies()
-                          .send()
-                          .catch_cancel();
+                      .cookie("session=manual-demo; theme=manual-only")
+                      .no_cookies()
+                      .send()
+                      .catch_cancel();
     if(manual.is_cancelled()) {
         std::cout << "manual request cancelled\n";
         co_return;

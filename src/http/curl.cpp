@@ -1,9 +1,3 @@
-#include "kota/http/detail/prepared_request.h"
-#include "kota/http/detail/runtime.h"
-#include "kota/http/detail/util.h"
-#include "kota/http/client.h"
-#include "kota/http/manager.h"
-
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +12,11 @@
 
 #include "../async/io/awaiter.h"
 #include "../async/libuv.h"
+#include "kota/http/client.h"
+#include "kota/http/detail/prepared_request.h"
+#include "kota/http/detail/runtime.h"
+#include "kota/http/detail/util.h"
+#include "kota/http/manager.h"
 
 namespace kota::http {
 
@@ -235,10 +234,8 @@ long to_curl_ssl_max(http::tls_version value) noexcept {
     return 0;
 }
 
-std::size_t prepared_request::on_write(char* data,
-                                       std::size_t size,
-                                       std::size_t count,
-                                       void* userdata) {
+std::size_t
+    prepared_request::on_write(char* data, std::size_t size, std::size_t count, void* userdata) {
     auto* self = static_cast<prepared_request*>(userdata);
     assert(self != nullptr && "curl write callback requires prepared_request");
 
@@ -248,10 +245,8 @@ std::size_t prepared_request::on_write(char* data,
     return bytes;
 }
 
-std::size_t prepared_request::on_header(char* data,
-                                        std::size_t size,
-                                        std::size_t count,
-                                        void* userdata) {
+std::size_t
+    prepared_request::on_header(char* data, std::size_t size, std::size_t count, void* userdata) {
     auto* self = static_cast<prepared_request*>(userdata);
     assert(self != nullptr && "curl header callback requires prepared_request");
 
@@ -307,14 +302,11 @@ bool prepared_request::apply_url() noexcept {
 
 bool prepared_request::apply_method() noexcept {
     switch(spec.verb) {
-        case method::get:
-            return true;
-        case method::post:
-            return easy_setopt(*this, CURLOPT_POST, 1L);
+        case method::get: return true;
+        case method::post: return easy_setopt(*this, CURLOPT_POST, 1L);
         case method::put:
         case method::patch:
-        case method::del:
-            return easy_setopt(*this, CURLOPT_CUSTOMREQUEST, method_name(spec.verb));
+        case method::del: return easy_setopt(*this, CURLOPT_CUSTOMREQUEST, method_name(spec.verb));
         case method::head:
             return easy_setopt(*this, CURLOPT_NOBODY, 1L) &&
                    easy_setopt(*this, CURLOPT_CUSTOMREQUEST, method_name(spec.verb));
@@ -327,8 +319,9 @@ bool prepared_request::apply_body() noexcept {
         return true;
     }
 
-    return easy_setopt(
-               *this, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(spec.body.size())) &&
+    return easy_setopt(*this,
+                       CURLOPT_POSTFIELDSIZE_LARGE,
+                       static_cast<curl_off_t>(spec.body.size())) &&
            easy_setopt(*this, CURLOPT_COPYPOSTFIELDS, spec.body.c_str());
 }
 
@@ -394,19 +387,20 @@ bool prepared_request::apply_tls() noexcept {
 #endif
     }
 
-    if(!easy_setopt(*this, CURLOPT_SSL_VERIFYPEER, spec.tls.danger_accept_invalid_certs ? 0L : 1L) ||
-       !easy_setopt(*this, CURLOPT_SSL_VERIFYHOST,
+    if(!easy_setopt(*this,
+                    CURLOPT_SSL_VERIFYPEER,
+                    spec.tls.danger_accept_invalid_certs ? 0L : 1L) ||
+       !easy_setopt(*this,
+                    CURLOPT_SSL_VERIFYHOST,
                     spec.tls.danger_accept_invalid_hostnames ? 0L : 2L)) {
         return false;
     }
 
-    if(spec.tls.ca_file &&
-       !easy_setopt(*this, CURLOPT_CAINFO, spec.tls.ca_file->c_str())) {
+    if(spec.tls.ca_file && !easy_setopt(*this, CURLOPT_CAINFO, spec.tls.ca_file->c_str())) {
         return false;
     }
 
-    if(spec.tls.ca_path &&
-       !easy_setopt(*this, CURLOPT_CAPATH, spec.tls.ca_path->c_str())) {
+    if(spec.tls.ca_path && !easy_setopt(*this, CURLOPT_CAPATH, spec.tls.ca_path->c_str())) {
         return false;
     }
 
@@ -418,7 +412,8 @@ bool prepared_request::apply_tls() noexcept {
         if(spec.tls.max_version) {
             auto upper = to_curl_ssl_max(*spec.tls.max_version);
             if(upper == 0) {
-                return fail(error::invalid_request("libcurl does not support the requested max tls version"));
+                return fail(error::invalid_request(
+                    "libcurl does not support the requested max tls version"));
             }
             version |= upper;
         }
@@ -448,11 +443,13 @@ bool prepared_request::apply_proxy() noexcept {
         return false;
     }
 
-    if(!proxy.username.empty() && !easy_setopt(*this, CURLOPT_PROXYUSERNAME, proxy.username.c_str())) {
+    if(!proxy.username.empty() &&
+       !easy_setopt(*this, CURLOPT_PROXYUSERNAME, proxy.username.c_str())) {
         return false;
     }
 
-    if(!proxy.password.empty() && !easy_setopt(*this, CURLOPT_PROXYPASSWORD, proxy.password.c_str())) {
+    if(!proxy.password.empty() &&
+       !easy_setopt(*this, CURLOPT_PROXYPASSWORD, proxy.password.c_str())) {
         return false;
     }
 
@@ -529,8 +526,8 @@ outcome<response, error, cancellation> prepared_request::finish() noexcept {
     out.status = status;
 
     char* effective = nullptr;
-    if(auto err = curl::getinfo(easy.get(), CURLINFO_EFFECTIVE_URL, &effective); curl::ok(err) &&
-       effective != nullptr) {
+    if(auto err = curl::getinfo(easy.get(), CURLINFO_EFFECTIVE_URL, &effective);
+       curl::ok(err) && effective != nullptr) {
         out.url = effective;
     } else {
         out.url = final_url;

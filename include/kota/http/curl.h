@@ -1,10 +1,9 @@
 #pragma once
 
 #include <cassert>
+#include <curl/curl.h>
 #include <string_view>
 #include <utility>
-
-#include <curl/curl.h>
 
 namespace kota::curl {
 

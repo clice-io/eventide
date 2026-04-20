@@ -10,11 +10,11 @@
 #include <utility>
 #include <vector>
 
-#include "kota/async/io/loop.h"
-#include "kota/async/runtime/task.h"
 #include "kota/http/options.h"
 #include "kota/http/request.h"
 #include "kota/http/response.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/runtime/task.h"
 
 #if __has_include(<simdjson.h>)
 #include "kota/codec/json.h"
@@ -78,16 +78,19 @@ public:
     task<response, error> send(this auto&& self)
         requires (!std::is_const_v<std::remove_reference_t<decltype(self)>>) {
         if(!self.owner) {
-            return failed(error::invalid_request("request_builder::send requires an owning client"));
+            return failed(
+                error::invalid_request("request_builder::send requires an owning client"));
         }
 
         auto loop = resolve_loop(self.owner, self.dispatch_loop);
         if(!loop) {
-            return failed(
-                error::invalid_request("request_builder::send requires a loop via client::bind or client.on"));
+            return failed(error::invalid_request(
+                "request_builder::send requires a loop via client::bind or client.on"));
         }
 
-        return detail::execute_with_state(std::forward<decltype(self)>(self).build(), loop->get(), self.owner);
+        return detail::execute_with_state(std::forward<decltype(self)>(self).build(),
+                                          loop->get(),
+                                          self.owner);
     }
 
 #if KOTA_HTTP_HAS_CODEC_JSON
@@ -174,7 +177,8 @@ private:
 
 class bound_client {
 public:
-    bound_client(client_state* state, event_loop& loop) noexcept : state(state), dispatch_loop(&loop) {}
+    bound_client(client_state* state, event_loop& loop) noexcept :
+        state(state), dispatch_loop(&loop) {}
 
     request_builder request(method verb, std::string url) const noexcept;
 

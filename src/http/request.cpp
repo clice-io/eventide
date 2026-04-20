@@ -1,8 +1,3 @@
-#include "kota/http/client.h"
-#include "kota/http/detail/client_state.h"
-#include "kota/http/detail/runtime.h"
-#include "kota/http/detail/util.h"
-
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
@@ -12,6 +7,11 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "kota/http/client.h"
+#include "kota/http/detail/client_state.h"
+#include "kota/http/detail/runtime.h"
+#include "kota/http/detail/util.h"
 
 namespace kota::http {
 
@@ -72,18 +72,30 @@ client_state::client_state(client_options opts) :
         std::abort();
     }
 
-    require_share_setopt(
-        share.get(), CURLSHOPT_LOCKFUNC, &client_state::on_share_lock, "curl share lock registration failed");
-    require_share_setopt(
-        share.get(), CURLSHOPT_UNLOCKFUNC, &client_state::on_share_unlock, "curl share unlock registration failed");
-    require_share_setopt(
-        share.get(), CURLSHOPT_USERDATA, static_cast<void*>(this), "curl share userdata registration failed");
-    require_share_setopt(
-        share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE, "curl share cookie registration failed");
-    require_share_setopt(
-        share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS, "curl share dns registration failed");
-    require_share_setopt(
-        share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION, "curl share ssl session registration failed");
+    require_share_setopt(share.get(),
+                         CURLSHOPT_LOCKFUNC,
+                         &client_state::on_share_lock,
+                         "curl share lock registration failed");
+    require_share_setopt(share.get(),
+                         CURLSHOPT_UNLOCKFUNC,
+                         &client_state::on_share_unlock,
+                         "curl share unlock registration failed");
+    require_share_setopt(share.get(),
+                         CURLSHOPT_USERDATA,
+                         static_cast<void*>(this),
+                         "curl share userdata registration failed");
+    require_share_setopt(share.get(),
+                         CURLSHOPT_SHARE,
+                         CURL_LOCK_DATA_COOKIE,
+                         "curl share cookie registration failed");
+    require_share_setopt(share.get(),
+                         CURLSHOPT_SHARE,
+                         CURL_LOCK_DATA_DNS,
+                         "curl share dns registration failed");
+    require_share_setopt(share.get(),
+                         CURLSHOPT_SHARE,
+                         CURL_LOCK_DATA_SSL_SESSION,
+                         "curl share ssl session registration failed");
 }
 
 void client_state::bind(event_loop& loop) noexcept {
@@ -164,7 +176,10 @@ std::vector<std::string> client_state::cookie_list() const {
     });
 }
 
-void client_state::on_share_lock(CURL*, curl_lock_data data, curl_lock_access, void* userptr) noexcept {
+void client_state::on_share_lock(CURL*,
+                                 curl_lock_data data,
+                                 curl_lock_access,
+                                 void* userptr) noexcept {
     auto* self = static_cast<client_state*>(userptr);
     if(!self) {
         return;
@@ -189,7 +204,9 @@ std::mutex& client_state::mutex_for(curl_lock_data data) noexcept {
     }
 }
 
-request_builder::request_builder(client_state* owner, event_loop* dispatch_loop, request req) noexcept :
+request_builder::request_builder(client_state* owner,
+                                 event_loop* dispatch_loop,
+                                 request req) noexcept :
     owner(owner), dispatch_loop(dispatch_loop), spec(std::move(req)) {}
 
 request_builder& request_builder::header(std::string name, std::string value) {
@@ -268,7 +285,7 @@ task<response, error> request_builder::failed(error err) {
 }
 
 std::optional<std::reference_wrapper<event_loop>>
-request_builder::resolve_loop(client_state* owner, event_loop* dispatch_loop) noexcept {
+    request_builder::resolve_loop(client_state* owner, event_loop* dispatch_loop) noexcept {
     if(dispatch_loop) {
         return *dispatch_loop;
     }
@@ -432,7 +449,9 @@ bound_client client::on(event_loop& loop) & noexcept {
 }
 
 request_builder client::request(method verb, std::string url) const& {
-    return request_builder(state.get(), nullptr, make_request(verb, std::move(url), state->options()));
+    return request_builder(state.get(),
+                           nullptr,
+                           make_request(verb, std::move(url), state->options()));
 }
 
 request_builder client::get(std::string url) const& {
@@ -490,7 +509,9 @@ const client_options& client::options() const noexcept {
 }
 
 request_builder bound_client::request(method verb, std::string url) const noexcept {
-    return request_builder(state, dispatch_loop, make_request(verb, std::move(url), state->options()));
+    return request_builder(state,
+                           dispatch_loop,
+                           make_request(verb, std::move(url), state->options()));
 }
 
 request_builder bound_client::get(std::string url) const noexcept {

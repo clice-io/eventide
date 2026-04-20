@@ -6,9 +6,9 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/async/io/loop.h"
 #include "kota/http/curl.h"
 #include "kota/http/options.h"
+#include "kota/async/io/loop.h"
 
 namespace kota::http {
 

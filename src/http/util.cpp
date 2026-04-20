@@ -60,8 +60,8 @@ std::string percent_encode(std::string_view text) {
     out.reserve(text.size() * 3);
     for(unsigned char ch: text) {
         const bool unreserved = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
-                                (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' ||
-                                ch == '.' || ch == '~';
+                                (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' ||
+                                ch == '~';
         if(unreserved) {
             out.push_back(static_cast<char>(ch));
             continue;
@@ -91,8 +91,7 @@ std::string encode_pairs(const std::vector<query_param>& pairs) {
 }
 
 std::string base64_encode(std::string_view text) {
-    constexpr char alphabet[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     std::string out;
     out.reserve(((text.size() + 2) / 3) * 4);

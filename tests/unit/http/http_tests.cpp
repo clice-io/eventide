@@ -11,13 +11,12 @@
 #include <utility>
 #include <vector>
 
-#include "kota/async/async.h"
+#include "../../src/async/io/awaiter.h"
+#include "../async/loop_fixture.h"
 #include "kota/http/http.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
-
-#include "../async/loop_fixture.h"
-#include "../../src/async/io/awaiter.h"
+#include "kota/async/async.h"
 
 namespace kota {
 
@@ -120,8 +119,8 @@ task<std::optional<server_request>, error> read_request(tcp& client) {
     request.target = request_line.substr(first_space + 1, second_space - first_space - 1);
 
     std::size_t content_length = 0;
-    std::size_t line_start = first_line_end == std::string::npos ? headers_block.size()
-                                                                 : first_line_end + 2;
+    std::size_t line_start =
+        first_line_end == std::string::npos ? headers_block.size() : first_line_end + 2;
     while(line_start < headers_block.size()) {
         const auto line_end = headers_block.find("\r\n", line_start);
         const auto line = headers_block.substr(
@@ -201,7 +200,8 @@ class test_http_server {
 public:
     using handler_type = std::function<server_response(const server_request&)>;
 
-    test_http_server(event_loop& loop, handler_type handler) : loop_(&loop), handler_(std::move(handler)) {
+    test_http_server(event_loop& loop, handler_type handler) :
+        loop_(&loop), handler_(std::move(handler)) {
         auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
         if(!listener) {
             return;
@@ -323,10 +323,7 @@ TEST_CASE(builder_overrides_preserve_manual_cookie) {
 }
 
 TEST_CASE(client_can_be_built_unbound_and_bound_later) {
-    auto client = http::client::builder()
-                      .user_agent("late-bind")
-                      .cookie_store(false)
-                      .build();
+    auto client = http::client::builder().user_agent("late-bind").cookie_store(false).build();
 
     ASSERT_TRUE(client.has_value());
     EXPECT_FALSE(client->is_bound());
@@ -620,7 +617,10 @@ TEST_CASE(form_request_sets_content_type_and_encodes_body) {
     http::client client(loop);
 
     auto req = client.post(server.url("/form"))
-                   .form({{"name", "alice"}, {"note", "a b+c"}})
+                   .form({
+                       {"name", "alice"},
+                       {"note", "a b+c"}
+    })
                    .send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
@@ -658,9 +658,7 @@ TEST_CASE(redirect_policy_follows_by_default_when_enabled) {
     });
     ASSERT_TRUE(server.valid());
 
-    auto client = http::client::builder(loop)
-                      .redirect(http::redirect_policy::limited(4))
-                      .build();
+    auto client = http::client::builder(loop).redirect(http::redirect_policy::limited(4)).build();
     ASSERT_TRUE(client.has_value());
 
     auto req = client->get(server.url("/jump")).send();
@@ -683,9 +681,7 @@ TEST_CASE(redirect_policy_none_preserves_redirect_response) {
     });
     ASSERT_TRUE(server.valid());
 
-    auto client = http::client::builder(loop)
-                      .redirect(http::redirect_policy::none())
-                      .build();
+    auto client = http::client::builder(loop).redirect(http::redirect_policy::none()).build();
     ASSERT_TRUE(client.has_value());
 
     auto req = client->get(server.url("/jump")).send();
@@ -699,7 +695,9 @@ TEST_CASE(redirect_policy_none_preserves_redirect_response) {
 }
 
 TEST_CASE(https_only_rejects_plain_http_requests) {
-    test_http_server server(loop, [](const server_request&) -> server_response { return {.body = "plain"}; });
+    test_http_server server(loop, [](const server_request&) -> server_response {
+        return {.body = "plain"};
+    });
     ASSERT_TRUE(server.valid());
 
     auto client = http::client::builder(loop).https_only().build();
@@ -761,11 +759,11 @@ TEST_CASE(cancelled_request_does_not_break_following_requests) {
     http::client client(loop);
 
     auto request = client.get(server.url("/slow")).send().catch_cancel();
-    auto cancel_after =
-        [](task<http::response, http::error, cancellation>* pending, event_loop& loop) -> task<> {
-            co_await sleep(20ms, loop);
-            (*pending)->cancel();
-        };
+    auto cancel_after = [](task<http::response, http::error, cancellation>* pending,
+                           event_loop& loop) -> task<> {
+        co_await sleep(20ms, loop);
+        (*pending)->cancel();
+    };
     auto canceler = cancel_after(&request, loop);
 
     loop.schedule(request);
