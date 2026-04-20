@@ -210,6 +210,10 @@ consteval std::uint64_t schema_required_field_mask() {
     return mask;
 }
 
+/// Detect whether Config carries deny_unknown_fields = true (from annotated struct attrs).
+template <typename Config>
+constexpr bool config_deny_unknown_v = requires { requires Config::deny_unknown_fields; };
+
 /// Virtual-schema-driven struct deserialization (by_name mode).
 /// Requires the deserializer to provide:
 ///   d.begin_object()              → status_t
@@ -219,6 +223,7 @@ consteval std::uint64_t schema_required_field_mask() {
 template <typename Config, typename E, typename D, typename T>
 auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
+    constexpr bool deny_unknown = schema::deny_unknown || config_deny_unknown_v<Config>;
 
     if(schema_has_ambiguous_wire_names<T, Config>()) {
         return std::unexpected(E::invalid_state);
@@ -248,7 +253,7 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
             continue;
         }
 
-        if constexpr(schema::deny_unknown) {
+        if constexpr(deny_unknown) {
             return std::unexpected(E::unknown_field(key_name));
         } else {
             KOTA_EXPECTED_TRY(d.skip_field_value());

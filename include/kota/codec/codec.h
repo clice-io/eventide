@@ -16,14 +16,49 @@
 #include "kota/meta/struct.h"
 #include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/common.h"
-#include "kota/codec/detail/field_dispatch.h"
 #include "kota/codec/detail/fwd.h"
-#include "kota/codec/detail/reflectable.h"
 #include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/detail/struct_deserialize.h"
 #include "kota/codec/detail/tagged.h"
 
 namespace kota::codec {
+
+namespace detail {
+
+template <typename BaseConfig,
+          typename Attrs,
+          bool HasRenameAll = tuple_has_spec_v<Attrs, meta::attrs::rename_all>,
+          bool HasDenyUnknown = tuple_has_v<Attrs, meta::attrs::deny_unknown_fields>>
+struct annotated_struct_config {
+    using type = BaseConfig;
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, true, false> {
+    struct type {
+        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, false, true> {
+    struct type {
+        static constexpr bool deny_unknown_fields = true;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, true, true> {
+    struct type {
+        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
+        static constexpr bool deny_unknown_fields = true;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+using annotated_struct_config_t = typename annotated_struct_config<BaseConfig, Attrs>::type;
+
+}  // namespace detail
 
 template <serializer_like S, typename V, typename T, typename E>
 constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
@@ -71,7 +106,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
                            tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
             using base_config_t = config::config_of<S>;
             using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
-            return detail::serialize_reflectable<struct_config_t, E>(s, value);
+            return detail::struct_serialize<struct_config_t, E>(s, value);
         }
         // Default: serialize the underlying value
         else {
@@ -165,12 +200,7 @@ constexpr auto serialize(S& s, const V& v) -> std::expected<T, E> {
             static_assert(dependent_false<V>, "cannot auto serialize the input range");
         }
     } else if constexpr(meta::reflectable_class<V>) {
-        if constexpr(has_field_mode<S>) {
-            return detail::struct_serialize<config::config_of<S>, E>(s, v);
-        } else {
-            using config_t = config::config_of<S>;
-            return detail::serialize_reflectable<config_t, E>(s, v);
-        }
+        return detail::struct_serialize<config::config_of<S>, E>(s, v);
     } else {
         static_assert(dependent_false<V>,
                       "cannot auto serialize the value, try to specialize for it");
@@ -223,8 +253,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                            tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
             using base_config_t = config::config_of<D>;
             using struct_config_t = detail::annotated_struct_config_t<base_config_t, attrs_t>;
-            constexpr bool deny_unknown = tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>;
-            return detail::deserialize_reflectable<struct_config_t, E, deny_unknown>(d, value);
+            return detail::struct_deserialize<struct_config_t, E>(d, value);
         }
         // Default: deserialize the underlying value
         else {
@@ -446,12 +475,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
             static_assert(dependent_false<V>, "cannot auto deserialize the input range");
         }
     } else if constexpr(meta::reflectable_class<V>) {
-        if constexpr(has_field_mode<D>) {
-            return detail::struct_deserialize<config::config_of<D>, E>(d, v);
-        } else {
-            using config_t = config::config_of<D>;
-            return detail::deserialize_reflectable<config_t, E, false>(d, v);
-        }
+        return detail::struct_deserialize<config::config_of<D>, E>(d, v);
     } else {
         static_assert(dependent_false<V>,
                       "cannot auto deserialize the value, try to specialize for it");
