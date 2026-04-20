@@ -85,6 +85,15 @@ else()
     message(STATUS "KOTA_CODEC_ENABLE_FLATBUFFERS=OFF: skipping tests/unit/codec/flatbuffers/*")
 endif()
 
+# Cap'n Proto-shape backend is header-only (no external capnproto dep), so it
+# is always built alongside the bincode backend.
+set(TEST_CODEC_CAPNP_SOURCES ${TEST_SOURCES})
+list(FILTER TEST_CODEC_CAPNP_SOURCES INCLUDE REGEX "^tests/unit/codec/capnp/.*\\.cpp$")
+list(TRANSFORM TEST_CODEC_CAPNP_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+target_sources(unit_tests PRIVATE
+    ${TEST_CODEC_CAPNP_SOURCES}
+)
+
 if(KOTA_CODEC_ENABLE_TOML)
     set(TEST_CODEC_TOML_SOURCES ${TEST_SOURCES})
     list(FILTER TEST_CODEC_TOML_SOURCES INCLUDE REGEX "^tests/unit/codec/toml/.*\\.cpp$")
