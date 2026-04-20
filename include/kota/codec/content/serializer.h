@@ -73,6 +73,7 @@ public:
         if(!root_is_written || !stack.empty()) {
             return std::unexpected(error_type::invalid_state);
         }
+        root_is_written = false;
         return std::move(root_);
     }
 

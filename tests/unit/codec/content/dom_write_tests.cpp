@@ -16,9 +16,9 @@ TEST_CASE(value_reassignment_changes_kind) {
     content::Value value(std::int64_t(1));
     ASSERT_TRUE(value.is_int());
 
-    value = content::Value(std::string_view("x"));
+    value = content::Value("x");
     ASSERT_TRUE(value.is_string());
-    EXPECT_EQ(value.as_string(), std::string_view("x"));
+    EXPECT_EQ(value.as_string(), "x");
 
     content::Array arr;
     arr.push_back(content::Value(std::int64_t(2)));
@@ -33,13 +33,13 @@ TEST_CASE(array_push_back_and_emplace_back) {
     array.push_back(content::Value(nullptr));
     array.push_back(content::Value(true));
     array.emplace_back(std::int64_t(7));
-    array.emplace_back(std::string("z"));
+    array.emplace_back("z");
 
     ASSERT_EQ(array.size(), std::size_t(4));
     EXPECT_TRUE(array[0].is_null());
     EXPECT_EQ(array[1].as_bool(), true);
     EXPECT_EQ(array[2].as_int(), 7);
-    EXPECT_EQ(array[3].as_string(), std::string_view("z"));
+    EXPECT_EQ(array[3].as_string(), "z");
 }
 
 TEST_CASE(array_clear_and_reserve) {
@@ -150,6 +150,57 @@ TEST_CASE(object_index_invalidated_after_cached_lookup_then_assign_new_key) {
     object.assign("b", content::Value(std::int64_t(2)));
     EXPECT_EQ(object.at("b").as_int(), 2);
     EXPECT_EQ(object.at("a").as_int(), 1);
+}
+
+TEST_CASE(object_assign_existing_key_preserves_index_correctness) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+    object.insert("b", content::Value(std::int64_t(2)));
+    object.insert("c", content::Value(std::int64_t(3)));
+
+    // Trigger index build
+    EXPECT_EQ(object.find("b")->as_int(), 2);
+
+    // Assign existing key — should NOT invalidate index
+    object.assign("b", content::Value(std::int64_t(20)));
+
+    // All lookups still work correctly
+    EXPECT_EQ(object.find("a")->as_int(), 1);
+    EXPECT_EQ(object.find("b")->as_int(), 20);
+    EXPECT_EQ(object.find("c")->as_int(), 3);
+    EXPECT_EQ(object.size(), std::size_t(3));
+}
+
+TEST_CASE(object_remove_then_insert_same_key) {
+    content::Object object;
+    object.insert("x", content::Value(std::int64_t(1)));
+    object.insert("y", content::Value(std::int64_t(2)));
+
+    // Trigger index build
+    EXPECT_EQ(object.find("x")->as_int(), 1);
+
+    // Remove and re-insert
+    EXPECT_EQ(object.remove("x"), std::size_t(1));
+    EXPECT_EQ(object.find("x"), nullptr);
+
+    object.insert("x", content::Value(std::int64_t(99)));
+    ASSERT_NE(object.find("x"), nullptr);
+    EXPECT_EQ(object.find("x")->as_int(), 99);
+    EXPECT_EQ(object.find("y")->as_int(), 2);
+}
+
+TEST_CASE(object_clear_then_lookup) {
+    content::Object object;
+    object.insert("a", content::Value(std::int64_t(1)));
+    object.insert("b", content::Value(std::int64_t(2)));
+
+    // Trigger index build
+    EXPECT_EQ(object.find("a")->as_int(), 1);
+
+    object.clear();
+    EXPECT_TRUE(object.empty());
+    EXPECT_EQ(object.find("a"), nullptr);
+    EXPECT_FALSE(object.contains("b"));
 }
 
 TEST_CASE(object_equality_multiset_with_duplicates) {

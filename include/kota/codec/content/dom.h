@@ -410,6 +410,10 @@ public:
         return ptr != nullptr;
     }
 
+    explicit operator bool() const noexcept {
+        return ptr != nullptr;
+    }
+
     [[nodiscard]] bool has_error() const noexcept {
         return !message.empty();
     }
@@ -479,30 +483,37 @@ public:
     }
 
     [[nodiscard]] bool as_bool() const {
+        assert_valid();
         return ptr->as_bool();
     }
 
     [[nodiscard]] std::int64_t as_int() const {
+        assert_valid();
         return ptr->as_int();
     }
 
     [[nodiscard]] std::uint64_t as_uint() const {
+        assert_valid();
         return ptr->as_uint();
     }
 
     [[nodiscard]] double as_double() const {
+        assert_valid();
         return ptr->as_double();
     }
 
     [[nodiscard]] std::string_view as_string() const {
+        assert_valid();
         return ptr->as_string();
     }
 
     [[nodiscard]] const Array& as_array() const {
+        assert_valid();
         return ptr->as_array();
     }
 
     [[nodiscard]] const Object& as_object() const {
+        assert_valid();
         return ptr->as_object();
     }
 
