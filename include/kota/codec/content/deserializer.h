@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/content/document.h"
@@ -27,6 +28,9 @@ class Deserializer {
 public:
     using config_type = Config;
     using error_type = content::error;
+
+    constexpr static auto backend_kind_v = backend_kind::streaming;
+    constexpr static auto field_mode_v = field_mode::by_name;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
@@ -309,6 +313,46 @@ public:
         return *ptr;
     }
 
+    // --- New-style streaming struct interface ---
+
+    status_t begin_object() {
+        KOTA_EXPECTED_TRY_V(auto obj, open_object());
+        deser_stack.push_back(deser_frame{.object = obj, .it = obj->begin()});
+        return {};
+    }
+
+    result_t<std::optional<std::string_view>> next_field() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+        if(frame.it == frame.object->end()) {
+            return std::optional<std::string_view>(std::nullopt);
+        }
+        const auto& entry = *frame.it;
+        ++frame.it;
+        current_value = content::Cursor(entry.value);
+        has_current_value = true;
+        return std::optional<std::string_view>(std::string_view(entry.key));
+    }
+
+    status_t skip_field_value() {
+        if(!is_valid) {
+            return std::unexpected(last_error);
+        }
+        // DOM-based: nothing to actually skip, just clear current value
+        has_current_value = false;
+        return {};
+    }
+
+    status_t end_object() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        deser_stack.pop_back();
+        return {};
+    }
+
 private:
     friend class codec::detail::IndexedArrayDeserializer<Deserializer, const content::Array*>;
     friend class codec::detail::IndexedObjectDeserializer<Deserializer, content::Cursor>;
@@ -494,6 +538,11 @@ private:
     }
 
 private:
+    struct deser_frame {
+        const content::Object* object = nullptr;
+        content::Object::const_iterator it{};
+    };
+
     bool is_valid = true;
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
@@ -501,6 +550,7 @@ private:
     content::Cursor root_value{};
     bool has_current_value = false;
     content::Cursor current_value{};
+    std::vector<deser_frame> deser_stack;
 };
 
 static_assert(codec::deserializer_like<Deserializer<>>);

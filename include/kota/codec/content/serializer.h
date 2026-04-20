@@ -142,22 +142,22 @@ public:
     }
 
     result_t<SerializeSeq> serialize_seq(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array());
+        KOTA_EXPECTED_TRY(begin_array_impl());
         return SerializeSeq(*this);
     }
 
     result_t<SerializeTuple> serialize_tuple(std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_array());
+        KOTA_EXPECTED_TRY(begin_array_impl());
         return SerializeTuple(*this);
     }
 
     result_t<SerializeMap> serialize_map(std::optional<std::size_t> /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object());
+        KOTA_EXPECTED_TRY(begin_object_impl());
         return SerializeMap(*this);
     }
 
     result_t<SerializeStruct> serialize_struct(std::string_view /*name*/, std::size_t /*len*/) {
-        KOTA_EXPECTED_TRY(begin_object());
+        KOTA_EXPECTED_TRY(begin_object_impl());
         return SerializeStruct(*this);
     }
 
@@ -185,6 +185,37 @@ public:
         return append_value(content::Value(std::move(value)));
     }
 
+    // --- New-style streaming struct interface ---
+
+    status_t begin_object(std::size_t /*count*/) {
+        return begin_object_impl();
+    }
+
+    result_t<value_type> end_object() {
+        if(!is_valid || stack.empty() || stack.back().object == nullptr ||
+           stack.back().has_pending_key) {
+            return mark_invalid();
+        }
+        stack.pop_back();
+        return {};
+    }
+
+    status_t field(std::string_view name) {
+        return key(name);
+    }
+
+    status_t begin_array(std::size_t /*count*/) {
+        return begin_array_impl();
+    }
+
+    result_t<value_type> end_array() {
+        if(!is_valid || stack.empty() || stack.back().array == nullptr) {
+            return mark_invalid();
+        }
+        stack.pop_back();
+        return {};
+    }
+
 private:
     friend class codec::detail::SerializeArray<Serializer<Config>>;
     friend class codec::detail::SerializeObject<Serializer<Config>>;
@@ -196,7 +227,7 @@ private:
         bool has_pending_key = false;
     };
 
-    status_t begin_array() {
+    status_t begin_array_impl() {
         if(!is_valid) {
             return std::unexpected(last_error);
         }
@@ -210,15 +241,7 @@ private:
         return {};
     }
 
-    status_t end_array() {
-        if(!is_valid || stack.empty() || stack.back().array == nullptr) {
-            return mark_invalid();
-        }
-        stack.pop_back();
-        return {};
-    }
-
-    status_t begin_object() {
+    status_t begin_object_impl() {
         if(!is_valid) {
             return std::unexpected(last_error);
         }
@@ -229,15 +252,6 @@ private:
         }
         stack.push_back(
             frame{.array = nullptr, .object = obj, .pending_key = {}, .has_pending_key = false});
-        return {};
-    }
-
-    status_t end_object() {
-        if(!is_valid || stack.empty() || stack.back().object == nullptr ||
-           stack.back().has_pending_key) {
-            return mark_invalid();
-        }
-        stack.pop_back();
         return {};
     }
 
