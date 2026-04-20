@@ -30,29 +30,17 @@ class Object;
 class Cursor;
 
 enum class ValueKind : std::uint8_t {
-    invalid = 0,
-    null_value,
-    boolean,
-    signed_int,
-    unsigned_int,
-    floating,
-    string,
-    array,
-    object,
+    null_value = 0,
+    boolean = 1,
+    signed_int = 2,
+    unsigned_int = 3,
+    floating = 4,
+    string = 5,
+    array = 6,
+    object = 7,
 };
 
 namespace detail {
-
-enum class storageindex : std::size_t {
-    null_v = 0,
-    bool_v = 1,
-    int_v = 2,
-    uint_v = 3,
-    double_v = 4,
-    string_v = 5,
-    array_v = 6,
-    object_v = 7,
-};
 
 inline std::string_view kind_name(ValueKind kind) noexcept {
     switch(kind) {
@@ -64,8 +52,8 @@ inline std::string_view kind_name(ValueKind kind) noexcept {
         case ValueKind::string: return "string";
         case ValueKind::array: return "array";
         case ValueKind::object: return "object";
-        default: return "invalid";
     }
+    return "unknown";
 }
 
 }  // namespace detail
@@ -218,21 +206,7 @@ public:
     }
 
     [[nodiscard]] ValueKind kind() const noexcept {
-        switch(storage.index()) {
-            case static_cast<std::size_t>(detail::storageindex::null_v):
-                return ValueKind::null_value;
-            case static_cast<std::size_t>(detail::storageindex::bool_v): return ValueKind::boolean;
-            case static_cast<std::size_t>(detail::storageindex::int_v):
-                return ValueKind::signed_int;
-            case static_cast<std::size_t>(detail::storageindex::uint_v):
-                return ValueKind::unsigned_int;
-            case static_cast<std::size_t>(detail::storageindex::double_v):
-                return ValueKind::floating;
-            case static_cast<std::size_t>(detail::storageindex::string_v): return ValueKind::string;
-            case static_cast<std::size_t>(detail::storageindex::array_v): return ValueKind::array;
-            case static_cast<std::size_t>(detail::storageindex::object_v): return ValueKind::object;
-            default: return ValueKind::invalid;
-        }
+        return static_cast<ValueKind>(storage.index());
     }
 
     [[nodiscard]] bool is_null() const noexcept {
@@ -416,8 +390,8 @@ public:
         return message;
     }
 
-    [[nodiscard]] ValueKind kind() const noexcept {
-        return ptr != nullptr ? ptr->kind() : ValueKind::invalid;
+    [[nodiscard]] std::optional<ValueKind> kind() const noexcept {
+        return ptr != nullptr ? std::optional{ptr->kind()} : std::nullopt;
     }
 
     [[nodiscard]] bool is_null() const noexcept {
@@ -533,7 +507,7 @@ public:
 
     void assert_kind([[maybe_unused]] ValueKind expected) const {
         assert_valid();
-        assert(kind() == expected);
+        assert(ptr->kind() == expected);
     }
 
     [[nodiscard]] const Value* unwrap() const noexcept {
