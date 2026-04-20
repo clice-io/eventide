@@ -16,7 +16,7 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/struct.h"
 #include "kota/codec/config.h"
-#include "kota/codec/content/dom.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/field_dispatch.h"
 #include "kota/codec/detail/fwd.h"

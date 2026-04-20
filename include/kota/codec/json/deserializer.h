@@ -16,7 +16,7 @@
 #include "kota/codec/codec.h"
 #include "kota/codec/config.h"
 #include "kota/codec/content/deserializer.h"
-#include "kota/codec/content/dom.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/detail/narrow.h"
 #include "kota/codec/json/error.h"
 

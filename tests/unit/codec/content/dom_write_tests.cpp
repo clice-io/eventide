@@ -153,21 +153,22 @@ TEST_CASE(object_index_invalidated_after_cached_lookup_then_assign_new_key) {
 
 TEST_CASE(object_assign_existing_key_preserves_index_correctness) {
     content::Object object;
-    object.insert("a", content::Value(std::int64_t(1)));
-    object.insert("b", content::Value(std::int64_t(2)));
-    object.insert("c", content::Value(std::int64_t(3)));
+    // Seed > 16 entries to cross the indexing threshold.
+    for(int i = 0; i < 20; ++i) {
+        object.insert("k" + std::to_string(i), content::Value(std::int64_t(i)));
+    }
 
     // Trigger index build
-    EXPECT_EQ(object.find("b")->as_int(), 2);
+    EXPECT_EQ(object.find("k5")->as_int(), 5);
 
     // Assign existing key — should NOT invalidate index
-    object.assign("b", content::Value(std::int64_t(20)));
+    object.assign("k5", content::Value(std::int64_t(50)));
 
-    // All lookups still work correctly
-    EXPECT_EQ(object.find("a")->as_int(), 1);
-    EXPECT_EQ(object.find("b")->as_int(), 20);
-    EXPECT_EQ(object.find("c")->as_int(), 3);
-    EXPECT_EQ(object.size(), 3);
+    // All lookups still work correctly via cached index
+    EXPECT_EQ(object.find("k0")->as_int(), 0);
+    EXPECT_EQ(object.find("k5")->as_int(), 50);
+    EXPECT_EQ(object.find("k19")->as_int(), 19);
+    EXPECT_EQ(object.size(), 20);
 }
 
 TEST_CASE(object_remove_then_insert_same_key) {

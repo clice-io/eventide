@@ -9,7 +9,7 @@
 
 #include "kota/codec/config.h"
 #include "kota/codec/content/deserializer.h"
-#include "kota/codec/content/dom.h"
+#include "kota/codec/content/document.h"
 #include "kota/codec/content/serializer.h"
 #include "kota/codec/json/deserializer.h"
 #include "kota/codec/json/error.h"
