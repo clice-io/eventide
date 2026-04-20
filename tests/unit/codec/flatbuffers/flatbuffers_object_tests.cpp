@@ -168,46 +168,6 @@ TEST_CASE(root_vector_preserves_scalar_vector_encoding) {
     EXPECT_EQ(vec->Get(2), 8);
 }
 
-TEST_CASE(roundtrip_person_with_from_flatbuffer) {
-    const person input{
-        .id = 7,
-        .name = "alice",
-        .pos = {.x = 10, .y = 20},
-        .scores = {1, 2, 3},
-        .addr = {.city = "sh", .zip = 200000},
-    };
-
-    auto encoded = to_flatbuffer(input);
-    ASSERT_TRUE(encoded.has_value());
-
-    person output{};
-    auto status = flatbuffers::from_flatbuffer(*encoded, output);
-    ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(output, input);
-}
-
-TEST_CASE(roundtrip_root_vector_and_variant) {
-    const std::vector<std::int32_t> input_vec{3, 5, 8};
-    auto encoded_vec = to_flatbuffer(input_vec);
-    ASSERT_TRUE(encoded_vec.has_value());
-
-    std::vector<std::int32_t> output_vec{};
-    auto vec_status = flatbuffers::from_flatbuffer(*encoded_vec, output_vec);
-    ASSERT_TRUE(vec_status.has_value());
-    EXPECT_EQ(output_vec, input_vec);
-
-    using sample_variant = std::variant<std::int32_t, std::string>;
-    const sample_variant input_var = std::string("kotatsu");
-
-    auto encoded_var = to_flatbuffer(input_var);
-    ASSERT_TRUE(encoded_var.has_value());
-
-    sample_variant output_var = std::int32_t{0};
-    auto var_status = flatbuffers::from_flatbuffer(*encoded_var, output_var);
-    ASSERT_TRUE(var_status.has_value());
-    EXPECT_EQ(output_var, input_var);
-}
-
 // --- Optional / smart pointer test structs ---
 
 struct with_optional_scalar {

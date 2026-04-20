@@ -10,18 +10,58 @@
 
 namespace kota {
 
+namespace detail {
+
+// A type counts as a "map value" if either:
+//  (a) it is tuple-like with exactly two elements (std::pair, std::tuple<K,V>,
+//      llvm::StringMapEntry<V>, ...), or
+//  (b) it exposes `.first` / `.second` members — covers types that derive from
+//      std::pair without re-specializing std::tuple_size (e.g. llvm::detail::DenseMapPair).
 template <typename T>
-constexpr bool is_map_value_v = false;
-
-template <typename T, typename U>
-constexpr bool is_map_value_v<std::pair<T, U>> = true;
-
-template <typename T, typename U>
-constexpr bool is_map_value_v<std::tuple<T, U>> = true;
+concept map_entry_tuple_like = requires {
+    { std::tuple_size<T>::value } -> std::convertible_to<std::size_t>;
+    requires std::tuple_size<T>::value == 2;
+};
 
 template <typename T>
-    requires std::is_reference_v<T> || std::is_const_v<T>
-constexpr bool is_map_value_v<T> = is_map_value_v<std::remove_cvref_t<T>>;
+concept map_entry_pair_like = requires(T& t) {
+    t.first;
+    t.second;
+};
+
+template <typename T>
+concept map_entry_like = map_entry_tuple_like<T> || map_entry_pair_like<T>;
+
+}  // namespace detail
+
+template <typename T>
+constexpr bool is_map_value_v = detail::map_entry_like<std::remove_cvref_t<T>>;
+
+// Extract key/mapped types from a map entry reference.
+namespace detail {
+
+template <typename E, typename = void>
+struct map_entry_types;
+
+template <typename E>
+struct map_entry_types<E, std::enable_if_t<map_entry_tuple_like<E>>> {
+    using key_type = std::remove_cvref_t<std::tuple_element_t<0, E>>;
+    using mapped_type = std::remove_cvref_t<std::tuple_element_t<1, E>>;
+};
+
+template <typename E>
+struct map_entry_types<E, std::enable_if_t<!map_entry_tuple_like<E> && map_entry_pair_like<E>>> {
+    using key_type = std::remove_cvref_t<decltype(std::declval<E&>().first)>;
+    using mapped_type = std::remove_cvref_t<decltype(std::declval<E&>().second)>;
+};
+
+}  // namespace detail
+
+template <typename E>
+using map_entry_key_t = typename detail::map_entry_types<std::remove_cvref_t<E>>::key_type;
+
+template <typename E>
+using map_entry_mapped_t = typename detail::map_entry_types<std::remove_cvref_t<E>>::mapped_type;
 
 enum class range_format { disabled, map, set, sequence };
 
