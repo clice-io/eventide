@@ -891,6 +891,106 @@ ALWAYS_INLINE error fs_close(uv_loop_t& loop, uv_fs_t& req, uv_file file, uv_fs_
     return status_to_error(::uv_fs_close(&loop, &req, file, cb));
 }
 
+// --- System / OS utility wrappers ---
+
+ALWAYS_INLINE error resident_set_memory(std::size_t& rss) noexcept {
+    return status_to_error(::uv_resident_set_memory(&rss));
+}
+
+ALWAYS_INLINE error getrusage(uv_rusage_t& usage) noexcept {
+    return status_to_error(::uv_getrusage(&usage));
+}
+
+ALWAYS_INLINE error cpu_info(uv_cpu_info_t*& infos, int& count) noexcept {
+    return status_to_error(::uv_cpu_info(&infos, &count));
+}
+
+ALWAYS_INLINE void free_cpu_info(uv_cpu_info_t* infos, int count) noexcept {
+    ::uv_free_cpu_info(infos, count);
+}
+
+ALWAYS_INLINE error os_uname(uv_utsname_t& buf) noexcept {
+    return status_to_error(::uv_os_uname(&buf));
+}
+
+ALWAYS_INLINE error os_gethostname(char* buf, std::size_t& size) noexcept {
+    assert(buf != nullptr && "uv::os_gethostname requires non-null buffer");
+    return status_to_error(::uv_os_gethostname(buf, &size));
+}
+
+ALWAYS_INLINE error uptime(double& value) noexcept {
+    return status_to_error(::uv_uptime(&value));
+}
+
+ALWAYS_INLINE error os_homedir(char* buf, std::size_t& size) noexcept {
+    assert(buf != nullptr && "uv::os_homedir requires non-null buffer");
+    return status_to_error(::uv_os_homedir(buf, &size));
+}
+
+ALWAYS_INLINE error os_tmpdir(char* buf, std::size_t& size) noexcept {
+    assert(buf != nullptr && "uv::os_tmpdir requires non-null buffer");
+    return status_to_error(::uv_os_tmpdir(buf, &size));
+}
+
+ALWAYS_INLINE error os_getpriority(uv_pid_t pid, int& priority) noexcept {
+    return status_to_error(::uv_os_getpriority(pid, &priority));
+}
+
+ALWAYS_INLINE error os_setpriority(uv_pid_t pid, int priority) noexcept {
+    return status_to_error(::uv_os_setpriority(pid, priority));
+}
+
+ALWAYS_INLINE uv_pid_t os_getpid() noexcept {
+    return ::uv_os_getpid();
+}
+
+ALWAYS_INLINE std::uint64_t get_total_memory() noexcept {
+    return ::uv_get_total_memory();
+}
+
+ALWAYS_INLINE std::uint64_t get_free_memory() noexcept {
+    return ::uv_get_free_memory();
+}
+
+ALWAYS_INLINE std::uint64_t get_available_memory() noexcept {
+    return ::uv_get_available_memory();
+}
+
+ALWAYS_INLINE std::uint64_t get_constrained_memory() noexcept {
+    return ::uv_get_constrained_memory();
+}
+
+ALWAYS_INLINE unsigned int available_parallelism() noexcept {
+    return ::uv_available_parallelism();
+}
+
+// --- Synchronous fs wrappers (no event loop needed) ---
+
+ALWAYS_INLINE int fs_open_sync(uv_fs_t& req, const char* path, int flags, int mode) noexcept {
+    assert(path != nullptr && "uv::fs_open_sync requires non-null path");
+    return ::uv_fs_open(nullptr, &req, path, flags, mode, nullptr);
+}
+
+ALWAYS_INLINE int fs_read_sync(uv_fs_t& req,
+                               uv_file file,
+                               const uv_buf_t bufs[],
+                               unsigned int nbufs,
+                               int64_t offset) noexcept {
+    return ::uv_fs_read(nullptr, &req, file, bufs, nbufs, offset, nullptr);
+}
+
+ALWAYS_INLINE int fs_write_sync(uv_fs_t& req,
+                                uv_file file,
+                                const uv_buf_t bufs[],
+                                unsigned int nbufs,
+                                int64_t offset) noexcept {
+    return ::uv_fs_write(nullptr, &req, file, bufs, nbufs, offset, nullptr);
+}
+
+ALWAYS_INLINE int fs_close_sync(uv_fs_t& req, uv_file file) noexcept {
+    return ::uv_fs_close(nullptr, &req, file, nullptr);
+}
+
 #undef ALWAYS_INLINE
 
 struct resolved_addr {

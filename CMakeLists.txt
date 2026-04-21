@@ -208,7 +208,7 @@ else()
         -Wall
         -Wextra
         -Werror
-        $<$<CXX_COMPILER_ID:GNU>:-Wno-error=maybe-uninitialized>
+        $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
     )
 
     if(MINGW)
