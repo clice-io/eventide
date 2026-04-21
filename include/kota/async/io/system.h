@@ -6,14 +6,14 @@
 
 #include "kota/async/vocab/error.h"
 
-namespace kota {
+namespace kota::sys {
 
-/// System memory information (in bytes).
+/// System memory information (all values in bytes).
 struct memory_info {
-    /// Total physical memory.
+    /// Total physical memory installed on the system.
     std::uint64_t total = 0;
 
-    /// Free physical memory.
+    /// Physical memory not currently in use.
     std::uint64_t free = 0;
 
     /// Memory available to the process, accounting for cgroup/container
@@ -27,89 +27,110 @@ struct memory_info {
 
 /// Per-CPU core timing snapshot (all values in milliseconds).
 struct cpu_times {
+    /// Time spent running user-space processes.
     std::uint64_t user = 0;
+
+    /// Time spent running niced user-space processes.
     std::uint64_t nice = 0;
+
+    /// Time spent running kernel-space code.
     std::uint64_t sys = 0;
+
+    /// Time spent idle.
     std::uint64_t idle = 0;
+
+    /// Time spent servicing hardware interrupts.
     std::uint64_t irq = 0;
 };
 
 /// Information about a single logical CPU core.
 struct cpu_info {
+    /// CPU model name (e.g. "Intel(R) Core(TM) i7-10700K").
     std::string model;
+
+    /// Clock speed in MHz.  May be zero on some virtualized environments.
     int speed_mhz = 0;
+
+    /// Cumulative timing breakdown for this core.
     cpu_times times;
 };
 
 /// Process resource usage snapshot (mirrors POSIX getrusage).
 struct resource_usage {
-    /// User CPU time in microseconds.
-    std::uint64_t utime_us = 0;
+    /// User-mode CPU time in microseconds.
+    std::uint64_t user_time = 0;
 
-    /// System CPU time in microseconds.
-    std::uint64_t stime_us = 0;
+    /// Kernel-mode CPU time in microseconds.
+    std::uint64_t system_time = 0;
 
     /// Peak resident set size in kilobytes.
-    std::uint64_t max_rss_kb = 0;
+    std::uint64_t max_rss = 0;
 
-    /// Page faults not requiring I/O.
+    /// Page faults serviced without I/O (minor faults).
     std::uint64_t minor_faults = 0;
 
-    /// Page faults requiring I/O.
+    /// Page faults requiring disk I/O (major faults).
     std::uint64_t major_faults = 0;
 
-    /// Voluntary context switches.
+    /// Context switches initiated by the process yielding the CPU.
     std::uint64_t voluntary_context_switches = 0;
 
-    /// Involuntary context switches.
+    /// Context switches forced by the scheduler.
     std::uint64_t involuntary_context_switches = 0;
 };
 
 /// Operating system identification.
-struct system_uname {
+struct uname_info {
+    /// OS name (e.g. "Linux", "Darwin", "Windows_NT").
     std::string sysname;
+
+    /// OS release version string.
     std::string release;
+
+    /// Detailed version/build string.
     std::string version;
+
+    /// Hardware architecture (e.g. "x86_64", "aarch64").
     std::string machine;
 };
 
 /// Query system memory information.
-memory_info get_memory_info();
+memory_info memory();
 
 /// Query the resident set size of the current process (in bytes).
-result<std::size_t> get_resident_memory();
+result<std::size_t> resident_memory();
 
 /// Query detailed resource usage for the current process.
-result<resource_usage> get_resource_usage();
+result<resource_usage> resources();
 
 /// Query per-core CPU information.
-result<std::vector<cpu_info>> get_cpu_info();
+result<std::vector<cpu_info>> cpus();
 
 /// Return the number of CPUs available to the process.
-unsigned int available_parallelism();
+unsigned int parallelism();
 
 /// Query OS identification strings.
-result<system_uname> get_uname();
+result<uname_info> uname();
 
 /// Query the system hostname.
-result<std::string> get_hostname();
+result<std::string> hostname();
 
 /// Query the system uptime in seconds.
-result<double> get_uptime();
+result<double> uptime();
 
 /// Query the current user's home directory.
-result<std::string> get_homedir();
+result<std::string> home_directory();
 
 /// Query the system temporary directory.
-result<std::string> get_tmpdir();
+result<std::string> temp_directory();
 
 /// Get the scheduling priority of a process.
 /// @param pid  Process ID (0 = current process).
-result<int> get_priority(int pid = 0);
+result<int> priority(int pid = 0);
 
 /// Set the scheduling priority of a process.
-/// @param priority  Nice value; higher = lower priority.
-/// @param pid       Process ID (0 = current process).
-error set_priority(int priority, int pid = 0);
+/// @param value  Nice value; higher = lower priority.
+/// @param pid    Process ID (0 = current process).
+error set_priority(int value, int pid = 0);
 
-}  // namespace kota
+}  // namespace kota::sys

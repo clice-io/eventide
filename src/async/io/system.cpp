@@ -1,42 +1,38 @@
 #include "kota/async/io/system.h"
 
-#include <uv.h>
+#include "../libuv.h"
 
-namespace kota {
+namespace kota::sys {
 
-static error from_uv(int status) {
-    return status < 0 ? error(status) : error{};
-}
-
-memory_info get_memory_info() {
+memory_info memory() {
     memory_info info;
-    info.total = uv_get_total_memory();
-    info.free = uv_get_free_memory();
-    info.available = uv_get_available_memory();
-    info.constrained = uv_get_constrained_memory();
+    info.total = ::uv_get_total_memory();
+    info.free = ::uv_get_free_memory();
+    info.available = ::uv_get_available_memory();
+    info.constrained = ::uv_get_constrained_memory();
     return info;
 }
 
-result<std::size_t> get_resident_memory() {
+result<std::size_t> resident_memory() {
     std::size_t rss = 0;
-    if(auto err = from_uv(uv_resident_set_memory(&rss))) {
+    if(auto err = uv::resident_set_memory(rss)) {
         return outcome_error(err);
     }
     return rss;
 }
 
-result<resource_usage> get_resource_usage() {
+result<resource_usage> resources() {
     uv_rusage_t ru{};
-    if(auto err = from_uv(uv_getrusage(&ru))) {
+    if(auto err = uv::getrusage(ru)) {
         return outcome_error(err);
     }
 
     resource_usage usage;
-    usage.utime_us =
+    usage.user_time =
         static_cast<std::uint64_t>(ru.ru_utime.tv_sec) * 1'000'000 + ru.ru_utime.tv_usec;
-    usage.stime_us =
+    usage.system_time =
         static_cast<std::uint64_t>(ru.ru_stime.tv_sec) * 1'000'000 + ru.ru_stime.tv_usec;
-    usage.max_rss_kb = ru.ru_maxrss;
+    usage.max_rss = ru.ru_maxrss;
     usage.minor_faults = ru.ru_minflt;
     usage.major_faults = ru.ru_majflt;
     usage.voluntary_context_switches = ru.ru_nvcsw;
@@ -44,10 +40,10 @@ result<resource_usage> get_resource_usage() {
     return usage;
 }
 
-result<std::vector<cpu_info>> get_cpu_info() {
+result<std::vector<cpu_info>> cpus() {
     uv_cpu_info_t* infos = nullptr;
     int count = 0;
-    if(auto err = from_uv(uv_cpu_info(&infos, &count))) {
+    if(auto err = uv::cpu_info(infos, count)) {
         return outcome_error(err);
     }
 
@@ -65,67 +61,67 @@ result<std::vector<cpu_info>> get_cpu_info() {
         ci.times.irq = src.cpu_times.irq;
         result.push_back(std::move(ci));
     }
-    uv_free_cpu_info(infos, count);
+    uv::free_cpu_info(infos, count);
     return result;
 }
 
-unsigned int available_parallelism() {
-    return uv_available_parallelism();
+unsigned int parallelism() {
+    return ::uv_available_parallelism();
 }
 
-result<system_uname> get_uname() {
+result<uname_info> uname() {
     uv_utsname_t buf{};
-    if(auto err = from_uv(uv_os_uname(&buf))) {
+    if(auto err = uv::os_uname(buf)) {
         return outcome_error(err);
     }
-    return system_uname{buf.sysname, buf.release, buf.version, buf.machine};
+    return uname_info{buf.sysname, buf.release, buf.version, buf.machine};
 }
 
-result<std::string> get_hostname() {
+result<std::string> hostname() {
     char buf[256]{};
     std::size_t size = sizeof(buf);
-    if(auto err = from_uv(uv_os_gethostname(buf, &size))) {
+    if(auto err = uv::os_gethostname(buf, size)) {
         return outcome_error(err);
     }
     return std::string(buf, size);
 }
 
-result<double> get_uptime() {
-    double uptime = 0;
-    if(auto err = from_uv(uv_uptime(&uptime))) {
+result<double> uptime() {
+    double value = 0;
+    if(auto err = uv::uptime(value)) {
         return outcome_error(err);
     }
-    return uptime;
+    return value;
 }
 
-result<std::string> get_homedir() {
+result<std::string> home_directory() {
     char buf[1024]{};
     std::size_t size = sizeof(buf);
-    if(auto err = from_uv(uv_os_homedir(buf, &size))) {
+    if(auto err = uv::os_homedir(buf, size)) {
         return outcome_error(err);
     }
     return std::string(buf, size);
 }
 
-result<std::string> get_tmpdir() {
+result<std::string> temp_directory() {
     char buf[1024]{};
     std::size_t size = sizeof(buf);
-    if(auto err = from_uv(uv_os_tmpdir(buf, &size))) {
+    if(auto err = uv::os_tmpdir(buf, size)) {
         return outcome_error(err);
     }
     return std::string(buf, size);
 }
 
-result<int> get_priority(int pid) {
-    int priority = 0;
-    if(auto err = from_uv(uv_os_getpriority(static_cast<uv_pid_t>(pid), &priority))) {
+result<int> priority(int pid) {
+    int value = 0;
+    if(auto err = uv::os_getpriority(static_cast<uv_pid_t>(pid), value)) {
         return outcome_error(err);
     }
-    return priority;
+    return value;
 }
 
-error set_priority(int priority, int pid) {
-    return from_uv(uv_os_setpriority(static_cast<uv_pid_t>(pid), priority));
+error set_priority(int value, int pid) {
+    return uv::os_setpriority(static_cast<uv_pid_t>(pid), value);
 }
 
-}  // namespace kota
+}  // namespace kota::sys
