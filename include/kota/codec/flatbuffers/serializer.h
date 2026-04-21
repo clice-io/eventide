@@ -129,7 +129,8 @@ public:
 
         template <typename T>
         auto add_scalar(slot_id sid, T value) -> void {
-            writers.push_back([b = &owner->builder, sid, value] { b->template AddElement<T>(sid, value); });
+            writers.push_back(
+                [b = &owner->builder, sid, value] { b->template AddElement<T>(sid, value); });
         }
 
         template <typename RefT>
