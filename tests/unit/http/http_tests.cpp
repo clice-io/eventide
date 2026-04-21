@@ -323,9 +323,10 @@ task<std::string, http::error> interleaved_fetch(http::bound_client api,
     co_return first.text_copy() + "|" + second.text_copy();
 }
 
-task<void, http::error> destroy_sibling_after_first(http::bound_client api,
-                                                    std::string first_url,
-                                                    std::optional<task<http::response, http::error>>& sibling) {
+task<void, http::error>
+    destroy_sibling_after_first(http::bound_client api,
+                                std::string first_url,
+                                std::optional<task<http::response, http::error>>& sibling) {
     auto first = co_await api.get(std::move(first_url)).send().or_fail();
     EXPECT_EQ(first.text(), "/first");
     sibling.reset();
@@ -1012,8 +1013,10 @@ TEST_CASE(http_completion_can_recreate_manager_inline) {
     ASSERT_TRUE(server.valid());
 
     http::client client(loop);
-    auto flow =
-        recreate_manager_between_requests(client, loop, server.url("/first"), server.url("/second"));
+    auto flow = recreate_manager_between_requests(client,
+                                                  loop,
+                                                  server.url("/first"),
+                                                  server.url("/second"));
     auto result = run_task(*this, flow);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, "/first|/second");

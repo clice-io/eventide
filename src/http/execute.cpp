@@ -1,5 +1,5 @@
-#include <source_location>
 #include <memory>
+#include <source_location>
 
 #include "../async/io/awaiter.h"
 #include "kota/http/detail/client.h"
@@ -218,8 +218,7 @@ task<response, error> execute_with_state(request req,
     request_op op(manager::for_loop(loop));
     op.attach(prepared);
     if(!prepared.bind_runtime(request_runtime_opaque(op.runtime)) &&
-       prepared.result.kind == error_kind::curl &&
-       curl::ok(prepared.result.curl_code)) {
+       prepared.result.kind == error_kind::curl && curl::ok(prepared.result.curl_code)) {
         prepared.result = error::invalid_request("failed to bind request to runtime");
     }
 

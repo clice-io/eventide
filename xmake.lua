@@ -68,7 +68,7 @@ if has_config("async") then
 	add_requires("libuv v1.52.0")
 end
 if has_config("http") then
-	add_requires("libcurl 8.17.0")
+	add_requires("libcurl 8.11.0")
 end
 if has_config("ztest") then
 	add_requires("cpptrace v1.0.4")
