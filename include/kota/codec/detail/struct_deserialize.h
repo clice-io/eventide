@@ -224,10 +224,13 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
 
         auto idx = schema_lookup_field<T, Config>(key_name);
         if(idx) {
+            // Copy key before dispatch: nested begin_object() may realloc the
+            // deserializer's frame stack, invalidating the string_view.
+            std::string owned_key(key_name);
             auto field_status = dispatch_slot_deserialize<T, Config, E>(d, *idx, v);
             if(!field_status) {
                 auto err = std::move(field_status).error();
-                err.prepend_field(key_name);
+                err.prepend_field(owned_key);
                 return std::unexpected(std::move(err));
             }
             seen_fields |= (std::uint64_t(1) << *idx);
@@ -235,7 +238,7 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
         }
 
         if constexpr(deny_unknown) {
-            return std::unexpected(E::unknown_field(key_name));
+            return std::unexpected(E::unknown_field(std::string(key_name)));
         } else {
             KOTA_EXPECTED_TRY(d.skip_field_value());
         }
