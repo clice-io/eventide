@@ -187,10 +187,8 @@ consteval std::uint64_t schema_required_field_mask() {
              using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
              using attrs_t = typename slot_t::attrs;
 
-             constexpr bool has_default = tuple_has_v<attrs_t, meta::attrs::default_value>;
-             constexpr bool is_opt = is_specialization_of<std::optional, raw_t>;
-
-             if constexpr(!has_default && !is_opt) {
+             if constexpr(!tuple_has_v<attrs_t, meta::attrs::default_value> &&
+                          !is_specialization_of<std::optional, raw_t>) {
                  mask |= (std::uint64_t(1) << Is);
              }
          }()),
