@@ -64,7 +64,18 @@ template <typename T, typename Config = default_config>
     requires meta::reflectable_class<T>
 struct virtual_schema {
     constexpr static std::size_t count = detail::type_instance<T, Config>::count;
-    constexpr static auto& fields = detail::type_instance<T, Config>::fields;
+
+    // Obtain fields from type_info_of<T>().fields (the span inside struct_type_info::value)
+    // rather than referencing type_instance<T>::fields directly.  This matters for recursive
+    // types: build_fields<T>() stores type_info_of<child> function pointers which
+    // transitively instantiate type_instance<T>::value.  If we enter through `value` first,
+    // the constexpr evaluator resolves `fields` as a sub-expression of `value` and the
+    // back-reference to `value` is recognized as already-in-progress (no re-entry).
+    // Entering through `fields` directly would leave `value` unevaluated, causing Clang to
+    // attempt its verification and discover a circular dependency.
+    constexpr static std::span<const field_info> fields =
+        static_cast<const struct_type_info&>(type_info_of<T, Config>()).fields;
+
     using slots = detail::build_slots_t<T, Config>;
     constexpr static bool is_trivially_copyable =
         detail::type_instance<T, Config>::is_trivially_copyable;
