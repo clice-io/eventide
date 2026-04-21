@@ -940,6 +940,30 @@ ALWAYS_INLINE error os_setpriority(uv_pid_t pid, int priority) noexcept {
     return status_to_error(::uv_os_setpriority(pid, priority));
 }
 
+ALWAYS_INLINE uv_pid_t os_getpid() noexcept {
+    return ::uv_os_getpid();
+}
+
+ALWAYS_INLINE std::uint64_t get_total_memory() noexcept {
+    return ::uv_get_total_memory();
+}
+
+ALWAYS_INLINE std::uint64_t get_free_memory() noexcept {
+    return ::uv_get_free_memory();
+}
+
+ALWAYS_INLINE std::uint64_t get_available_memory() noexcept {
+    return ::uv_get_available_memory();
+}
+
+ALWAYS_INLINE std::uint64_t get_constrained_memory() noexcept {
+    return ::uv_get_constrained_memory();
+}
+
+ALWAYS_INLINE unsigned int available_parallelism() noexcept {
+    return ::uv_available_parallelism();
+}
+
 #undef ALWAYS_INLINE
 
 struct resolved_addr {

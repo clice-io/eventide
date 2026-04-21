@@ -5,8 +5,8 @@ namespace kota {
 
 TEST_SUITE(system_info) {
 
-TEST_CASE(current_pid_positive) {
-    EXPECT_GT(sys::current_pid(), 0);
+TEST_CASE(pid_positive) {
+    EXPECT_GT(sys::pid(), 0);
 }
 
 TEST_CASE(memory_sane) {
@@ -27,14 +27,14 @@ TEST_CASE(resident_memory) {
 TEST_CASE(process_self) {
     auto stat = sys::process();
     ASSERT_TRUE(stat.has_value());
-    EXPECT_EQ(stat->pid, sys::current_pid());
+    EXPECT_EQ(stat->pid, sys::pid());
     EXPECT_GT(stat->rss, std::size_t{0});
     EXPECT_GT(stat->vsize, std::size_t{0});
     EXPECT_GT(stat->max_rss, std::size_t{0});
 }
 
 TEST_CASE(process_by_pid) {
-    auto pid = sys::current_pid();
+    auto pid = sys::pid();
     auto stat = sys::process(pid);
     ASSERT_TRUE(stat.has_value());
     EXPECT_EQ(stat->pid, pid);

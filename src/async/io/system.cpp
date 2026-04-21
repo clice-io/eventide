@@ -16,16 +16,16 @@
 
 namespace kota::sys {
 
-int current_pid() noexcept {
-    return static_cast<int>(::uv_os_getpid());
+int pid() noexcept {
+    return static_cast<int>(uv::os_getpid());
 }
 
 memory_info memory() {
     memory_info info;
-    info.total = ::uv_get_total_memory();
-    info.free = ::uv_get_free_memory();
-    info.available = ::uv_get_available_memory();
-    info.constrained = ::uv_get_constrained_memory();
+    info.total = uv::get_total_memory();
+    info.free = uv::get_free_memory();
+    info.available = uv::get_available_memory();
+    info.constrained = uv::get_constrained_memory();
     return info;
 }
 
@@ -63,7 +63,7 @@ result<std::vector<cpu_core>> cpu_cores() {
 }
 
 unsigned int parallelism() {
-    return ::uv_available_parallelism();
+    return uv::available_parallelism();
 }
 
 result<uname_info> uname() {
@@ -124,7 +124,7 @@ error set_priority(int value, int pid) {
 result<process_stat> process(int pid) {
     bool is_self = (pid == 0);
     if(is_self) {
-        pid = current_pid();
+        pid = sys::pid();
     }
 
     process_stat stat{};

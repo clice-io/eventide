@@ -105,7 +105,7 @@ struct uname_info {
 };
 
 /// Retrieve the OS pid of the calling process.
-int current_pid() noexcept;
+int pid() noexcept;
 
 /// Query system memory information.
 memory_info memory();
