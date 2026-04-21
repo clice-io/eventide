@@ -44,6 +44,15 @@ result<std::vector<cpu_core>> cpu_cores() {
         return outcome_error(err);
     }
 
+    struct guard {
+        uv_cpu_info_t* p;
+        int n;
+
+        ~guard() {
+            uv::free_cpu_info(p, n);
+        }
+    } cleanup{infos, count};
+
     std::vector<cpu_core> result;
     result.reserve(static_cast<std::size_t>(count));
     for(int i = 0; i < count; ++i) {
@@ -58,7 +67,6 @@ result<std::vector<cpu_core>> cpu_cores() {
         core.times.irq = std::chrono::milliseconds(src.cpu_times.irq);
         result.push_back(std::move(core));
     }
-    uv::free_cpu_info(infos, count);
     return result;
 }
 
@@ -74,13 +82,29 @@ result<uname_info> uname() {
     return uname_info{buf.sysname, buf.release, buf.version, buf.machine};
 }
 
-result<std::string> hostname() {
-    char buf[256]{};
-    std::size_t size = sizeof(buf);
-    if(auto err = uv::os_gethostname(buf, size)) {
+/// Helper: call a libuv string-returning function with stack buffer,
+/// retry with heap allocation on UV_ENOBUFS.
+template <typename Fn>
+static result<std::string> read_uv_string(Fn&& fn, std::size_t initial_size) {
+    std::string buf(initial_size, '\0');
+    std::size_t size = buf.size();
+    auto err = fn(buf.data(), size);
+    if(err == error::no_buffer_space_available) {
+        buf.resize(size);
+        size = buf.size();
+        err = fn(buf.data(), size);
+    }
+    if(err) {
         return outcome_error(err);
     }
-    return std::string(buf, size);
+    buf.resize(size);
+    return buf;
+}
+
+result<std::string> hostname() {
+    return read_uv_string(
+        [](char* buf, std::size_t& size) { return uv::os_gethostname(buf, size); },
+        256);
 }
 
 result<std::chrono::duration<double>> uptime() {
@@ -92,21 +116,13 @@ result<std::chrono::duration<double>> uptime() {
 }
 
 result<std::string> home_directory() {
-    char buf[1024]{};
-    std::size_t size = sizeof(buf);
-    if(auto err = uv::os_homedir(buf, size)) {
-        return outcome_error(err);
-    }
-    return std::string(buf, size);
+    return read_uv_string([](char* buf, std::size_t& size) { return uv::os_homedir(buf, size); },
+                          1024);
 }
 
 result<std::string> temp_directory() {
-    char buf[1024]{};
-    std::size_t size = sizeof(buf);
-    if(auto err = uv::os_tmpdir(buf, size)) {
-        return outcome_error(err);
-    }
-    return std::string(buf, size);
+    return read_uv_string([](char* buf, std::size_t& size) { return uv::os_tmpdir(buf, size); },
+                          1024);
 }
 
 result<int> priority(int pid) {

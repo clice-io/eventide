@@ -21,8 +21,9 @@ struct memory_info {
     /// limits.  Falls back to free memory when no limit is set.
     std::uint64_t available = 0;
 
-    /// Memory limit imposed by the OS (cgroups on Linux, Job Objects on
-    /// Windows).  Zero when no constraint is active.
+    /// Memory limit imposed by the OS (cgroups on Linux).  Zero means
+    /// unknown/no constraint; UINT64_MAX means a constraint mechanism exists
+    /// but no limit is set.
     std::uint64_t constrained = 0;
 };
 
@@ -138,11 +139,15 @@ result<std::string> home_directory();
 result<std::string> temp_directory();
 
 /// Get the scheduling priority of a process.
+/// Returns a nice value (-20..19) on Unix, or a UV_PRIORITY_* constant on
+/// Windows.  The returned value may not exactly match a prior set_priority()
+/// call on Windows due to priority class mapping.
 /// @param pid  Process ID (0 = current process).
 result<int> priority(int pid = 0);
 
 /// Set the scheduling priority of a process.
-/// @param value  Nice value; higher = lower priority.
+/// @param value  Nice value on Unix (-20..19); on Windows the value is mapped
+///               to the nearest priority class.
 /// @param pid    Process ID (0 = current process).
 error set_priority(int value, int pid = 0);
 
