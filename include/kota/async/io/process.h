@@ -128,9 +128,6 @@ public:
     /// Send a signal to the process.
     error kill(int signum);
 
-    /// Retrieve the OS pid of the calling process.
-    static int current_pid() noexcept;
-
 private:
     explicit process(unique_handle<Self> self) noexcept;
 

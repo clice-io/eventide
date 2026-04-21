@@ -268,8 +268,4 @@ error process::kill(int signum) {
     return {};
 }
 
-int process::current_pid() noexcept {
-    return uv_os_getpid();
-}
-
 }  // namespace kota
