@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -25,22 +26,22 @@ struct memory_info {
     std::uint64_t constrained = 0;
 };
 
-/// Per-CPU core timing snapshot (all values in milliseconds).
+/// Per-CPU core timing snapshot.
 struct cpu_times {
     /// Time spent running user-space processes.
-    std::uint64_t user = 0;
+    std::chrono::milliseconds user{};
 
     /// Time spent running niced user-space processes.
-    std::uint64_t nice = 0;
+    std::chrono::milliseconds nice{};
 
     /// Time spent running kernel-space code.
-    std::uint64_t sys = 0;
+    std::chrono::milliseconds sys{};
 
     /// Time spent idle.
-    std::uint64_t idle = 0;
+    std::chrono::milliseconds idle{};
 
     /// Time spent servicing hardware interrupts.
-    std::uint64_t irq = 0;
+    std::chrono::milliseconds irq{};
 };
 
 /// Information about a single logical CPU core.
@@ -57,11 +58,11 @@ struct cpu_info {
 
 /// Process resource usage snapshot (mirrors POSIX getrusage).
 struct resource_usage {
-    /// User-mode CPU time in microseconds.
-    std::uint64_t user_time = 0;
+    /// User-mode CPU time.
+    std::chrono::microseconds user_time{};
 
-    /// Kernel-mode CPU time in microseconds.
-    std::uint64_t system_time = 0;
+    /// Kernel-mode CPU time.
+    std::chrono::microseconds system_time{};
 
     /// Peak resident set size in kilobytes.
     std::uint64_t max_rss = 0;
@@ -115,8 +116,8 @@ result<uname_info> uname();
 /// Query the system hostname.
 result<std::string> hostname();
 
-/// Query the system uptime in seconds.
-result<double> uptime();
+/// Query the system uptime.
+result<std::chrono::duration<double>> uptime();
 
 /// Query the current user's home directory.
 result<std::string> home_directory();

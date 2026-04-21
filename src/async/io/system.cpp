@@ -29,9 +29,9 @@ result<resource_usage> resources() {
 
     resource_usage usage;
     usage.user_time =
-        static_cast<std::uint64_t>(ru.ru_utime.tv_sec) * 1'000'000 + ru.ru_utime.tv_usec;
+        std::chrono::seconds(ru.ru_utime.tv_sec) + std::chrono::microseconds(ru.ru_utime.tv_usec);
     usage.system_time =
-        static_cast<std::uint64_t>(ru.ru_stime.tv_sec) * 1'000'000 + ru.ru_stime.tv_usec;
+        std::chrono::seconds(ru.ru_stime.tv_sec) + std::chrono::microseconds(ru.ru_stime.tv_usec);
     usage.max_rss = ru.ru_maxrss;
     usage.minor_faults = ru.ru_minflt;
     usage.major_faults = ru.ru_majflt;
@@ -54,11 +54,11 @@ result<std::vector<cpu_info>> cpus() {
         cpu_info ci;
         ci.model = src.model ? src.model : "";
         ci.speed_mhz = src.speed;
-        ci.times.user = src.cpu_times.user;
-        ci.times.nice = src.cpu_times.nice;
-        ci.times.sys = src.cpu_times.sys;
-        ci.times.idle = src.cpu_times.idle;
-        ci.times.irq = src.cpu_times.irq;
+        ci.times.user = std::chrono::milliseconds(src.cpu_times.user);
+        ci.times.nice = std::chrono::milliseconds(src.cpu_times.nice);
+        ci.times.sys = std::chrono::milliseconds(src.cpu_times.sys);
+        ci.times.idle = std::chrono::milliseconds(src.cpu_times.idle);
+        ci.times.irq = std::chrono::milliseconds(src.cpu_times.irq);
         result.push_back(std::move(ci));
     }
     uv::free_cpu_info(infos, count);
@@ -86,12 +86,12 @@ result<std::string> hostname() {
     return std::string(buf, size);
 }
 
-result<double> uptime() {
+result<std::chrono::duration<double>> uptime() {
     double value = 0;
     if(auto err = uv::uptime(value)) {
         return outcome_error(err);
     }
-    return value;
+    return std::chrono::duration<double>(value);
 }
 
 result<std::string> home_directory() {

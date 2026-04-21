@@ -24,7 +24,7 @@ TEST_CASE(resources) {
     auto ru = sys::resources();
     ASSERT_TRUE(ru.has_value());
     // user_time may be 0 if the process hasn't consumed a full tick yet.
-    EXPECT_TRUE(ru->user_time >= 0);
+    EXPECT_TRUE(ru->user_time >= std::chrono::microseconds::zero());
     EXPECT_TRUE(ru->max_rss > 0);
 }
 
@@ -59,7 +59,7 @@ TEST_CASE(hostname_nonempty) {
 TEST_CASE(uptime_positive) {
     auto up = sys::uptime();
     ASSERT_TRUE(up.has_value());
-    EXPECT_TRUE(*up > 0);
+    EXPECT_TRUE(up->count() > 0);
 }
 
 TEST_CASE(home_directory_nonempty) {
