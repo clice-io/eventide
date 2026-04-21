@@ -1,7 +1,10 @@
 #if __has_include(<toml++/toml.hpp>)
 
+#include <array>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "fixtures/schema/common.h"
@@ -124,6 +127,87 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     auto decode_none_status = from_toml(*encoded_none, decoded_none);
     ASSERT_TRUE(decode_none_status.has_value());
     EXPECT_FALSE(decoded_none.has_value());
+}
+
+TEST_CASE(tuple_length_errors) {
+    // Helper: wrap a toml::array in a boxed root table (__value = arr)
+    auto boxed = [](::toml::array arr) {
+        ::toml::table tbl;
+        tbl.insert_or_assign("__value", std::move(arr));
+        return tbl;
+    };
+
+    // Too many elements for tuple<int,int>
+    {
+        auto tbl = boxed(::toml::array{1, 2, 3});
+        std::tuple<int, int> t{};
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
+    }
+
+    // Too few elements for tuple<int,int>
+    {
+        auto tbl = boxed(::toml::array{1});
+        std::tuple<int, int> t{};
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
+    }
+
+    // Too many elements for pair<int,int>
+    {
+        auto tbl = boxed(::toml::array{1, 2, 3});
+        std::pair<int, int> p{};
+        EXPECT_FALSE(from_toml(tbl, p).has_value());
+    }
+
+    // Too few elements for pair
+    {
+        auto tbl = boxed(::toml::array{1});
+        std::pair<int, int> p{};
+        EXPECT_FALSE(from_toml(tbl, p).has_value());
+    }
+
+    // Empty array into non-empty tuple
+    {
+        auto tbl = boxed(::toml::array{});
+        std::tuple<int> t{};
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
+    }
+
+    // Non-empty array into empty tuple
+    {
+        auto tbl = boxed(::toml::array{1});
+        std::tuple<> t{};
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
+    }
+
+    // Too many elements for array<int,2>
+    {
+        auto tbl = boxed(::toml::array{1, 2, 3});
+        std::array<int, 2> a{};
+        EXPECT_FALSE(from_toml(tbl, a).has_value());
+    }
+
+    // Too few elements for array<int,2>
+    {
+        auto tbl = boxed(::toml::array{1});
+        std::array<int, 2> a{};
+        EXPECT_FALSE(from_toml(tbl, a).has_value());
+    }
+
+    // Exact match still works
+    {
+        auto tbl = boxed(::toml::array{1, 2});
+        std::tuple<int, int> t{};
+        ASSERT_TRUE(from_toml(tbl, t).has_value());
+        EXPECT_EQ(std::get<0>(t), 1);
+        EXPECT_EQ(std::get<1>(t), 2);
+    }
+
+    // Type mismatch within tuple
+    {
+        auto tbl = boxed(::toml::array{1, "x"});
+        std::tuple<int, int> t{};
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
+    }
 }
 
 };  // TEST_SUITE(serde_toml)

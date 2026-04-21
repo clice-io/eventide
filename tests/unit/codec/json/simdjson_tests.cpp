@@ -192,6 +192,30 @@ TEST_CASE(array_errors) {
     auto tuple_type_error = from_json(R"([1,2])", pair);
     EXPECT_FALSE(tuple_type_error.has_value());
 
+    // Too many elements for tuple
+    std::tuple<int, int> t2{};
+    auto tuple_too_long = from_json(R"([1,2,3])", t2);
+    EXPECT_FALSE(tuple_too_long.has_value());
+
+    // Too many elements for pair
+    std::pair<int, int> p2{};
+    auto pair_too_long = from_json(R"([1,2,3])", p2);
+    EXPECT_FALSE(pair_too_long.has_value());
+
+    // Too few for pair
+    auto pair_too_short = from_json(R"([1])", p2);
+    EXPECT_FALSE(pair_too_short.has_value());
+
+    // Empty array into non-empty tuple
+    std::tuple<int> t1{};
+    auto tuple_empty_src = from_json(R"([])", t1);
+    EXPECT_FALSE(tuple_empty_src.has_value());
+
+    // Non-empty array into empty tuple
+    std::tuple<> t0{};
+    auto tuple_empty_dst = from_json(R"([1])", t0);
+    EXPECT_FALSE(tuple_empty_dst.has_value());
+
     std::array<int, 2> fixed{};
     auto fixed_short = from_json(R"([1])", fixed);
     EXPECT_FALSE(fixed_short.has_value());
@@ -201,6 +225,11 @@ TEST_CASE(array_errors) {
 
     auto fixed_type = from_json(R"([1,"x"])", fixed);
     EXPECT_FALSE(fixed_type.has_value());
+
+    // Empty array into non-empty fixed array
+    std::array<int, 1> fixed1{};
+    auto fixed_empty_src = from_json(R"([])", fixed1);
+    EXPECT_FALSE(fixed_empty_src.has_value());
 }
 
 TEST_CASE(object_roundtrip) {

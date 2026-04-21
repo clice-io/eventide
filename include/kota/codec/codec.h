@@ -217,9 +217,15 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 ++tuple_index;
                 return true;
             };
-            std::apply([&](auto&... elements) { (read_element(elements) && ...); }, v);
+            std::apply([&](auto&... elements) { (void)(read_element(elements) && ...); }, v);
             if(!element_result) {
                 return std::unexpected(element_result.error());
+            }
+
+            // Verify no trailing elements beyond the expected tuple size
+            KOTA_EXPECTED_TRY_V(auto trailing, d.next_element());
+            if(trailing) {
+                return std::unexpected(E::type_mismatch);
             }
 
             return d.end_array();
@@ -238,7 +244,7 @@ constexpr auto deserialize(D& d, V& v) -> std::expected<void, E> {
                 ++tuple_index;
                 return true;
             };
-            std::apply([&](auto&... elements) { (read_element(elements) && ...); }, v);
+            std::apply([&](auto&... elements) { (void)(read_element(elements) && ...); }, v);
             if(!element_result) {
                 return std::unexpected(element_result.error());
             }
