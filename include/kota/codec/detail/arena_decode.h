@@ -598,178 +598,181 @@ auto decode_sequence(const B& d,
             }
         }
         return {};
-    }
-
-    if(!view.has(sid)) {
-        if(required) {
-            return std::unexpected(E::invalid_state);
+    } else {
+        if(!view.has(sid)) {
+            if(required) {
+                return std::unexpected(E::invalid_state);
+            }
+            return {};
         }
-        return {};
-    }
 
-    if constexpr(requires { out.clear(); }) {
-        out.clear();
-    }
+        if constexpr(requires { out.clear(); }) {
+            out.clear();
+        }
 
-    constexpr bool index_assignable_fixed_size =
-        !kota::detail::sequence_insertable<U, element_t> &&
-        requires(U& container, std::size_t index, element_t value) {
-            std::tuple_size<U>::value;
-            container[index] = std::move(value);
+        constexpr bool index_assignable_fixed_size =
+            !kota::detail::sequence_insertable<U, element_t> &&
+            requires(U& container, std::size_t index, element_t value) {
+                std::tuple_size<U>::value;
+                container[index] = std::move(value);
+            };
+
+        std::size_t written_count = 0;
+        auto store_element = [&](auto&& element) -> std::expected<void, E> {
+            if constexpr(index_assignable_fixed_size) {
+                constexpr auto expected_count = std::tuple_size_v<U>;
+                if(written_count >= expected_count) {
+                    return std::unexpected(E::invalid_state);
+                }
+                out[written_count] =
+                    static_cast<element_t>(std::forward<decltype(element)>(element));
+                ++written_count;
+                return {};
+            } else {
+                auto ok = kota::detail::append_sequence_element(
+                    out,
+                    static_cast<element_t>(std::forward<decltype(element)>(element)));
+                if(!ok) {
+                    return std::unexpected(E::unsupported_type);
+                }
+                return {};
+            }
         };
 
-    std::size_t written_count = 0;
-    auto store_element = [&](auto&& element) -> std::expected<void, E> {
-        if constexpr(index_assignable_fixed_size) {
-            constexpr auto expected_count = std::tuple_size_v<U>;
-            if(written_count >= expected_count) {
-                return std::unexpected(E::invalid_state);
-            }
-            out[written_count] = static_cast<element_t>(std::forward<decltype(element)>(element));
-            ++written_count;
-            return {};
-        } else {
-            auto ok = kota::detail::append_sequence_element(
-                out,
-                static_cast<element_t>(std::forward<decltype(element)>(element)));
-            if(!ok) {
-                return std::unexpected(E::unsupported_type);
+        auto finalize_sequence = [&]() -> std::expected<void, E> {
+            if constexpr(index_assignable_fixed_size) {
+                constexpr auto expected_count = std::tuple_size_v<U>;
+                if(written_count != expected_count) {
+                    return std::unexpected(E::invalid_state);
+                }
             }
             return {};
-        }
-    };
+        };
 
-    auto finalize_sequence = [&]() -> std::expected<void, E> {
-        if constexpr(index_assignable_fixed_size) {
-            constexpr auto expected_count = std::tuple_size_v<U>;
-            if(written_count != expected_count) {
-                return std::unexpected(E::invalid_state);
+        if constexpr(std::same_as<element_clean_t, std::byte>) {
+            KOTA_EXPECTED_TRY_V(auto bytes, d.get_bytes(view, sid));
+            for(std::size_t i = 0; i < bytes.size(); ++i) {
+                KOTA_EXPECTED_TRY(store_element(bytes[i]));
             }
-        }
-        return {};
-    };
-
-    if constexpr(std::same_as<element_clean_t, std::byte>) {
-        KOTA_EXPECTED_TRY_V(auto bytes, d.get_bytes(view, sid));
-        for(std::size_t i = 0; i < bytes.size(); ++i) {
-            KOTA_EXPECTED_TRY(store_element(bytes[i]));
-        }
-        return finalize_sequence();
-    } else if constexpr(codec::bool_like<element_clean_t> || codec::int_like<element_clean_t> ||
-                        codec::uint_like<element_clean_t>) {
-        KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<element_clean_t>(view, sid)));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            KOTA_EXPECTED_TRY(store_element(vec[i]));
-        }
-        return finalize_sequence();
-    } else if constexpr(codec::floating_like<element_clean_t>) {
-        if constexpr(std::same_as<element_clean_t, float> ||
-                     std::same_as<element_clean_t, double>) {
+            return finalize_sequence();
+        } else if constexpr(codec::bool_like<element_clean_t> || codec::int_like<element_clean_t> ||
+                            codec::uint_like<element_clean_t>) {
             KOTA_EXPECTED_TRY_V(auto vec,
                                 (d.template get_scalar_vector<element_clean_t>(view, sid)));
             for(std::size_t i = 0; i < vec.size(); ++i) {
                 KOTA_EXPECTED_TRY(store_element(vec[i]));
             }
             return finalize_sequence();
-        } else {
-            KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<double>(view, sid)));
+        } else if constexpr(codec::floating_like<element_clean_t>) {
+            if constexpr(std::same_as<element_clean_t, float> ||
+                         std::same_as<element_clean_t, double>) {
+                KOTA_EXPECTED_TRY_V(auto vec,
+                                    (d.template get_scalar_vector<element_clean_t>(view, sid)));
+                for(std::size_t i = 0; i < vec.size(); ++i) {
+                    KOTA_EXPECTED_TRY(store_element(vec[i]));
+                }
+                return finalize_sequence();
+            } else {
+                KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<double>(view, sid)));
+                for(std::size_t i = 0; i < vec.size(); ++i) {
+                    KOTA_EXPECTED_TRY(store_element(static_cast<element_clean_t>(vec[i])));
+                }
+                return finalize_sequence();
+            }
+        } else if constexpr(codec::char_like<element_clean_t>) {
+            KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<std::int8_t>(view, sid)));
+            for(std::size_t i = 0; i < vec.size(); ++i) {
+                KOTA_EXPECTED_TRY(store_element(static_cast<char>(vec[i])));
+            }
+            return finalize_sequence();
+        } else if constexpr(std::is_enum_v<element_clean_t>) {
+            using storage_t = std::underlying_type_t<element_clean_t>;
+            KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<storage_t>(view, sid)));
             for(std::size_t i = 0; i < vec.size(); ++i) {
                 KOTA_EXPECTED_TRY(store_element(static_cast<element_clean_t>(vec[i])));
             }
             return finalize_sequence();
-        }
-    } else if constexpr(codec::char_like<element_clean_t>) {
-        KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<std::int8_t>(view, sid)));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            KOTA_EXPECTED_TRY(store_element(static_cast<char>(vec[i])));
-        }
-        return finalize_sequence();
-    } else if constexpr(std::is_enum_v<element_clean_t>) {
-        using storage_t = std::underlying_type_t<element_clean_t>;
-        KOTA_EXPECTED_TRY_V(auto vec, (d.template get_scalar_vector<storage_t>(view, sid)));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            KOTA_EXPECTED_TRY(store_element(static_cast<element_clean_t>(vec[i])));
-        }
-        return finalize_sequence();
-    } else if constexpr(codec::str_like<element_clean_t>) {
-        KOTA_EXPECTED_TRY_V(auto vec, d.get_string_vector(view, sid));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            auto text = vec[i];
-            if constexpr(std::same_as<element_t, std::string> ||
-                         std::derived_from<element_t, std::string>) {
-                KOTA_EXPECTED_TRY(store_element(std::string(text.data(), text.size())));
-            } else if constexpr(std::same_as<element_t, std::string_view>) {
-                KOTA_EXPECTED_TRY(store_element(std::string_view(text.data(), text.size())));
-            } else if constexpr(std::constructible_from<element_t, const char*, std::size_t>) {
-                KOTA_EXPECTED_TRY(store_element(element_t(text.data(), text.size())));
-            } else {
-                return std::unexpected(E::unsupported_type);
-            }
-        }
-        return finalize_sequence();
-    } else if constexpr(is_pair_v<element_clean_t> || is_tuple_v<element_clean_t>) {
-        KOTA_EXPECTED_TRY_V(auto vec, d.get_table_vector(view, sid));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            using dec_t = std::remove_cvref_t<element_t>;
-            if constexpr(!std::default_initializable<dec_t>) {
-                return std::unexpected(E::unsupported_type);
-            } else {
-                dec_t element{};
-                auto nested = vec[i];
-                KOTA_EXPECTED_TRY(decode_tuple_like<Config>(d, nested, element));
-                KOTA_EXPECTED_TRY(store_element(std::move(element)));
-            }
-        }
-        return finalize_sequence();
-    } else if constexpr(B::template can_inline_struct_element<element_clean_t>) {
-        KOTA_EXPECTED_TRY_V(auto vec,
-                            (d.template get_inline_struct_vector<element_clean_t>(view, sid)));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            KOTA_EXPECTED_TRY(store_element(vec[i]));
-        }
-        return finalize_sequence();
-    } else if constexpr(meta::reflectable_class<element_clean_t>) {
-        KOTA_EXPECTED_TRY_V(auto vec, d.get_table_vector(view, sid));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            using dec_t = std::remove_cvref_t<element_t>;
-            if constexpr(!std::default_initializable<dec_t>) {
-                return std::unexpected(E::unsupported_type);
-            } else {
-                dec_t element{};
-                auto nested = vec[i];
-                KOTA_EXPECTED_TRY(decode_table<Config>(d, nested, element));
-                KOTA_EXPECTED_TRY(store_element(std::move(element)));
-            }
-        }
-        return finalize_sequence();
-    } else {
-        KOTA_EXPECTED_TRY_V(auto vec, d.get_table_vector(view, sid));
-        for(std::size_t i = 0; i < vec.size(); ++i) {
-            using dec_t = std::remove_cvref_t<element_t>;
-            if constexpr(!std::default_initializable<dec_t>) {
-                return std::unexpected(E::unsupported_type);
-            } else {
-                dec_t element{};
-                auto nested = vec[i];
-                auto sid_r = B::field_slot_id(0);
-                if(!sid_r) {
-                    return std::unexpected(sid_r.error());
-                }
-                if constexpr(root_unboxed_for<B, dec_t>) {
-                    KOTA_EXPECTED_TRY(decode_unboxed<Config>(d, nested, element));
+        } else if constexpr(codec::str_like<element_clean_t>) {
+            KOTA_EXPECTED_TRY_V(auto vec, d.get_string_vector(view, sid));
+            for(std::size_t i = 0; i < vec.size(); ++i) {
+                auto text = vec[i];
+                if constexpr(std::same_as<element_t, std::string> ||
+                             std::derived_from<element_t, std::string>) {
+                    KOTA_EXPECTED_TRY(store_element(std::string(text.data(), text.size())));
+                } else if constexpr(std::same_as<element_t, std::string_view>) {
+                    KOTA_EXPECTED_TRY(store_element(std::string_view(text.data(), text.size())));
+                } else if constexpr(std::constructible_from<element_t, const char*, std::size_t>) {
+                    KOTA_EXPECTED_TRY(store_element(element_t(text.data(), text.size())));
                 } else {
-                    KOTA_EXPECTED_TRY(
-                        (decode_value_at<Config, B, dec_t, std::tuple<>>(d,
-                                                                         nested,
-                                                                         *sid_r,
-                                                                         element,
-                                                                         /*required=*/true)));
+                    return std::unexpected(E::unsupported_type);
                 }
-                KOTA_EXPECTED_TRY(store_element(std::move(element)));
             }
+            return finalize_sequence();
+        } else if constexpr(is_pair_v<element_clean_t> || is_tuple_v<element_clean_t>) {
+            KOTA_EXPECTED_TRY_V(auto vec, d.get_table_vector(view, sid));
+            for(std::size_t i = 0; i < vec.size(); ++i) {
+                using dec_t = std::remove_cvref_t<element_t>;
+                if constexpr(!std::default_initializable<dec_t>) {
+                    return std::unexpected(E::unsupported_type);
+                } else {
+                    dec_t element{};
+                    auto nested = vec[i];
+                    KOTA_EXPECTED_TRY(decode_tuple_like<Config>(d, nested, element));
+                    KOTA_EXPECTED_TRY(store_element(std::move(element)));
+                }
+            }
+            return finalize_sequence();
+        } else if constexpr(B::template can_inline_struct_element<element_clean_t>) {
+            KOTA_EXPECTED_TRY_V(auto vec,
+                                (d.template get_inline_struct_vector<element_clean_t>(view, sid)));
+            for(std::size_t i = 0; i < vec.size(); ++i) {
+                KOTA_EXPECTED_TRY(store_element(vec[i]));
+            }
+            return finalize_sequence();
+        } else if constexpr(meta::reflectable_class<element_clean_t>) {
+            KOTA_EXPECTED_TRY_V(auto vec, d.get_table_vector(view, sid));
+            for(std::size_t i = 0; i < vec.size(); ++i) {
+                using dec_t = std::remove_cvref_t<element_t>;
+                if constexpr(!std::default_initializable<dec_t>) {
+                    return std::unexpected(E::unsupported_type);
+                } else {
+                    dec_t element{};
+                    auto nested = vec[i];
+                    KOTA_EXPECTED_TRY(decode_table<Config>(d, nested, element));
+                    KOTA_EXPECTED_TRY(store_element(std::move(element)));
+                }
+            }
+            return finalize_sequence();
+        } else {
+            KOTA_EXPECTED_TRY_V(auto vec, d.get_table_vector(view, sid));
+            for(std::size_t i = 0; i < vec.size(); ++i) {
+                using dec_t = std::remove_cvref_t<element_t>;
+                if constexpr(!std::default_initializable<dec_t>) {
+                    return std::unexpected(E::unsupported_type);
+                } else {
+                    dec_t element{};
+                    auto nested = vec[i];
+                    auto sid_r = B::field_slot_id(0);
+                    if(!sid_r) {
+                        return std::unexpected(sid_r.error());
+                    }
+                    if constexpr(root_unboxed_for<B, dec_t>) {
+                        KOTA_EXPECTED_TRY(decode_unboxed<Config>(d, nested, element));
+                    } else {
+                        KOTA_EXPECTED_TRY(
+                            (decode_value_at<Config, B, dec_t, std::tuple<>>(d,
+                                                                             nested,
+                                                                             *sid_r,
+                                                                             element,
+                                                                             /*required=*/true)));
+                    }
+                    KOTA_EXPECTED_TRY(store_element(std::move(element)));
+                }
+            }
+            return finalize_sequence();
         }
-        return finalize_sequence();
-    }
+
+    }  // else (non-trait path)
 }
 
 template <typename Config, typename B, typename T>

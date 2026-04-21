@@ -37,12 +37,12 @@ auto emit_field_value(S& s, std::expected<typename S::value_type, E>&& r)
     if(!r) {
         return std::unexpected(std::move(r).error());
     }
-    if constexpr(!std::is_void_v<typename S::value_type>) {
-        if constexpr(requires { s.accept_field_value(std::move(*r)); }) {
-            return s.accept_field_value(std::move(*r));
-        }
+    if constexpr(!std::is_void_v<typename S::value_type> &&
+                 requires { s.accept_field_value(std::move(*r)); }) {
+        return s.accept_field_value(std::move(*r));
+    } else {
+        return {};
     }
-    return {};
 }
 
 template <typename S, typename E>
@@ -51,12 +51,12 @@ auto emit_element_value(S& s, std::expected<typename S::value_type, E>&& r)
     if(!r) {
         return std::unexpected(std::move(r).error());
     }
-    if constexpr(!std::is_void_v<typename S::value_type>) {
-        if constexpr(requires { s.accept_element_value(std::move(*r)); }) {
-            return s.accept_element_value(std::move(*r));
-        }
+    if constexpr(!std::is_void_v<typename S::value_type> &&
+                 requires { s.accept_element_value(std::move(*r)); }) {
+        return s.accept_element_value(std::move(*r));
+    } else {
+        return {};
     }
-    return {};
 }
 
 template <typename Attrs, typename E, typename S, typename V>
