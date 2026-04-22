@@ -354,8 +354,7 @@ auto decode_value_at(const B& d,
         return {};
     } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
         using clean_u = detail::clean_t<U>;
-        using Policy =
-            typename kota::tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
+        using Policy = typename kota::tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
         static_assert(std::is_enum_v<clean_u>, "enum_string requires an enum type");
         if(!view.has(sid)) {
             if(required) {

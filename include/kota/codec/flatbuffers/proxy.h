@@ -172,7 +172,7 @@ auto field_index(Member Object::* member) -> std::size_t {
 // proxy uses unchecked reads and returns empty values on miss).
 // Sentinel slot that FlatBuffers' GetOptionalFieldOffset treats as "absent"
 // (any voffset >= vtable_size → returns 0).
-inline constexpr slot_id invalid_slot = std::numeric_limits<slot_id>::max();
+constexpr inline slot_id invalid_slot = std::numeric_limits<slot_id>::max();
 
 inline auto field_slot(std::size_t index) -> slot_id {
     auto r = backend::field_slot_id(index);
