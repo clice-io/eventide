@@ -6,8 +6,7 @@
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
-#include "kota/codec/codec.h"
-#include "kota/codec/json/deserializer.h"
+#include "kota/codec/json/json.h"
 
 namespace kota::codec {
 

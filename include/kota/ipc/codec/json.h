@@ -4,10 +4,10 @@
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
-#include "kota/codec/config.h"
+#include "kota/codec/detail/config.h"
+#include "kota/codec/detail/raw_value.h"
+#include "kota/codec/detail/spelling.h"
 #include "kota/codec/json/json.h"
-#include "kota/codec/raw_value.h"
-#include "kota/codec/spelling.h"
 
 namespace kota::ipc {
 

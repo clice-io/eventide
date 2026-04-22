@@ -22,9 +22,9 @@
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
-#include "kota/codec/backend.h"
-#include "kota/codec/config.h"
+#include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/common.h"
+#include "kota/codec/detail/config.h"
 #include "kota/codec/detail/ser_dispatch.h"
 
 namespace kota::codec::arena {

@@ -21,11 +21,11 @@
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
-#include "kota/codec/backend.h"
-#include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
+#include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/common.h"
-#include "kota/codec/spelling.h"
+#include "kota/codec/detail/config.h"
+#include "kota/codec/detail/spelling.h"
 
 namespace kota::codec::arena {
 

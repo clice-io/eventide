@@ -17,7 +17,7 @@
 #include <vector>
 
 #include "kota/meta/schema.h"
-#include "kota/codec/codec.h"
+#include "kota/codec/detail/codec.h"
 #include "kota/codec/flatbuffers/deserializer.h"
 #include "kota/codec/flatbuffers/struct_layout.h"
 

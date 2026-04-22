@@ -7,7 +7,7 @@
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
-#include "kota/codec/toml.h"
+#include "kota/codec/toml/toml.h"
 
 namespace kota::codec {
 

@@ -7,7 +7,7 @@
 #include <type_traits>
 
 #include "kota/meta/attrs.h"
-#include "kota/codec/spelling.h"
+#include "kota/codec/detail/spelling.h"
 
 namespace kota::codec::detail {
 

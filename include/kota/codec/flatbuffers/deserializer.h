@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/backend.h"
-#include "kota/codec/config.h"
 #include "kota/codec/detail/arena_decode.h"
+#include "kota/codec/detail/backend.h"
+#include "kota/codec/detail/config.h"
 #include "kota/codec/flatbuffers/serializer.h"
 #include "kota/codec/flatbuffers/struct_layout.h"
 

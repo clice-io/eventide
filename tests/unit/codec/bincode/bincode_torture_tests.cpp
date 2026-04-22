@@ -1,6 +1,6 @@
 #include "../standard_case_suite.h"
 #include "kota/zest/zest.h"
-#include "kota/codec/bincode.h"
+#include "kota/codec/bincode/bincode.h"
 
 namespace kota::codec {
 

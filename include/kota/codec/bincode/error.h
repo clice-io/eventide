@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "kota/codec/error.h"
+#include "kota/codec/detail/error.h"
 
 namespace kota::codec::bincode {
 

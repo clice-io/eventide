@@ -15,10 +15,10 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/backend.h"
 #include "kota/codec/bincode/error.h"
-#include "kota/codec/codec.h"
-#include "kota/codec/config.h"
+#include "kota/codec/detail/backend.h"
+#include "kota/codec/detail/codec.h"
+#include "kota/codec/detail/config.h"
 
 namespace kota::codec::bincode {
 

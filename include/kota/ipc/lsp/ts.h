@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "kota/ipc/protocol.h"
-#include "kota/codec/codec.h"
+#include "kota/codec/detail/codec.h"
 
 namespace kota::ipc::protocol {
 

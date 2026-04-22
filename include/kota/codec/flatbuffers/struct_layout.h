@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "kota/codec/codec.h"
+#include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/common.h"
 
 namespace kota::codec::flatbuffers {

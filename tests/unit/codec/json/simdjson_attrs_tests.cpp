@@ -2,9 +2,7 @@
 #include <string>
 
 #include "kota/zest/zest.h"
-#include "kota/codec/codec.h"
-#include "kota/codec/json/deserializer.h"
-#include "kota/codec/json/serializer.h"
+#include "kota/codec/json/json.h"
 
 namespace kota::codec {
 

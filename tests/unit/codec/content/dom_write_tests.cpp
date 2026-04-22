@@ -3,7 +3,7 @@
 #include <utility>
 
 #include "kota/zest/zest.h"
-#include "kota/codec/content.h"
+#include "kota/codec/content/content.h"
 
 namespace kota::codec {
 

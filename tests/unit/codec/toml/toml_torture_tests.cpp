@@ -4,7 +4,7 @@
 
 #include "../standard_case_suite.h"
 #include "kota/zest/zest.h"
-#include "kota/codec/toml.h"
+#include "kota/codec/toml/toml.h"
 
 namespace kota::codec {
 

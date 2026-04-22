@@ -20,14 +20,14 @@
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/struct.h"
-#include "kota/codec/backend.h"
-#include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
+#include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/common.h"
+#include "kota/codec/detail/config.h"
 #include "kota/codec/detail/ser_dispatch.h"
+#include "kota/codec/detail/spelling.h"
 #include "kota/codec/detail/struct_deserialize.h"
 #include "kota/codec/detail/tagged.h"
-#include "kota/codec/spelling.h"
 
 namespace kota::codec::detail {
 

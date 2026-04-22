@@ -3,7 +3,7 @@
 #include "kota/codec/bincode/deserializer.h"
 #include "kota/codec/bincode/error.h"
 #include "kota/codec/bincode/serializer.h"
-#include "kota/codec/raw_value.h"
+#include "kota/codec/detail/raw_value.h"
 
 namespace kota::codec {
 
