@@ -945,8 +945,8 @@ TEST_CASE(cancelled_request_does_not_break_following_requests) {
 
     auto request = client.get(server.url("/slow")).send().catch_cancel();
     auto cancel_after = [](task<http::response, http::error, cancellation>* pending,
-                           event_loop& loop) -> task<> {
-        co_await sleep(20ms, loop);
+                           event_loop& ev) -> task<> {
+        co_await sleep(20ms, ev);
         (*pending)->cancel();
     };
     auto canceler = cancel_after(&request, loop);
