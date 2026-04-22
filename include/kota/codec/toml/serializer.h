@@ -137,6 +137,17 @@ public:
         return {};
     }
 
+    template <typename F>
+    status_t serialize_field(std::string_view name, F&& writer) {
+        KOTA_EXPECTED_TRY(field(name));
+        return std::forward<F>(writer)();
+    }
+
+    template <typename F>
+    status_t serialize_element(F&& writer) {
+        return std::forward<F>(writer)();
+    }
+
     status_t begin_array(std::optional<std::size_t> /*count*/) {
         ser_frame frame;
         frame.is_array = true;

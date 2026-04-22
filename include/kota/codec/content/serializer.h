@@ -25,7 +25,7 @@ template <typename Config = config::default_config>
 class Serializer {
 public:
     using config_type = Config;
-    using value_type = void;
+    using value_type = content::Value;
     using error_type = content::error_kind;
 
     constexpr static auto backend_kind_v = backend_kind::streaming;
@@ -43,37 +43,8 @@ public:
     auto operator=(const Serializer&) -> Serializer& = delete;
     auto operator=(Serializer&&) -> Serializer& = delete;
 
-    [[nodiscard]] bool valid() const noexcept {
-        return is_valid;
-    }
-
-    [[nodiscard]] error_type error() const noexcept {
-        return last_error;
-    }
-
-    result_t<content::Value> dom_value() const {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        if(!root_is_written || !stack.empty()) {
-            return std::unexpected(error_type::invalid_state);
-        }
-        return root;
-    }
-
-    result_t<content::Value> take_dom_value() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        if(!root_is_written || !stack.empty()) {
-            return std::unexpected(error_type::invalid_state);
-        }
-        root_is_written = false;
-        return std::move(root);
-    }
-
     result_t<value_type> serialize_null() {
-        return append_value(content::Value(nullptr));
+        return content::Value(nullptr);
     }
 
     template <typename T>
@@ -89,36 +60,37 @@ public:
     }
 
     result_t<value_type> serialize_bool(bool v) {
-        return append_value(content::Value(v));
+        return content::Value(v);
     }
 
     result_t<value_type> serialize_int(std::int64_t v) {
-        return append_value(content::Value(v));
+        return content::Value(v);
     }
 
     result_t<value_type> serialize_uint(std::uint64_t v) {
-        return append_value(content::Value(v));
+        return content::Value(v);
     }
 
     result_t<value_type> serialize_float(double v) {
         if(std::isfinite(v)) {
-            return append_value(content::Value(v));
+            return content::Value(v);
         }
-        return serialize_null();
+        return content::Value(nullptr);
     }
 
     result_t<value_type> serialize_char(char v) {
-        return append_value(content::Value(std::string(1, v)));
+        return content::Value(std::string(1, v));
     }
 
     result_t<value_type> serialize_str(std::string_view v) {
-        return append_value(content::Value(v));
+        return content::Value(v);
     }
 
     result_t<value_type> serialize_bytes(std::string_view value) {
         KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(unsigned char byte: value) {
-            KOTA_EXPECTED_TRY(serialize_uint(static_cast<std::uint64_t>(byte)));
+            KOTA_EXPECTED_TRY(serialize_element(
+                [&] { return serialize_uint(static_cast<std::uint64_t>(byte)); }));
         }
         return end_array();
     }
@@ -126,165 +98,94 @@ public:
     result_t<value_type> serialize_bytes(std::span<const std::byte> value) {
         KOTA_EXPECTED_TRY(begin_array(value.size()));
         for(std::byte byte: value) {
-            KOTA_EXPECTED_TRY(
-                serialize_uint(static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte))));
+            KOTA_EXPECTED_TRY(serialize_element([&] {
+                return serialize_uint(
+                    static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(byte)));
+            }));
         }
         return end_array();
     }
 
-    result_t<value_type> append_dom_value(const content::Value& value) {
-        return append_value(value);
-    }
-
-    result_t<value_type> append_dom_value(content::Value&& value) {
-        return append_value(std::move(value));
-    }
-
-    result_t<value_type> append_dom_value(const content::Array& value) {
-        return append_value(content::Value(value));
-    }
-
-    result_t<value_type> append_dom_value(content::Array&& value) {
-        return append_value(content::Value(std::move(value)));
-    }
-
-    result_t<value_type> append_dom_value(const content::Object& value) {
-        return append_value(content::Value(value));
-    }
-
-    result_t<value_type> append_dom_value(content::Object&& value) {
-        return append_value(content::Value(std::move(value)));
-    }
-
     status_t begin_object(std::size_t /*count*/) {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        KOTA_EXPECTED_TRY(append_value(content::Value(content::Object{})));
-        content::Object* obj = last_placed_object();
-        if(obj == nullptr) {
-            return mark_invalid();
-        }
-        stack.push_back(
-            frame{.array = nullptr, .object = obj, .pending_key = {}, .has_pending_key = false});
+        stack.push_back(frame{content::Object{}});
         return {};
     }
 
     result_t<value_type> end_object() {
-        if(!is_valid || stack.empty() || stack.back().object == nullptr ||
-           stack.back().has_pending_key) {
-            return mark_invalid();
+        if(stack.empty()) {
+            return std::unexpected(error_type::invalid_state);
         }
+        auto* obj = std::get_if<content::Object>(&stack.back().data);
+        if(!obj) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        content::Value result(std::move(*obj));
         stack.pop_back();
-        return {};
+        return result;
     }
 
-    status_t field(std::string_view name) {
-        if(!is_valid || stack.empty() || stack.back().object == nullptr) {
-            return mark_invalid();
-        }
-        auto& f = stack.back();
-        if(f.has_pending_key) {
-            return mark_invalid();
-        }
-        f.pending_key.assign(name.data(), name.size());
-        f.has_pending_key = true;
+    status_t field(std::string_view /*name*/) {
         return {};
     }
 
     status_t begin_array(std::optional<std::size_t> /*count*/) {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        KOTA_EXPECTED_TRY(append_value(content::Value(content::Array{})));
-        content::Array* arr = last_placed_array();
-        if(arr == nullptr) {
-            return mark_invalid();
-        }
-        stack.push_back(
-            frame{.array = arr, .object = nullptr, .pending_key = {}, .has_pending_key = false});
+        stack.push_back(frame{content::Array{}});
         return {};
     }
 
     result_t<value_type> end_array() {
-        if(!is_valid || stack.empty() || stack.back().array == nullptr) {
-            return mark_invalid();
+        if(stack.empty()) {
+            return std::unexpected(error_type::invalid_state);
         }
+        auto* arr = std::get_if<content::Array>(&stack.back().data);
+        if(!arr) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        content::Value result(std::move(*arr));
         stack.pop_back();
+        return result;
+    }
+
+    template <typename F>
+    status_t serialize_field(std::string_view name, F&& writer) {
+        auto result = std::forward<F>(writer)();
+        if(!result) {
+            return std::unexpected(result.error());
+        }
+        if(stack.empty()) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        auto* obj = std::get_if<content::Object>(&stack.back().data);
+        if(!obj) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        obj->insert(std::string(name), std::move(*result));
+        return {};
+    }
+
+    template <typename F>
+    status_t serialize_element(F&& writer) {
+        auto result = std::forward<F>(writer)();
+        if(!result) {
+            return std::unexpected(result.error());
+        }
+        if(stack.empty()) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        auto* arr = std::get_if<content::Array>(&stack.back().data);
+        if(!arr) {
+            return std::unexpected(error_type::invalid_state);
+        }
+        arr->push_back(std::move(*result));
         return {};
     }
 
 private:
     struct frame {
-        content::Array* array = nullptr;
-        content::Object* object = nullptr;
-        std::string pending_key;
-        bool has_pending_key = false;
+        std::variant<content::Array, content::Object> data;
     };
 
-    status_t append_value(content::Value v) {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-        if(stack.empty()) {
-            if(root_is_written) {
-                return mark_invalid();
-            }
-            root = std::move(v);
-            root_is_written = true;
-            return {};
-        }
-        auto& f = stack.back();
-        if(f.array != nullptr) {
-            f.array->push_back(std::move(v));
-            return {};
-        }
-        if(f.object == nullptr || !f.has_pending_key) {
-            return mark_invalid();
-        }
-        f.object->insert(std::move(f.pending_key), std::move(v));
-        f.pending_key.clear();
-        f.has_pending_key = false;
-        return {};
-    }
-
-    content::Array* last_placed_array() {
-        content::Value* slot = last_placed_slot();
-        return slot != nullptr ? slot->get_array() : nullptr;
-    }
-
-    content::Object* last_placed_object() {
-        content::Value* slot = last_placed_slot();
-        return slot != nullptr ? slot->get_object() : nullptr;
-    }
-
-    content::Value* last_placed_slot() {
-        if(stack.empty()) {
-            return &root;
-        }
-        auto& f = stack.back();
-        if(f.array != nullptr) {
-            return f.array->empty() ? nullptr : &(*f.array)[f.array->size() - 1];
-        }
-        if(f.object != nullptr) {
-            return f.object->empty() ? nullptr : &f.object->back_value();
-        }
-        return nullptr;
-    }
-
-    std::unexpected<error_type> mark_invalid(error_type err = error_type::invalid_state) {
-        is_valid = false;
-        if(last_error == error_type::invalid_state || err != error_type::invalid_state) {
-            last_error = err;
-        }
-        return std::unexpected(last_error);
-    }
-
-    content::Value root;
     std::vector<frame> stack;
-    bool is_valid = true;
-    bool root_is_written = false;
-    error_type last_error = error_type::invalid_state;
 };
 
 static_assert(codec::serializer_like<Serializer<>>);
@@ -292,10 +193,6 @@ static_assert(codec::serializer_like<Serializer<>>);
 }  // namespace kota::codec::content
 
 namespace kota::codec {
-
-template <typename T>
-concept content_dom_type = std::same_as<T, content::Value> || std::same_as<T, content::Array> ||
-                           std::same_as<T, content::Object>;
 
 template <serializer_like S>
 struct serialize_traits<S, content::Value> {
@@ -338,7 +235,7 @@ struct serialize_traits<S, content::Array> {
         -> std::expected<value_type, error_type> {
         KOTA_EXPECTED_TRY(s.begin_array(value.size()));
         for(const auto& item: value) {
-            KOTA_EXPECTED_TRY(codec::serialize(s, item));
+            KOTA_EXPECTED_TRY(s.serialize_element([&] { return codec::serialize(s, item); }));
         }
         return s.end_array();
     }
@@ -353,8 +250,8 @@ struct serialize_traits<S, content::Object> {
         -> std::expected<value_type, error_type> {
         KOTA_EXPECTED_TRY(s.begin_object(value.size()));
         for(const auto& entry: value) {
-            KOTA_EXPECTED_TRY(s.field(std::string_view(entry.key)));
-            KOTA_EXPECTED_TRY(codec::serialize(s, entry.value));
+            KOTA_EXPECTED_TRY(s.serialize_field(std::string_view(entry.key),
+                                                [&] { return codec::serialize(s, entry.value); }));
         }
         return s.end_object();
     }
@@ -365,9 +262,9 @@ struct serialize_traits<content::Serializer<Config>, content::Value> {
     using value_type = typename content::Serializer<Config>::value_type;
     using error_type = typename content::Serializer<Config>::error_type;
 
-    static auto serialize(content::Serializer<Config>& s, const content::Value& value)
+    static auto serialize(content::Serializer<Config>&, const content::Value& value)
         -> std::expected<value_type, error_type> {
-        return s.append_dom_value(value);
+        return value;
     }
 };
 
@@ -376,9 +273,9 @@ struct serialize_traits<content::Serializer<Config>, content::Array> {
     using value_type = typename content::Serializer<Config>::value_type;
     using error_type = typename content::Serializer<Config>::error_type;
 
-    static auto serialize(content::Serializer<Config>& s, const content::Array& value)
+    static auto serialize(content::Serializer<Config>&, const content::Array& value)
         -> std::expected<value_type, error_type> {
-        return s.append_dom_value(value);
+        return content::Value(value);
     }
 };
 
@@ -387,9 +284,9 @@ struct serialize_traits<content::Serializer<Config>, content::Object> {
     using value_type = typename content::Serializer<Config>::value_type;
     using error_type = typename content::Serializer<Config>::error_type;
 
-    static auto serialize(content::Serializer<Config>& s, const content::Object& value)
+    static auto serialize(content::Serializer<Config>&, const content::Object& value)
         -> std::expected<value_type, error_type> {
-        return s.append_dom_value(value);
+        return content::Value(value);
     }
 };
 

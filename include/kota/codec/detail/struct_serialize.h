@@ -33,14 +33,13 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
     -> std::expected<typename S::value_type, E>;
 
 template <typename Attrs, typename E, typename S, typename V>
-auto serialize_slot_value(S& s, const V& value) -> std::expected<void, E> {
+auto serialize_slot_value(S& s, const V& value) -> std::expected<typename S::value_type, E> {
+    using VT = typename S::value_type;
     if constexpr(tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
         auto result = apply_serialize_behavior<Attrs, V, E>(
             value,
-            [&](const auto& v) -> std::expected<void, E> {
-                return codec::serialize(s, v);
-            },
-            [&](auto tag, const auto& v) -> std::expected<void, E> {
+            [&](const auto& v) -> std::expected<VT, E> { return codec::serialize(s, v); },
+            [&](auto tag, const auto& v) -> std::expected<VT, E> {
                 using Adapter = typename decltype(tag)::type;
                 if constexpr(requires { Adapter::to_wire(v); }) {
                     auto wire = Adapter::to_wire(v);
@@ -91,8 +90,8 @@ auto serialize_slot_by_name(S& s, const T& v) -> std::expected<void, E> {
     }
 
     std::string_view name = schema::fields[I].name;
-    KOTA_EXPECTED_TRY(s.field(name));
-    return serialize_slot_value<attrs_t, E>(s, field_value);
+    return s.serialize_field(name,
+                             [&] { return serialize_slot_value<attrs_t, E>(s, field_value); });
 }
 
 template <typename Config, typename E, typename T, std::size_t I, typename S>

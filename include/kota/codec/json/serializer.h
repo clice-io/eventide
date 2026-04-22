@@ -237,6 +237,17 @@ public:
         return {};
     }
 
+    template <typename F>
+    status_t serialize_field(std::string_view name, F&& writer) {
+        KOTA_EXPECTED_TRY(field(name));
+        return std::forward<F>(writer)();
+    }
+
+    template <typename F>
+    status_t serialize_element(F&& writer) {
+        return std::forward<F>(writer)();
+    }
+
     result_t<value_type> end_array() {
         if(!is_valid || stack.empty()) {
             mark_invalid();

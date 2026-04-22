@@ -126,7 +126,7 @@ struct StreamingCtx {
             KOTA_EXPECTED_TRY(s.begin_array(N));
             std::expected<void, E> element_result;
             auto for_each = [&](const auto& element) -> bool {
-                auto r = codec::serialize(s, element);
+                auto r = s.serialize_element([&] { return codec::serialize(s, element); });
                 if(!r) {
                     element_result = std::unexpected(r.error());
                     return false;
@@ -166,7 +166,7 @@ struct StreamingCtx {
         KOTA_EXPECTED_TRY(s.begin_array(len));
 
         for(auto&& e: v) {
-            KOTA_EXPECTED_TRY(codec::serialize(s, e));
+            KOTA_EXPECTED_TRY(s.serialize_element([&] { return codec::serialize(s, e); }));
         }
 
         return s.end_array();
@@ -182,8 +182,8 @@ struct StreamingCtx {
         if constexpr(S::field_mode_v == field_mode::by_name) {
             KOTA_EXPECTED_TRY(s.begin_object(len.value_or(0)));
             for(auto&& [key, value]: v) {
-                KOTA_EXPECTED_TRY(s.field(codec::spelling::map_key_to_string(key)));
-                KOTA_EXPECTED_TRY(codec::serialize(s, value));
+                KOTA_EXPECTED_TRY(s.serialize_field(codec::spelling::map_key_to_string(key),
+                                                    [&] { return codec::serialize(s, value); }));
             }
             return s.end_object();
         } else {
