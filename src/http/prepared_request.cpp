@@ -314,7 +314,7 @@ bool prepared_request::apply_timeout() noexcept {
         return fail(error::invalid_request("timeout must be non-negative"));
     }
 
-    if(timeout_ms > std::numeric_limits<long>::max()) {
+    if(timeout_ms > (std::numeric_limits<long>::max)()) {
         return fail(error::invalid_request("timeout exceeds libcurl timeout range"));
     }
 

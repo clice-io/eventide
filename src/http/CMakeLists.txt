@@ -30,6 +30,10 @@ target_include_directories(kota_http PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
+if(WIN32)
+    target_compile_definitions(kota_http PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 target_link_libraries(kota_http PUBLIC
     kota::async
     CURL::libcurl

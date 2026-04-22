@@ -286,10 +286,6 @@ if(KOTA_BUILD_ALL_TESTS)
         set(KOTA_CODEC_ENABLE_TOML ON CACHE BOOL "Enable tomlplusplus dependency for kota::codec" FORCE)
     endif()
 
-    if(NOT KOTA_ENABLE_HTTP)
-        message(STATUS "KOTA_BUILD_ALL_TESTS=ON: enabling KOTA_ENABLE_HTTP")
-        set(KOTA_ENABLE_HTTP ON CACHE BOOL "Enable HTTP client target and libcurl dependency" FORCE)
-    endif()
 endif()
 
 if(KOTA_ENABLE_TEST)
