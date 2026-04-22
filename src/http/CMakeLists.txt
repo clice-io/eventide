@@ -1,3 +1,7 @@
+if(DEFINED ENV{CONDA_PREFIX})
+    set(OPENSSL_ROOT_DIR "$ENV{CONDA_PREFIX}" CACHE PATH "" FORCE)
+endif()
+
 kota_add_git_dependency(
     curl
     GIT_REPOSITORY https://github.com/curl/curl.git
@@ -9,6 +13,8 @@ kota_add_git_dependency(
         CURL_DISABLE_INSTALL ON
         CURL_ENABLE_EXPORT_TARGET ON
         CURL_USE_LIBPSL OFF
+        CURL_ZLIB OFF
+        CURL_ZSTD OFF
         ENABLE_ARES OFF
         HTTP_ONLY ON
 )
