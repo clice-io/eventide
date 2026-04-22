@@ -338,9 +338,7 @@ struct serialize_traits<S, content::Array> {
         -> std::expected<value_type, error_type> {
         KOTA_EXPECTED_TRY(s.begin_array(value.size()));
         for(const auto& item: value) {
-            auto _r = detail::emit_element_value<S, error_type>(s, codec::serialize(s, item));
-            if(!_r)
-                return std::unexpected(_r.error());
+            KOTA_EXPECTED_TRY(codec::serialize(s, item));
         }
         return s.end_array();
     }
@@ -356,9 +354,7 @@ struct serialize_traits<S, content::Object> {
         KOTA_EXPECTED_TRY(s.begin_object(value.size()));
         for(const auto& entry: value) {
             KOTA_EXPECTED_TRY(s.field(std::string_view(entry.key)));
-            auto _r = detail::emit_field_value<S, error_type>(s, codec::serialize(s, entry.value));
-            if(!_r)
-                return std::unexpected(_r.error());
+            KOTA_EXPECTED_TRY(codec::serialize(s, entry.value));
         }
         return s.end_object();
     }

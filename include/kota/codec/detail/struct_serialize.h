@@ -32,51 +32,23 @@ template <typename E, typename S, typename... Ts, typename TagAttr>
 constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
     -> std::expected<typename S::value_type, E>;
 
-template <typename S, typename E>
-auto emit_field_value(S& s, std::expected<typename S::value_type, E>&& r)
-    -> std::expected<void, E> {
-    if(!r) {
-        return std::unexpected(std::move(r).error());
-    }
-    if constexpr(!std::is_void_v<typename S::value_type> &&
-                 requires { s.accept_field_value(std::move(*r)); }) {
-        return s.accept_field_value(std::move(*r));
-    } else {
-        return {};
-    }
-}
-
-template <typename S, typename E>
-auto emit_element_value(S& s, std::expected<typename S::value_type, E>&& r)
-    -> std::expected<void, E> {
-    if(!r) {
-        return std::unexpected(std::move(r).error());
-    }
-    if constexpr(!std::is_void_v<typename S::value_type> &&
-                 requires { s.accept_element_value(std::move(*r)); }) {
-        return s.accept_element_value(std::move(*r));
-    } else {
-        return {};
-    }
-}
-
 template <typename Attrs, typename E, typename S, typename V>
 auto serialize_slot_value(S& s, const V& value) -> std::expected<void, E> {
     if constexpr(tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
         auto result = apply_serialize_behavior<Attrs, V, E>(
             value,
             [&](const auto& v) -> std::expected<void, E> {
-                return emit_field_value<S, E>(s, codec::serialize(s, v));
+                return codec::serialize(s, v);
             },
             [&](auto tag, const auto& v) -> std::expected<void, E> {
                 using Adapter = typename decltype(tag)::type;
                 if constexpr(requires { Adapter::to_wire(v); }) {
                     auto wire = Adapter::to_wire(v);
-                    return emit_field_value<S, E>(s, codec::serialize(s, wire));
+                    return codec::serialize(s, wire);
                 } else if constexpr(requires { Adapter::serialize(s, v); }) {
-                    return emit_field_value<S, E>(s, Adapter::serialize(s, v));
+                    return Adapter::serialize(s, v);
                 } else {
-                    return emit_field_value<S, E>(s, codec::serialize(s, v));
+                    return codec::serialize(s, v);
                 }
             });
         if(result.has_value()) {
@@ -89,14 +61,14 @@ auto serialize_slot_value(S& s, const V& value) -> std::expected<void, E> {
         using tag_attr = tuple_find_t<Attrs, meta::is_tagged_attr>;
         constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
         if constexpr(strategy == meta::tagged_strategy::external) {
-            return emit_field_value<S, E>(s, serialize_externally_tagged<E>(s, value, tag_attr{}));
+            return serialize_externally_tagged<E>(s, value, tag_attr{});
         } else if constexpr(strategy == meta::tagged_strategy::internal) {
-            return emit_field_value<S, E>(s, serialize_internally_tagged<E>(s, value, tag_attr{}));
+            return serialize_internally_tagged<E>(s, value, tag_attr{});
         } else {
-            return emit_field_value<S, E>(s, serialize_adjacently_tagged<E>(s, value, tag_attr{}));
+            return serialize_adjacently_tagged<E>(s, value, tag_attr{});
         }
     } else {
-        return emit_field_value<S, E>(s, codec::serialize(s, value));
+        return codec::serialize(s, value);
     }
 }
 

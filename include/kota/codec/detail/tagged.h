@@ -82,7 +82,7 @@ constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& valu
     std::expected<void, E> inner_status{};
     std::visit(
         [&](const auto& item) {
-            auto r = emit_field_value<S, E>(s, codec::serialize(s, item));
+            auto r = codec::serialize(s, item);
             if(!r) {
                 inner_status = std::unexpected(r.error());
             }
@@ -105,18 +105,14 @@ constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& valu
     // Tag field
     auto tag_name = names[value.index()];
     KOTA_EXPECTED_TRY(s.field(TagAttr::field_names[0]));
-    {
-        auto _r = emit_field_value<S, E>(s, codec::serialize(s, tag_name));
-        if(!_r)
-            return std::unexpected(_r.error());
-    }
+    KOTA_EXPECTED_TRY(codec::serialize(s, tag_name));
 
     // Content field
     KOTA_EXPECTED_TRY(s.field(TagAttr::field_names[1]));
     std::expected<void, E> inner_status{};
     std::visit(
         [&](const auto& item) {
-            auto r = emit_field_value<S, E>(s, codec::serialize(s, item));
+            auto r = codec::serialize(s, item);
             if(!r) {
                 inner_status = std::unexpected(r.error());
             }
@@ -151,11 +147,7 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
             // Tag field first
             auto tag_name = names[value.index()];
             KOTA_EXPECTED_TRY(s.field(tag_field));
-            {
-                auto _r = emit_field_value<S, E>(s, codec::serialize(s, tag_name));
-                if(!_r)
-                    return std::unexpected(_r.error());
-            }
+            KOTA_EXPECTED_TRY(codec::serialize(s, tag_name));
 
             // Struct fields via schema
             std::expected<void, E> slot_status{};

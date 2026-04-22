@@ -126,7 +126,7 @@ struct StreamingCtx {
             KOTA_EXPECTED_TRY(s.begin_array(N));
             std::expected<void, E> element_result;
             auto for_each = [&](const auto& element) -> bool {
-                auto r = emit_element_value<S, E>(s, codec::serialize(s, element));
+                auto r = codec::serialize(s, element);
                 if(!r) {
                     element_result = std::unexpected(r.error());
                     return false;
@@ -158,7 +158,6 @@ struct StreamingCtx {
 
     template <typename Config, typename V>
     result_type emit_sequence(const V& v) {
-        using E = error_type;
         std::optional<std::size_t> len = std::nullopt;
         if constexpr(std::ranges::sized_range<V>) {
             len = static_cast<std::size_t>(std::ranges::size(v));
@@ -167,11 +166,7 @@ struct StreamingCtx {
         KOTA_EXPECTED_TRY(s.begin_array(len));
 
         for(auto&& e: v) {
-            {
-                auto _r = emit_element_value<S, E>(s, codec::serialize(s, e));
-                if(!_r)
-                    return std::unexpected(_r.error());
-            }
+            KOTA_EXPECTED_TRY(codec::serialize(s, e));
         }
 
         return s.end_array();
@@ -179,7 +174,6 @@ struct StreamingCtx {
 
     template <typename Config, typename V>
     result_type emit_map(const V& v) {
-        using E = error_type;
         std::optional<std::size_t> len = std::nullopt;
         if constexpr(std::ranges::sized_range<V>) {
             len = static_cast<std::size_t>(std::ranges::size(v));
@@ -189,11 +183,7 @@ struct StreamingCtx {
             KOTA_EXPECTED_TRY(s.begin_object(len.value_or(0)));
             for(auto&& [key, value]: v) {
                 KOTA_EXPECTED_TRY(s.field(codec::spelling::map_key_to_string(key)));
-                {
-                    auto _r = emit_field_value<S, E>(s, codec::serialize(s, value));
-                    if(!_r)
-                        return std::unexpected(_r.error());
-                }
+                KOTA_EXPECTED_TRY(codec::serialize(s, value));
             }
             return s.end_object();
         } else {
