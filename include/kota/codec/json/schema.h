@@ -11,9 +11,8 @@
 #include <vector>
 
 #include "simdjson.h"
-
-#include "kota/meta/type_info.h"
 #include "kota/support/naming.h"
+#include "kota/meta/type_info.h"
 
 namespace kota::codec::json::schema {
 
@@ -56,7 +55,7 @@ public:
     }
 
 private:
-    static const meta::type_info* unwrap(const meta::type_info* ti) {
+    const static meta::type_info* unwrap(const meta::type_info* ti) {
         while(ti->kind == tk::optional || ti->kind == tk::pointer) {
             ti = &static_cast<const meta::optional_type_info*>(ti)->inner();
         }
