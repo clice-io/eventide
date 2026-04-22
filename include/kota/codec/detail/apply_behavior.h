@@ -65,8 +65,12 @@ constexpr auto apply_deserialize_behavior(value_t& value, Reader&& read, WithFn&
             value = *parsed;
             return std::expected<void, E>{};
         } else {
-            return std::expected<void, E>(std::unexpected(
-                E::custom(std::format("unknown enum string value '{}'", enum_text))));
+            if constexpr(requires { E::custom(std::string{}); }) {
+                return std::expected<void, E>(std::unexpected(
+                    E::custom(std::format("unknown enum string value '{}'", enum_text))));
+            } else {
+                return std::expected<void, E>(std::unexpected(E::invalid_state));
+            }
         }
     } else {
         return std::nullopt;

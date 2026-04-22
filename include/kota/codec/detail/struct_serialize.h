@@ -17,6 +17,7 @@
 #include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/fwd.h"
+#include "kota/codec/detail/struct_visitor.h"
 
 namespace kota::codec::detail {
 
@@ -71,76 +72,50 @@ auto serialize_slot_value(S& s, const V& value) -> std::expected<typename S::val
     }
 }
 
-template <typename Config, typename E, typename T, std::size_t I, typename S>
-auto serialize_slot_by_name(S& s, const T& v) -> std::expected<void, E> {
-    using schema = meta::virtual_schema<T, Config>;
-    using slot_t = type_list_element_t<I, typename schema::slots>;
-    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-    using attrs_t = typename slot_t::attrs;
+template <typename E, typename S>
+struct serialize_by_name_visitor {
+    using error_type = E;
+    S& s;
 
-    constexpr std::size_t offset = schema::fields[I].offset;
-    const auto* base = reinterpret_cast<const std::byte*>(std::addressof(v));
-    const auto& field_value = *reinterpret_cast<const raw_t*>(base + offset);
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-        using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-        if(meta::evaluate_skip_predicate<pred>(field_value, /*is_serialize=*/true)) {
-            return {};
-        }
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_field(const raw_t& field_ref, std::string_view name) -> std::expected<void, E> {
+        return s.serialize_field(name,
+                                 [&] { return serialize_slot_value<attrs_t, E>(s, field_ref); });
     }
 
-    std::string_view name = schema::fields[I].name;
-    return s.serialize_field(name,
-                             [&] { return serialize_slot_value<attrs_t, E>(s, field_value); });
-}
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_skip(const raw_t&) -> std::expected<void, E> {
+        return {};
+    }
+};
 
-template <typename Config, typename E, typename T, std::size_t I, typename S>
-auto serialize_slot_by_position(S& s, const T& v) -> std::expected<void, E> {
-    using schema = meta::virtual_schema<T, Config>;
-    using slot_t = type_list_element_t<I, typename schema::slots>;
-    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-    using attrs_t = typename slot_t::attrs;
+template <typename E, typename S>
+struct serialize_by_position_visitor {
+    using error_type = E;
+    S& s;
 
-    constexpr std::size_t offset = schema::fields[I].offset;
-    const auto* base = reinterpret_cast<const std::byte*>(std::addressof(v));
-    const auto& field_value = *reinterpret_cast<const raw_t*>(base + offset);
-
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-        using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-        if(meta::evaluate_skip_predicate<pred>(field_value, /*is_serialize=*/true)) {
-            // For by-position formats, we cannot omit the slot — it would shift
-            // all subsequent field positions.  Serialize the default value instead.
-            raw_t default_value{};
-            return serialize_slot_value<attrs_t, E>(s, default_value);
-        }
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_field(const raw_t& field_ref, std::string_view) -> std::expected<void, E> {
+        return serialize_slot_value<attrs_t, E>(s, field_ref);
     }
 
-    return serialize_slot_value<attrs_t, E>(s, field_value);
-}
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_skip(const raw_t&) -> std::expected<void, E> {
+        // For by-position formats, we cannot omit the slot — it would shift
+        // all subsequent field positions.  Serialize the default value instead.
+        raw_t default_value{};
+        return serialize_slot_value<attrs_t, E>(s, default_value);
+    }
+};
 
 template <typename Config, typename E, typename S, typename T>
 auto struct_serialize_by_name(S& s, const T& v) -> std::expected<typename S::value_type, E> {
     using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
+    constexpr std::size_t N = type_list_size_v<typename schema::slots>;
 
     KOTA_EXPECTED_TRY(s.begin_object(N));
-
-    std::expected<void, E> status{};
-    bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return ([&] {
-            auto r = serialize_slot_by_name<Config, E, T, Is>(s, v);
-            if(!r) {
-                status = std::unexpected(r.error());
-                return false;
-            }
-            return true;
-        }() && ...);
-    }(std::make_index_sequence<N>{});
-
-    if(!ok) {
-        return std::unexpected(status.error());
-    }
+    serialize_by_name_visitor<E, S> visitor{s};
+    KOTA_EXPECTED_TRY((for_each_field<Config, true>(v, visitor)));
     return s.end_object();
 }
 
@@ -149,25 +124,8 @@ auto struct_serialize_by_position(S& s, const T& v) -> std::expected<typename S:
     static_assert(std::is_void_v<typename S::value_type>,
                   "by_position serialization requires value_type = void");
 
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
-
-    std::expected<void, E> status{};
-    bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return ([&] {
-            auto r = serialize_slot_by_position<Config, E, T, Is>(s, v);
-            if(!r) {
-                status = std::unexpected(r.error());
-                return false;
-            }
-            return true;
-        }() && ...);
-    }(std::make_index_sequence<N>{});
-
-    if(!ok) {
-        return std::unexpected(status.error());
-    }
+    serialize_by_position_visitor<E, S> visitor{s};
+    KOTA_EXPECTED_TRY((for_each_field<Config, true>(v, visitor)));
     return {};
 }
 

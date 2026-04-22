@@ -11,9 +11,9 @@
 #include <utility>
 #include <vector>
 
+#include "kota/codec/backend.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/arena_encode.h"
-#include "kota/codec/detail/arena_traits.h"
 #include "kota/codec/flatbuffers/struct_layout.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -73,17 +73,6 @@ inline auto variant_payload_voffset(std::size_t index)
 
 }  // namespace detail
 
-// Arena-codec backend for flatbuffers.
-//
-// Exposes the arena serializer trait on top of a ::flatbuffers::FlatBufferBuilder.
-// All type-dispatch logic lives in kota::codec::arena::encode_* — this class is
-// a thin adapter that turns arena primitives into FlatBufferBuilder calls.
-//
-// NOTE: FlatBufferBuilder forbids calling CreateString / CreateVector while a
-// table is open. Each TableBuilder therefore DEFERS every add_* call into its
-// own writer list and flushes it within StartTable / EndTable inside
-// finalize(). Nested TableBuilders hold their own lists so they can be built
-// concurrently with an outer builder without clobbering its queued writes.
 template <typename Config = config::default_config>
 class Serializer {
 public:
@@ -120,8 +109,6 @@ public:
     }
 
     explicit Serializer(std::size_t initial_capacity = 1024) : builder(initial_capacity) {}
-
-    // === Arena primitives =================================================
 
     class TableBuilder {
     public:
@@ -212,7 +199,6 @@ public:
         return std::vector<std::uint8_t>(begin, begin + builder.GetSize());
     }
 
-    // === Top-level entry (public) =========================================
     template <typename T>
     auto bytes(const T& value) -> result_t<std::vector<std::uint8_t>> {
         builder.Clear();

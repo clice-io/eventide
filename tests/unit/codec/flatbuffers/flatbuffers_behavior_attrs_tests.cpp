@@ -11,9 +11,9 @@
 #include "kota/zest/zest.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/flatbuffers/flatbuffers.h"
 #include "kota/codec/flatbuffers/proxy.h"
-#include "kota/codec/traits.h"
 
 namespace kota::codec {
 

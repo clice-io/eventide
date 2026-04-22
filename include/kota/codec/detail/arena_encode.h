@@ -22,11 +22,10 @@
 #include "kota/support/type_traits.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/config.h"
-#include "kota/codec/detail/arena_traits.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/dispatch.h"
-#include "kota/codec/traits.h"
 
 namespace kota::codec::arena {
 
@@ -102,54 +101,30 @@ auto encode_boxed(B& b, const T& value)
     return tb.finalize();
 }
 
-template <typename Config, typename B, typename T, std::size_t I>
-auto encode_struct_slot(B& b, typename B::TableBuilder& tb, const T& value)
-    -> std::expected<void, typename B::error_type> {
-    using schema = meta::virtual_schema<T, Config>;
-    using slot_t = kota::type_list_element_t<I, typename schema::slots>;
-    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-    using attrs_t = typename slot_t::attrs;
+template <typename Config, typename B>
+struct encode_field_visitor {
+    using error_type = typename B::error_type;
+    B& b;
+    typename B::TableBuilder& tb;
 
-    constexpr std::size_t offset = schema::fields[I].offset;
-    const auto* base = reinterpret_cast<const std::byte*>(std::addressof(value));
-    const auto& field_value = *reinterpret_cast<const raw_t*>(base + offset);
-
-    if constexpr(kota::tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-        using pred = typename kota::tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-        if(meta::evaluate_skip_predicate<pred>(field_value, /*is_serialize=*/true)) {
-            return {};
-        }
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_field(const raw_t& field_ref, std::string_view) -> std::expected<void, error_type> {
+        KOTA_EXPECTED_TRY_V(auto sid, B::field_slot_id(I));
+        return encode_value_at<Config, B, raw_t, attrs_t>(b, tb, sid, field_ref);
     }
 
-    KOTA_EXPECTED_TRY_V(auto sid, B::field_slot_id(I));
-    return encode_value_at<Config, B, raw_t, attrs_t>(b, tb, sid, field_value);
-}
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_skip(const raw_t&) -> std::expected<void, error_type> {
+        return {};
+    }
+};
 
 template <typename Config, typename B, typename T>
 auto encode_table(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type> {
-    using E = typename B::error_type;
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = kota::type_list_size_v<slots>;
-
     auto tb = b.start_table();
-
-    std::expected<void, E> status{};
-    bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return ([&] {
-            auto r = encode_struct_slot<Config, B, T, Is>(b, tb, value);
-            if(!r) {
-                status = std::unexpected(r.error());
-                return false;
-            }
-            return true;
-        }() && ...);
-    }(std::make_index_sequence<N>{});
-
-    if(!ok) {
-        return std::unexpected(status.error());
-    }
+    encode_field_visitor<Config, B> visitor{b, tb};
+    KOTA_EXPECTED_TRY((codec::detail::for_each_field<Config, true>(value, visitor)));
     return tb.finalize();
 }
 

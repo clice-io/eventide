@@ -2,7 +2,7 @@
 
 #include <expected>
 
-#include "kota/codec/traits.h"
+#include "kota/codec/backend.h"
 
 namespace kota::codec {
 

@@ -26,7 +26,6 @@
 #include "kota/codec/detail/fwd.h"
 #include "kota/codec/detail/struct_serialize.h"
 #include "kota/codec/spelling.h"
-#include "kota/codec/traits.h"
 
 namespace kota::codec::detail {
 

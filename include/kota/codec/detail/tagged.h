@@ -149,21 +149,8 @@ constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& valu
                 s.serialize_field(tag_field, [&] { return codec::serialize(s, tag_name); }));
 
             // Struct fields via schema
-            std::expected<void, E> slot_status{};
-            bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return ([&] {
-                    auto r = serialize_slot_by_name<config_t, E, alt_t, Is>(s, item);
-                    if(!r) {
-                        slot_status = std::unexpected(r.error());
-                        return false;
-                    }
-                    return true;
-                }() && ...);
-            }(std::make_index_sequence<N>{});
-
-            if(!ok) {
-                return std::unexpected(slot_status.error());
-            }
+            serialize_by_name_visitor<E, S> visitor{s};
+            KOTA_EXPECTED_TRY((for_each_field<config_t, true>(item, visitor)));
             return s.end_object();
         },
         value);

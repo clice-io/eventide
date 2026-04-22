@@ -22,11 +22,11 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
 #include "kota/meta/schema.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/config.h"
-#include "kota/codec/detail/arena_traits.h"
+#include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/spelling.h"
-#include "kota/codec/traits.h"
 
 namespace kota::codec::arena {
 
@@ -336,62 +336,37 @@ auto decode_value_at(const B& d,
                                                         sid,
                                                         meta::annotated_value(out),
                                                         required);
-    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::as>) {
-        using target = typename kota::tuple_find_spec_t<Attrs, meta::behavior::as>::target;
+    } else if constexpr(kota::tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
         if(!view.has(sid)) {
             if(required) {
                 return std::unexpected(E::invalid_state);
             }
             return {};
         }
-        target tmp{};
-        KOTA_EXPECTED_TRY((decode_value_at<Config, B, target, std::tuple<>>(d,
-                                                                            view,
-                                                                            sid,
-                                                                            tmp,
-                                                                            /*required=*/true)));
-        out = static_cast<U>(std::move(tmp));
-        return {};
-    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
-        using clean_u = detail::clean_t<U>;
-        using Policy = typename kota::tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<clean_u>, "enum_string requires an enum type");
-        if(!view.has(sid)) {
-            if(required) {
-                return std::unexpected(E::invalid_state);
-            }
-            return {};
-        }
-        std::string name;
-        KOTA_EXPECTED_TRY(
-            (decode_value_at<Config, B, std::string, std::tuple<>>(d,
-                                                                   view,
-                                                                   sid,
-                                                                   name,
-                                                                   /*required=*/true)));
-        auto parsed = codec::spelling::map_string_to_enum<clean_u, Policy>(name);
-        if(!parsed.has_value()) {
-            return std::unexpected(E::invalid_state);
-        }
-        out = static_cast<U>(*parsed);
-        return {};
-    } else if constexpr(kota::tuple_has_spec_v<Attrs, meta::behavior::with>) {
-        using adapter = typename kota::tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
-        using wire_t = typename adapter::wire_type;
-        if(!view.has(sid)) {
-            if(required) {
-                return std::unexpected(E::invalid_state);
-            }
-            return {};
-        }
-        wire_t wire{};
-        KOTA_EXPECTED_TRY((decode_value_at<Config, B, wire_t, std::tuple<>>(d,
-                                                                            view,
-                                                                            sid,
-                                                                            wire,
-                                                                            /*required=*/true)));
-        out = static_cast<U>(adapter::from_wire(std::move(wire)));
-        return {};
+        auto result = codec::detail::apply_deserialize_behavior<Attrs, U, E>(
+            out,
+            [&](auto& v) {
+                return decode_value_at<Config, B, std::remove_cvref_t<decltype(v)>, std::tuple<>>(
+                    d,
+                    view,
+                    sid,
+                    v,
+                    /*required=*/true);
+            },
+            [&](auto tag, auto& v) -> std::expected<void, E> {
+                using Adapter = typename decltype(tag)::type;
+                using wire_t = typename Adapter::wire_type;
+                wire_t wire{};
+                KOTA_EXPECTED_TRY(
+                    (decode_value_at<Config, B, wire_t, std::tuple<>>(d,
+                                                                      view,
+                                                                      sid,
+                                                                      wire,
+                                                                      /*required=*/true)));
+                v = Adapter::from_wire(std::move(wire));
+                return {};
+            });
+        return *result;
     } else if constexpr(arena::streaming_deserialize_traits<B, U>) {
         using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
         return traits::deserialize(d, view, sid, out);

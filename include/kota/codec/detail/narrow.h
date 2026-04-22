@@ -6,7 +6,7 @@
 #include <limits>
 #include <string_view>
 
-#include "kota/codec/traits.h"
+#include "kota/codec/backend.h"
 
 namespace kota::codec::detail {
 

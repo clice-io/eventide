@@ -21,6 +21,7 @@
 #include "kota/codec/config.h"
 #include "kota/codec/detail/apply_behavior.h"
 #include "kota/codec/detail/fwd.h"
+#include "kota/codec/detail/struct_visitor.h"
 
 namespace kota::codec::detail {
 
@@ -264,52 +265,29 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     }
 }
 
+template <typename E, typename D>
+struct deserialize_by_position_visitor {
+    using error_type = E;
+    D& d;
+
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_field(raw_t& field_ref, std::string_view) -> std::expected<void, E> {
+        return deserialize_slot_value<attrs_t, E>(d, field_ref);
+    }
+
+    template <std::size_t I, typename raw_t, typename attrs_t>
+    auto on_skip(raw_t&) -> std::expected<void, E> {
+        // Discard using the same wire shape as normal deserialization
+        // (respects with/as/enum_string behavior attrs).
+        raw_t discard{};
+        return deserialize_slot_value<attrs_t, E>(d, discard);
+    }
+};
+
 template <typename Config, typename E, typename D, typename T>
 auto struct_deserialize_by_position(D& d, T& v) -> std::expected<void, E> {
-    using schema = meta::virtual_schema<T, Config>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
-
-    std::expected<void, E> status{};
-    bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return ([&] {
-            using slot_t = type_list_element_t<Is, slots>;
-            using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
-            using attrs_t = typename slot_t::attrs;
-
-            constexpr std::size_t offset = schema::fields[Is].offset;
-            auto* base = reinterpret_cast<std::byte*>(std::addressof(v));
-            auto& field_value = *reinterpret_cast<raw_t*>(base + offset);
-
-            if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-                using pred =
-                    typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
-                if(meta::evaluate_skip_predicate<pred>(field_value, false)) {
-                    // Discard using the same wire shape as normal deserialization
-                    // (respects with/as/enum_string behavior attrs).
-                    raw_t discard{};
-                    auto r = deserialize_slot_value<attrs_t, E>(d, discard);
-                    if(!r) {
-                        status = std::unexpected(r.error());
-                        return false;
-                    }
-                    return true;
-                }
-            }
-
-            auto r = deserialize_slot_value<attrs_t, E>(d, field_value);
-            if(!r) {
-                status = std::unexpected(r.error());
-                return false;
-            }
-            return true;
-        }() && ...);
-    }(std::make_index_sequence<N>{});
-
-    if(!ok) {
-        return std::unexpected(status.error());
-    }
-    return {};
+    deserialize_by_position_visitor<E, D> visitor{d};
+    return for_each_field<Config, false>(v, visitor);
 }
 
 template <typename Config, typename E, typename D, typename T>

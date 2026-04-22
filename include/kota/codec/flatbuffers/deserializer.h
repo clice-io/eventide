@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/backend.h"
 #include "kota/codec/config.h"
 #include "kota/codec/detail/arena_decode.h"
-#include "kota/codec/detail/arena_traits.h"
 #include "kota/codec/flatbuffers/serializer.h"
 #include "kota/codec/flatbuffers/struct_layout.h"
 
@@ -25,8 +25,6 @@
 namespace kota::codec::flatbuffers {
 
 namespace detail {
-
-// === Small typed view wrappers used by the arena decode layer =============
 
 template <typename T>
 class scalar_vector_view {
@@ -119,11 +117,6 @@ private:
 
 }  // namespace detail
 
-// Arena-codec backend for flatbuffers (deserialization side).
-//
-// Wraps a ::flatbuffers::Table* and exposes the arena deserializer trait.
-// All type-dispatch logic lives in kota::codec::arena::decode_* — this class
-// is a thin adapter that turns arena accessors into FlatBuffers table reads.
 template <typename Config = config::default_config>
 class Deserializer {
 public:
@@ -153,8 +146,6 @@ public:
     static auto variant_payload_slot_id(std::size_t index) -> result_t<slot_id> {
         return ::kota::codec::flatbuffers::detail::variant_payload_voffset(index);
     }
-
-    // === Table view =========================================================
 
     class TableView {
     public:
@@ -195,8 +186,6 @@ public:
         const ::flatbuffers::Table* table = nullptr;
     };
 
-    // === Construction =======================================================
-
     explicit Deserializer(std::span<const std::uint8_t> bytes) {
         initialize(bytes);
     }
@@ -223,8 +212,6 @@ public:
         }
         return last_error;
     }
-
-    // === Arena decode accessors ============================================
 
     auto root_view() const -> TableView {
         return TableView(root);
@@ -334,8 +321,6 @@ public:
         }
         return detail::table_vector_view<TableView>(vector);
     }
-
-    // === Top-level entry (public) ==========================================
 
     template <typename T>
     auto deserialize(T& value) const -> result_t<void> {
