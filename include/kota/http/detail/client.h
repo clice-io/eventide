@@ -188,7 +188,7 @@ private:
     void remember_error(error err) noexcept;
 
     std::shared_ptr<client_state> owner;
-    event_loop* dispatch_loop = nullptr;
+    [[maybe_unused]] event_loop* dispatch_loop = nullptr;
     request spec{};
     std::optional<error> staged_error;
 };

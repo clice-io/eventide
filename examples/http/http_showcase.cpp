@@ -1,6 +1,6 @@
 #include <chrono>
 #include <cstdlib>
-#include <iostream>
+#include <print>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,7 +15,7 @@ using namespace kota;
 namespace {
 
 void print_error(std::string_view label, const http::error& err) {
-    std::cout << label << ": " << http::message(err) << "\n";
+    std::println("{}: {}", label, http::message(err));
 }
 
 http::client build_demo_client() {
@@ -35,7 +35,7 @@ http::client build_demo_client() {
                      .build();
 
     if(!built) {
-        std::cerr << "failed to build client: " << http::message(built.error()) << "\n";
+        std::println(stderr, "failed to build client: {}", http::message(built.error()));
         std::exit(1);
     }
 
@@ -92,7 +92,7 @@ task<> run_showcase(event_loop& loop) {
                     .catch_cancel();
 
     if(home.is_cancelled()) {
-        std::cout << "home request cancelled\n";
+        std::println("home request cancelled");
         co_return;
     }
     if(home.has_error()) {
@@ -100,14 +100,14 @@ task<> run_showcase(event_loop& loop) {
         co_return;
     }
 
-    std::cout << "GET " << home->url << " -> " << home->status << "\n";
-    std::cout << "body bytes: " << home->bytes().size() << "\n";
+    std::println("GET {} -> {}", home->url, home->status);
+    std::println("body bytes: {}", home->bytes().size());
 
     auto built_head = client.head("https://example.com").header("accept", "*/*").build();
 
     auto head = co_await api.execute(std::move(built_head)).catch_cancel();
     if(head.is_cancelled()) {
-        std::cout << "head request cancelled\n";
+        std::println("head request cancelled");
         co_return;
     }
     if(head.has_error()) {
@@ -115,9 +115,9 @@ task<> run_showcase(event_loop& loop) {
         co_return;
     }
 
-    std::cout << "HEAD " << head->url << " -> " << head->status << "\n";
+    std::println("HEAD {} -> {}", head->url, head->status);
     client.record_cookie(false);
-    std::cout << "automatic cookie recording disabled for subsequent requests\n";
+    std::println("automatic cookie recording disabled for subsequent requests");
 }
 
 }  // namespace

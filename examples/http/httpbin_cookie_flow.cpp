@@ -1,4 +1,4 @@
-#include <iostream>
+#include <print>
 #include <string>
 
 #include "kota/http/detail/manager.h"
@@ -10,18 +10,18 @@ using namespace kota;
 namespace {
 
 void print_error(std::string_view label, const http::error& err) {
-    std::cout << label << ": " << http::message(err) << "\n";
+    std::println("{}: {}", label, http::message(err));
 }
 
 task<> run_demo(event_loop& loop) {
     http::client client(loop);
 
-    std::cout << "1) let httpbin set two cookies while automatic recording is enabled\n";
+    std::println("1) let httpbin set two cookies while automatic recording is enabled");
     auto seeded = co_await client.get("https://httpbin.io/cookies/set?session=jar-demo&theme=light")
                       .send()
                       .catch_cancel();
     if(seeded.is_cancelled()) {
-        std::cout << "seed request cancelled\n";
+        std::println("seed request cancelled");
         co_return;
     }
     if(seeded.has_error()) {
@@ -29,12 +29,12 @@ task<> run_demo(event_loop& loop) {
         co_return;
     }
 
-    std::cout << "seed response body: " << seeded->text() << "\n";
+    std::println("seed response body: {}", seeded->text());
 
-    std::cout << "\n2) ask httpbin which cookies it sees from the recorded jar\n";
+    std::println("\n2) ask httpbin which cookies it sees from the recorded jar");
     auto jar_echo = co_await client.get("https://httpbin.io/cookies").send().catch_cancel();
     if(jar_echo.is_cancelled()) {
-        std::cout << "jar echo request cancelled\n";
+        std::println("jar echo request cancelled");
         co_return;
     }
     if(jar_echo.has_error()) {
@@ -42,18 +42,18 @@ task<> run_demo(event_loop& loop) {
         co_return;
     }
 
-    std::cout << "jar-backed /cookies response: " << jar_echo->text() << "\n";
+    std::println("jar-backed /cookies response: {}", jar_echo->text());
 
-    std::cout << "\n3) turn off automatic cookie recording on the client\n";
+    std::println("\n3) turn off automatic cookie recording on the client");
     client.record_cookie(false);
 
-    std::cout << "\n4) send manual cookies on one request with cookies(...)\n";
+    std::println("\n4) send manual cookies on one request with cookies(...)");
     auto manual = co_await client.get("https://httpbin.io/cookies")
                       .cookies("session=manual-demo; theme=manual-only")
                       .send()
                       .catch_cancel();
     if(manual.is_cancelled()) {
-        std::cout << "manual request cancelled\n";
+        std::println("manual request cancelled");
         co_return;
     }
     if(manual.has_error()) {
@@ -61,7 +61,7 @@ task<> run_demo(event_loop& loop) {
         co_return;
     }
 
-    std::cout << "manual-only /cookies response: " << manual->text() << "\n";
+    std::println("manual-only /cookies response: {}", manual->text());
 }
 
 }  // namespace

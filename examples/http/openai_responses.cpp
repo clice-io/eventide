@@ -1,7 +1,8 @@
 #include <chrono>
-#include <iostream>
+#include <print>
 #include <string>
 
+#include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
 #include "kota/codec/json.h"
@@ -43,8 +44,8 @@ task<void, http::error> request_openai(event_loop& loop) {
                      .value()["text"]
                      .as_string();
 
-    std::cout << "status: " << result.status << "\n";
-    std::cout << reply << "\n";
+    std::println("status: {}", result.status);
+    std::println("{}", reply);
 }
 
 }  // namespace
