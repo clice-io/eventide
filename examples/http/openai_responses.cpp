@@ -5,7 +5,7 @@
 #include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
-#include "kota/codec/json.h"
+#include "kota/codec/json/json.h"
 
 using namespace std::chrono_literals;
 using namespace kota;

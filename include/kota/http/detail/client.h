@@ -18,7 +18,7 @@
 #include "kota/async/runtime/task.h"
 
 #if __has_include(<simdjson.h>)
-#include "kota/codec/json.h"
+#include "kota/codec/json/json.h"
 #define KOTA_HTTP_HAS_CODEC_JSON 1
 #else
 #define KOTA_HTTP_HAS_CODEC_JSON 0
