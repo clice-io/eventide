@@ -64,6 +64,10 @@ end
 
 set_languages("c++23")
 
+if is_plat("windows") then
+	add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN")
+end
+
 if has_config("async") then
 	add_requires("libuv v1.52.0")
 end

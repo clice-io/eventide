@@ -125,6 +125,7 @@ std::expected<std::reference_wrapper<manager>, error> manager::try_for_loop(even
 
     auto& out = *created;
     table.emplace(&loop, std::move(created));
+    loop.on_destroy([loop_ptr = &loop] { manager::unregister_loop(*loop_ptr); });
     return out;
 }
 

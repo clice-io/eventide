@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cassert>
 #include <deque>
+#include <vector>
 
 #include "../libuv.h"
 #include "kota/support/functional.h"
@@ -25,6 +26,7 @@ struct event_loop::self {
     uv_async_t async = {};
     bool idle_running = false;
     std::deque<async_node*> tasks;
+    std::vector<function<void()>> destroy_callbacks;
 
     /// Lock-free MPSC stack head. Writers (any thread) push via CAS in
     /// post(); the single consumer (event loop thread) drains via exchange
@@ -185,6 +187,10 @@ void event_loop::post(function<void()> callback) {
     uv::async_send(self->async);
 }
 
+void event_loop::on_destroy(function<void()> callback) {
+    self->destroy_callbacks.push_back(std::move(callback));
+}
+
 event_loop::event_loop() : self(new struct self()) {
     auto& loop = self->loop;
     if(auto err = uv::loop_init(loop)) {
@@ -224,6 +230,11 @@ event_loop::~event_loop() {
         auto* next = leaked->next;
         delete leaked;
         leaked = next;
+    }
+
+    auto callbacks = std::move(self->destroy_callbacks);
+    for(auto& callback: callbacks) {
+        callback();
     }
 
     auto& loop = self->loop;

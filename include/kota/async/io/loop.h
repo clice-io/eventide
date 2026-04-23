@@ -113,6 +113,13 @@ public:
     /// callback, where relay::send() can be called thread-safely.
     relay create_relay();
 
+    /// Registers a callback to run during event_loop destruction, before the
+    /// underlying uv loop is closed.
+    ///
+    /// NOT thread-safe: intended for loop-affine subsystems that need to
+    /// release handles tied to this loop.
+    void on_destroy(function<void()> callback);
+
     /// Schedules a task for execution on this event loop.
     /// If the task is passed by rvalue (temporary), the loop takes ownership
     /// (sets root=true). The task will be destroyed after it completes.
