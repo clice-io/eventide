@@ -384,13 +384,9 @@ bool inflight_request::prepare() noexcept {
         return fail(error::invalid_request("failed to bind curl easy to shared request resources"));
     }
 
-    if(!apply_url() || !apply_method() || !apply_body() || !apply_headers() || !apply_cookies() ||
-       !apply_user_agent() || !apply_redirect() || !apply_tls() || !apply_proxy() ||
-       !apply_timeout() || !apply_curl_options()) {
-        return false;
-    }
-
-    return true;
+    return apply_url() && apply_method() && apply_body() && apply_headers() && apply_cookies() &&
+           apply_user_agent() && apply_redirect() && apply_tls() && apply_proxy() &&
+           apply_timeout() && apply_curl_options();
 }
 
 bool inflight_request::bind_runtime(void* opaque) noexcept {

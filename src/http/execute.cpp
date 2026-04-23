@@ -71,10 +71,10 @@ struct request_awaiter : uv::await_op<request_awaiter> {
     }
 
     static void on_cancel(system_op* op) {
-        uv::await_op<request_awaiter>::complete_cancel(op, [](request_awaiter& awaiter) {
-            awaiter.state->detach_from_multi();
-            awaiter.state->release_request();
-            awaiter.state->completed = true;
+        uv::await_op<request_awaiter>::complete_cancel(op, [](request_awaiter& self) {
+            self.state->detach_from_multi();
+            self.state->release_request();
+            self.state->completed = true;
         });
     }
 
