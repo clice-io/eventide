@@ -3,8 +3,10 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -28,15 +30,6 @@ auto& managers() {
     return table;
 }
 
-template <typename T>
-void require_multi_setopt(CURLM* multi,
-                          CURLMoption option,
-                          T value,
-                          [[maybe_unused]] const char* message) noexcept {
-    [[maybe_unused]] auto err = curl::multi_setopt(multi, option, value);
-    assert(curl::ok(err) && message);
-}
-
 }  // namespace
 
 struct manager::timer_context {
@@ -56,23 +49,38 @@ manager::manager(event_loop& loop, curl::multi_handle handle) noexcept :
     timer->owner = this;
     uv::timer_init(loop, timer->handle);
     timer->handle.data = timer;
+}
 
-    require_multi_setopt(multi.get(),
-                         CURLMOPT_SOCKETFUNCTION,
-                         &manager::on_curl_socket,
-                         "curl socket callback registration failed");
-    require_multi_setopt(multi.get(),
-                         CURLMOPT_SOCKETDATA,
-                         static_cast<void*>(this),
-                         "curl socket callback data registration failed");
-    require_multi_setopt(multi.get(),
-                         CURLMOPT_TIMERFUNCTION,
-                         &manager::on_curl_timeout,
-                         "curl timer callback registration failed");
-    require_multi_setopt(multi.get(),
-                         CURLMOPT_TIMERDATA,
-                         static_cast<void*>(this),
-                         "curl timer callback data registration failed");
+std::expected<void, error> manager::initialize() {
+    if(auto err = curl::multi_setopt(multi.get(), CURLMOPT_SOCKETFUNCTION, &manager::on_curl_socket);
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to register curl socket callback: {}", curl::message(err))));
+    }
+
+    if(auto err = curl::multi_setopt(multi.get(), CURLMOPT_SOCKETDATA, static_cast<void*>(this));
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to register curl socket callback data: {}", curl::message(err))));
+    }
+
+    if(auto err = curl::multi_setopt(multi.get(), CURLMOPT_TIMERFUNCTION, &manager::on_curl_timeout);
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to register curl timer callback: {}", curl::message(err))));
+    }
+
+    if(auto err = curl::multi_setopt(multi.get(), CURLMOPT_TIMERDATA, static_cast<void*>(this));
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to register curl timer callback data: {}", curl::message(err))));
+    }
+
+    return {};
 }
 
 manager::~manager() {
@@ -90,9 +98,9 @@ manager::~manager() {
     }
 }
 
-manager& manager::for_loop(event_loop& loop) {
+std::expected<std::reference_wrapper<manager>, error> manager::try_for_loop(event_loop& loop) {
     if(auto code = detail::ensure_curl_runtime(); !curl::ok(code)) {
-        std::abort();
+        return std::unexpected(error::from_curl(code));
     }
 
     std::scoped_lock lock(table_mutex());
@@ -104,13 +112,26 @@ manager& manager::for_loop(event_loop& loop) {
 
     auto multi = curl::multi_handle::create();
     if(!multi) {
-        std::abort();
+        return std::unexpected(
+            error::from_curl(CURLE_FAILED_INIT, "failed to create curl multi handle"));
     }
 
     auto created = std::unique_ptr<manager>(new manager(loop, std::move(multi)));
+    if(auto init = created->initialize(); !init) {
+        return std::unexpected(std::move(init.error()));
+    }
+
     auto& out = *created;
     table.emplace(&loop, std::move(created));
     return out;
+}
+
+manager& manager::for_loop(event_loop& loop) {
+    auto out = try_for_loop(loop);
+    if(!out) {
+        std::abort();
+    }
+    return out->get();
 }
 
 void manager::unregister_loop(event_loop& loop) {

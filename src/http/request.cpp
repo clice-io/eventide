@@ -48,80 +48,59 @@ request_builder make_request_builder(const std::shared_ptr<client_state>& state,
                            make_request(std::move(method), std::move(url), state->options()));
 }
 
-template <typename Options>
-std::expected<client, error> build_client(event_loop* bound_loop, Options&& options) {
-    if(auto code = detail::ensure_curl_runtime(); !curl::ok(code)) {
-        return std::unexpected(error::from_curl(code));
+std::shared_ptr<client_state> require_client_state(client_options options) {
+    auto state = client_state::create(std::move(options));
+    if(!state) {
+        std::abort();
     }
-
-    client out(std::forward<Options>(options));
-    if(bound_loop) {
-        out.bind(*bound_loop);
-    }
-    return out;
-}
-
-void require_share_setopt(CURLSH* share,
-                          CURLSHoption option,
-                          auto value,
-                          [[maybe_unused]] const char* message) noexcept {
-    [[maybe_unused]] auto err = curl::share_setopt(share, option, value);
-    assert(curl::ok(err) && message);
+    return std::move(*state);
 }
 
 }  // namespace
 
-client_state::client_state(client_options opts) : defaults(std::move(opts)) {
+std::expected<std::shared_ptr<client_state>, error> client_state::create(client_options opts) {
     if(auto code = detail::ensure_curl_runtime(); !curl::ok(code)) {
-        std::abort();
+        return std::unexpected(error::from_curl(code));
     }
 
-    share = curl::share_handle::create();
-    if(!share) {
-        std::abort();
+    auto state = std::shared_ptr<client_state>(new client_state(std::move(opts)));
+    state->share = curl::share_handle::create();
+    if(!state->share) {
+        return std::unexpected(
+            error::from_curl(CURLE_FAILED_INIT, "failed to create curl share handle"));
     }
 
-    require_share_setopt(share.get(),
-                         CURLSHOPT_LOCKFUNC,
-                         &client_state::on_share_lock,
-                         "curl share lock registration failed");
-    require_share_setopt(share.get(),
-                         CURLSHOPT_UNLOCKFUNC,
-                         &client_state::on_share_unlock,
-                         "curl share unlock registration failed");
-    require_share_setopt(share.get(),
-                         CURLSHOPT_USERDATA,
-                         static_cast<void*>(this),
-                         "curl share userdata registration failed");
-    require_share_setopt(share.get(),
-                         CURLSHOPT_SHARE,
-                         CURL_LOCK_DATA_COOKIE,
-                         "curl share cookie registration failed");
-    require_share_setopt(share.get(),
-                         CURLSHOPT_SHARE,
-                         CURL_LOCK_DATA_DNS,
-                         "curl share dns registration failed");
-    require_share_setopt(share.get(),
-                         CURLSHOPT_SHARE,
-                         CURL_LOCK_DATA_SSL_SESSION,
-                         "curl share ssl session registration failed");
+    if(auto err = curl::share_setopt(state->share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_COOKIE);
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to share curl cookie state: {}", curl::message(err))));
+    }
+
+    if(auto err = curl::share_setopt(state->share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to share curl dns state: {}", curl::message(err))));
+    }
+
+    if(auto err =
+           curl::share_setopt(state->share.get(), CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+       !curl::ok(err)) {
+        return std::unexpected(error::from_curl(
+            err,
+            std::format("failed to share curl ssl session state: {}", curl::message(err))));
+    }
+
+    return state;
 }
 
-client_state::~client_state() noexcept {
-    if(!share) {
-        return;
-    }
-
-    curl::share_setopt(share.get(), CURLSHOPT_UNSHARE, CURL_LOCK_DATA_COOKIE);
-    curl::share_setopt(share.get(), CURLSHOPT_UNSHARE, CURL_LOCK_DATA_DNS);
-    curl::share_setopt(share.get(), CURLSHOPT_UNSHARE, CURL_LOCK_DATA_SSL_SESSION);
-    curl::share_setopt(share.get(), CURLSHOPT_LOCKFUNC, nullptr);
-    curl::share_setopt(share.get(), CURLSHOPT_UNLOCKFUNC, nullptr);
-    curl::share_setopt(share.get(), CURLSHOPT_USERDATA, nullptr);
-    share.reset();
-}
+client_state::client_state(client_options opts) : defaults(std::move(opts)) {}
 
 void client_state::bind(event_loop& loop) noexcept {
+    if(bound_loop != nullptr && bound_loop != &loop) {
+        std::abort();
+    }
     bound_loop = &loop;
 }
 
@@ -162,35 +141,6 @@ bool client_state::bind_easy(CURL* easy, bool enable_record_cookie) const noexce
 
     return true;
 }
-
-void client_state::on_share_lock(CURL*,
-                                 curl_lock_data data,
-                                 curl_lock_access,
-                                 void* userptr) noexcept {
-    auto* self = static_cast<client_state*>(userptr);
-    if(!self) {
-        return;
-    }
-    self->mutex_for(data).lock();
-}
-
-void client_state::on_share_unlock(CURL*, curl_lock_data data, void* userptr) noexcept {
-    auto* self = static_cast<client_state*>(userptr);
-    if(!self) {
-        return;
-    }
-    self->mutex_for(data).unlock();
-}
-
-std::mutex& client_state::mutex_for(curl_lock_data data) noexcept {
-    switch(data) {
-        case CURL_LOCK_DATA_COOKIE: return cookie_mu;
-        case CURL_LOCK_DATA_DNS: return dns_mu;
-        case CURL_LOCK_DATA_SSL_SESSION: return ssl_session_mu;
-        default: return admin_mu;
-    }
-}
-
 request_builder::request_builder(std::shared_ptr<client_state> owner,
                                  event_loop* dispatch_loop,
                                  request req) noexcept :
@@ -282,15 +232,16 @@ void request_builder::remember_error(error err) noexcept {
 std::optional<std::reference_wrapper<event_loop>>
     request_builder::resolve_loop(const std::shared_ptr<client_state>& owner,
                                   event_loop* dispatch_loop) noexcept {
-    if(dispatch_loop) {
-        return *dispatch_loop;
-    }
-
     if(!owner) {
         return std::nullopt;
     }
 
-    return owner->loop();
+    auto bound = owner->loop();
+    if(dispatch_loop) {
+        owner->bind(*dispatch_loop);
+        return *dispatch_loop;
+    }
+    return bound;
 }
 
 client_builder::client_builder(event_loop& loop) noexcept : bound_loop(&loop) {}
@@ -377,19 +328,38 @@ client_builder& client_builder::ca_path(std::string path) {
 }
 
 std::expected<client, error> client_builder::build() const& {
-    return build_client(bound_loop, options);
+    auto state = client_state::create(options);
+    if(!state) {
+        return std::unexpected(std::move(state.error()));
+    }
+
+    client out(std::move(*state));
+    if(bound_loop) {
+        out.bind(*bound_loop);
+    }
+    return out;
 }
 
 std::expected<client, error> client_builder::build() && {
-    return build_client(bound_loop, std::move(options));
+    auto state = client_state::create(std::move(options));
+    if(!state) {
+        return std::unexpected(std::move(state.error()));
+    }
+
+    client out(std::move(*state));
+    if(bound_loop) {
+        out.bind(*bound_loop);
+    }
+    return out;
 }
 
-client::client(client_options options) :
-    state(std::make_shared<client_state>(std::move(options))) {}
+client::client(client_options options) : state(require_client_state(std::move(options))) {}
 
 client::client(event_loop& loop, client_options options) : client(std::move(options)) {
     bind(loop);
 }
+
+client::client(std::shared_ptr<client_state> state) noexcept : state(std::move(state)) {}
 
 client::~client() = default;
 
@@ -415,6 +385,7 @@ bool client::is_bound() const noexcept {
 }
 
 bound_client client::on(event_loop& loop) & noexcept {
+    state->bind(loop);
     return bound_client(state, loop);
 }
 

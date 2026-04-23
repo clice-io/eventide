@@ -213,7 +213,7 @@ public:
 
     bool is_bound() const noexcept;
 
-    // Create a lightweight loop-bound view without rebinding the client itself.
+    // Bind the client to this loop and create a lightweight loop-bound view.
     bound_client on(event_loop& loop) & noexcept;
 
     // Start a request with an arbitrary HTTP method string.
@@ -252,6 +252,10 @@ public:
     const client_options& options() const noexcept;
 
 private:
+    friend class client_builder;
+
+    explicit client(std::shared_ptr<client_state> state) noexcept;
+
     std::shared_ptr<client_state> state;
 };
 

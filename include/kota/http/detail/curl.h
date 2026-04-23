@@ -27,6 +27,10 @@ inline easy_error to_easy_error(multi_error code) noexcept {
     return ok(code) ? CURLE_OK : CURLE_FAILED_INIT;
 }
 
+inline easy_error to_easy_error(share_error code) noexcept {
+    return ok(code) ? CURLE_OK : CURLE_FAILED_INIT;
+}
+
 inline std::string_view message(easy_error code) noexcept {
     auto* text = ::curl_easy_strerror(code);
     return text ? std::string_view(text) : std::string_view();

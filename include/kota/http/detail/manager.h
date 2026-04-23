@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstddef>
+#include <expected>
+#include <functional>
 #include <unordered_map>
 
+#include "kota/http/detail/common.h"
 #include "kota/http/detail/curl.h"
 #include "kota/async/io/loop.h"
 
@@ -26,6 +29,8 @@ public:
     manager& operator=(manager&&) = delete;
 
     ~manager();
+
+    static std::expected<std::reference_wrapper<manager>, error> try_for_loop(event_loop& loop);
 
     static manager& for_loop(event_loop& loop);
 
@@ -88,6 +93,8 @@ private:
     void close_watchers() noexcept;
 
     manager(event_loop& loop, curl::multi_handle multi) noexcept;
+
+    std::expected<void, error> initialize();
 
     event_loop* bound_loop = nullptr;
     curl::multi_handle multi;

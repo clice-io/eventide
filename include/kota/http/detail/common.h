@@ -35,8 +35,16 @@ struct error {
     curl::easy_error curl_code = CURLE_OK;
     std::string detail;
 
-    static error from_curl(curl::easy_error code) {
-        return {.kind = error_kind::curl, .curl_code = code, .detail = {}};
+    static error from_curl(curl::easy_error code, std::string detail = {}) {
+        return {.kind = error_kind::curl, .curl_code = code, .detail = std::move(detail)};
+    }
+
+    static error from_curl(curl::multi_error code, std::string detail = {}) {
+        return from_curl(curl::to_easy_error(code), std::move(detail));
+    }
+
+    static error from_curl(curl::share_error code, std::string detail = {}) {
+        return from_curl(curl::to_easy_error(code), std::move(detail));
     }
 
     static error invalid_request(std::string detail) {

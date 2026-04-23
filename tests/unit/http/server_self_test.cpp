@@ -383,6 +383,9 @@ TEST_CASE(unbound_client_can_dispatch_via_on) {
     auto req = client.on(loop).get(server.url("/via-on")).send();
     auto result = run_task(*this, req);
     ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(client.is_bound());
+    ASSERT_TRUE(client.loop().has_value());
+    EXPECT_EQ(&client.loop()->get(), &loop);
     EXPECT_EQ(result->text(), "/via-on");
 }
 
@@ -462,6 +465,12 @@ TEST_CASE(response_body_exposes_bytes_and_text_helpers) {
 TEST_CASE(http_error_message_member_matches_free_function) {
     auto err = http::error::invalid_request("bad request");
     EXPECT_EQ(err.message(), "bad request");
+    EXPECT_EQ(err.message(), http::message(err));
+}
+
+TEST_CASE(http_curl_error_uses_detail_when_present) {
+    auto err = http::error::from_curl(CURLE_FAILED_INIT, "curl multi initialization failed");
+    EXPECT_EQ(err.message(), "curl multi initialization failed");
     EXPECT_EQ(err.message(), http::message(err));
 }
 

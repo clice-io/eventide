@@ -214,8 +214,13 @@ void complete_request_operation(const request_runtime_ref& runtime,
 task<response, error> execute_with_state(request req,
                                          event_loop& loop,
                                          std::shared_ptr<client_state> owner) {
+    auto manager = manager::try_for_loop(loop);
+    if(!manager) {
+        co_await fail(std::move(manager.error()));
+    }
+
     prepared_request prepared(std::move(req), owner);
-    request_op op(manager::for_loop(loop));
+    request_op op(manager->get());
     op.attach(prepared);
     if(!prepared.bind_runtime(request_runtime_opaque(op.runtime)) &&
        prepared.result.kind == error_kind::curl && curl::ok(prepared.result.curl_code)) {
