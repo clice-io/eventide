@@ -124,6 +124,44 @@ if(KOTA_CODEC_ENABLE_FLATBUFFERS)
     )
 endif()
 
+if(KOTA_CODEC_ENABLE_YAML)
+    set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_FORMAT_SOURCE OFF CACHE BOOL "" FORCE)
+
+    kota_add_git_dependency(
+        yaml-cpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG yaml-cpp-0.9.0
+        OPTIONS
+            YAML_CPP_BUILD_TESTS OFF
+            YAML_CPP_BUILD_TOOLS OFF
+            YAML_CPP_BUILD_CONTRIB OFF
+            YAML_CPP_INSTALL OFF
+            YAML_CPP_FORMAT_SOURCE OFF
+    )
+
+    add_library(kota_codec_yaml INTERFACE)
+    add_library(kota::codec::yaml ALIAS kota_codec_yaml)
+
+    target_include_directories(kota_codec_yaml INTERFACE
+        "${PROJECT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(kota_codec_yaml INTERFACE
+        kota::meta
+        yaml-cpp::yaml-cpp
+    )
+
+    kota_apply_project_options(kota_codec_yaml)
+
+    target_link_libraries(kota_codec INTERFACE
+        kota::codec::yaml
+    )
+endif()
+
 if(KOTA_CODEC_ENABLE_TOML)
     set(TOMLPLUSPLUS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(TOMLPLUSPLUS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

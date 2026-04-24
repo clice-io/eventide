@@ -92,6 +92,17 @@ else()
     message(STATUS "KOTA_CODEC_ENABLE_TOML=OFF: skipping tests/unit/codec/toml/*")
 endif()
 
+if(KOTA_CODEC_ENABLE_YAML)
+    set(TEST_CODEC_YAML_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_CODEC_YAML_SOURCES INCLUDE REGEX "^tests/unit/codec/yaml/.*\\.cpp$")
+    list(TRANSFORM TEST_CODEC_YAML_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_CODEC_YAML_SOURCES}
+    )
+else()
+    message(STATUS "KOTA_CODEC_ENABLE_YAML=OFF: skipping tests/unit/codec/yaml/*")
+endif()
+
 set(TEST_CODEC_BINCODE_SOURCES ${TEST_SOURCES})
 list(FILTER TEST_CODEC_BINCODE_SOURCES INCLUDE REGEX "^tests/unit/codec/bincode/.*\\.cpp$")
 list(TRANSFORM TEST_CODEC_BINCODE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
