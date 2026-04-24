@@ -50,6 +50,7 @@ struct TestSuiteDef {
 
         auto run_test = +[] -> TestState {
             current_test_state() = TestState::Passed;
+            current_test_context() = {TestName.data(), case_name.data(), path.data()};
             Derived test;
             if constexpr(requires { test.setup(); }) {
                 test.setup();

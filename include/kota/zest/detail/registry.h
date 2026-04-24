@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -50,6 +51,18 @@ inline void pass() {
 
 inline void skip() {
     current_test_state() = TestState::Skipped;
+}
+
+struct TestContext {
+    std::string_view suite;
+    std::string_view test;
+    std::string_view file;
+    std::uint32_t snap_counter = 0;
+};
+
+inline TestContext& current_test_context() {
+    thread_local TestContext ctx;
+    return ctx;
 }
 
 class Runner {
