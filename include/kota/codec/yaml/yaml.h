@@ -15,11 +15,15 @@
 namespace kota::codec::yaml {
 
 inline auto parse_node(std::string_view text) -> std::expected<YAML::Node, error> {
+#if KOTA_ENABLE_EXCEPTIONS
     try {
         return YAML::Load(std::string(text));
     } catch(const YAML::ParserException&) {
         return std::unexpected(error_kind::parse_error);
     }
+#else
+    return YAML::Load(std::string(text));
+#endif
 }
 
 template <typename T>

@@ -128,11 +128,11 @@ public:
 
     status_t deserialize_bool(bool& value) {
         return read_scalar(value, [](const YAML::Node& node) -> result_t<bool> {
-            try {
-                return node.as<bool>();
-            } catch(...) {
+            bool v{};
+            if(!YAML::convert<bool>::decode(node, v)) {
                 return std::unexpected(error_kind::type_mismatch);
             }
+            return v;
         });
     }
 
@@ -140,11 +140,11 @@ public:
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(parsed, [](const YAML::Node& node) -> result_t<std::int64_t> {
-            try {
-                return node.as<std::int64_t>();
-            } catch(...) {
+            std::int64_t v{};
+            if(!YAML::convert<std::int64_t>::decode(node, v)) {
                 return std::unexpected(error_kind::type_mismatch);
             }
+            return v;
         });
         if(!status) {
             return std::unexpected(status.error());
@@ -163,11 +163,11 @@ public:
     status_t deserialize_uint(T& value) {
         std::int64_t parsed = 0;
         auto status = read_scalar(parsed, [](const YAML::Node& node) -> result_t<std::int64_t> {
-            try {
-                return node.as<std::int64_t>();
-            } catch(...) {
+            std::int64_t v{};
+            if(!YAML::convert<std::int64_t>::decode(node, v)) {
                 return std::unexpected(error_kind::type_mismatch);
             }
+            return v;
         });
         if(!status) {
             return std::unexpected(status.error());
@@ -192,11 +192,11 @@ public:
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
         auto status = read_scalar(parsed, [](const YAML::Node& node) -> result_t<double> {
-            try {
-                return node.as<double>();
-            } catch(...) {
+            double v{};
+            if(!YAML::convert<double>::decode(node, v)) {
                 return std::unexpected(error_kind::type_mismatch);
             }
+            return v;
         });
         if(!status) {
             return std::unexpected(status.error());
@@ -214,11 +214,11 @@ public:
     status_t deserialize_char(char& value) {
         std::string text;
         auto status = read_scalar(text, [](const YAML::Node& node) -> result_t<std::string> {
-            try {
-                return node.as<std::string>();
-            } catch(...) {
+            std::string v;
+            if(!YAML::convert<std::string>::decode(node, v)) {
                 return std::unexpected(error_kind::type_mismatch);
             }
+            return v;
         });
         if(!status) {
             return std::unexpected(status.error());
@@ -236,11 +236,11 @@ public:
 
     status_t deserialize_str(std::string& value) {
         return read_scalar(value, [](const YAML::Node& node) -> result_t<std::string> {
-            try {
-                return node.as<std::string>();
-            } catch(...) {
+            std::string v;
+            if(!YAML::convert<std::string>::decode(node, v)) {
                 return std::unexpected(error_kind::type_mismatch);
             }
+            return v;
         });
     }
 
@@ -303,7 +303,7 @@ public:
             return std::optional<std::string_view>(std::nullopt);
         }
 
-        frame.pending_key = frame.iter->first.template as<std::string>();
+        YAML::convert<std::string>::decode(frame.iter->first, frame.pending_key);
         frame.pending_valid = true;
         current_value.set(frame.iter->second);
         return std::optional<std::string_view>(frame.pending_key);
