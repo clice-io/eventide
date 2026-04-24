@@ -1,0 +1,8 @@
+{
+  "name": "Alice",
+  "age": 30,
+  "addr": {
+    "city": "Tokyo",
+    "zip": 100
+  }
+}
