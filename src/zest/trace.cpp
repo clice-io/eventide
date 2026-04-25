@@ -26,6 +26,8 @@ void print_trace(std::source_location location) {
 }
 #ifdef __cpp_exceptions
 bool trace_exception(function<void()> cb, bool print) {
+    bool ret = false;
+
     CPPTRACE_TRY {
         CPPTRACE_TRY {
             cb();
@@ -35,7 +37,7 @@ bool trace_exception(function<void()> cb, bool print) {
                 std::println("[ exception ] {}", e.what());
                 cpptrace::from_current_exception().print();
             }
-            return true;
+            ret = true;
         }
     }
     CPPTRACE_CATCH(...) {
@@ -43,9 +45,9 @@ bool trace_exception(function<void()> cb, bool print) {
             std::println("[ exception ] <non-std exception>");
             cpptrace::from_current_exception().print();
         }
-        return true;
+        ret = true;
     }
-    return false;
+    return ret;
 }
 #endif
 

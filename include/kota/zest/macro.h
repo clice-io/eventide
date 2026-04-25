@@ -153,8 +153,8 @@
     } while(0)
 
 // clang-format off
-#define EXPECT_THROWS(...) ZEST_EXPECT_THROWS("throw exception", !CAUGHT(true, __VA_ARGS__), (void)0, __VA_ARGS__)
-#define EXPECT_NOTHROWS(...) ZEST_EXPECT_THROWS("not throw exception", CAUGHT(false, __VA_ARGS__), (void)0, __VA_ARGS__)
+#define EXPECT_THROWS(...) ZEST_EXPECT_THROWS("throw exception", !CAUGHT(false, __VA_ARGS__), (void)0, __VA_ARGS__)
+#define EXPECT_NOTHROWS(...) ZEST_EXPECT_THROWS("not throw exception", CAUGHT(true, __VA_ARGS__), (void)0, __VA_ARGS__)
 // clang-format on
 
 #endif
