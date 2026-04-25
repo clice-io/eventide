@@ -6,6 +6,7 @@ set_allowedplats("windows", "linux", "macosx")
 option("dev", { default = true })
 option("test", { default = true })
 option("async", { default = true })
+option("http", { default = true })
 option("ztest", { default = true })
 option("codec", { default = true })
 option("option", { default = true })
@@ -16,6 +17,10 @@ option("codec_toml", { default = false })
 
 if has_config("ztest") and (not has_config("deco") or not has_config("option")) then
 	raise("ztest requires deco and option")
+end
+
+if has_config("http") and not has_config("async") then
+	raise("http requires async")
 end
 
 if has_config("dev") then
@@ -59,8 +64,15 @@ end
 
 set_languages("c++23")
 
+if is_plat("windows") then
+	add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN")
+end
+
 if has_config("async") then
 	add_requires("libuv v1.52.0")
+end
+if has_config("http") then
+	add_requires("libcurl 8.11.0")
 end
 if has_config("ztest") then
 	add_requires("cpptrace v1.0.4")
@@ -191,7 +203,22 @@ if has_config("async") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/async/**)")
 		add_deps("support")
-		add_packages("libuv")
+		add_packages("libuv", { public = true })
+	end)
+end
+
+if has_config("http") then
+	target("http", function()
+		set_kind("$(kind)")
+		add_rules("cl-flags")
+		add_files("src/http/**.cpp")
+		add_includedirs("include", { public = true })
+		add_headerfiles("include/(kota/http/**)")
+		add_deps("async")
+		if has_config("codec") and has_config("codec_simdjson") then
+			add_deps("codec_json")
+		end
+		add_packages("libcurl", { public = true })
 	end)
 end
 
@@ -281,6 +308,10 @@ target("kotatsu", function()
 		add_deps("async", { public = true })
 		add_packages("libuv", { public = true })
 	end
+	if has_config("http") then
+		add_deps("http", { public = true })
+		add_packages("libcurl", { public = true })
+	end
 	if has_config("async") then
 		add_deps("ipc", "language", { public = true })
 	end
@@ -350,6 +381,9 @@ if has_config("test") and has_config("ztest") then
 		end
 		if has_config("async") and has_config("codec") and has_config("codec_simdjson") then
 			add_files("tests/unit/ipc/**.cpp")
+		end
+		if has_config("http") then
+			add_files("tests/unit/http/**.cpp")
 		end
 
 		add_deps("kotatsu")

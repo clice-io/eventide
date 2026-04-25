@@ -52,6 +52,7 @@ concept handle_like = is_one_of<bare_t<T>,
                                 uv_pipe_t,
                                 uv_tty_t,
                                 uv_udp_t,
+                                uv_poll_t,
                                 uv_timer_t,
                                 uv_idle_t,
                                 uv_prepare_t,
@@ -256,6 +257,21 @@ ALWAYS_INLINE void timer_start(uv_timer_t& handle,
 ALWAYS_INLINE void timer_stop(uv_timer_t& handle) noexcept {
     [[maybe_unused]] int rc = ::uv_timer_stop(&handle);
     assert(rc == 0 && "uv::timer_stop failed");
+}
+
+ALWAYS_INLINE error poll_init_socket(uv_loop_t& loop,
+                                     uv_poll_t& handle,
+                                     uv_os_sock_t socket) noexcept {
+    return status_to_error(::uv_poll_init_socket(&loop, &handle, socket));
+}
+
+ALWAYS_INLINE error poll_start(uv_poll_t& handle, int events, uv_poll_cb cb) noexcept {
+    assert(cb != nullptr && "uv::poll_start requires non-null callback");
+    return status_to_error(::uv_poll_start(&handle, events, cb));
+}
+
+ALWAYS_INLINE error poll_stop(uv_poll_t& handle) noexcept {
+    return status_to_error(::uv_poll_stop(&handle));
 }
 
 ALWAYS_INLINE error signal_init(uv_loop_t& loop, uv_signal_t& handle) noexcept {
