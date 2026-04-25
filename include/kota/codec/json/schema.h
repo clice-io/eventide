@@ -376,11 +376,11 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
         return compact;
     }
     simdjson::dom::parser parser;
-    auto doc = parser.parse(compact);
-    if(doc.error()) {
-        return std::unexpected(error(make_error(doc.error())));
+    simdjson::dom::element doc;
+    if(auto err = parser.parse(compact).get(doc)) {
+        return std::unexpected(error(make_error(err)));
     }
-    return simdjson::prettify(doc.value());
+    return simdjson::prettify(doc);
 }
 
 template <typename T>
