@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "kota/async/runtime/task.h"
@@ -35,18 +36,21 @@ public:
 
     struct change {
         std::string path;
-        effect type;
-        std::string associated;
+        effect type = effect::other;
+        std::string old_path;
     };
 
     struct options {
         std::chrono::milliseconds debounce;
+        bool recursive;
 
-        constexpr options(std::chrono::milliseconds debounce = std::chrono::milliseconds{200}) :
-            debounce(debounce) {}
+        constexpr options() : debounce(std::chrono::milliseconds{200}), recursive(true) {}
+
+        explicit constexpr options(std::chrono::milliseconds debounce, bool recursive = true) :
+            debounce(debounce), recursive(recursive) {}
     };
 
-    static result<directory_watcher> create(const char* path,
+    static result<directory_watcher> create(std::string_view path,
                                             options opts = {},
                                             event_loop& loop = event_loop::current());
 

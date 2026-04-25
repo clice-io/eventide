@@ -45,11 +45,13 @@ struct directory_watcher::Self : std::enable_shared_from_this<Self> {
 
         change c;
 
-        std::string path = dir;
+        std::string path = dir ? dir : "";
         if(!path.empty() && path.back() != '/' && path.back() != '\\') {
             path += '/';
         }
-        path += filename;
+        if(filename) {
+            path += filename;
+        }
         c.path = std::move(path);
 
         switch(action) {
@@ -61,12 +63,12 @@ struct directory_watcher::Self : std::enable_shared_from_this<Self> {
         }
 
         if(action == EFSW_MOVED && old_filename) {
-            std::string old_path = dir;
+            std::string old_path = dir ? dir : "";
             if(!old_path.empty() && old_path.back() != '/' && old_path.back() != '\\') {
                 old_path += '/';
             }
             old_path += old_filename;
-            c.associated = std::move(old_path);
+            c.old_path = std::move(old_path);
         }
 
         auto shared = raw->shared_from_this();
@@ -84,7 +86,13 @@ directory_watcher::~directory_watcher() {
 
 directory_watcher::directory_watcher(directory_watcher&&) noexcept = default;
 
-directory_watcher& directory_watcher::operator=(directory_watcher&&) noexcept = default;
+directory_watcher& directory_watcher::operator=(directory_watcher&& other) noexcept {
+    if(this != &other) {
+        close();
+        self = std::move(other.self);
+    }
+    return *this;
+}
 
 namespace {
 
@@ -101,7 +109,7 @@ error efsw_error_to_error(efsw_watchid id) {
 
 }  // namespace
 
-result<directory_watcher> directory_watcher::create(const char* path,
+result<directory_watcher> directory_watcher::create(std::string_view path,
                                                     options opts,
                                                     event_loop& loop) {
     auto s = std::make_shared<Self>();
@@ -114,7 +122,12 @@ result<directory_watcher> directory_watcher::create(const char* path,
         return outcome_error(error::unknown_error);
     }
 
-    efsw_watchid id = efsw_addwatch(s->watcher, path, Self::efsw_callback, 1, s.get());
+    std::string path_str(path);
+    efsw_watchid id = efsw_addwatch(s->watcher,
+                                    path_str.c_str(),
+                                    Self::efsw_callback,
+                                    opts.recursive ? 1 : 0,
+                                    s.get());
     if(id < 0) {
         return outcome_error(efsw_error_to_error(id));
     }
