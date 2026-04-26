@@ -367,7 +367,9 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/deco/**.cc")
 		end
 		if has_config("codec") and has_config("codec_simdjson") then
-			add_files("tests/unit/codec/json/simdjson_*.cpp")
+			add_files("tests/unit/codec/json/**.cpp")
+		end
+		if has_config("codec") then
 			add_files("tests/unit/codec/content/**.cpp")
 		end
 		if has_config("codec") and has_config("codec_flatbuffers") then

@@ -54,7 +54,7 @@ endif()
 
 if(KOTA_CODEC_ENABLE_SIMDJSON)
     set(TEST_CODEC_SIMDJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_CODEC_SIMDJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/json/simdjson_.*\\.cpp$")
+    list(FILTER TEST_CODEC_SIMDJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/json/.*\\.cpp$")
     list(TRANSFORM TEST_CODEC_SIMDJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_CODEC_SIMDJSON_SOURCES}
