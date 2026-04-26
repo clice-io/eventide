@@ -209,10 +209,14 @@ bool path_exists(const char* path) {
     return res;
 }
 
-constexpr auto IGNORED_FLAGS = kFSEventStreamEventFlagItemIsHardlink |
-                               kFSEventStreamEventFlagItemIsLastHardlink |
-                               kFSEventStreamEventFlagItemIsSymlink |
-                               kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemIsFile;
+constexpr FSEventStreamEventFlags IGNORED_FLAGS =
+    kFSEventStreamEventFlagItemIsHardlink | kFSEventStreamEventFlagItemIsLastHardlink |
+    kFSEventStreamEventFlagItemIsSymlink | kFSEventStreamEventFlagItemIsDir |
+    kFSEventStreamEventFlagItemIsFile
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 101300
+    | kFSEventStreamEventFlagItemCloned
+#endif
+    ;
 
 }  // namespace
 
@@ -287,8 +291,13 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 continue;
             if(flags[i] & (kFSEventStreamEventFlagMount | kFSEventStreamEventFlagUnmount))
                 continue;
-            if(flags[i] & kFSEventStreamEventFlagRootChanged)
+            if(flags[i] & kFSEventStreamEventFlagRootChanged) {
+                struct stat st;
+                if(stat(self->root_path.c_str(), &st) != 0) {
+                    changes.push_back(change{self->root_path, effect::destroy, {}});
+                }
                 continue;
+            }
 
             if((flags[i] & ~IGNORED_FLAGS) == 0) {
                 continue;
@@ -485,6 +494,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
             case ERROR_NOTIFY_ENUM_DIR: {
                 auto shared = shared_from_this();
                 loop->post([shared]() { shared->push_event(change{{}, effect::overflow, {}}); });
+                poll();
                 return;
             }
             case ERROR_ACCESS_DENIED: {
@@ -532,9 +542,15 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 case FILE_ACTION_RENAMED_OLD_NAME:
                     changes.push_back(change{std::move(full), effect::destroy, {}});
                     break;
-                case FILE_ACTION_MODIFIED:
+                case FILE_ACTION_MODIFIED: {
+                    std::wstring wfull =
+                        root_wpath + L"\\" + std::wstring(info->FileName, name_chars);
+                    DWORD attrs = GetFileAttributesW(wfull.c_str());
+                    if(attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY))
+                        break;
                     changes.push_back(change{std::move(full), effect::modify, {}});
                     break;
+                }
             }
 
             if(info->NextEntryOffset == 0)
@@ -720,6 +736,14 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     if(s->dir_handle == INVALID_HANDLE_VALUE) {
         return outcome_error(error::no_such_file_or_directory);
+    }
+
+    BY_HANDLE_FILE_INFORMATION file_info;
+    if(!GetFileInformationByHandle(s->dir_handle, &file_info) ||
+       !(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        CloseHandle(s->dir_handle);
+        s->dir_handle = INVALID_HANDLE_VALUE;
+        return outcome_error(error::invalid_argument);
     }
 
     s->root_wpath = std::move(wpath);
