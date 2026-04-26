@@ -1,6 +1,7 @@
 #include "kota/async/io/fs_event.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <unordered_map>
 #include <utility>
@@ -36,8 +37,8 @@ namespace kota {
 #if defined(__linux__)
 
 #define INOTIFY_MASK                                                                               \
-    IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY | IN_MOVE_SELF |                \
-        IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW | IN_ONLYDIR | IN_EXCL_UNLINK
+    (IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY | IN_MOVE_SELF |               \
+     IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW | IN_ONLYDIR | IN_EXCL_UNLINK)
 
 struct fs_event::Self : std::enable_shared_from_this<Self> {
     event_loop* loop;
@@ -45,7 +46,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     kota::event has_events{false};
     std::vector<change> buffer;
     std::chrono::milliseconds debounce_ms;
-    bool closed = false;
+    std::atomic<bool> closed{false};
     bool recursive = false;
     std::string root_path;
     std::string file_filter;
@@ -58,13 +59,22 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     std::unordered_map<std::string, int> path_to_wd;
 
     ~Self() {
-        close_inotify();
+        if(inotify_fd >= 0) {
+            ::close(inotify_fd);
+            inotify_fd = -1;
+        }
+        wd_to_path.clear();
+        path_to_wd.clear();
     }
 
-    void close_inotify() {
+    void stop_inotify() {
         if(poll_initialized) {
             uv_poll_stop(&poll_handle);
-            uv_close(reinterpret_cast<uv_handle_t*>(&poll_handle), nullptr);
+            auto prevent_destroy = new std::shared_ptr<Self>(shared_from_this());
+            poll_handle.data = prevent_destroy;
+            uv_close(reinterpret_cast<uv_handle_t*>(&poll_handle), [](uv_handle_t* h) {
+                delete static_cast<std::shared_ptr<fs_event::Self>*>(h->data);
+            });
             poll_initialized = false;
         }
         if(inotify_fd >= 0) {
@@ -103,7 +113,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void push_event(change c) {
-        if(closed)
+        if(closed.load(std::memory_order_relaxed))
             return;
         buffer.push_back(std::move(c));
         has_events.set();
@@ -119,12 +129,42 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         return it->second;
     }
 
+    void update_renamed_paths(const std::string& old_path, const std::string& new_path) {
+        std::string old_prefix = old_path + "/";
+        std::vector<std::pair<int, std::string>> updates;
+        for(auto& [wd, p]: wd_to_path) {
+            if(p == old_path) {
+                updates.push_back({wd, new_path});
+            } else if(p.size() > old_prefix.size() &&
+                      p.compare(0, old_prefix.size(), old_prefix) == 0) {
+                updates.push_back({wd, new_path + p.substr(old_path.size())});
+            }
+        }
+        for(auto& [wd, new_p]: updates) {
+            path_to_wd.erase(wd_to_path[wd]);
+            wd_to_path[wd] = new_p;
+            path_to_wd[new_p] = wd;
+        }
+    }
+
     void process_inotify_events() {
         alignas(struct inotify_event) char buf[8192];
         for(;;) {
             ssize_t n = ::read(inotify_fd, buf, sizeof(buf));
             if(n <= 0)
                 break;
+
+            struct raw_event {
+                std::string path;
+                uint32_t mask;
+                uint32_t cookie;
+                bool is_dir;
+                int wd;
+                bool consumed = false;
+            };
+
+            std::vector<raw_event> events;
+            std::unordered_map<uint32_t, size_t> move_from_cookies;
 
             for(char* p = buf; p < buf + n;) {
                 auto* ev = reinterpret_cast<struct inotify_event*>(p);
@@ -135,29 +175,63 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     continue;
                 }
 
-                bool is_dir = (ev->mask & IN_ISDIR) != 0;
                 std::string path = build_path(ev->wd, ev->name, ev->len);
                 if(path.empty())
                     continue;
 
-                if(ev->mask & (IN_CREATE | IN_MOVED_TO)) {
-                    push_event(change{path, effect::create, {}});
-                    if(is_dir && recursive) {
-                        scan_directory(path);
+                bool is_dir = (ev->mask & IN_ISDIR) != 0;
+                events.push_back({std::move(path), ev->mask, ev->cookie, is_dir, ev->wd});
+
+                if((ev->mask & IN_MOVED_FROM) && ev->cookie != 0) {
+                    move_from_cookies[ev->cookie] = events.size() - 1;
+                }
+            }
+
+            for(size_t i = 0; i < events.size(); i++) {
+                auto& e = events[i];
+                if(e.consumed)
+                    continue;
+
+                if(e.mask & IN_MOVED_TO) {
+                    auto it = move_from_cookies.find(e.cookie);
+                    if(it != move_from_cookies.end()) {
+                        auto& from = events[it->second];
+                        from.consumed = true;
+                        push_event(change{e.path, effect::rename, from.path});
+                        if(e.is_dir && recursive) {
+                            update_renamed_paths(from.path, e.path);
+                            scan_directory(e.path);
+                        }
+                    } else {
+                        push_event(change{e.path, effect::create, {}});
+                        if(e.is_dir && recursive) {
+                            scan_directory(e.path);
+                        }
                     }
-                } else if(ev->mask & (IN_MODIFY | IN_ATTRIB)) {
-                    push_event(change{path, effect::modify, {}});
-                } else if(ev->mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVED_FROM | IN_MOVE_SELF)) {
-                    bool is_self = (ev->mask & (IN_DELETE_SELF | IN_MOVE_SELF)) != 0;
-                    // Self events on non-root directories: the parent's
-                    // IN_DELETE / IN_MOVED_FROM already emitted the event.
-                    // For MOVE_SELF the watch stays alive (inode unchanged),
-                    // the MOVED_TO handler re-registers the new path.
-                    if(!is_self || path == root_path) {
-                        push_event(change{path, effect::destroy, {}});
+                } else if(e.mask & IN_CREATE) {
+                    push_event(change{e.path, effect::create, {}});
+                    if(e.is_dir && recursive) {
+                        scan_directory(e.path);
                     }
-                    if(!is_self && is_dir) {
-                        auto pit = path_to_wd.find(path);
+                } else if(e.mask & (IN_MODIFY | IN_ATTRIB)) {
+                    push_event(change{e.path, effect::modify, {}});
+                } else if(e.mask & IN_MOVED_FROM) {
+                    // Unmatched MOVED_FROM — file moved out of watched tree
+                    push_event(change{e.path, effect::destroy, {}});
+                    if(e.is_dir) {
+                        auto pit = path_to_wd.find(e.path);
+                        if(pit != path_to_wd.end()) {
+                            wd_to_path.erase(pit->second);
+                            path_to_wd.erase(pit);
+                        }
+                    }
+                } else if(e.mask & (IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF)) {
+                    bool is_self = (e.mask & (IN_DELETE_SELF | IN_MOVE_SELF)) != 0;
+                    if(!is_self || e.path == root_path) {
+                        push_event(change{e.path, effect::destroy, {}});
+                    }
+                    if(!is_self && e.is_dir) {
+                        auto pit = path_to_wd.find(e.path);
                         if(pit != path_to_wd.end()) {
                             wd_to_path.erase(pit->second);
                             path_to_wd.erase(pit);
@@ -165,8 +239,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     }
                 }
 
-                if(ev->mask & IN_IGNORED) {
-                    auto wit = wd_to_path.find(ev->wd);
+                if(e.mask & IN_IGNORED) {
+                    auto wit = wd_to_path.find(e.wd);
                     if(wit != wd_to_path.end()) {
                         path_to_wd.erase(wit->second);
                         wd_to_path.erase(wit);
@@ -178,7 +252,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
     static void on_poll(uv_poll_t* handle, int status, int events) {
         auto* self = static_cast<Self*>(handle->data);
-        if(status < 0 || self->closed)
+        if(status < 0 || self->closed.load(std::memory_order_relaxed))
             return;
         if(events & UV_READABLE) {
             self->process_inotify_events();
@@ -192,9 +266,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
 namespace {
 
-// macOS has a case insensitive file system by default. Use F_GETPATH
-// to get the canonical path and compare it with the input path to
-// detect case-only renames.
 bool path_exists(const char* path) {
     int fd = open(path, O_RDONLY | O_SYMLINK);
     if(fd == -1)
@@ -226,7 +297,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     kota::event has_events{false};
     std::vector<change> buffer;
     std::chrono::milliseconds debounce_ms;
-    bool closed = false;
+    std::atomic<bool> closed{false};
     bool recursive = false;
     std::string root_path;
     std::string file_filter;
@@ -239,12 +310,12 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     pthread_cond_t start_cond = PTHREAD_COND_INITIALIZER;
 
     ~Self() {
-        close_fsevents();
+        stop_fsevents();
         pthread_mutex_destroy(&start_mutex);
         pthread_cond_destroy(&start_cond);
     }
 
-    void close_fsevents() {
+    void stop_fsevents() {
         if(stream && cf_run_loop) {
             FSEventStreamStop(stream);
             FSEventStreamInvalidate(stream);
@@ -263,7 +334,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void push_event(change c) {
-        if(closed)
+        if(closed.load(std::memory_order_relaxed))
             return;
         buffer.push_back(std::move(c));
         has_events.set();
@@ -276,6 +347,10 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                                   const FSEventStreamEventFlags flags[],
                                   const FSEventStreamEventId[]) {
         auto* self = static_cast<Self*>(info);
+
+        if(self->closed.load(std::memory_order_acquire))
+            return;
+
         auto** paths = static_cast<char**>(event_paths);
 
         std::vector<change> changes;
@@ -309,15 +384,18 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
             }
 
             if(!self->recursive) {
-                if(path.size() <= self->root_path.size() + 1)
+                size_t prefix_len = self->root_path.size();
+                if(self->root_path.back() != '/')
+                    prefix_len += 1;
+                if(path.size() <= prefix_len)
                     continue;
-                auto relative = std::string_view(path).substr(self->root_path.size() + 1);
+                auto relative = std::string_view(path).substr(prefix_len);
                 if(relative.find('/') != std::string_view::npos) {
                     continue;
                 }
             }
 
-            if(self->closed)
+            if(self->closed.load(std::memory_order_relaxed))
                 continue;
 
             bool is_created = (flags[i] & kFSEventStreamEventFlagItemCreated) != 0;
@@ -348,6 +426,9 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         }
 
         if(changes.empty())
+            return;
+
+        if(self->closed.load(std::memory_order_acquire))
             return;
 
         auto shared = self->shared_from_this();
@@ -385,7 +466,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     kota::event has_events{false};
     std::vector<change> buffer;
     std::chrono::milliseconds debounce_ms;
-    bool closed = false;
+    std::atomic<bool> closed{false};
     bool recursive = false;
     std::string root_path;
     std::string file_filter;
@@ -403,10 +484,10 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     OVERLAPPED overlapped{};
 
     ~Self() {
-        close_win();
+        stop_win();
     }
 
-    void close_win() {
+    void stop_win() {
         if(!worker_thread.joinable())
             return;
 
@@ -426,7 +507,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void push_event(change c) {
-        if(closed)
+        if(closed.load(std::memory_order_relaxed))
             return;
         buffer.push_back(std::move(c));
         has_events.set();
@@ -516,15 +597,14 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     return;
         }
 
-        // Swap buffers and re-poll
         std::swap(read_buffer, write_buffer);
         poll();
 
         if(num_bytes == 0)
             return;
 
-        // Process events from read_buffer
         std::vector<change> changes;
+        std::string pending_old_name;
         BYTE* ptr = read_buffer.data();
         for(;;) {
             auto* info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(ptr);
@@ -535,11 +615,9 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
             switch(info->Action) {
                 case FILE_ACTION_ADDED:
-                case FILE_ACTION_RENAMED_NEW_NAME:
                     changes.push_back(change{std::move(full), effect::create, {}});
                     break;
                 case FILE_ACTION_REMOVED:
-                case FILE_ACTION_RENAMED_OLD_NAME:
                     changes.push_back(change{std::move(full), effect::destroy, {}});
                     break;
                 case FILE_ACTION_MODIFIED: {
@@ -551,11 +629,25 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                     changes.push_back(change{std::move(full), effect::modify, {}});
                     break;
                 }
+                case FILE_ACTION_RENAMED_OLD_NAME: pending_old_name = std::move(full); break;
+                case FILE_ACTION_RENAMED_NEW_NAME:
+                    if(!pending_old_name.empty()) {
+                        changes.push_back(
+                            change{std::move(full), effect::rename, std::move(pending_old_name)});
+                        pending_old_name.clear();
+                    } else {
+                        changes.push_back(change{std::move(full), effect::create, {}});
+                    }
+                    break;
             }
 
             if(info->NextEntryOffset == 0)
                 break;
             ptr += info->NextEntryOffset;
+        }
+
+        if(!pending_old_name.empty()) {
+            changes.push_back(change{std::move(pending_old_name), effect::destroy, {}});
         }
 
         if(!changes.empty()) {
@@ -585,14 +677,14 @@ fs_event::fs_event() noexcept = default;
 fs_event::fs_event(std::shared_ptr<Self> self) noexcept : self(std::move(self)) {}
 
 fs_event::~fs_event() {
-    close();
+    stop();
 }
 
 fs_event::fs_event(fs_event&&) noexcept = default;
 
 fs_event& fs_event::operator=(fs_event&& other) noexcept {
     if(this != &other) {
-        close();
+        stop();
         self = std::move(other.self);
     }
     return *this;
@@ -661,11 +753,10 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     rc = uv_poll_start(&s->poll_handle, UV_READABLE, Self::on_poll);
     if(rc < 0) {
-        s->close_inotify();
+        s->stop_inotify();
         return outcome_error(error(rc));
     }
 
-    // Keep the poll handle unreferenced so it doesn't keep the loop alive on its own
     uv_unref(reinterpret_cast<uv_handle_t*>(&s->poll_handle));
 
 #elif defined(__APPLE__)
@@ -703,7 +794,6 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
         return outcome_error(error::unknown_error);
     }
 
-    // Start the CF thread
     pthread_mutex_lock(&s->start_mutex);
     int pt_err = pthread_create(&s->cf_thread, nullptr, Self::cf_thread_entry, s.get());
     if(pt_err != 0) {
@@ -761,8 +851,12 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
     return fs_event(std::move(s));
 }
 
+result<fs_event> fs_event::create(std::string_view path, event_loop& loop) {
+    return create(path, options{}, loop);
+}
+
 task<std::vector<fs_event::change>, error> fs_event::next() {
-    if(!self || self->closed) {
+    if(!self || self->closed.load(std::memory_order_relaxed)) {
         co_await fail(error::invalid_argument);
     }
 
@@ -771,8 +865,8 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
             self->has_events.reset();
             co_await self->has_events.wait();
 
-            if(self->closed) {
-                co_await fail(error::software_caused_connection_abort);
+            if(self->closed.load(std::memory_order_relaxed)) {
+                co_await fail(error::operation_aborted);
             }
         }
 
@@ -803,7 +897,6 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
         if(filtered.empty())
             continue;
 
-        // Coalesce: create takes priority over modify in the same batch
         if(has_create) {
             bool any_destroy = false;
             for(auto& c: filtered) {
@@ -824,22 +917,22 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
     }
 }
 
-void fs_event::close() {
+void fs_event::stop() {
     if(!self) {
         return;
     }
 
-#if defined(__linux__)
-    self->close_inotify();
-#elif defined(__APPLE__)
-    self->close_fsevents();
-#elif defined(_WIN32)
-    self->close_win();
-#endif
-
-    self->closed = true;
+    self->closed.store(true, std::memory_order_release);
     self->has_events.set();
     self->debounce_timer.stop();
+
+#if defined(__linux__)
+    self->stop_inotify();
+#elif defined(__APPLE__)
+    self->stop_fsevents();
+#elif defined(_WIN32)
+    self->stop_win();
+#endif
 }
 
 }  // namespace kota

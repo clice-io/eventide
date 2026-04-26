@@ -42,28 +42,26 @@ public:
     };
 
     struct options {
-        std::chrono::milliseconds debounce;
-        bool recursive;
-
-        constexpr options() : debounce(std::chrono::milliseconds{200}), recursive(true) {}
-
-        explicit constexpr options(std::chrono::milliseconds debounce, bool recursive = true) :
-            debounce(debounce), recursive(recursive) {}
+        std::chrono::milliseconds debounce = std::chrono::milliseconds{200};
+        bool recursive = true;
     };
 
     static result<fs_event> create(std::string_view path,
-                                   options opts = {},
+                                   options opts,
                                    event_loop& loop = event_loop::current());
+
+    static result<fs_event> create(std::string_view path, event_loop& loop = event_loop::current());
 
     task<std::vector<change>, error> next();
 
-    void close();
+    void stop();
 
 private:
     struct Self;
 
     explicit fs_event(std::shared_ptr<Self> self) noexcept;
 
+    // shared_ptr because macOS/Windows backends need cross-thread shared ownership
     std::shared_ptr<Self> self;
 };
 

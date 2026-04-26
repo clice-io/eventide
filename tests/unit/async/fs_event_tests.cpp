@@ -59,7 +59,7 @@ task<int, error> fse_detect_modify(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    watcher->close();
+    watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
     co_await fs::rmdir(dir, loop).or_fail();
 
@@ -86,7 +86,7 @@ task<int, error> fse_detect_create(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    watcher->close();
+    watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
     co_await fs::rmdir(dir, loop).or_fail();
 
@@ -113,7 +113,7 @@ task<int, error> fse_detect_destroy(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    watcher->close();
+    watcher->stop();
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return has_effect(changes, fs_event::effect::destroy) ? 1 : 0;
@@ -149,12 +149,20 @@ task<int, error> fse_ignores_sibling(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    watcher->close();
+    watcher->stop();
     co_await fs::unlink(target, loop).or_fail();
     co_await fs::unlink(sibling, loop).or_fail();
     co_await fs::rmdir(dir, loop).or_fail();
 
-    co_return has_effect(changes, fs_event::effect::modify) ? 1 : 0;
+    if(!has_effect(changes, fs_event::effect::modify))
+        co_return 0;
+
+    for(const auto& c: changes) {
+        if(c.path.find("sibling") != std::string::npos)
+            co_return 0;
+    }
+
+    co_return 1;
 }
 
 // ── atomic replace (write tmp + rename) ────────────────────────────
@@ -183,11 +191,14 @@ task<int, error> fse_atomic_replace(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    watcher->close();
+    watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
     co_await fs::rmdir(dir, loop).or_fail();
 
-    co_return has_effect(changes, fs_event::effect::create) ? 1 : 0;
+    co_return (has_effect(changes, fs_event::effect::create) ||
+               has_effect(changes, fs_event::effect::rename))
+        ? 1
+        : 0;
 }
 
 // ── error on nonexistent parent directory ──────────────────────────
@@ -197,9 +208,9 @@ task<int, error> fse_error_bad_parent(event_loop& loop) {
     co_return result.has_error() ? 1 : 0;
 }
 
-// ── close then next returns error ──────────────────────────────────
+// ── stop then next returns error ───────────────────────────────────
 
-task<int, error> fse_close_then_next(event_loop& loop) {
+task<int, error> fse_stop_then_next(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -211,7 +222,7 @@ task<int, error> fse_close_then_next(event_loop& loop) {
     if(!watcher.has_value())
         co_await fail(watcher.error());
 
-    watcher->close();
+    watcher->stop();
     auto result = co_await watcher->next();
 
     co_await fs::unlink(file, loop).or_fail();
@@ -272,8 +283,8 @@ TEST_CASE(error_bad_parent) {
     EXPECT_EQ(*result, 1);
 }
 
-TEST_CASE(close_then_next) {
-    auto worker = fse_close_then_next(loop);
+TEST_CASE(stop_then_next) {
+    auto worker = fse_stop_then_next(loop);
     schedule_all(worker);
     auto result = worker.result();
     EXPECT_TRUE(result.has_value());
