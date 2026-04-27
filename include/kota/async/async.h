@@ -2,6 +2,7 @@
 
 #include "kota/support/config.h"
 #include "kota/async/io/fs.h"
+#include "kota/async/io/task_group.h"
 #include "kota/async/io/fs_event.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/process.h"

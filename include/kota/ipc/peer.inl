@@ -118,8 +118,8 @@ struct Peer<CodecT>::Self {
     std::unordered_map<protocol::RequestID, std::shared_ptr<cancellation_source>> incoming_requests;
 
     bool running = false;
-    bool writer_running = false;
     bool closed = false;
+    event write_event;
 
     LogCallback logger;
     LogLevel min_level = LogLevel::info;
@@ -133,14 +133,17 @@ struct Peer<CodecT>::Self {
         }
         ET_IPC_LOG(this, LogLevel::trace, "send: {}", payload);
         outgoing_queue.push_back(std::move(payload));
-        if(!writer_running) {
-            writer_running = true;
-            loop.schedule(write_loop());
-        }
+        write_event.set();
     }
 
     task<> write_loop() {
-        while(!outgoing_queue.empty()) {
+        while(!closed) {
+            if(outgoing_queue.empty()) {
+                write_event.reset();
+                co_await write_event.wait();
+                continue;
+            }
+
             auto payload = std::move(outgoing_queue.front());
             outgoing_queue.pop_front();
 
@@ -159,8 +162,6 @@ struct Peer<CodecT>::Self {
                 break;
             }
         }
-
-        writer_running = false;
     }
 
     void send_error(const protocol::RequestID& id, const Error& error) {
@@ -236,7 +237,8 @@ struct Peer<CodecT>::Self {
 
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
-                          std::string_view params) {
+                          std::string_view params,
+                          task_group<>& request_group) {
         ET_IPC_LOG(this, LogLevel::debug, "request: {} id={}", method, id);
 
         if(incoming_requests.contains(id)) {
@@ -254,9 +256,8 @@ struct Peer<CodecT>::Self {
         auto callback = it->second;
         auto cancel_source = std::make_shared<cancellation_source>();
         incoming_requests.insert_or_assign(id, cancel_source);
-        auto task =
-            run_request(id, std::move(callback), std::string(params), cancel_source->token());
-        loop.schedule(std::move(task));
+        request_group.spawn(
+            run_request(id, std::move(callback), std::string(params), cancel_source->token()));
     }
 
     task<> run_request(protocol::RequestID id,
@@ -285,14 +286,14 @@ struct Peer<CodecT>::Self {
         enqueue_outgoing(std::move(*response));
     }
 
-    void dispatch_incoming_message(std::string_view payload) {
+    void dispatch_incoming_message(std::string_view payload, task_group<>& request_group) {
         ET_IPC_LOG(this, LogLevel::trace, "recv: {}", payload);
         auto msg = codec.parse_message(payload);
         std::visit(
             [&](auto& m) {
                 using T = std::remove_cvref_t<decltype(m)>;
                 if constexpr(std::is_same_v<T, IncomingRequest>) {
-                    dispatch_request(m.method, m.id, m.params);
+                    dispatch_request(m.method, m.id, m.params, request_group);
                 } else if constexpr(std::is_same_v<T, IncomingNotification>) {
                     dispatch_notification(m.method, m.params);
                 } else if constexpr(std::is_same_v<T, IncomingResponse>) {
@@ -327,19 +328,25 @@ task<> Peer<CodecT>::run() {
     }
 
     self->running = true;
-    ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
 
-    while(self->transport) {
-        auto payload = co_await self->transport->read_message();
-        if(!payload.has_value()) {
-            self->fail_pending_requests("transport closed");
-            break;
+    task_group<> request_group(self->loop);
+
+    auto read_loop = [this, &request_group]() -> task<> {
+        ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
+        while(self->transport) {
+            auto payload = co_await self->transport->read_message();
+            if(!payload.has_value()) {
+                self->fail_pending_requests("transport closed");
+                break;
+            }
+            self->dispatch_incoming_message(*payload, request_group);
         }
+        ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
+    };
 
-        self->dispatch_incoming_message(*payload);
-    }
+    co_await when_all(read_loop(), self->write_loop());
+    co_await request_group.join();
 
-    ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
     self->running = false;
 }
 
@@ -369,6 +376,9 @@ Result<void> Peer<CodecT>::close() {
 
     // Discard queued outgoing messages.
     self->outgoing_queue.clear();
+
+    // Wake write_loop so it exits.
+    self->write_event.set();
 
     // Close the transport to unblock any pending read.
     return self->transport->close();
