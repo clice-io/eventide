@@ -3,17 +3,18 @@
 #include <cassert>
 #include <cstddef>
 #include <exception>
+#include <memory>
 #include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "kota/support/config.h"
 #include "kota/support/type_list.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/sync.h"
 #include "kota/async/runtime/task.h"
-#include "kota/async/vocab/cancellation.h"
 #include "kota/async/vocab/outcome.h"
 
 namespace kota {
@@ -66,17 +67,20 @@ public:
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     void spawn(task<T, E, C>&& t) {
         ++active;
-        done.reset();
-        loop.schedule(monitor(with_token(std::move(t), cancel_source.token())));
+        done->reset();
+        std::size_t index = children.size();
+        auto m = monitor(std::move(t), index);
+        children.push_back(m.operator->());
+        loop.schedule(std::move(m));
     }
 
     task<result_type> join() {
         if(active > 0) {
-            auto wait_result = co_await done.wait().catch_cancel();
+            auto wait_result = co_await done->wait().catch_cancel();
             if(!wait_result.has_value()) {
-                cancel_source.cancel();
+                cancel_all();
                 if(active > 0) {
-                    co_await done.wait();
+                    co_await done->wait();
                 }
                 co_await cancel();
             }
@@ -97,43 +101,56 @@ public:
     }
 
     void cancel_all() {
-        cancel_source.cancel();
+        cancelled = true;
+        for(auto* node: children) {
+            if(node) {
+                auto* t = static_cast<standard_task*>(node);
+                if(t->has_awaitee()) {
+                    node->cancel();
+                }
+            }
+        }
     }
 
 private:
     template <typename T, typename E, typename C>
-    task<> monitor(task<T, E, C> child) {
-        KOTA_TRY {
-            auto result = co_await std::move(child).catch_cancel();
+    task<> monitor(task<T, E, C> child, std::size_t index) {
+        if(!cancelled) {
+            KOTA_TRY {
+                auto result = co_await std::move(child).catch_cancel();
 
-            if constexpr(!std::is_void_v<E>) {
-                if(result.has_error() && !has_error) {
-                    has_error = true;
-                    if constexpr(std::is_same_v<E, error_type>) {
-                        first_error.emplace(std::move(result).error());
-                    } else {
-                        first_error.emplace(error_type(std::move(result).error()));
+                if constexpr(!std::is_void_v<E>) {
+                    if(result.has_error() && !has_error) {
+                        has_error = true;
+                        if constexpr(std::is_same_v<E, error_type>) {
+                            first_error.emplace(std::move(result).error());
+                        } else {
+                            first_error.emplace(error_type(std::move(result).error()));
+                        }
                     }
                 }
             }
-        }
-        KOTA_CATCH_ALL() {
+            KOTA_CATCH_ALL() {
 #if KOTA_ENABLE_EXCEPTIONS
-            if(!exception) {
-                exception = std::current_exception();
-            }
+                if(!exception) {
+                    exception = std::current_exception();
+                }
 #endif
+            }
         }
 
+        children[index] = nullptr;
         if(--active == 0) {
-            done.set();
+            auto d = done;
+            d->set();
         }
     }
 
     event_loop& loop;
-    event done{true};
-    cancellation_source cancel_source;
+    std::shared_ptr<event> done = std::make_shared<event>(true);
     std::size_t active = 0;
+    bool cancelled = false;
+    std::vector<async_node*> children;
 
     bool has_error = false;
     using stored_error_type = std::conditional_t<std::is_void_v<error_type>, int, error_type>;
