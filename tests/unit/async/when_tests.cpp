@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "loop_fixture.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
@@ -1542,40 +1543,11 @@ TEST_CASE(direct_co_await_rethrows) {
     EXPECT_THROWS(run(parent()));
 }
 
-TEST_CASE(exception_in_task_group) {
-    int slow_done = 0;
-
-    auto thrower = [&]() -> task<> {
-        co_await sleep(1);
-        throw std::runtime_error("group boom");
-    };
-
-    auto slow = [&]() -> task<> {
-        co_await sleep(50);
-        slow_done += 1;
-    };
-
-    auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
-        task_group<> group(loop);
-        group.spawn(thrower());
-        group.spawn(slow());
-        co_await group.join();
-    };
-
-    auto t = driver();
-    EXPECT_THROWS(run(t));
-}
-
 };  // TEST_SUITE(when_exceptions)
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 
-// ============================================================================
-// TEST_SUITE: task_group
-// ============================================================================
-
-TEST_SUITE(task_group) {
+TEST_SUITE(task_group, loop_fixture) {
 
 TEST_CASE(basic) {
     int count = 0;
@@ -1586,7 +1558,6 @@ TEST_CASE(basic) {
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(work(1));
         group.spawn(work(10));
@@ -1594,18 +1565,19 @@ TEST_CASE(basic) {
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(count, 111);
 }
 
 TEST_CASE(empty_join) {
-    auto driver = []() -> task<> {
-        event_loop& loop = event_loop::current();
+    auto driver = [&]() -> task<> {
         task_group<> group(loop);
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
 }
 
 TEST_CASE(multiple_spawns) {
@@ -1622,14 +1594,14 @@ TEST_CASE(multiple_spawns) {
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(inc1());
         group.spawn(inc10());
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(count, 11);
 }
 
@@ -1637,12 +1609,11 @@ TEST_CASE(with_sleep) {
     int count = 0;
 
     auto work = [&](int val, int ms) -> task<> {
-        co_await sleep(ms);
+        co_await sleep(ms, loop);
         count += val;
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(work(1, 5));
         group.spawn(work(10, 1));
@@ -1650,7 +1621,8 @@ TEST_CASE(with_sleep) {
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(count, 111);
 }
 
@@ -1658,17 +1630,16 @@ TEST_CASE(returns_structured_error) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, error> {
-        co_await sleep(1);
+        co_await sleep(1, loop);
         co_await fail(error::connection_refused);
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(50);
+        co_await sleep(50, loop);
         slow_done += 1;
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<error> group(loop);
         group.spawn(failing());
         group.spawn(slow());
@@ -1677,24 +1648,24 @@ TEST_CASE(returns_structured_error) {
         EXPECT_EQ(res.error(), error::connection_refused);
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
 }
 
 TEST_CASE(mixed_error_types) {
     int slow_done = 0;
 
     auto failing = [&]() -> task<int, custom_error> {
-        co_await sleep(1);
+        co_await sleep(1, loop);
         co_await fail(custom_error{7});
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(50);
+        co_await sleep(50, loop);
         slow_done += 1;
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<error, custom_error> group(loop);
         group.spawn(failing());
         group.spawn(slow());
@@ -1703,7 +1674,8 @@ TEST_CASE(mixed_error_types) {
         EXPECT_EQ(std::get<custom_error>(res.error()), custom_error{7});
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
 }
 
 TEST_CASE(direct_error_does_not_escape) {
@@ -1711,7 +1683,7 @@ TEST_CASE(direct_error_does_not_escape) {
 
     auto failing = [&]() -> task<> {
         auto inner = [&]() -> task<int, error> {
-            co_await sleep(1);
+            co_await sleep(1, loop);
             co_await fail(error::connection_refused);
         };
         auto res = co_await inner();
@@ -1719,19 +1691,19 @@ TEST_CASE(direct_error_does_not_escape) {
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(5);
+        co_await sleep(5, loop);
         slow_done += 1;
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(failing());
         group.spawn(slow());
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(slow_done, 1);
 }
 
@@ -1739,10 +1711,9 @@ TEST_CASE(in_when_all) {
     int group_count = 0;
 
     auto grouped_work = [&]() -> task<int> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         auto work = [&]() -> task<> {
-            co_await sleep(1);
+            co_await sleep(1, loop);
             group_count += 1;
         };
         for(int i = 0; i < 3; ++i) {
@@ -1753,7 +1724,7 @@ TEST_CASE(in_when_all) {
     };
 
     auto normal = [&]() -> task<int> {
-        co_await sleep(1);
+        co_await sleep(1, loop);
         co_return 100;
     };
 
@@ -1762,9 +1733,10 @@ TEST_CASE(in_when_all) {
         co_return a + b;
     };
 
-    auto [res] = run(combined());
+    auto t = combined();
+    schedule_all(t);
     EXPECT_EQ(group_count, 3);
-    EXPECT_EQ(res, 103);
+    EXPECT_EQ(t.result(), 103);
 }
 
 TEST_CASE(when_all_in_group) {
@@ -1772,11 +1744,11 @@ TEST_CASE(when_all_in_group) {
 
     auto pair_work = [&]() -> task<> {
         auto a = [&]() -> task<int> {
-            co_await sleep(1);
+            co_await sleep(1, loop);
             co_return 1;
         };
         auto b = [&]() -> task<int> {
-            co_await sleep(1);
+            co_await sleep(1, loop);
             co_return 2;
         };
         auto [x, y] = co_await when_all(a(), b());
@@ -1784,14 +1756,14 @@ TEST_CASE(when_all_in_group) {
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(pair_work());
         group.spawn(pair_work());
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(count, 6);
 }
 
@@ -1799,24 +1771,24 @@ TEST_CASE(child_self_cancel) {
     int slow_done = 0;
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(1);
+        co_await sleep(1, loop);
         co_await cancel();
     };
 
     auto slow = [&]() -> task<> {
-        co_await sleep(5);
+        co_await sleep(5, loop);
         slow_done += 1;
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(canceler());
         group.spawn(slow());
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(slow_done, 1);
 }
 
@@ -1825,12 +1797,11 @@ TEST_CASE(token_cancel) {
     int finished = 0;
 
     auto slow = [&](int ms) -> task<> {
-        co_await sleep(ms);
+        co_await sleep(ms, loop);
         finished += 1;
     };
 
     auto driver = [&]() -> task<int> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(slow(10));
         group.spawn(slow(10));
@@ -1841,12 +1812,12 @@ TEST_CASE(token_cancel) {
     auto guarded = with_token(driver(), source.token());
 
     auto canceler = [&]() -> task<> {
-        co_await sleep(1);
+        co_await sleep(1, loop);
         source.cancel();
     };
 
     auto cancel_task = canceler();
-    run(guarded, cancel_task);
+    schedule_all(guarded, cancel_task);
 
     EXPECT_FALSE(guarded.value().has_value());
     EXPECT_EQ(finished, 0);
@@ -1856,12 +1827,11 @@ TEST_CASE(cancel_all) {
     int finished = 0;
 
     auto slow = [&](int ms) -> task<> {
-        co_await sleep(ms);
+        co_await sleep(ms, loop);
         finished += 1;
     };
 
     auto driver = [&]() -> task<> {
-        event_loop& loop = event_loop::current();
         task_group<> group(loop);
         group.spawn(slow(50));
         group.spawn(slow(50));
@@ -1869,9 +1839,38 @@ TEST_CASE(cancel_all) {
         co_await group.join();
     };
 
-    run(driver());
+    auto t = driver();
+    schedule_all(t);
     EXPECT_EQ(finished, 0);
 }
+
+#if KOTA_ENABLE_EXCEPTIONS
+TEST_CASE(exception_propagates) {
+    int slow_done = 0;
+
+    auto thrower = [&]() -> task<> {
+        co_await sleep(1, loop);
+        throw std::runtime_error("group boom");
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(50, loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(thrower());
+        group.spawn(slow());
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_failed());
+    EXPECT_THROWS(t.result());
+}
+#endif
 
 };  // TEST_SUITE(task_group)
 
