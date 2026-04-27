@@ -39,10 +39,10 @@ public:
         MutexWaiter,
         EventWaiter,
 
-        /// Aggregate operations — when_all / when_any / async_scope.
+        /// Aggregate operations — when_all / when_any.
         WhenAll,
         WhenAny,
-        Scope,
+        Scope,  // reserved (was async_scope)
 
         /// Pending libuv I/O — timers, signals, fs, network, etc.
         SystemIO,
