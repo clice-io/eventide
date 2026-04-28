@@ -39,10 +39,9 @@ public:
         MutexWaiter,
         EventWaiter,
 
-        /// Aggregate operations — when_all / when_any / async_scope.
+        /// Aggregate operations — when_all / when_any.
         WhenAll,
         WhenAny,
-        Scope,
 
         /// Pending libuv I/O — timers, signals, fs, network, etc.
         SystemIO,
@@ -85,7 +84,7 @@ public:
     }
 
     bool is_aggregate_op() const noexcept {
-        return NodeKind::WhenAll <= kind && kind <= NodeKind::Scope;
+        return NodeKind::WhenAll <= kind && kind <= NodeKind::WhenAny;
     }
 
     bool is_finished() const noexcept {
