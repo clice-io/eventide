@@ -429,32 +429,25 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 continue;
             }
 
-            if(is_created && !(is_removed || is_modified)) {
-                changes.push_back(change{std::move(path), effect::create, {}});
-            } else if(is_removed && !(is_created || is_modified)) {
+            struct stat st;
+            bool exists = (stat(path.c_str(), &st) == 0);
+
+            if(!exists) {
                 changes.push_back(change{std::move(path), effect::destroy, {}});
-            } else if(is_modified && !(is_created || is_removed)) {
-                changes.push_back(change{std::move(path), effect::modify, {}});
-            } else {
-                struct stat st;
-                if(stat(path.c_str(), &st) != 0 || !path_exists(paths[i])) {
-                    changes.push_back(change{std::move(path), effect::destroy, {}});
-                } else if(is_created && is_modified) {
-                    // FSEvents coalesced both flags. Use birthtime to disambiguate:
-                    // a freshly created file has birthtime close to mtime.
-                    long long diff_ms =
-                        (st.st_mtimespec.tv_sec - st.st_birthtimespec.tv_sec) * 1000LL +
-                        (st.st_mtimespec.tv_nsec - st.st_birthtimespec.tv_nsec) / 1000000LL;
-                    if(diff_ms < 200) {
-                        changes.push_back(change{std::move(path), effect::create, {}});
-                    } else {
-                        changes.push_back(change{std::move(path), effect::modify, {}});
-                    }
-                } else if(is_modified) {
-                    changes.push_back(change{std::move(path), effect::modify, {}});
-                } else {
+            } else if(is_created) {
+                // FSEvents may set Created for both genuine creates and for
+                // modifications of existing files. Use birthtime vs mtime to
+                // disambiguate: a freshly created file has birthtime ≈ mtime.
+                long long diff_ms =
+                    (st.st_ctimespec.tv_sec - st.st_birthtimespec.tv_sec) * 1000LL +
+                    (st.st_ctimespec.tv_nsec - st.st_birthtimespec.tv_nsec) / 1000000LL;
+                if(diff_ms < 200) {
                     changes.push_back(change{std::move(path), effect::create, {}});
+                } else {
+                    changes.push_back(change{std::move(path), effect::modify, {}});
                 }
+            } else if(is_modified) {
+                changes.push_back(change{std::move(path), effect::modify, {}});
             }
         }
 

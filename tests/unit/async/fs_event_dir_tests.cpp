@@ -1394,6 +1394,7 @@ task<int, error> watch_debounce_coalesces(event_loop& loop) {
 task<int, error> watch_root_dir_deleted(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+    auto canonical_dir = std::filesystem::canonical(dir).string();
 
     auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
     if(!watcher.has_value()) {
@@ -1408,7 +1409,7 @@ task<int, error> watch_root_dir_deleted(event_loop& loop) {
 
     bool found = false;
     for(const auto& c: changes) {
-        if(c.type == fs_event::effect::destroy && c.path == dir) {
+        if(c.type == fs_event::effect::destroy && c.path == canonical_dir) {
             found = true;
         }
     }
