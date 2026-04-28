@@ -25,6 +25,7 @@ format = ["format"]
 python = "*"
 ninja = "*"
 ccache = "*"
+openssl = "*"
 
 [feature.build.pypi-dependencies]
 pygls = ">=2.0"

@@ -54,7 +54,7 @@ endif()
 
 if(KOTA_CODEC_ENABLE_SIMDJSON)
     set(TEST_CODEC_SIMDJSON_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_CODEC_SIMDJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/json/simdjson_.*\\.cpp$")
+    list(FILTER TEST_CODEC_SIMDJSON_SOURCES INCLUDE REGEX "^tests/unit/codec/json/.*\\.cpp$")
     list(TRANSFORM TEST_CODEC_SIMDJSON_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_CODEC_SIMDJSON_SOURCES}
@@ -98,6 +98,20 @@ list(TRANSFORM TEST_CODEC_BINCODE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE
     ${TEST_CODEC_BINCODE_SOURCES}
 )
+
+if(KOTA_ENABLE_HTTP)
+    set(TEST_HTTP_SOURCES ${TEST_SOURCES})
+    list(FILTER TEST_HTTP_SOURCES INCLUDE REGEX "^tests/unit/http/.*\\.cpp$")
+    list(TRANSFORM TEST_HTTP_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+    target_sources(unit_tests PRIVATE
+        ${TEST_HTTP_SOURCES}
+    )
+    target_link_libraries(unit_tests PRIVATE
+        kota::http
+    )
+else()
+    message(STATUS "KOTA_ENABLE_HTTP=OFF: skipping tests/unit/http/*")
+endif()
 
 if(KOTA_ENABLE_ASYNC AND KOTA_CODEC_ENABLE_SIMDJSON)
     set(TEST_IPC_SOURCES ${TEST_SOURCES})
