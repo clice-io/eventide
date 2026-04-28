@@ -108,10 +108,22 @@ public:
             return std::unexpected(source.error());
         }
 
-        auto result = codec::try_variant_dispatch<Deserializer>(*source,
-                                                                map_to_type_hint(*valueKind),
-                                                                value,
-                                                                error_type::type_mismatch);
+        auto source_kind = map_to_kind(*valueKind);
+
+        auto result = codec::try_variant_dispatch<Deserializer>(
+            *source,
+            source_kind,
+            value,
+            error_type::type_mismatch,
+            [&](auto&& feed) {
+                if(const auto* obj = source->get_object()) {
+                    for(const auto& entry: *obj) {
+                        if(feed(std::string_view(entry.key))) {
+                            break;
+                        }
+                    }
+                }
+            });
         if(!result) {
             return mark_invalid(result.error());
         }
@@ -344,7 +356,8 @@ private:
     enum class value_kind : std::uint8_t {
         null,
         boolean,
-        number,
+        integer,
+        floating,
         string,
         array,
         object,
@@ -410,8 +423,11 @@ private:
         if(ref->is_bool()) {
             return value_kind::boolean;
         }
+        if(ref->is_int()) {
+            return value_kind::integer;
+        }
         if(ref->is_number()) {
-            return value_kind::number;
+            return value_kind::floating;
         }
         if(ref->is_string()) {
             return value_kind::string;
@@ -426,15 +442,16 @@ private:
         return mark_invalid(error_type::type_mismatch);
     }
 
-    static codec::type_hint map_to_type_hint(value_kind kind) {
+    static meta::type_kind map_to_kind(value_kind kind) {
         switch(kind) {
-            case value_kind::null: return codec::type_hint::null_like;
-            case value_kind::boolean: return codec::type_hint::boolean;
-            case value_kind::number: return codec::type_hint::integer | codec::type_hint::floating;
-            case value_kind::string: return codec::type_hint::string;
-            case value_kind::array: return codec::type_hint::array;
-            case value_kind::object: return codec::type_hint::object;
-            default: return codec::type_hint::any;
+            case value_kind::null: return meta::type_kind::null;
+            case value_kind::boolean: return meta::type_kind::boolean;
+            case value_kind::integer: return meta::type_kind::int64;
+            case value_kind::floating: return meta::type_kind::float64;
+            case value_kind::string: return meta::type_kind::string;
+            case value_kind::array: return meta::type_kind::array;
+            case value_kind::object: return meta::type_kind::structure;
+            default: return meta::type_kind::any;
         }
     }
 

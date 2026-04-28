@@ -140,10 +140,22 @@ public:
             return std::unexpected(source.error());
         }
 
-        auto result = codec::try_variant_dispatch<Deserializer>(*source,
-                                                                map_to_type_hint(*kind),
-                                                                value,
-                                                                error_type::type_mismatch);
+        auto source_kind = map_to_kind(*kind);
+
+        auto result = codec::try_variant_dispatch<Deserializer>(
+            *source,
+            source_kind,
+            value,
+            error_type::type_mismatch,
+            [&](auto&& feed) {
+                if(const auto* tbl = (*source)->as_table()) {
+                    for(const auto& [k, v]: *tbl) {
+                        if(feed(std::string_view(k))) {
+                            break;
+                        }
+                    }
+                }
+            });
         if(!result) {
             return mark_invalid(result.error());
         }
@@ -479,16 +491,16 @@ private:
         return node_kind::unknown;
     }
 
-    static codec::type_hint map_to_type_hint(node_kind kind) {
+    static meta::type_kind map_to_kind(node_kind kind) {
         switch(kind) {
-            case node_kind::none: return codec::type_hint::null_like;
-            case node_kind::boolean: return codec::type_hint::boolean;
-            case node_kind::integer: return codec::type_hint::integer;
-            case node_kind::floating: return codec::type_hint::floating;
-            case node_kind::string: return codec::type_hint::string;
-            case node_kind::array: return codec::type_hint::array;
-            case node_kind::table: return codec::type_hint::object;
-            default: return codec::type_hint::any;
+            case node_kind::none: return meta::type_kind::null;
+            case node_kind::boolean: return meta::type_kind::boolean;
+            case node_kind::integer: return meta::type_kind::int64;
+            case node_kind::floating: return meta::type_kind::float64;
+            case node_kind::string: return meta::type_kind::string;
+            case node_kind::array: return meta::type_kind::array;
+            case node_kind::table: return meta::type_kind::structure;
+            default: return meta::type_kind::any;
         }
     }
 

@@ -356,13 +356,20 @@ TEST_CASE(variant_roundtrip) {
 }
 
 TEST_CASE(variant_backtrack_errors) {
+    // Two structs with the same field name but different field types.
+    // JSON object path picks the first kind-compatible alternative without fallback.
     using object_variant = std::variant<object_int_value, object_string_value>;
 
     object_variant out = object_int_value{.value = 0};
+    // object_int_value is tried first (same field "value"), "text" is not int → fails
     auto backtrack_status = from_json(R"({"value":"text"})", out);
-    ASSERT_TRUE(backtrack_status.has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<object_string_value>(out).value, "text");
+    EXPECT_FALSE(backtrack_status.has_value());
+
+    // object_int_value is tried first and 42 is a valid int → succeeds
+    auto int_status = from_json(R"({"value":42})", out);
+    ASSERT_TRUE(int_status.has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<object_int_value>(out).value, 42);
 
     using strict_variant = std::variant<int, bool>;
     strict_variant strict_out = 0;

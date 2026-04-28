@@ -195,16 +195,17 @@ TEST_CASE(single_alternative) {
     EXPECT_EQ(std::get<int>(out), 99);
 }
 
-TEST_CASE(struct_backtracking) {
-    // Two struct types that are both objects; the first one should fail and
-    // the second one should succeed
+TEST_CASE(struct_no_backtracking) {
+    // Two struct types with the same field name but different field types.
+    // Without backtracking, the first kind-compatible alternative is always tried.
+    // If its fields don't type-match, deserialization fails.
     using V = std::variant<IntHolder, StringHolder>;
 
     V out{};
-    ASSERT_TRUE(from_json(R"({"value":"hello"})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<StringHolder>(out).value, "hello");
+    // IntHolder is tried first (same field name "value"), but "hello" is not int → fails
+    EXPECT_FALSE(from_json(R"({"value":"hello"})", out).has_value());
 
+    // IntHolder is tried first and 42 is a valid int → succeeds
     ASSERT_TRUE(from_json(R"({"value":42})", out).has_value());
     EXPECT_EQ(out.index(), 0U);
     EXPECT_EQ(std::get<IntHolder>(out).value, 42);
