@@ -402,7 +402,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 continue;
 
             bool is_created = (flags[i] & kFSEventStreamEventFlagItemCreated) != 0;
-            bool is_removed = (flags[i] & kFSEventStreamEventFlagItemRemoved) != 0;
             bool is_renamed = (flags[i] & kFSEventStreamEventFlagItemRenamed) != 0;
             bool is_modified = (flags[i] & (kFSEventStreamEventFlagItemModified |
                                             kFSEventStreamEventFlagItemInodeMetaMod |
@@ -912,7 +911,6 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
         }
 
         std::vector<change> filtered;
-        bool has_create = false;
         for(auto& c: batch) {
             auto slash = c.path.rfind('/');
             std::string_view name = (slash != std::string::npos)
@@ -921,29 +919,11 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
             if(name != self->file_filter)
                 continue;
 
-            if(c.type == effect::create)
-                has_create = true;
             filtered.push_back(std::move(c));
         }
 
         if(filtered.empty())
             continue;
-
-        if(has_create) {
-            bool any_destroy = false;
-            for(auto& c: filtered) {
-                if(c.type == effect::destroy) {
-                    any_destroy = true;
-                    break;
-                }
-            }
-            if(!any_destroy) {
-                for(auto& c: filtered) {
-                    if(c.type == effect::modify)
-                        c.type = effect::create;
-                }
-            }
-        }
 
         co_return filtered;
     }
