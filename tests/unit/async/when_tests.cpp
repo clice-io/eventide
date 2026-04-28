@@ -1877,6 +1877,54 @@ TEST_CASE(exception_propagates) {
 }
 #endif
 
+TEST_CASE(collects_multiple_errors) {
+    auto failing = [&](int ms, error e) -> task<int, error> {
+        co_await sleep(ms, loop);
+        co_await fail(e);
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(failing(1, error::connection_refused));
+        group.spawn(failing(1, error::connection_reset_by_peer));
+        group.spawn(failing(1, error::io_error));
+        auto res = co_await group.join();
+        EXPECT_TRUE(res.has_error());
+        EXPECT_GE(res.error().size(), 1u);
+    };
+
+    auto t = driver();
+    schedule_all(t);
+}
+
+TEST_CASE(fail_fast_cancels_siblings) {
+    int completed = 0;
+
+    auto failing = [&]() -> task<int, error> {
+        co_await sleep(1, loop);
+        co_await fail(error::connection_refused);
+    };
+
+    auto slow = [&](int ms) -> task<> {
+        co_await sleep(ms, loop);
+        completed += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(failing());
+        group.spawn(slow(100));
+        group.spawn(slow(100));
+        group.spawn(slow(100));
+        auto res = co_await group.join();
+        EXPECT_TRUE(res.has_error());
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_EQ(completed, 0);
+}
+
 };  // TEST_SUITE(task_group)
 
 }  // namespace kota
