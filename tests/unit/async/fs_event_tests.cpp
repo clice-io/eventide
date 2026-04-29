@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
@@ -131,9 +132,10 @@ task<int, error> fse_ignores_sibling(event_loop& loop) {
     if(!has_effect(changes, fs_event::effect::modify))
         co_return 0;
 
-    for(const auto& c: changes) {
-        if(c.path.find("sibling") != std::string::npos)
-            co_return 0;
+    if(std::ranges::any_of(changes, [](const auto& c) {
+           return c.path.find("sibling") != std::string::npos;
+       })) {
+        co_return 0;
     }
 
     co_return 1;

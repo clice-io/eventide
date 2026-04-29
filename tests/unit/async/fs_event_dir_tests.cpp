@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
@@ -27,12 +28,9 @@ task<int, error> watch_file_create(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -64,12 +62,9 @@ task<int, error> watch_file_modify(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::modify) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::modify;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -97,12 +92,9 @@ task<int, error> watch_file_delete(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::destroy) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::destroy;
+    });
 
     watcher->stop();
     co_await fs::rmdir(dir, loop).or_fail();
@@ -131,13 +123,10 @@ task<int, error> watch_file_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_relevant = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-           c.type == fs_event::effect::destroy) {
-            found_relevant = true;
-        }
-    }
+    bool found_relevant = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+               c.type == fs_event::effect::destroy;
+    });
 
     watcher->stop();
     co_await fs::unlink(dst, loop).or_fail();
@@ -269,12 +258,9 @@ task<int, error> watch_subdirectory_changes(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_subdir_event = false;
-    for(const auto& c: changes) {
-        if(c.path.find("sub") != std::string::npos) {
-            found_subdir_event = true;
-        }
-    }
+    bool found_subdir_event = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("sub") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -313,14 +299,12 @@ task<int, error> watch_non_recursive(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_top = false;
-    bool found_deep = false;
-    for(const auto& c: changes) {
-        if(c.path.find("top.txt") != std::string::npos)
-            found_top = true;
-        if(c.path.find("deep.txt") != std::string::npos)
-            found_deep = true;
-    }
+    bool found_top = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("top.txt") != std::string::npos;
+    });
+    bool found_deep = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("deep.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(deep_file, loop).or_fail();
@@ -357,12 +341,9 @@ task<int, error> watch_move_assignment(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher_a, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create;
+    });
 
     watcher_a->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -444,16 +425,15 @@ task<int, error> watch_rename_populates_old_path(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_rename = false;
-    bool found_old_path = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename && c.path.find("new_name.txt") != std::string::npos) {
-            found_rename = true;
-            if(c.old_path.find("old_name.txt") != std::string::npos) {
-                found_old_path = true;
-            }
-        }
-    }
+    bool found_rename = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename &&
+               c.path.find("new_name.txt") != std::string::npos;
+    });
+    bool found_old_path = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename &&
+               c.path.find("new_name.txt") != std::string::npos &&
+               c.old_path.find("old_name.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(dst, loop).or_fail();
@@ -484,13 +464,10 @@ task<int, error> watch_rename_existing_file(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-           c.type == fs_event::effect::destroy) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+               c.type == fs_event::effect::destroy;
+    });
 
     watcher->stop();
     co_await fs::unlink(dst, loop).or_fail();
@@ -517,12 +494,9 @@ task<int, error> watch_directory_creation(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create && c.path.find("newdir") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("newdir") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(sub, loop).or_fail();
@@ -550,13 +524,10 @@ task<int, error> watch_directory_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_relevant = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-           c.type == fs_event::effect::destroy) {
-            found_relevant = true;
-        }
-    }
+    bool found_relevant = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+               c.type == fs_event::effect::destroy;
+    });
 
     watcher->stop();
     co_await fs::rmdir(sub2, loop).or_fail();
@@ -583,12 +554,9 @@ task<int, error> watch_directory_deletion(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::destroy && c.path.find("todelete") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("todelete") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(dir, loop).or_fail();
@@ -622,12 +590,9 @@ task<int, error> watch_subfile_create(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create && c.path.find("child.txt") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("child.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -662,12 +627,9 @@ task<int, error> watch_subfile_modify(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::modify && c.path.find("edit.txt") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::modify && c.path.find("edit.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -699,15 +661,11 @@ task<int, error> watch_subfile_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-           c.type == fs_event::effect::destroy) {
-            if(c.path.find("subdir") != std::string::npos) {
-                found = true;
-            }
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return (c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+                c.type == fs_event::effect::destroy) &&
+               c.path.find("subdir") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(dst, loop).or_fail();
@@ -738,12 +696,9 @@ task<int, error> watch_subfile_delete(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::destroy && c.path.find("gone.txt") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("gone.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(sub, loop).or_fail();
@@ -775,12 +730,9 @@ task<int, error> watch_nested_subdir_create(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create && c.path.find("level2") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("level2") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(sub2, loop).or_fail();
@@ -817,12 +769,9 @@ task<int, error> watch_deep_nested_file(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create && c.path.find("deep.txt") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("deep.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -852,13 +801,10 @@ task<int, error> watch_subdir_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_relevant = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-           c.type == fs_event::effect::destroy) {
-            found_relevant = true;
-        }
-    }
+    bool found_relevant = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
+               c.type == fs_event::effect::destroy;
+    });
 
     watcher->stop();
     co_await fs::rmdir(sub2, loop).or_fail();
@@ -894,12 +840,9 @@ task<int, error> watch_renamed_dir_still_tracked(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.path.find("after_rename.txt") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("after_rename.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -938,16 +881,12 @@ task<int, error> watch_multiple_watchers_same_dir(event_loop& loop) {
     auto changes1 = co_await next_or_timeout(*w1, loop).or_fail();
     auto changes2 = co_await next_or_timeout(*w2, loop).or_fail();
 
-    bool w1_saw = false;
-    bool w2_saw = false;
-    for(const auto& c: changes1) {
-        if(c.type == fs_event::effect::create)
-            w1_saw = true;
-    }
-    for(const auto& c: changes2) {
-        if(c.type == fs_event::effect::create)
-            w2_saw = true;
-    }
+    bool w1_saw = std::ranges::any_of(changes1, [](const auto& c) {
+        return c.type == fs_event::effect::create;
+    });
+    bool w2_saw = std::ranges::any_of(changes2, [](const auto& c) {
+        return c.type == fs_event::effect::create;
+    });
 
     w1->stop();
     w2->stop();
@@ -982,16 +921,12 @@ task<int, error> watch_multiple_watchers_different_dirs(event_loop& loop) {
     auto c1 = co_await next_or_timeout(*w1, loop).or_fail();
     auto c2 = co_await next_or_timeout(*w2, loop).or_fail();
 
-    bool w1_saw = false;
-    bool w2_saw = false;
-    for(const auto& c: c1) {
-        if(c.path.find("one.txt") != std::string::npos)
-            w1_saw = true;
-    }
-    for(const auto& c: c2) {
-        if(c.path.find("two.txt") != std::string::npos)
-            w2_saw = true;
-    }
+    bool w1_saw = std::ranges::any_of(c1, [](const auto& c) {
+        return c.path.find("one.txt") != std::string::npos;
+    });
+    bool w2_saw = std::ranges::any_of(c2, [](const auto& c) {
+        return c.path.find("two.txt") != std::string::npos;
+    });
 
     w1->stop();
     w2->stop();
@@ -1027,12 +962,9 @@ task<int, error> watch_rapid_create_delete(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_keep_create = false;
-    for(const auto& c: changes) {
-        if(c.path.find("keep.txt") != std::string::npos && c.type == fs_event::effect::create) {
-            saw_keep_create = true;
-        }
-    }
+    bool saw_keep_create = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("keep.txt") != std::string::npos && c.type == fs_event::effect::create;
+    });
 
     watcher->stop();
     co_await fs::unlink(f1, loop).or_fail();
@@ -1066,12 +998,9 @@ task<int, error> watch_rapid_multiple_writes(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_modify = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::modify && c.path.find("multi.txt") != std::string::npos) {
-            saw_modify = true;
-        }
-    }
+    bool saw_modify = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::modify && c.path.find("multi.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -1101,12 +1030,9 @@ task<int, error> watch_attribute_change(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::modify && c.path.find("attrs.txt") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::modify && c.path.find("attrs.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::chmod(file, 0644, loop).or_fail();
@@ -1146,13 +1072,10 @@ task<int, error> watch_atomic_replace(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.path.find("target.txt") != std::string::npos &&
-           (c.type == fs_event::effect::create || c.type == fs_event::effect::modify)) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("target.txt") != std::string::npos &&
+               (c.type == fs_event::effect::create || c.type == fs_event::effect::modify);
+    });
 
     watcher->stop();
     co_await fs::unlink(target, loop).or_fail();
@@ -1183,11 +1106,9 @@ task<int, error> watch_toctou_dir_and_file(event_loop& loop) {
     bool found = false;
     for(int attempt = 0; attempt < 3 && !found; ++attempt) {
         auto changes = co_await next_or_timeout(*watcher, loop, 3000).or_fail();
-        for(const auto& c: changes) {
-            if(c.path.find("quick.txt") != std::string::npos) {
-                found = true;
-            }
-        }
+        found = std::ranges::any_of(changes, [](const auto& c) {
+            return c.path.find("quick.txt") != std::string::npos;
+        });
     }
 
     watcher->stop();
@@ -1217,13 +1138,10 @@ task<int, error> watch_unicode_filename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create &&
-           c.path.find("\xe6\x96\x87\xe4\xbb\xb6") != std::string::npos) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create &&
+               c.path.find("\xe6\x96\x87\xe4\xbb\xb6") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -1254,23 +1172,17 @@ task<int, error> watch_symlink_create_delete(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_create = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create && c.path.find("link.txt") != std::string::npos) {
-            found_create = true;
-        }
-    }
+    bool found_create = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("link.txt") != std::string::npos;
+    });
 
     co_await fs::unlink(link, loop).or_fail();
 
     auto changes2 = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_delete = false;
-    for(const auto& c: changes2) {
-        if(c.type == fs_event::effect::destroy && c.path.find("link.txt") != std::string::npos) {
-            found_delete = true;
-        }
-    }
+    bool found_delete = std::ranges::any_of(changes2, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("link.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(real, loop).or_fail();
@@ -1308,11 +1220,9 @@ task<int, error> watch_large_burst(event_loop& loop) {
         auto changes = co_await next_or_timeout(*watcher, loop, 3000).or_fail();
         if(changes.empty())
             break;
-        for(const auto& c: changes) {
-            if(c.type == fs_event::effect::create) {
-                ++total_creates;
-            }
-        }
+        total_creates += static_cast<int>(std::ranges::count_if(changes, [](const auto& c) {
+            return c.type == fs_event::effect::create;
+        }));
     }
 
     watcher->stop();
@@ -1350,12 +1260,9 @@ task<int, error> watch_debounce_coalesces(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    int create_count = 0;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create) {
-            ++create_count;
-        }
-    }
+    auto create_count = static_cast<int>(std::ranges::count_if(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create;
+    }));
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -1390,12 +1297,9 @@ task<int, error> watch_root_dir_deleted(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::destroy && c.path == canonical_dir) {
-            found = true;
-        }
-    }
+    bool found = std::ranges::any_of(changes, [&](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path == canonical_dir;
+    });
 
     watcher->stop();
     co_return found ? 1 : 0;
@@ -1429,17 +1333,13 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_file_delete = false;
-    bool found_dir_delete = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::destroy && c.path.find("child.txt") != std::string::npos) {
-            found_file_delete = true;
-        }
-        if(c.type == fs_event::effect::destroy && c.path.find("mydir") != std::string::npos &&
-           c.path.find("child.txt") == std::string::npos) {
-            found_dir_delete = true;
-        }
-    }
+    bool found_file_delete = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("child.txt") != std::string::npos;
+    });
+    bool found_dir_delete = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("mydir") != std::string::npos &&
+               c.path.find("child.txt") == std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(dir, loop).or_fail();
@@ -1472,20 +1372,15 @@ task<int, error> watch_symlink_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_rename = false;
-    bool found_destroy = false;
-    bool found_create = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::rename && c.path.find("link2.txt") != std::string::npos) {
-            found_rename = true;
-        }
-        if(c.type == fs_event::effect::destroy && c.path.find("link1.txt") != std::string::npos) {
-            found_destroy = true;
-        }
-        if(c.type == fs_event::effect::create && c.path.find("link2.txt") != std::string::npos) {
-            found_create = true;
-        }
-    }
+    bool found_rename = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::rename && c.path.find("link2.txt") != std::string::npos;
+    });
+    bool found_destroy = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("link1.txt") != std::string::npos;
+    });
+    bool found_create = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("link2.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(link2, loop).or_fail();
@@ -1526,12 +1421,9 @@ task<int, error> watch_symlink_update(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_modify = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::modify) {
-            found_modify = true;
-        }
-    }
+    bool found_modify = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::modify;
+    });
 
     watcher->stop();
     co_await fs::unlink(link, loop).or_fail();
@@ -1562,23 +1454,17 @@ task<int, error> watch_folder_symlink(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_create = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create && c.path.find("linkdir") != std::string::npos) {
-            found_create = true;
-        }
-    }
+    bool found_create = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create && c.path.find("linkdir") != std::string::npos;
+    });
 
     co_await fs::unlink(link, loop).or_fail();
 
     auto changes2 = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_delete = false;
-    for(const auto& c: changes2) {
-        if(c.type == fs_event::effect::destroy && c.path.find("linkdir") != std::string::npos) {
-            found_delete = true;
-        }
-    }
+    bool found_delete = std::ranges::any_of(changes2, [](const auto& c) {
+        return c.type == fs_event::effect::destroy && c.path.find("linkdir") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(sub, loop).or_fail();
@@ -1613,12 +1499,9 @@ task<int, error> watch_rapid_create_update(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_create = false;
-    for(const auto& c: changes) {
-        if(c.path.find("rapid.txt") != std::string::npos && c.type == fs_event::effect::create) {
-            saw_create = true;
-        }
-    }
+    bool saw_create = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("rapid.txt") != std::string::npos && c.type == fs_event::effect::create;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -1656,12 +1539,10 @@ task<int, error> watch_rapid_update_delete(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_destroy = false;
-    for(const auto& c: changes) {
-        if(c.path.find("doomed.txt") != std::string::npos && c.type == fs_event::effect::destroy) {
-            saw_destroy = true;
-        }
-    }
+    bool saw_destroy = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("doomed.txt") != std::string::npos &&
+               c.type == fs_event::effect::destroy;
+    });
 
     watcher->stop();
     co_await fs::rmdir(dir, loop).or_fail();
@@ -1696,12 +1577,9 @@ task<int, error> watch_rapid_delete_create(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_relevant = false;
-    for(const auto& c: changes) {
-        if(c.path.find("phoenix.txt") != std::string::npos) {
-            saw_relevant = true;
-        }
-    }
+    bool saw_relevant = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("phoenix.txt") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -1734,13 +1612,10 @@ task<int, error> watch_case_only_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_event = false;
-    for(const auto& c: changes) {
-        if(c.type == fs_event::effect::create || c.type == fs_event::effect::destroy ||
-           c.type == fs_event::effect::rename) {
-            saw_event = true;
-        }
-    }
+    bool saw_event = std::ranges::any_of(changes, [](const auto& c) {
+        return c.type == fs_event::effect::create || c.type == fs_event::effect::destroy ||
+               c.type == fs_event::effect::rename;
+    });
 
     watcher->stop();
     co_await fs::unlink(upper, loop).or_fail();
@@ -1773,17 +1648,13 @@ task<int, error> watch_nested_dir_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_parent = false;
-    bool saw_child = false;
-    for(const auto& c: changes) {
-        if(c.path.find("parent2") != std::string::npos &&
-           c.path.find("child") == std::string::npos) {
-            saw_parent = true;
-        }
-        if(c.path.find("child2") != std::string::npos) {
-            saw_child = true;
-        }
-    }
+    bool saw_parent = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("parent2") != std::string::npos &&
+               c.path.find("child") == std::string::npos;
+    });
+    bool saw_child = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("child2") != std::string::npos;
+    });
 
     watcher->stop();
     co_await fs::rmdir(subsub2, loop).or_fail();
@@ -1816,13 +1687,10 @@ task<int, error> watch_create_rename_coalesce(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_final = false;
-    for(const auto& c: changes) {
-        if(c.path.find("final.txt") != std::string::npos &&
-           (c.type == fs_event::effect::create || c.type == fs_event::effect::rename)) {
-            saw_final = true;
-        }
-    }
+    bool saw_final = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("final.txt") != std::string::npos &&
+               (c.type == fs_event::effect::create || c.type == fs_event::effect::rename);
+    });
 
     watcher->stop();
     co_await fs::unlink(f2, loop).or_fail();
@@ -1858,13 +1726,10 @@ task<int, error> watch_chain_rename_coalesce(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_final = false;
-    for(const auto& c: changes) {
-        if(c.path.find("step4.txt") != std::string::npos &&
-           (c.type == fs_event::effect::create || c.type == fs_event::effect::rename)) {
-            saw_final = true;
-        }
-    }
+    bool saw_final = std::ranges::any_of(changes, [](const auto& c) {
+        return c.path.find("step4.txt") != std::string::npos &&
+               (c.type == fs_event::effect::create || c.type == fs_event::effect::rename);
+    });
 
     watcher->stop();
     co_await fs::unlink(f4, loop).or_fail();
@@ -2161,11 +2026,6 @@ TEST_CASE(rapid_multiple_writes) {
     schedule_all(worker);
 
     auto result = worker.result();
-    if(result.has_error()) {
-        fprintf(stderr,
-                "DEBUG: rapid_multiple_writes error msg = %s\n",
-                std::string(result.error().message()).c_str());
-    }
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }

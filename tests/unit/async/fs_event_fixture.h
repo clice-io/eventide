@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <variant>
 #include <vector>
@@ -27,11 +28,7 @@ inline task<std::vector<fs_event::change>, error> next_or_timeout(fs_event& w,
 }
 
 inline bool has_effect(const std::vector<fs_event::change>& changes, fs_event::effect eff) {
-    for(const auto& c: changes) {
-        if(c.type == eff)
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(changes, [eff](const auto& c) { return c.type == eff; });
 }
 
 }  // namespace kota
