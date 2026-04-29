@@ -4,6 +4,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/async/async.h"
 #include "kota/async/io/fs_event.h"
 
 namespace kota {
