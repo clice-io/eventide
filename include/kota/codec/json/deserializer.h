@@ -168,7 +168,7 @@ public:
             return std::unexpected(last_error);
         }
 
-        if(has_preloaded_object) {
+        if(pending_object || pending_array) {
             return false;
         }
 
@@ -208,53 +208,42 @@ public:
         using adapter = detail::simdjson_source_adapter;
 
         if(*json_type == simdjson::ondemand::json_type::object) {
-            auto obj_result =
-                read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
-                                                        [](auto& val) { return val.get_object(); });
-            if(!obj_result) {
-                return std::unexpected(obj_result.error());
-            }
-            auto obj = std::move(*obj_result);
+            KOTA_EXPECTED_TRY_V(auto obj,
+                                read_source<simdjson::ondemand::object>(
+                                    [](auto& doc) { return doc.get_object(); },
+                                    [](auto& val) { return val.get_object(); }));
             best =
                 codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&obj));
             obj.reset();
-            preloaded_object = std::move(obj);
-            has_preloaded_object = true;
+            pending_object.emplace(std::move(obj));
         } else if(*json_type == simdjson::ondemand::json_type::array) {
-            auto arr_result =
+            KOTA_EXPECTED_TRY_V(
+                auto arr,
                 read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                       [](auto& val) { return val.get_array(); });
-            if(!arr_result) {
-                return std::unexpected(arr_result.error());
-            }
-            auto arr = std::move(*arr_result);
+                                                       [](auto& val) { return val.get_array(); }));
             best =
                 codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&arr));
             arr.reset();
-            preloaded_array = std::move(arr);
-            has_preloaded_array = true;
+            pending_array.emplace(std::move(arr));
         } else {
             std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
             if(*json_type == simdjson::ondemand::json_type::number) {
-                auto current_number_type = peek_number_type();
-                if(!current_number_type) {
-                    return std::unexpected(current_number_type.error());
-                }
-                number_type = *current_number_type;
+                KOTA_EXPECTED_TRY_V(auto nt, peek_number_type());
+                number_type = nt;
             }
-            auto source_kind = map_to_kind(*json_type, number_type);
-            best = codec::select_variant_index<config_type, Ts...>(source_kind);
+            best = codec::select_variant_index<config_type, Ts...>(
+                map_to_kind(*json_type, number_type));
         }
 
         if(best >= N) {
-            has_preloaded_object = false;
-            has_preloaded_array = false;
+            pending_object.reset();
+            pending_array.reset();
             return mark_invalid(error_kind::type_mismatch);
         }
 
         auto result = codec::deserialize_variant_at<error_type>(*this, value, best);
-        has_preloaded_object = false;
-        has_preloaded_array = false;
+        pending_object.reset();
+        pending_array.reset();
         return result;
     }
 
@@ -388,8 +377,13 @@ public:
             if(root_consumed) {
                 return mark_invalid();
             }
+            simdjson::ondemand::value root_value;
+            auto err = document.get_value().get(root_value);
+            if(err != simdjson::SUCCESS) {
+                return mark_invalid(err);
+            }
             root_consumed = true;
-            KOTA_EXPECTED_TRY(build_dom_from_document(out));
+            KOTA_EXPECTED_TRY(build_dom_from_value(root_value, out));
         }
         return out;
     }
@@ -405,38 +399,16 @@ public:
     }
 
     status_t begin_object() {
-        simdjson::ondemand::object obj;
-        if(has_preloaded_object) {
-            obj = std::move(preloaded_object);
-            has_preloaded_object = false;
-        } else {
-            auto obj_result =
-                read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
-                                                        [](auto& val) { return val.get_object(); });
-            if(!obj_result) {
-                return std::unexpected(obj_result.error());
-            }
-            obj = std::move(*obj_result);
+        if(pending_object) {
+            auto obj = std::move(*pending_object);
+            pending_object.reset();
+            return begin_object(std::move(obj));
         }
-        current_value = nullptr;
-
-        deser_frame frame;
-        frame.object = std::move(obj);
-
-        auto begin_result = frame.object.begin();
-        auto begin_err = std::move(begin_result).get(frame.iter);
-        if(begin_err != simdjson::SUCCESS) {
-            return mark_invalid(begin_err);
-        }
-
-        auto end_result = frame.object.end();
-        auto end_err = std::move(end_result).get(frame.end_iter);
-        if(end_err != simdjson::SUCCESS) {
-            return mark_invalid(end_err);
-        }
-
-        deser_stack.push_back(std::move(frame));
-        return {};
+        KOTA_EXPECTED_TRY_V(
+            auto obj,
+            read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
+                                                    [](auto& val) { return val.get_object(); }));
+        return begin_object(std::move(obj));
     }
 
     result_t<std::optional<std::string_view>> next_field() {
@@ -504,38 +476,16 @@ public:
     }
 
     status_t begin_array() {
-        simdjson::ondemand::array arr;
-        if(has_preloaded_array) {
-            arr = std::move(preloaded_array);
-            has_preloaded_array = false;
-        } else {
-            auto arr_result =
-                read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                       [](auto& val) { return val.get_array(); });
-            if(!arr_result) {
-                return std::unexpected(arr_result.error());
-            }
-            arr = std::move(*arr_result);
+        if(pending_array) {
+            auto arr = std::move(*pending_array);
+            pending_array.reset();
+            return begin_array(std::move(arr));
         }
-        current_value = nullptr;
-
-        array_frame frame;
-        frame.array = std::move(arr);
-
-        auto begin_result = frame.array.begin();
-        auto begin_err = std::move(begin_result).get(frame.iter);
-        if(begin_err != simdjson::SUCCESS) {
-            return mark_invalid(begin_err);
-        }
-
-        auto end_result = frame.array.end();
-        auto end_err = std::move(end_result).get(frame.end_iter);
-        if(end_err != simdjson::SUCCESS) {
-            return mark_invalid(end_err);
-        }
-
-        array_stack.push_back(std::move(frame));
-        return {};
+        KOTA_EXPECTED_TRY_V(
+            auto arr,
+            read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
+                                                   [](auto& val) { return val.get_array(); }));
+        return begin_array(std::move(arr));
     }
 
     result_t<bool> next_element() {
@@ -580,83 +530,46 @@ public:
     }
 
 private:
-    status_t build_dom_from_document(content::Value& out) {
-        simdjson::ondemand::json_type type;
-        auto err = document.type().get(type);
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
+    status_t begin_object(simdjson::ondemand::object obj) {
+        current_value = nullptr;
+        deser_frame frame;
+        frame.object = std::move(obj);
+
+        auto begin_result = frame.object.begin();
+        auto begin_err = std::move(begin_result).get(frame.iter);
+        if(begin_err != simdjson::SUCCESS) {
+            return mark_invalid(begin_err);
         }
 
-        switch(type) {
-            case simdjson::ondemand::json_type::null: {
-                bool is_null = false;
-                err = document.is_null().get(is_null);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(nullptr);
-                return {};
-            }
-            case simdjson::ondemand::json_type::boolean: {
-                bool b = false;
-                err = document.get_bool().get(b);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(b);
-                return {};
-            }
-            case simdjson::ondemand::json_type::number: {
-                simdjson::ondemand::number_type nt{};
-                err = document.get_number_type().get(nt);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                if(nt == simdjson::ondemand::number_type::signed_integer) {
-                    std::int64_t i = 0;
-                    err = document.get_int64().get(i);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(i);
-                } else if(nt == simdjson::ondemand::number_type::unsigned_integer) {
-                    std::uint64_t u = 0;
-                    err = document.get_uint64().get(u);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(u);
-                } else {
-                    double d = 0.0;
-                    err = document.get_double().get(d);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(d);
-                }
-                return {};
-            }
-            case simdjson::ondemand::json_type::string: {
-                std::string_view s;
-                err = document.get_string().get(s);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(std::string(s));
-                return {};
-            }
-            case simdjson::ondemand::json_type::array:
-            case simdjson::ondemand::json_type::object: {
-                simdjson::ondemand::value root_value;
-                err = document.get_value().get(root_value);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                return build_dom_from_value(root_value, out);
-            }
-            default: break;
+        auto end_result = frame.object.end();
+        auto end_err = std::move(end_result).get(frame.end_iter);
+        if(end_err != simdjson::SUCCESS) {
+            return mark_invalid(end_err);
         }
-        return mark_invalid();
+
+        deser_stack.push_back(std::move(frame));
+        return {};
+    }
+
+    status_t begin_array(simdjson::ondemand::array arr) {
+        current_value = nullptr;
+        array_frame frame;
+        frame.array = std::move(arr);
+
+        auto begin_result = frame.array.begin();
+        auto begin_err = std::move(begin_result).get(frame.iter);
+        if(begin_err != simdjson::SUCCESS) {
+            return mark_invalid(begin_err);
+        }
+
+        auto end_result = frame.array.end();
+        auto end_err = std::move(end_result).get(frame.end_iter);
+        if(end_err != simdjson::SUCCESS) {
+            return mark_invalid(end_err);
+        }
+
+        array_stack.push_back(std::move(frame));
+        return {};
     }
 
     status_t build_dom_from_value(simdjson::ondemand::value& value, content::Value& out) {
@@ -937,10 +850,8 @@ private:
     error_type last_error;
     simdjson::ondemand::value* current_value = nullptr;
 
-    bool has_preloaded_object = false;
-    simdjson::ondemand::object preloaded_object{};
-    bool has_preloaded_array = false;
-    simdjson::ondemand::array preloaded_array{};
+    std::optional<simdjson::ondemand::object> pending_object;
+    std::optional<simdjson::ondemand::array> pending_array;
 
     struct deser_frame {
         simdjson::ondemand::object object{};
