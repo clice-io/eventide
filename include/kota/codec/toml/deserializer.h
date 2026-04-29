@@ -76,6 +76,47 @@ auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
 
 }  // namespace detail
 
+struct toml_source_adapter {
+    using node_type = const ::toml::node*;
+
+    static meta::type_kind kind_of(node_type node) {
+        if(!node)
+            return meta::type_kind::null;
+        if(node->is_boolean())
+            return meta::type_kind::boolean;
+        if(node->is_integer())
+            return meta::type_kind::int64;
+        if(node->is_floating_point())
+            return meta::type_kind::float64;
+        if(node->is_string())
+            return meta::type_kind::string;
+        if(node->is_array())
+            return meta::type_kind::array;
+        if(node->is_table())
+            return meta::type_kind::structure;
+        return meta::type_kind::any;
+    }
+
+    template <typename Fn>
+    static void for_each_field(node_type node, Fn&& fn) {
+        if(const auto* tbl = node->as_table()) {
+            for(const auto& [k, v]: *tbl) {
+                fn(std::string_view(k), &v);
+            }
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_element(node_type node, Fn&& fn) {
+        if(const auto* arr = node->as_array()) {
+            std::size_t total = arr->size();
+            for(std::size_t i = 0; i < total; ++i) {
+                fn(i, total, arr->get(i));
+            }
+        }
+    }
+};
+
 template <typename Config = config::default_config>
 class Deserializer {
 public:
@@ -130,36 +171,40 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        auto kind = peek_node_kind();
-        if(!kind) {
-            return std::unexpected(kind.error());
+        static_assert((std::default_initializable<Ts> && ...),
+                      "variant deserialization requires default-constructible alternatives");
+
+        auto node = peek_node();
+        if(!node) {
+            return std::unexpected(node.error());
         }
 
-        auto source = consume_node();
-        if(!source) {
-            return std::unexpected(source.error());
+        constexpr std::size_t N = sizeof...(Ts);
+        std::size_t best =
+            codec::select_variant_index<toml_source_adapter, config_type, Ts...>(*node);
+
+        if(best >= N) {
+            return mark_invalid(error_type::type_mismatch);
         }
 
-        auto source_kind = map_to_kind(*kind);
+        status_t result = std::unexpected(error_type::type_mismatch);
+        std::size_t idx = 0;
+        auto try_alt = [&](auto type_tag) {
+            if(idx++ != best)
+                return;
+            using alt_t = typename decltype(type_tag)::type;
+            alt_t candidate{};
+            auto status = codec::deserialize(*this, candidate);
+            if(status) {
+                value = std::move(candidate);
+                result = {};
+            } else {
+                result = std::unexpected(status.error());
+            }
+        };
+        (try_alt(std::type_identity<Ts>{}), ...);
 
-        auto result = codec::try_variant_dispatch<Deserializer>(
-            *source,
-            source_kind,
-            value,
-            error_type::type_mismatch,
-            [&](auto&& feed) {
-                if(const auto* tbl = (*source)->as_table()) {
-                    for(const auto& [k, v]: *tbl) {
-                        if(feed(std::string_view(k))) {
-                            break;
-                        }
-                    }
-                }
-            });
-        if(!result) {
-            return mark_invalid(result.error());
-        }
-        return {};
+        return result;
     }
 
     status_t deserialize_bool(bool& value) {
@@ -404,17 +449,6 @@ public:
     }
 
 private:
-    enum class node_kind : std::uint8_t {
-        none,
-        boolean,
-        integer,
-        floating,
-        string,
-        array,
-        table,
-        unknown,
-    };
-
     template <typename T, typename Reader>
     status_t read_scalar(T& out, Reader&& reader) {
         auto node = consume_node();
@@ -432,76 +466,6 @@ private:
 
         out = std::move(*parsed);
         return {};
-    }
-
-    template <typename T>
-    status_t deserialize_from_node(const ::toml::node* node, T& out) {
-        struct value_scope {
-            value_scope(Deserializer& deserializer, const ::toml::node* value) :
-                deserializer(deserializer), previous_has_current(deserializer.has_current_value),
-                previous_current(deserializer.current_node) {
-                deserializer.current_node = value;
-                deserializer.has_current_value = true;
-            }
-
-            ~value_scope() {
-                deserializer.current_node = previous_current;
-                deserializer.has_current_value = previous_has_current;
-            }
-
-            Deserializer& deserializer;
-            bool previous_has_current;
-            const ::toml::node* previous_current;
-        };
-
-        value_scope scope(*this, node);
-        return codec::deserialize(*this, out);
-    }
-
-    result_t<node_kind> peek_node_kind() {
-        auto node = peek_node();
-        if(!node) {
-            return std::unexpected(node.error());
-        }
-        return classify_node(*node);
-    }
-
-    static auto classify_node(const ::toml::node* node) -> node_kind {
-        if(node == nullptr) {
-            return node_kind::none;
-        }
-        if(node->is_boolean()) {
-            return node_kind::boolean;
-        }
-        if(node->is_integer()) {
-            return node_kind::integer;
-        }
-        if(node->is_floating_point()) {
-            return node_kind::floating;
-        }
-        if(node->is_string()) {
-            return node_kind::string;
-        }
-        if(node->is_array()) {
-            return node_kind::array;
-        }
-        if(node->is_table()) {
-            return node_kind::table;
-        }
-        return node_kind::unknown;
-    }
-
-    static meta::type_kind map_to_kind(node_kind kind) {
-        switch(kind) {
-            case node_kind::none: return meta::type_kind::null;
-            case node_kind::boolean: return meta::type_kind::boolean;
-            case node_kind::integer: return meta::type_kind::int64;
-            case node_kind::floating: return meta::type_kind::float64;
-            case node_kind::string: return meta::type_kind::string;
-            case node_kind::array: return meta::type_kind::array;
-            case node_kind::table: return meta::type_kind::structure;
-            default: return meta::type_kind::any;
-        }
     }
 
     result_t<const ::toml::node*> access_node(bool consume) {

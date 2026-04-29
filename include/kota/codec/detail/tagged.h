@@ -399,45 +399,46 @@ constexpr bool accepts_kind(meta::type_kind source) noexcept {
     }
 }
 
-namespace detail {
+struct content_source_adapter {
+    using node_type = const content::Value*;
 
-template <typename T, typename Config>
-bool alt_has_field(std::string_view name) {
-    using U = std::remove_cvref_t<T>;
-    constexpr auto k = meta::kind_of<U>();
-
-    if constexpr(k == meta::type_kind::optional) {
-        return alt_has_field<typename U::value_type, Config>(name);
-    } else if constexpr(k == meta::type_kind::pointer) {
-        return alt_has_field<typename U::element_type, Config>(name);
-    } else if constexpr(!meta::reflectable_class<U>) {
-        return true;
-    } else if constexpr(meta::field_count<U>() == 0) {
-        return true;
-    } else {
-        using schema = meta::virtual_schema<U, Config>;
-        if constexpr(!schema::deny_unknown) {
-            return true;
+    static meta::type_kind kind_of(node_type node) {
+        if(!node)
+            return meta::type_kind::null;
+        switch(node->kind()) {
+            case content::ValueKind::null_value: return meta::type_kind::null;
+            case content::ValueKind::boolean: return meta::type_kind::boolean;
+            case content::ValueKind::signed_int:
+            case content::ValueKind::unsigned_int: return meta::type_kind::int64;
+            case content::ValueKind::floating: return meta::type_kind::float64;
+            case content::ValueKind::string: return meta::type_kind::string;
+            case content::ValueKind::array: return meta::type_kind::array;
+            case content::ValueKind::object: return meta::type_kind::structure;
         }
-        for(const auto& field: schema::fields) {
-            if(field.name == name) {
-                return true;
-            }
-            for(auto alias: field.aliases) {
-                if(alias == name) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return meta::type_kind::any;
     }
-}
 
-template <typename Config, typename... Ts>
-struct alt_has_field_table {
-    using fn_t = bool (*)(std::string_view);
-    constexpr static fn_t table[] = {alt_has_field<Ts, Config>...};
+    template <typename Fn>
+    static void for_each_field(node_type node, Fn&& fn) {
+        if(const auto* obj = node->get_object()) {
+            for(const auto& entry: *obj) {
+                fn(std::string_view(entry.key), &entry.value);
+            }
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_element(node_type node, Fn&& fn) {
+        if(const auto* arr = node->get_array()) {
+            std::size_t total = arr->size();
+            for(std::size_t i = 0; i < total; ++i) {
+                fn(i, total, &(*arr)[i]);
+            }
+        }
+    }
 };
+
+namespace detail {
 
 template <typename T>
 consteval meta::type_kind resolved_alt_kind() noexcept {
@@ -452,16 +453,163 @@ consteval meta::type_kind resolved_alt_kind() noexcept {
     }
 }
 
+struct variant_candidate {
+    std::size_t index;
+    const meta::type_info* type;
+};
+
+const inline meta::type_info* unwrap_indirect(const meta::type_info* info) {
+    while(info->kind == meta::type_kind::optional || info->kind == meta::type_kind::pointer) {
+        info = &static_cast<const meta::optional_type_info&>(*info).inner();
+    }
+    return info;
+}
+
+template <typename F>
+bool field_name_matches(const F& field, std::string_view name) {
+    if(field.name == name)
+        return true;
+    for(auto alias: field.aliases) {
+        if(alias == name)
+            return true;
+    }
+    return false;
+}
+
+template <typename Adapter>
+void multi_score(typename Adapter::node_type node,
+                 const variant_candidate* candidates,
+                 std::size_t count,
+                 std::size_t* scores) {
+    if(count == 0)
+        return;
+
+    auto source_kind = Adapter::kind_of(node);
+
+    variant_candidate struct_cands[64];
+    std::size_t struct_n = 0;
+    variant_candidate map_cands[64];
+    std::size_t map_n = 0;
+    variant_candidate seq_cands[64];
+    std::size_t seq_n = 0;
+
+    for(std::size_t i = 0; i < count; ++i) {
+        const auto* info = unwrap_indirect(candidates[i].type);
+        if(!kind_compatible(info->kind, source_kind))
+            continue;
+
+        scores[candidates[i].index] += 1;
+
+        if(info->kind == meta::type_kind::structure)
+            struct_cands[struct_n++] = {candidates[i].index, info};
+        else if(info->kind == meta::type_kind::map)
+            map_cands[map_n++] = {candidates[i].index, info};
+        else if(meta::is_sequence_kind(info->kind))
+            seq_cands[seq_n++] = {candidates[i].index, info};
+    }
+
+    if(meta::is_object_kind(source_kind) && (struct_n + map_n) > 0) {
+        Adapter::for_each_field(
+            node,
+            [&](std::string_view name, typename Adapter::node_type child) {
+                variant_candidate child_cands[64];
+                std::size_t child_n = 0;
+
+                for(std::size_t i = 0; i < struct_n; ++i) {
+                    auto& si = static_cast<const meta::struct_type_info&>(*struct_cands[i].type);
+                    for(const auto& f: si.fields) {
+                        if(field_name_matches(f, name)) {
+                            child_cands[child_n++] = {struct_cands[i].index, &f.type()};
+                            break;
+                        }
+                    }
+                }
+
+                for(std::size_t i = 0; i < map_n; ++i) {
+                    auto& mi = static_cast<const meta::map_type_info&>(*map_cands[i].type);
+                    child_cands[child_n++] = {map_cands[i].index, &mi.value()};
+                }
+
+                if(child_n > 0) {
+                    multi_score<Adapter>(child, child_cands, child_n, scores);
+                }
+            });
+    }
+
+    if(meta::is_sequence_kind(source_kind) && seq_n > 0) {
+        Adapter::for_each_element(
+            node,
+            [&](std::size_t elem_idx, std::size_t total, typename Adapter::node_type elem) {
+                variant_candidate child_cands[64];
+                std::size_t child_n = 0;
+
+                for(std::size_t i = 0; i < seq_n; ++i) {
+                    const auto* info = seq_cands[i].type;
+                    if(info->kind == meta::type_kind::array || info->kind == meta::type_kind::set) {
+                        auto& ai = static_cast<const meta::array_type_info&>(*info);
+                        child_cands[child_n++] = {seq_cands[i].index, &ai.element()};
+                    } else if(info->kind == meta::type_kind::tuple) {
+                        auto& ti = static_cast<const meta::tuple_type_info&>(*info);
+                        if(ti.elements.size() != total)
+                            continue;
+                        if(elem_idx < ti.elements.size()) {
+                            child_cands[child_n++] = {seq_cands[i].index, &ti.elements[elem_idx]()};
+                        }
+                    }
+                }
+
+                if(child_n > 0) {
+                    multi_score<Adapter>(elem, child_cands, child_n, scores);
+                }
+            });
+    }
+}
+
 }  // namespace detail
 
-template <typename Config, typename... Ts, typename Visitor>
-std::size_t decide_variant_index(meta::type_kind source_kind, Visitor&& visit) {
+template <typename... Ts>
+std::size_t numeric_tiebreaker(std::uint64_t live) {
+    constexpr meta::type_kind alt_kinds[] = {detail::resolved_alt_kind<Ts>()...};
+    bool all_integer = true;
+    bool all_float = true;
+    {
+        std::uint64_t mask = live;
+        while(mask) {
+            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            if(!meta::is_integer_kind(alt_kinds[idx]))
+                all_integer = false;
+            if(!meta::is_floating_kind(alt_kinds[idx]))
+                all_float = false;
+            mask &= mask - 1;
+        }
+    }
+    if(all_integer || all_float) {
+        std::size_t best_idx = static_cast<std::size_t>(__builtin_ctzll(live));
+        std::size_t best_width = kind_width(alt_kinds[best_idx]);
+        std::uint64_t mask = live & (live - 1);
+        while(mask) {
+            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            std::size_t w = kind_width(alt_kinds[idx]);
+            if(w > best_width) {
+                best_width = w;
+                best_idx = idx;
+            }
+            mask &= mask - 1;
+        }
+        return best_idx;
+    }
+    return static_cast<std::size_t>(__builtin_ctzll(live));
+}
+
+template <typename Adapter, typename Config, typename... Ts>
+std::size_t select_variant_index(typename Adapter::node_type node) {
     constexpr std::size_t N = sizeof...(Ts);
     static_assert(N <= 64, "variant with more than 64 alternatives is not supported");
 
+    auto source_kind = Adapter::kind_of(node);
+
     std::uint64_t live = 0;
     std::size_t live_count = 0;
-
     {
         std::size_t idx = 0;
         auto init = [&](auto type_tag) {
@@ -475,171 +623,73 @@ std::size_t decide_variant_index(meta::type_kind source_kind, Visitor&& visit) {
         (init(std::type_identity<Ts>{}), ...);
     }
 
-    if(live_count > 1 && meta::is_object_kind(source_kind)) {
-        using table = detail::alt_has_field_table<Config, Ts...>;
-        std::forward<Visitor>(visit)([&](std::string_view field_name) -> bool {
-            std::uint64_t mask = live;
-            while(mask) {
-                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
-                if(!table::table[idx](field_name)) {
-                    live &= ~(std::uint64_t{1} << idx);
-                    --live_count;
-                }
-                mask &= mask - 1;
-            }
-            return live_count <= 1;
-        });
+    if(live_count == 0)
+        return N;
+    if(live_count == 1)
+        return static_cast<std::size_t>(__builtin_ctzll(live));
+
+    constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
+    std::size_t scores[N] = {};
+
+    detail::variant_candidate candidates[64];
+    std::size_t cand_count = 0;
+    {
+        std::uint64_t mask = live;
+        while(mask) {
+            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            candidates[cand_count++] = {idx, &info_fns[idx]()};
+            mask &= mask - 1;
+        }
     }
 
-    if(live_count > 1) {
-        constexpr meta::type_kind alt_kinds[] = {detail::resolved_alt_kind<Ts>()...};
-        bool all_integer = true;
-        bool all_float = true;
-        {
-            std::uint64_t mask = live;
-            while(mask) {
-                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
-                auto ak = alt_kinds[idx];
-                if(!meta::is_integer_kind(ak)) {
-                    all_integer = false;
-                }
-                if(!meta::is_floating_kind(ak)) {
-                    all_float = false;
-                }
-                mask &= mask - 1;
+    detail::multi_score<Adapter>(node, candidates, cand_count, scores);
+
+    std::size_t best_score = 0;
+    std::size_t best_idx = N;
+    {
+        std::uint64_t mask = live;
+        while(mask) {
+            std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+            if(scores[idx] > best_score) {
+                best_score = scores[idx];
+                best_idx = idx;
             }
+            mask &= mask - 1;
         }
-        if(all_integer || all_float) {
-            std::size_t best_idx = static_cast<std::size_t>(__builtin_ctzll(live));
-            std::size_t best_width = kind_width(alt_kinds[best_idx]);
-            std::uint64_t mask = live & (live - 1);
-            while(mask) {
-                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
-                std::size_t w = kind_width(alt_kinds[idx]);
-                if(w > best_width) {
-                    best_width = w;
-                    best_idx = idx;
-                }
-                mask &= mask - 1;
-            }
-            return best_idx;
-        }
-        return static_cast<std::size_t>(__builtin_ctzll(live));
     }
-    if(live_count == 1) {
-        return static_cast<std::size_t>(__builtin_ctzll(live));
-    }
-    return N;
+
+    if(best_idx < N)
+        return best_idx;
+
+    return numeric_tiebreaker<Ts...>(live);
 }
 
 template <typename Config, typename... Ts>
-std::size_t decide_variant_index(meta::type_kind source_kind) {
-    return decide_variant_index<Config, Ts...>(source_kind, [](auto&&) {});
-}
-
-template <typename D, typename Alt, typename Source, typename... Ts>
-auto try_deserialize_variant_candidate(Source&& source, std::variant<Ts...>& value)
-    -> std::expected<void, typename D::error_type> {
-    Alt candidate{};
-    D probe(std::forward<Source>(source));
-    if(!probe.valid()) {
-        return std::unexpected(probe.error());
-    }
-
-    auto status = codec::deserialize(probe, candidate);
-    if(!status) {
-        return std::unexpected(status.error());
-    }
-
-    auto finished = probe.finish();
-    if(!finished) {
-        return std::unexpected(finished.error());
-    }
-
-    value = std::move(candidate);
-    return {};
-}
-
-template <typename D, typename Source, typename Visitor, typename... Ts>
-auto try_variant_dispatch(Source&& source,
-                          meta::type_kind source_kind,
-                          std::variant<Ts...>& value,
-                          typename D::error_type mismatch_error,
-                          Visitor&& visit) -> std::expected<void, typename D::error_type> {
-    static_assert((std::default_initializable<Ts> && ...),
-                  "variant deserialization requires default-constructible alternatives");
-
-    using error_type = typename D::error_type;
-    using config_t = typename D::config_type;
+std::size_t select_variant_index(meta::type_kind source_kind) {
     constexpr std::size_t N = sizeof...(Ts);
+    static_assert(N <= 64, "variant with more than 64 alternatives is not supported");
 
-    std::size_t best =
-        decide_variant_index<config_t, Ts...>(source_kind, std::forward<Visitor>(visit));
-
-    if(best >= N) {
-        return std::unexpected(mismatch_error);
-    }
-
-    bool matched = false;
-    error_type last_error = mismatch_error;
-
-    auto try_at = [&](auto type_tag) {
-        if(matched) {
-            return;
-        }
-        using alt_t = typename decltype(type_tag)::type;
-        auto status =
-            try_deserialize_variant_candidate<D, alt_t>(std::forward<Source>(source), value);
-        if(status) {
-            matched = true;
-        } else {
-            last_error = status.error();
-        }
-    };
-
+    std::uint64_t live = 0;
+    std::size_t live_count = 0;
     {
         std::size_t idx = 0;
-        auto try_best = [&](auto type_tag) {
-            if(idx++ == best) {
-                try_at(type_tag);
-            }
-        };
-        (try_best(std::type_identity<Ts>{}), ...);
-    }
-
-    if(!matched) {
-        std::size_t idx = 0;
-        auto try_fallback = [&](auto type_tag) {
-            std::size_t current = idx++;
-            if(matched || current == best) {
-                return;
-            }
+        auto init = [&](auto type_tag) {
             using alt_t = typename decltype(type_tag)::type;
-            if(!accepts_kind<alt_t>(source_kind)) {
-                return;
+            if(accepts_kind<alt_t>(source_kind)) {
+                live |= (std::uint64_t{1} << idx);
+                ++live_count;
             }
-            try_at(type_tag);
+            ++idx;
         };
-        (try_fallback(std::type_identity<Ts>{}), ...);
+        (init(std::type_identity<Ts>{}), ...);
     }
 
-    if(!matched) {
-        return std::unexpected(last_error);
-    }
-    return {};
-}
+    if(live_count == 0)
+        return N;
+    if(live_count == 1)
+        return static_cast<std::size_t>(__builtin_ctzll(live));
 
-template <typename D, typename Source, typename... Ts>
-auto try_variant_dispatch(Source&& source,
-                          meta::type_kind source_kind,
-                          std::variant<Ts...>& value,
-                          typename D::error_type mismatch_error)
-    -> std::expected<void, typename D::error_type> {
-    return try_variant_dispatch<D>(std::forward<Source>(source),
-                                   source_kind,
-                                   value,
-                                   mismatch_error,
-                                   [](auto&&) {});
+    return numeric_tiebreaker<Ts...>(live);
 }
 
 }  // namespace kota::codec

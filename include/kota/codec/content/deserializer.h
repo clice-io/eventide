@@ -98,36 +98,41 @@ public:
 
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
-        auto valueKind = peek_value_kind();
-        if(!valueKind) {
-            return std::unexpected(valueKind.error());
+        static_assert((std::default_initializable<Ts> && ...),
+                      "variant deserialization requires default-constructible alternatives");
+
+        auto ref = peek_value_ref();
+        if(!ref) {
+            return std::unexpected(ref.error());
         }
 
-        auto source = consume_value_ref();
-        if(!source) {
-            return std::unexpected(source.error());
+        constexpr std::size_t N = sizeof...(Ts);
+        const content::Value* node = ref->unwrap();
+        std::size_t best =
+            codec::select_variant_index<codec::content_source_adapter, config_type, Ts...>(node);
+
+        if(best >= N) {
+            return mark_invalid(error_type::type_mismatch);
         }
 
-        auto source_kind = map_to_kind(*valueKind);
+        status_t result = std::unexpected(error_type::type_mismatch);
+        std::size_t idx = 0;
+        auto try_alt = [&](auto type_tag) {
+            if(idx++ != best)
+                return;
+            using alt_t = typename decltype(type_tag)::type;
+            alt_t candidate{};
+            auto status = codec::deserialize(*this, candidate);
+            if(status) {
+                value = std::move(candidate);
+                result = {};
+            } else {
+                result = std::unexpected(status.error());
+            }
+        };
+        (try_alt(std::type_identity<Ts>{}), ...);
 
-        auto result = codec::try_variant_dispatch<Deserializer>(
-            *source,
-            source_kind,
-            value,
-            error_type::type_mismatch,
-            [&](auto&& feed) {
-                if(const auto* obj = source->get_object()) {
-                    for(const auto& entry: *obj) {
-                        if(feed(std::string_view(entry.key))) {
-                            break;
-                        }
-                    }
-                }
-            });
-        if(!result) {
-            return mark_invalid(result.error());
-        }
-        return {};
+        return result;
     }
 
     status_t deserialize_bool(bool& value) {
@@ -353,16 +358,6 @@ public:
     }
 
 private:
-    enum class value_kind : std::uint8_t {
-        null,
-        boolean,
-        integer,
-        floating,
-        string,
-        array,
-        object,
-    };
-
     template <typename T, typename Reader>
     status_t read_scalar(T& out, Reader&& reader) {
         if(!is_valid) {
@@ -384,75 +379,6 @@ private:
             root_consumed = true;
         }
         return {};
-    }
-
-    template <typename T>
-    status_t deserialize_from_value_ref(content::Cursor input, T& out) {
-        struct value_scope {
-            value_scope(Deserializer& deserializer, content::Cursor input) :
-                deserializer(deserializer),
-                previous_has_current_value(deserializer.has_current_value),
-                previous_current_value(deserializer.current_value) {
-                deserializer.current_value = input;
-                deserializer.has_current_value = true;
-            }
-
-            ~value_scope() {
-                deserializer.current_value = previous_current_value;
-                deserializer.has_current_value = previous_has_current_value;
-            }
-
-            Deserializer& deserializer;
-            bool previous_has_current_value;
-            content::Cursor previous_current_value;
-        };
-
-        value_scope scope(*this, input);
-        return codec::deserialize(*this, out);
-    }
-
-    result_t<value_kind> peek_value_kind() {
-        auto ref = peek_value_ref();
-        if(!ref) {
-            return std::unexpected(ref.error());
-        }
-
-        if(ref->is_null()) {
-            return value_kind::null;
-        }
-        if(ref->is_bool()) {
-            return value_kind::boolean;
-        }
-        if(ref->is_int()) {
-            return value_kind::integer;
-        }
-        if(ref->is_number()) {
-            return value_kind::floating;
-        }
-        if(ref->is_string()) {
-            return value_kind::string;
-        }
-        if(ref->is_array()) {
-            return value_kind::array;
-        }
-        if(ref->is_object()) {
-            return value_kind::object;
-        }
-
-        return mark_invalid(error_type::type_mismatch);
-    }
-
-    static meta::type_kind map_to_kind(value_kind kind) {
-        switch(kind) {
-            case value_kind::null: return meta::type_kind::null;
-            case value_kind::boolean: return meta::type_kind::boolean;
-            case value_kind::integer: return meta::type_kind::int64;
-            case value_kind::floating: return meta::type_kind::float64;
-            case value_kind::string: return meta::type_kind::string;
-            case value_kind::array: return meta::type_kind::array;
-            case value_kind::object: return meta::type_kind::structure;
-            default: return meta::type_kind::any;
-        }
     }
 
     result_t<content::Cursor> access_value_ref(bool consume) {

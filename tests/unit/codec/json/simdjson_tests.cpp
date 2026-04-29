@@ -355,17 +355,19 @@ TEST_CASE(variant_roundtrip) {
     EXPECT_EQ(parsed.active, true);
 }
 
-TEST_CASE(variant_backtrack_errors) {
+TEST_CASE(variant_deep_scoring_disambiguation) {
     // Two structs with the same field name but different field types.
-    // JSON object path picks the first kind-compatible alternative without fallback.
+    // Deep scoring correctly picks the alternative whose field type matches the source.
     using object_variant = std::variant<object_int_value, object_string_value>;
 
     object_variant out = object_int_value{.value = 0};
-    // object_int_value is tried first (same field "value"), "text" is not int → fails
-    auto backtrack_status = from_json(R"({"value":"text"})", out);
-    EXPECT_FALSE(backtrack_status.has_value());
+    // Deep scoring: "text" is string → object_string_value wins
+    auto string_status = from_json(R"({"value":"text"})", out);
+    ASSERT_TRUE(string_status.has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<object_string_value>(out).value, "text");
 
-    // object_int_value is tried first and 42 is a valid int → succeeds
+    // Deep scoring: 42 is int → object_int_value wins
     auto int_status = from_json(R"({"value":42})", out);
     ASSERT_TRUE(int_status.has_value());
     EXPECT_EQ(out.index(), 0U);

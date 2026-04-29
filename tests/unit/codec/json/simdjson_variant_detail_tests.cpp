@@ -24,7 +24,6 @@ using Point = meta::fixtures::Point2d;
 using Color = meta::fixtures::Color3;
 using IntHolder = meta::fixtures::IntHolder;
 using StringHolder = meta::fixtures::StringHolder;
-using Empty = meta::fixtures::EmptyStruct;
 
 using ExtSimple =
     annotation<std::variant<int, std::string>, meta::attrs::externally_tagged::names<"num", "str">>;
@@ -195,17 +194,20 @@ TEST_CASE(single_alternative) {
     EXPECT_EQ(std::get<int>(out), 99);
 }
 
-TEST_CASE(struct_no_backtracking) {
+TEST_CASE(struct_deep_scoring) {
     // Two struct types with the same field name but different field types.
-    // Without backtracking, the first kind-compatible alternative is always tried.
-    // If its fields don't type-match, deserialization fails.
+    // Deep scoring matches the correct alternative by recursively comparing field types.
     using V = std::variant<IntHolder, StringHolder>;
 
     V out{};
-    // IntHolder is tried first (same field name "value"), but "hello" is not int → fails
-    EXPECT_FALSE(from_json(R"({"value":"hello"})", out).has_value());
+    // Deep scoring: "hello" is string → StringHolder.value (string) scores higher than
+    // IntHolder.value (int)
+    ASSERT_TRUE(from_json(R"({"value":"hello"})", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<StringHolder>(out).value, "hello");
 
-    // IntHolder is tried first and 42 is a valid int → succeeds
+    // Deep scoring: 42 is int → IntHolder.value (int) scores higher than
+    // StringHolder.value (string)
     ASSERT_TRUE(from_json(R"({"value":42})", out).has_value());
     EXPECT_EQ(out.index(), 0U);
     EXPECT_EQ(std::get<IntHolder>(out).value, 42);

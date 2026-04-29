@@ -19,9 +19,74 @@
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/narrow.h"
+#include "kota/codec/detail/tagged.h"
 #include "kota/codec/json/error.h"
 
 namespace kota::codec::json {
+
+namespace detail {
+
+struct simdjson_source_adapter {
+    using node_type = simdjson::ondemand::value;
+
+    static meta::type_kind kind_of(node_type node) {
+        simdjson::ondemand::json_type type;
+        if(node.type().get(type) != simdjson::SUCCESS)
+            return meta::type_kind::any;
+        switch(type) {
+            case simdjson::ondemand::json_type::null: return meta::type_kind::null;
+            case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
+            case simdjson::ondemand::json_type::number: {
+                simdjson::ondemand::number_type nt;
+                if(node.get_number_type().get(nt) != simdjson::SUCCESS)
+                    return meta::type_kind::int64;
+                return nt == simdjson::ondemand::number_type::floating_point_number
+                           ? meta::type_kind::float64
+                           : meta::type_kind::int64;
+            }
+            case simdjson::ondemand::json_type::string: return meta::type_kind::string;
+            case simdjson::ondemand::json_type::array: return meta::type_kind::array;
+            case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
+            default: return meta::type_kind::any;
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_field(node_type node, Fn&& fn) {
+        simdjson::ondemand::object obj;
+        if(node.get_object().get(obj) != simdjson::SUCCESS)
+            return;
+        for(auto field_result: obj) {
+            simdjson::ondemand::field field;
+            if(std::move(field_result).get(field) != simdjson::SUCCESS)
+                break;
+            std::string_view key;
+            if(field.unescaped_key().get(key) != simdjson::SUCCESS)
+                break;
+            fn(key, std::move(field).value());
+        }
+    }
+
+    template <typename Fn>
+    static void for_each_element(node_type node, Fn&& fn) {
+        simdjson::ondemand::array arr;
+        if(node.get_array().get(arr) != simdjson::SUCCESS)
+            return;
+        std::size_t total = 0;
+        if(arr.count_elements().get(total) != simdjson::SUCCESS)
+            return;
+        std::size_t idx = 0;
+        for(auto elem_result: arr) {
+            simdjson::ondemand::value elem;
+            if(std::move(elem_result).get(elem) != simdjson::SUCCESS)
+                break;
+            fn(idx, total, std::move(elem));
+            ++idx;
+        }
+    }
+};
+
+}  // namespace detail
 
 template <typename Config = config::default_config>
 class Deserializer {
@@ -115,43 +180,23 @@ public:
             if(!obj_result) {
                 return std::unexpected(obj_result.error());
             }
-
             auto obj = std::move(*obj_result);
 
-            std::size_t best = codec::decide_variant_index<config_type, Ts...>(
-                meta::type_kind::structure,
-                [&](auto&& feed) {
-                    for(auto field_result: obj) {
-                        simdjson::ondemand::field field;
-                        if(std::move(field_result).get(field) != simdjson::SUCCESS) {
-                            break;
-                        }
-                        std::string_view key;
-                        if(field.unescaped_key().get(key) != simdjson::SUCCESS) {
-                            break;
-                        }
-                        if(feed(key)) {
-                            break;
-                        }
-                    }
-                });
+            std::size_t best = score_variant_from_object<Ts...>(obj);
 
             if(best >= N) {
                 return mark_invalid(error_kind::type_mismatch);
             }
 
-            if(obj.reset().error()) {
-                return mark_invalid(error_kind::invalid_state);
-            }
+            obj.reset();
             preloaded_object = std::move(obj);
             has_preloaded_object = true;
 
             status_t result = std::unexpected(error_type::type_mismatch);
             std::size_t idx = 0;
             auto try_alt = [&](auto type_tag) {
-                if(idx++ != best) {
+                if(idx++ != best)
                     return;
-                }
                 using alt_t = typename decltype(type_tag)::type;
                 alt_t candidate{};
                 auto status = codec::deserialize(*this, candidate);
@@ -177,17 +222,81 @@ public:
             number_type = *current_number_type;
         }
 
-        auto raw = consume_raw_json_view();
-        if(!raw) {
-            return std::unexpected(raw.error());
-        }
-
         auto source_kind = map_to_kind(*json_type, number_type);
 
-        auto result = codec::try_variant_dispatch<Deserializer>(*raw,
-                                                                source_kind,
-                                                                value,
-                                                                error_type::type_mismatch);
+        std::uint64_t live = 0;
+        std::size_t live_count = 0;
+        {
+            std::size_t idx = 0;
+            auto init = [&](auto type_tag) {
+                using alt_t = typename decltype(type_tag)::type;
+                if(codec::accepts_kind<alt_t>(source_kind)) {
+                    live |= (std::uint64_t{1} << idx);
+                    ++live_count;
+                }
+                ++idx;
+            };
+            (init(std::type_identity<Ts>{}), ...);
+        }
+
+        if(live_count == 0) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+
+        if(live_count == 1) {
+            std::size_t best = static_cast<std::size_t>(__builtin_ctzll(live));
+            status_t result = std::unexpected(error_type::type_mismatch);
+            std::size_t idx = 0;
+            auto try_alt = [&](auto type_tag) {
+                if(idx++ != best)
+                    return;
+                using alt_t = typename decltype(type_tag)::type;
+                alt_t candidate{};
+                auto status = codec::deserialize(*this, candidate);
+                if(status) {
+                    value = std::move(candidate);
+                    result = {};
+                } else {
+                    result = std::unexpected(status.error());
+                }
+            };
+            (try_alt(std::type_identity<Ts>{}), ...);
+            return result;
+        }
+
+        auto dom = capture_dom_value();
+        if(!dom) {
+            return std::unexpected(dom.error());
+        }
+
+        const content::Value* node = &*dom;
+        std::size_t best =
+            codec::select_variant_index<codec::content_source_adapter, config_type, Ts...>(node);
+
+        if(best >= N) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+
+        status_t result = std::unexpected(error_type::type_mismatch);
+        std::size_t idx = 0;
+        auto try_alt = [&](auto type_tag) {
+            if(idx++ != best)
+                return;
+            using alt_t = typename decltype(type_tag)::type;
+            alt_t candidate{};
+            content::Deserializer<config_type> sub_deser(std::move(*dom));
+            auto status = codec::deserialize(sub_deser, candidate);
+            if(status) {
+                if(auto fin = sub_deser.finish(); fin) {
+                    value = std::move(candidate);
+                    result = {};
+                }
+            } else {
+                result = std::unexpected(error_type(error_kind::type_mismatch));
+            }
+        };
+        (try_alt(std::type_identity<Ts>{}), ...);
+
         if(!result) {
             return mark_invalid(result.error().kind);
         }
@@ -324,13 +433,8 @@ public:
             if(root_consumed) {
                 return mark_invalid();
             }
-            simdjson::ondemand::value root_value;
-            auto err = document.get_value().get(root_value);
-            if(err != simdjson::SUCCESS) {
-                return mark_invalid(err);
-            }
             root_consumed = true;
-            KOTA_EXPECTED_TRY(build_dom_from_value(root_value, out));
+            KOTA_EXPECTED_TRY(build_dom_from_document(out));
         }
         return out;
     }
@@ -512,6 +616,85 @@ public:
     }
 
 private:
+    status_t build_dom_from_document(content::Value& out) {
+        simdjson::ondemand::json_type type;
+        auto err = document.type().get(type);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
+
+        switch(type) {
+            case simdjson::ondemand::json_type::null: {
+                bool is_null = false;
+                err = document.is_null().get(is_null);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                out = content::Value(nullptr);
+                return {};
+            }
+            case simdjson::ondemand::json_type::boolean: {
+                bool b = false;
+                err = document.get_bool().get(b);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                out = content::Value(b);
+                return {};
+            }
+            case simdjson::ondemand::json_type::number: {
+                simdjson::ondemand::number_type nt{};
+                err = document.get_number_type().get(nt);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                if(nt == simdjson::ondemand::number_type::signed_integer) {
+                    std::int64_t i = 0;
+                    err = document.get_int64().get(i);
+                    if(err != simdjson::SUCCESS) {
+                        return mark_invalid(err);
+                    }
+                    out = content::Value(i);
+                } else if(nt == simdjson::ondemand::number_type::unsigned_integer) {
+                    std::uint64_t u = 0;
+                    err = document.get_uint64().get(u);
+                    if(err != simdjson::SUCCESS) {
+                        return mark_invalid(err);
+                    }
+                    out = content::Value(u);
+                } else {
+                    double d = 0.0;
+                    err = document.get_double().get(d);
+                    if(err != simdjson::SUCCESS) {
+                        return mark_invalid(err);
+                    }
+                    out = content::Value(d);
+                }
+                return {};
+            }
+            case simdjson::ondemand::json_type::string: {
+                std::string_view s;
+                err = document.get_string().get(s);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                out = content::Value(std::string(s));
+                return {};
+            }
+            case simdjson::ondemand::json_type::array:
+            case simdjson::ondemand::json_type::object: {
+                simdjson::ondemand::value root_value;
+                err = document.get_value().get(root_value);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                return build_dom_from_value(root_value, out);
+            }
+            default: break;
+        }
+        return mark_invalid();
+    }
+
     status_t build_dom_from_value(simdjson::ondemand::value& value, content::Value& out) {
         simdjson::ondemand::json_type type;
         auto err = value.type().get(type);
@@ -671,24 +854,12 @@ private:
         return {};
     }
 
-    template <typename T>
-    status_t deserialize_from_value(simdjson::ondemand::value& value, T& out) {
-        struct ValueScope {
-            explicit ValueScope(Deserializer& deserializer, simdjson::ondemand::value& value) :
-                deserializer(deserializer), previous(deserializer.current_value) {
-                deserializer.current_value = &value;
-            }
-
-            ~ValueScope() {
-                deserializer.current_value = previous;
-            }
-
-            Deserializer& deserializer;
-            simdjson::ondemand::value* previous;
-        };
-
-        ValueScope scope(*this, value);
-        return codec::deserialize(*this, out);
+    result_t<simdjson::padded_string_view> consume_raw_json_view() {
+        KOTA_EXPECTED_TRY_V(
+            auto raw,
+            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
+                                          [](auto& val) { return val.raw_json(); }));
+        return to_padded_subview(raw);
     }
 
     result_t<simdjson::ondemand::number_type> peek_number_type() {
@@ -703,13 +874,12 @@ private:
         switch(json_type) {
             case simdjson::ondemand::json_type::null: return meta::type_kind::null;
             case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
-            case simdjson::ondemand::json_type::number: {
+            case simdjson::ondemand::json_type::number:
                 if(number_type.has_value() &&
                    *number_type == simdjson::ondemand::number_type::floating_point_number) {
                     return meta::type_kind::float64;
                 }
                 return meta::type_kind::int64;
-            }
             case simdjson::ondemand::json_type::string: return meta::type_kind::string;
             case simdjson::ondemand::json_type::array: return meta::type_kind::array;
             case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
@@ -717,28 +887,115 @@ private:
         }
     }
 
-    template <typename Alt, typename... Ts>
-    static auto deserialize_variant_candidate(simdjson::padded_string_view raw,
-                                              std::variant<Ts...>& value) -> status_t {
-        Alt candidate{};
-        Deserializer probe(raw);
-        if(!probe.valid()) {
-            return std::unexpected(probe.error());
+    template <typename... Ts>
+    std::size_t score_variant_from_object(simdjson::ondemand::object& obj) {
+        constexpr std::size_t N = sizeof...(Ts);
+        constexpr auto source_kind = meta::type_kind::structure;
+        using config_t = Config;
+
+        std::uint64_t live = 0;
+        std::size_t live_count = 0;
+        {
+            std::size_t idx = 0;
+            auto init = [&](auto type_tag) {
+                using alt_t = typename decltype(type_tag)::type;
+                if(codec::accepts_kind<alt_t>(source_kind)) {
+                    live |= (std::uint64_t{1} << idx);
+                    ++live_count;
+                }
+                ++idx;
+            };
+            (init(std::type_identity<Ts>{}), ...);
         }
 
-        KOTA_EXPECTED_TRY(codec::deserialize(probe, candidate));
-        KOTA_EXPECTED_TRY(probe.finish());
+        if(live_count <= 1) {
+            if(live_count == 1)
+                return static_cast<std::size_t>(__builtin_ctzll(live));
+            return N;
+        }
 
-        value = std::move(candidate);
-        return {};
-    }
+        constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, config_t>...};
+        std::size_t scores[N] = {};
 
-    result_t<simdjson::padded_string_view> consume_raw_json_view() {
-        KOTA_EXPECTED_TRY_V(
-            auto raw,
-            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                          [](auto& val) { return val.raw_json(); }));
-        return to_padded_subview(raw);
+        codec::detail::variant_candidate candidates[64];
+        std::size_t cand_count = 0;
+        {
+            std::uint64_t mask = live;
+            while(mask) {
+                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+                candidates[cand_count++] = {idx, &info_fns[idx]()};
+                mask &= mask - 1;
+            }
+        }
+
+        codec::detail::variant_candidate struct_cands[64];
+        std::size_t struct_n = 0;
+        codec::detail::variant_candidate map_cands[64];
+        std::size_t map_n = 0;
+
+        for(std::size_t i = 0; i < cand_count; ++i) {
+            const auto* info = codec::detail::unwrap_indirect(candidates[i].type);
+            scores[candidates[i].index] += 1;
+            if(info->kind == meta::type_kind::structure)
+                struct_cands[struct_n++] = {candidates[i].index, info};
+            else if(info->kind == meta::type_kind::map)
+                map_cands[map_n++] = {candidates[i].index, info};
+        }
+
+        if(struct_n + map_n > 0) {
+            for(auto field_result: obj) {
+                simdjson::ondemand::field field;
+                if(std::move(field_result).get(field) != simdjson::SUCCESS)
+                    break;
+                std::string_view key;
+                if(field.unescaped_key().get(key) != simdjson::SUCCESS)
+                    break;
+                auto child = std::move(field).value();
+
+                codec::detail::variant_candidate child_cands[64];
+                std::size_t child_n = 0;
+
+                for(std::size_t i = 0; i < struct_n; ++i) {
+                    auto& si = static_cast<const meta::struct_type_info&>(*struct_cands[i].type);
+                    for(const auto& f: si.fields) {
+                        if(codec::detail::field_name_matches(f, key)) {
+                            child_cands[child_n++] = {struct_cands[i].index, &f.type()};
+                            break;
+                        }
+                    }
+                }
+
+                for(std::size_t i = 0; i < map_n; ++i) {
+                    auto& mi = static_cast<const meta::map_type_info&>(*map_cands[i].type);
+                    child_cands[child_n++] = {map_cands[i].index, &mi.value()};
+                }
+
+                if(child_n > 0) {
+                    codec::detail::multi_score<detail::simdjson_source_adapter>(child,
+                                                                                child_cands,
+                                                                                child_n,
+                                                                                scores);
+                }
+            }
+        }
+
+        std::size_t best_score = 0;
+        std::size_t best_idx = N;
+        {
+            std::uint64_t mask = live;
+            while(mask) {
+                std::size_t idx = static_cast<std::size_t>(__builtin_ctzll(mask));
+                if(scores[idx] > best_score) {
+                    best_score = scores[idx];
+                    best_idx = idx;
+                }
+                mask &= mask - 1;
+            }
+        }
+
+        if(best_idx < N)
+            return best_idx;
+        return codec::numeric_tiebreaker<Ts...>(live);
     }
 
     result_t<simdjson::padded_string_view> to_padded_subview(std::string_view raw) {
@@ -824,9 +1081,10 @@ private:
 private:
     bool is_valid = true;
     bool root_consumed = false;
-    bool has_preloaded_object = false;
     error_type last_error;
     simdjson::ondemand::value* current_value = nullptr;
+
+    bool has_preloaded_object = false;
     simdjson::ondemand::object preloaded_object{};
 
     struct deser_frame {
