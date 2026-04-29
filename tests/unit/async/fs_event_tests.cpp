@@ -240,7 +240,7 @@ TEST_CASE(detect_modify) {
     auto worker = fse_detect_modify(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -248,7 +248,7 @@ TEST_CASE(detect_create) {
     auto worker = fse_detect_create(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -256,7 +256,7 @@ TEST_CASE(detect_destroy) {
     auto worker = fse_detect_destroy(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -264,7 +264,7 @@ TEST_CASE(ignores_sibling) {
     auto worker = fse_ignores_sibling(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -272,7 +272,7 @@ TEST_CASE(atomic_replace) {
     auto worker = fse_atomic_replace(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -280,7 +280,7 @@ TEST_CASE(error_bad_parent) {
     auto worker = fse_error_bad_parent(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -288,7 +288,7 @@ TEST_CASE(stop_then_next) {
     auto worker = fse_stop_then_next(loop);
     schedule_all(worker);
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 

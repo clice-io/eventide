@@ -1899,7 +1899,7 @@ TEST_CASE(detect_file_creation) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1908,7 +1908,7 @@ TEST_CASE(detect_file_modification) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1917,7 +1917,7 @@ TEST_CASE(detect_file_deletion) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1926,7 +1926,7 @@ TEST_CASE(detect_file_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1935,7 +1935,7 @@ TEST_CASE(error_on_nonexistent_path) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1944,7 +1944,7 @@ TEST_CASE(close_then_next_returns_error) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1953,7 +1953,7 @@ TEST_CASE(multiple_next_calls) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1962,7 +1962,7 @@ TEST_CASE(debounce_batches_events) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1971,7 +1971,7 @@ TEST_CASE(recursive_subdirectory_events) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1980,7 +1980,7 @@ TEST_CASE(non_recursive_watches_top_level) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1989,7 +1989,7 @@ TEST_CASE(move_assignment_closes_old_watcher) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -1998,7 +1998,7 @@ TEST_CASE(destructor_cleans_up_without_close) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2007,7 +2007,7 @@ TEST_CASE(double_close_is_safe) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2016,7 +2016,7 @@ TEST_CASE(create_with_default_options) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2025,7 +2025,7 @@ TEST_CASE(rename_populates_old_path) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2034,7 +2034,7 @@ TEST_CASE(rename_existing_file) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2043,7 +2043,7 @@ TEST_CASE(directory_creation) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2052,7 +2052,7 @@ TEST_CASE(directory_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2061,7 +2061,7 @@ TEST_CASE(directory_deletion) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2070,7 +2070,7 @@ TEST_CASE(subfile_create) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2079,7 +2079,7 @@ TEST_CASE(subfile_modify) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2088,7 +2088,7 @@ TEST_CASE(subfile_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2097,7 +2097,7 @@ TEST_CASE(subfile_delete) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2106,7 +2106,7 @@ TEST_CASE(nested_subdir_create) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2115,7 +2115,7 @@ TEST_CASE(deep_nested_file) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2124,7 +2124,7 @@ TEST_CASE(subdir_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2133,7 +2133,7 @@ TEST_CASE(renamed_dir_still_tracked) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2142,7 +2142,7 @@ TEST_CASE(error_on_bad_parent) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2151,7 +2151,7 @@ TEST_CASE(multiple_watchers_same_dir) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2160,7 +2160,7 @@ TEST_CASE(multiple_watchers_different_dirs) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2169,7 +2169,7 @@ TEST_CASE(rapid_create_delete) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2183,7 +2183,7 @@ TEST_CASE(rapid_multiple_writes) {
                 "DEBUG: rapid_multiple_writes error msg = %s\n",
                 std::string(result.error().message()).c_str());
     }
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2192,7 +2192,7 @@ TEST_CASE(attribute_change) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2201,7 +2201,7 @@ TEST_CASE(atomic_replace) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2210,7 +2210,7 @@ TEST_CASE(toctou_dir_and_file) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2219,7 +2219,7 @@ TEST_CASE(unicode_filename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2228,7 +2228,7 @@ TEST_CASE(symlink_create_delete) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2237,7 +2237,7 @@ TEST_CASE(large_burst) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2246,7 +2246,7 @@ TEST_CASE(debounce_coalesces) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2255,7 +2255,7 @@ TEST_CASE(root_dir_deleted) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2264,7 +2264,7 @@ TEST_CASE(subdir_delete_with_files) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2273,7 +2273,7 @@ TEST_CASE(symlink_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2282,7 +2282,7 @@ TEST_CASE(symlink_update) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2291,7 +2291,7 @@ TEST_CASE(folder_symlink) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2300,7 +2300,7 @@ TEST_CASE(rapid_create_update) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2309,7 +2309,7 @@ TEST_CASE(rapid_update_delete) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2318,7 +2318,7 @@ TEST_CASE(rapid_delete_create) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2327,7 +2327,7 @@ TEST_CASE(case_only_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2336,7 +2336,7 @@ TEST_CASE(nested_dir_rename) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2345,7 +2345,7 @@ TEST_CASE(create_rename_coalesce) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
@@ -2354,7 +2354,7 @@ TEST_CASE(chain_rename_coalesce) {
     schedule_all(worker);
 
     auto result = worker.result();
-    EXPECT_TRUE(result.has_value());
+    ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
 }
 
