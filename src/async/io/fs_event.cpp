@@ -269,20 +269,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
 namespace {
 
-bool path_exists(const char* path) {
-    int fd = open(path, O_RDONLY | O_SYMLINK);
-    if(fd == -1)
-        return false;
-    char buf[PATH_MAX];
-    if(fcntl(fd, F_GETPATH, buf) == -1) {
-        ::close(fd);
-        return false;
-    }
-    bool res = strncmp(path, buf, PATH_MAX) == 0;
-    ::close(fd);
-    return res;
-}
-
 constexpr FSEventStreamEventFlags IGNORED_FLAGS =
     kFSEventStreamEventFlagItemIsHardlink | kFSEventStreamEventFlagItemIsLastHardlink |
     kFSEventStreamEventFlagItemIsSymlink | kFSEventStreamEventFlagItemIsDir |
@@ -512,8 +498,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 s->running = false;
                 if(s->dir_handle != INVALID_HANDLE_VALUE) {
                     CancelIoEx(s->dir_handle, nullptr);
-                    CloseHandle(s->dir_handle);
-                    s->dir_handle = INVALID_HANDLE_VALUE;
                 }
             },
             worker_thread.native_handle(),
@@ -693,6 +677,11 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
         poll();
         while(running) {
             SleepEx(INFINITE, TRUE);
+        }
+        while(SleepEx(0, TRUE) == WAIT_IO_COMPLETION) {}
+        if(dir_handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(dir_handle);
+            dir_handle = INVALID_HANDLE_VALUE;
         }
     }
 };
