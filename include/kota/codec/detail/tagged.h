@@ -362,7 +362,9 @@ constexpr bool accepts_kind(meta::type_kind source) noexcept {
     } else if constexpr(k == meta::type_kind::pointer) {
         return source == meta::type_kind::null || accepts_kind<typename T::element_type>(source);
     } else if constexpr(k == meta::type_kind::variant) {
-        return true;
+        return [source]<std::size_t... I>(std::index_sequence<I...>) {
+            return (accepts_kind<std::variant_alternative_t<I, T>>(source) || ...);
+        }(std::make_index_sequence<std::variant_size_v<T>>{});
     } else {
         return kind_compatible(k, source);
     }
@@ -530,7 +532,7 @@ void multi_score(typename Adapter::node_type node,
 }  // namespace detail
 
 template <typename... Ts>
-std::size_t numeric_tiebreaker(std::uint64_t live) {
+std::size_t numeric_tiebreaker(std::uint64_t live, meta::type_kind source_kind) {
     constexpr meta::type_kind alt_kinds[] = {detail::resolved_alt_kind<Ts>()...};
     bool all_integer = true;
     bool all_float = true;
@@ -552,7 +554,7 @@ std::size_t numeric_tiebreaker(std::uint64_t live) {
         while(mask) {
             std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
             std::size_t w = kind_width(alt_kinds[idx]);
-            if(w > best_width) {
+            if(w > best_width || (w == best_width && alt_kinds[idx] == source_kind)) {
                 best_width = w;
                 best_idx = idx;
             }
@@ -623,7 +625,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     if(best_idx < N)
         return best_idx;
 
-    return numeric_tiebreaker<Ts...>(live);
+    return numeric_tiebreaker<Ts...>(live, source_kind);
 }
 
 template <typename Config, typename... Ts>
@@ -651,7 +653,7 @@ std::size_t select_variant_index(meta::type_kind source_kind) {
     if(live_count == 1)
         return static_cast<std::size_t>(std::countr_zero(live));
 
-    return numeric_tiebreaker<Ts...>(live);
+    return numeric_tiebreaker<Ts...>(live, source_kind);
 }
 
 template <typename E, typename D, typename... Ts>

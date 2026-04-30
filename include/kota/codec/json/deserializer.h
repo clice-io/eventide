@@ -307,7 +307,9 @@ public:
                                 }));
             best =
                 codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&obj));
-            obj.reset();
+            if(auto r = obj.reset(); r.error() != simdjson::SUCCESS) {
+                return mark_invalid(r.error());
+            }
             pending_object.emplace(std::move(obj));
         } else if(*json_type == simdjson::ondemand::json_type::array) {
             KOTA_EXPECTED_TRY_V(auto arr, read_source<simdjson::ondemand::array>([](auto& src) {
@@ -315,7 +317,9 @@ public:
                                 }));
             best =
                 codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&arr));
-            arr.reset();
+            if(auto r = arr.reset(); r.error() != simdjson::SUCCESS) {
+                return mark_invalid(r.error());
+            }
             pending_array.emplace(std::move(arr));
         } else {
             std::optional<simdjson::ondemand::number_type> number_type = std::nullopt;
@@ -497,7 +501,9 @@ public:
             return std::unexpected(
                 error_type::custom(std::format("missing field '{}'", field_name)));
         }
-        obj.reset();
+        if(auto r = obj.reset(); r.error() != simdjson::SUCCESS) {
+            return mark_invalid(r.error());
+        }
         pending_object.emplace(std::move(obj));
         return result;
     }

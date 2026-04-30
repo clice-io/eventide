@@ -99,6 +99,8 @@ struct toml_source_adapter {
 
     template <typename Fn>
     static void for_each_field(node_type node, Fn&& fn) {
+        if(!node)
+            return;
         if(const auto* tbl = node->as_table()) {
             for(const auto& [k, v]: *tbl) {
                 fn(std::string_view(k), &v);
@@ -108,6 +110,8 @@ struct toml_source_adapter {
 
     template <typename Fn>
     static void for_each_element(node_type node, Fn&& fn) {
+        if(!node)
+            return;
         if(const auto* arr = node->as_array()) {
             std::size_t total = arr->size();
             for(std::size_t i = 0; i < total; ++i) {
