@@ -1908,6 +1908,8 @@ TEST_CASE(exception_takes_precedence_over_error) {
 }
 
 TEST_CASE(only_first_exception_rethrown) {
+    std::string caught_what;
+
     auto thrower = [&](int ms, const char* msg) -> task<> {
         co_await sleep(ms, loop);
         throw std::runtime_error(msg);
@@ -1918,17 +1920,18 @@ TEST_CASE(only_first_exception_rethrown) {
         group.spawn(thrower(1, "first"));
         group.spawn(thrower(1, "second"));
         group.spawn(thrower(1, "third"));
-        co_await group.join();
+        try {
+            co_await group.join();
+        } catch(const std::runtime_error& e) {
+            caught_what = e.what();
+            throw;
+        }
     };
 
     auto t = driver();
     schedule_all(t);
     EXPECT_TRUE(t->is_failed());
-    try {
-        t.result();
-    } catch(const std::runtime_error& e) {
-        EXPECT_EQ(std::string_view(e.what()), "first");
-    }
+    EXPECT_EQ(caught_what, "first");
 }
 #endif
 
