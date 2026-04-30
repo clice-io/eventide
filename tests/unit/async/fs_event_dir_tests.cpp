@@ -193,6 +193,41 @@ task<int, error> watch_stop_during_next(event_loop& loop) {
     co_return 1;
 }
 
+task<int, error> watch_stop_during_debounce(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{2000}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    std::string file = (std::filesystem::path(dir) / "debounce_stop.txt").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    // Wait a bit for events to arrive and next() to enter debounce phase,
+    // then stop while debounce_timer.wait() is suspended.
+    auto stopper = [&]() -> task<void, error> {
+        co_await sleep(200, loop);
+        watcher->stop();
+    };
+    auto stop_task = stopper();
+    loop.schedule(stop_task);
+
+    auto result = co_await next_or_timeout(*watcher, loop, 5000);
+
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    if(result.has_error()) {
+        co_return result.error() == error::operation_aborted ? 1 : 0;
+    }
+    co_return 1;
+}
+
 task<int, error> watch_multiple_next_calls(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -427,8 +462,6 @@ task<int, error> watch_default_options(event_loop& loop) {
     co_return 1;
 }
 
-// ── parcel-watcher parity: files ────────────────────────────────────
-
 task<int, error> watch_rename_populates_old_path(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -500,8 +533,6 @@ task<int, error> watch_rename_existing_file(event_loop& loop) {
 
     co_return found ? 1 : 0;
 }
-
-// ── parcel-watcher parity: directories ──────────────────────────────
 
 task<int, error> watch_directory_creation(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -588,8 +619,6 @@ task<int, error> watch_directory_deletion(event_loop& loop) {
 
     co_return found ? 1 : 0;
 }
-
-// ── parcel-watcher parity: sub-files ────────────────────────────────
 
 task<int, error> watch_subfile_create(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -731,8 +760,6 @@ task<int, error> watch_subfile_delete(event_loop& loop) {
 
     co_return found ? 1 : 0;
 }
-
-// ── parcel-watcher parity: sub-directories ──────────────────────────
 
 task<int, error> watch_nested_subdir_create(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -877,14 +904,10 @@ task<int, error> watch_renamed_dir_still_tracked(event_loop& loop) {
     co_return found ? 1 : 0;
 }
 
-// ── parcel-watcher parity: errors ───────────────────────────────────
-
 task<int, error> watch_error_on_bad_parent(event_loop& loop) {
     auto result = fs_event::create("/nonexistent/parent/file.txt", {}, loop);
     co_return result.has_error() ? 1 : 0;
 }
-
-// ── parcel-watcher parity: multiple watchers ────────────────────────
 
 task<int, error> watch_multiple_watchers_same_dir(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -959,8 +982,6 @@ task<int, error> watch_multiple_watchers_different_dirs(event_loop& loop) {
     co_return (w1_saw && w2_saw) ? 1 : 0;
 }
 
-// ── parcel-watcher parity: rapid changes ────────────────────────────
-
 task<int, error> watch_rapid_create_delete(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1030,8 +1051,6 @@ task<int, error> watch_rapid_multiple_writes(event_loop& loop) {
     co_return saw_modify ? 1 : 0;
 }
 
-// ── compatibility: attribute changes ────────────────────────────────
-
 task<int, error> watch_attribute_change(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1062,8 +1081,6 @@ task<int, error> watch_attribute_change(event_loop& loop) {
 
     co_return found ? 1 : 0;
 }
-
-// ── compatibility: atomic file replacement (vim-style) ─────────────
 
 task<int, error> watch_atomic_replace(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1105,8 +1122,6 @@ task<int, error> watch_atomic_replace(event_loop& loop) {
     co_return found ? 1 : 0;
 }
 
-// ── compatibility: TOCTOU (create dir + immediate file) ────────────
-
 task<int, error> watch_toctou_dir_and_file(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1140,8 +1155,6 @@ task<int, error> watch_toctou_dir_and_file(event_loop& loop) {
     co_return found ? 1 : 0;
 }
 
-// ── compatibility: unicode filenames ───────────────────────────────
-
 task<int, error> watch_unicode_filename(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1171,8 +1184,8 @@ task<int, error> watch_unicode_filename(event_loop& loop) {
     co_return found ? 1 : 0;
 }
 
-// ── compatibility: symlink create/delete ───────────────────────────
-
+// Windows symlink creation requires SeCreateSymbolicLinkPrivilege, which
+// is unavailable in unprivileged CI runners.
 task<int, error> watch_symlink_create_delete([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
@@ -1216,8 +1229,6 @@ task<int, error> watch_symlink_create_delete([[maybe_unused]] event_loop& loop) 
 #endif
 }
 
-// ── compatibility: large event burst ───────────────────────────────
-
 task<int, error> watch_large_burst(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1256,10 +1267,8 @@ task<int, error> watch_large_burst(event_loop& loop) {
     }
     co_await fs::rmdir(dir, loop).or_fail();
 
-    co_return total_creates >= (count * 3 / 4) ? 1 : 0;
+    co_return total_creates >= (count * 9 / 10) ? 1 : 0;
 }
-
-// ── compatibility: debounce coalescing ─────────────────────────────
 
 task<int, error> watch_debounce_coalesces(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1301,8 +1310,6 @@ task<int, error> watch_debounce_coalesces(event_loop& loop) {
     co_return create_count >= 7 ? 1 : 0;
 }
 
-// ── parcel-watcher parity: watched root directory deletion ─────────
-
 task<int, error> watch_root_dir_deleted(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1329,8 +1336,6 @@ task<int, error> watch_root_dir_deleted(event_loop& loop) {
     watcher->stop();
     co_return found ? 1 : 0;
 }
-
-// ── parcel-watcher parity: delete subdir with files inside ────────
 
 task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1371,8 +1376,6 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
 
     co_return (found_file_delete && found_dir_delete) ? 1 : 0;
 }
-
-// ── parcel-watcher parity: symlink rename ─────────────────────────
 
 task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
@@ -1419,8 +1422,6 @@ task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
 #endif
 }
 
-// ── parcel-watcher parity: symlink update (write through symlink) ─
-
 task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
@@ -1464,8 +1465,6 @@ task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
 #endif
 }
 
-// ── parcel-watcher parity: folder symlink ─────────────────────────
-
 task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
@@ -1508,8 +1507,6 @@ task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
 #endif
 }
 
-// ── parcel-watcher parity: rapid create+update → create ───────────
-
 task<int, error> watch_rapid_create_update(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1544,8 +1541,6 @@ task<int, error> watch_rapid_create_update(event_loop& loop) {
 
     co_return saw_create ? 1 : 0;
 }
-
-// ── parcel-watcher parity: rapid update+delete → delete ───────────
 
 task<int, error> watch_rapid_update_delete(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1585,8 +1580,6 @@ task<int, error> watch_rapid_update_delete(event_loop& loop) {
     co_return saw_destroy ? 1 : 0;
 }
 
-// ── parcel-watcher parity: rapid delete+create → update ───────────
-
 task<int, error> watch_rapid_delete_create(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1623,8 +1616,6 @@ task<int, error> watch_rapid_delete_create(event_loop& loop) {
     co_return saw_relevant ? 1 : 0;
 }
 
-// ── parcel-watcher parity: case-only rename ────────────────────────
-
 task<int, error> watch_case_only_rename(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1658,8 +1649,6 @@ task<int, error> watch_case_only_rename(event_loop& loop) {
 
     co_return saw_event ? 1 : 0;
 }
-
-// ── parcel-watcher parity: nested dir + subdir rename ──────────────
 
 task<int, error> watch_nested_dir_rename(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1699,8 +1688,6 @@ task<int, error> watch_nested_dir_rename(event_loop& loop) {
     co_return (saw_parent && saw_child) ? 1 : 0;
 }
 
-// ── parcel-watcher parity: create+rename coalescing ────────────────
-
 task<int, error> watch_create_rename_coalesce(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -1733,8 +1720,6 @@ task<int, error> watch_create_rename_coalesce(event_loop& loop) {
 
     co_return saw_final ? 1 : 0;
 }
-
-// ── parcel-watcher parity: chain rename coalescing ─────────────────
 
 task<int, error> watch_chain_rename_coalesce(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
@@ -1833,6 +1818,15 @@ TEST_CASE(close_then_next_returns_error) {
 
 TEST_CASE(stop_during_next_returns_aborted) {
     auto worker = watch_stop_during_next(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(stop_during_debounce_returns) {
+    auto worker = watch_stop_during_debounce(loop);
     schedule_all(worker);
 
     auto result = worker.result();

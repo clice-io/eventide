@@ -40,8 +40,10 @@ public:
         std::string old_path;
     };
 
+    constexpr static std::chrono::milliseconds default_debounce{200};
+
     struct options {
-        std::chrono::milliseconds debounce = std::chrono::milliseconds{200};
+        std::chrono::milliseconds debounce = default_debounce;
         bool recursive = true;
     };
 

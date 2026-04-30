@@ -11,8 +11,6 @@ namespace kota {
 
 namespace {
 
-// ── detect modification of an existing file ────────────────────────
-
 task<int, error> fse_detect_modify(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -41,8 +39,6 @@ task<int, error> fse_detect_modify(event_loop& loop) {
     co_return has_effect(changes, fs_event::effect::modify) ? 1 : 0;
 }
 
-// ── detect file creation (file does not exist initially) ───────────
-
 task<int, error> fse_detect_create(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -68,8 +64,6 @@ task<int, error> fse_detect_create(event_loop& loop) {
     co_return has_effect(changes, fs_event::effect::create) ? 1 : 0;
 }
 
-// ── detect file deletion ───────────────────────────────────────────
-
 task<int, error> fse_detect_destroy(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -93,8 +87,6 @@ task<int, error> fse_detect_destroy(event_loop& loop) {
 
     co_return has_effect(changes, fs_event::effect::destroy) ? 1 : 0;
 }
-
-// ── ignores sibling file changes ───────────────────────────────────
 
 task<int, error> fse_ignores_sibling(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
@@ -141,8 +133,6 @@ task<int, error> fse_ignores_sibling(event_loop& loop) {
     co_return 1;
 }
 
-// ── atomic replace (write tmp + rename) ────────────────────────────
-
 task<int, error> fse_atomic_replace(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
@@ -177,14 +167,10 @@ task<int, error> fse_atomic_replace(event_loop& loop) {
         : 0;
 }
 
-// ── error on nonexistent parent directory ──────────────────────────
-
 task<int, error> fse_error_bad_parent(event_loop& loop) {
     auto result = fs_event::create("/nonexistent/path/file.txt", {}, loop);
     co_return result.has_error() ? 1 : 0;
 }
-
-// ── stop then next returns error ───────────────────────────────────
 
 task<int, error> fse_stop_then_next(event_loop& loop) {
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
@@ -204,7 +190,80 @@ task<int, error> fse_stop_then_next(event_loop& loop) {
     co_await fs::unlink(file, loop).or_fail();
     co_await fs::rmdir(dir, loop).or_fail();
 
+    if(!result.has_error())
+        co_return 0;
+    co_return result.error() == error::invalid_argument ? 1 : 0;
+}
+
+task<int, error> fse_error_empty_path(event_loop& loop) {
+    auto result = fs_event::create("", {}, loop);
     co_return result.has_error() ? 1 : 0;
+}
+
+task<int, error> fse_default_constructed([[maybe_unused]] event_loop& loop) {
+    fs_event watcher;
+    watcher.stop();
+    auto result = co_await watcher.next();
+    co_return result.has_error() && result.error() == error::invalid_argument ? 1 : 0;
+}
+
+task<int, error> fse_two_arg_create(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "test.json").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(file, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await sleep(500, loop);
+
+    fd = co_await fs::open(file, O_WRONLY, 0, loop).or_fail();
+    co_await fs::write(fd, std::span<const char>("changed", 7), 0, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
+
+    watcher->stop();
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    co_return has_effect(changes, fs_event::effect::modify) ? 1 : 0;
+}
+
+task<int, error> fse_stop_during_next(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    std::string file = (std::filesystem::path(dir) / "test.json").string();
+    int fd = co_await fs::open(file, O_CREAT | O_WRONLY | O_TRUNC, 0644, loop).or_fail();
+    co_await fs::close(fd, loop).or_fail();
+
+    auto watcher = fs_event::create(file, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value())
+        co_await fail(watcher.error());
+
+    co_await sleep(500, loop);
+
+    auto stopper = [&]() -> task<void, error> {
+        co_await sleep(100, loop);
+        watcher->stop();
+    };
+    auto stop_task = stopper();
+    loop.schedule(stop_task);
+
+    auto result = co_await next_or_timeout(*watcher, loop, 5000);
+
+    co_await fs::unlink(file, loop).or_fail();
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    if(result.has_error()) {
+        co_return result.error() == error::operation_aborted ? 1 : 0;
+    }
+    co_return 1;
 }
 
 }  // namespace
@@ -261,6 +320,38 @@ TEST_CASE(error_bad_parent) {
 
 TEST_CASE(stop_then_next) {
     auto worker = fse_stop_then_next(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(error_empty_path) {
+    auto worker = fse_error_empty_path(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(default_constructed) {
+    auto worker = fse_default_constructed(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(two_arg_create) {
+    auto worker = fse_two_arg_create(loop);
+    schedule_all(worker);
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(stop_during_next) {
+    auto worker = fse_stop_during_next(loop);
     schedule_all(worker);
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());

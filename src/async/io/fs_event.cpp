@@ -32,15 +32,22 @@
 
 namespace kota {
 
-// Fields and push_event() are identical across all three platform Self
-// structs.  They are defined once here; each platform Self inherits them.
+// Common state shared by all three platform Self structs.
+//
+// Thread safety: `closed` is atomic and may be read/written from any thread.
+// All other fields are only accessed from the event-loop thread except during
+// platform callbacks (macOS dispatch queue, Windows worker thread), which
+// only read `root_path`, `recursive`, and `loop` (all immutable after create)
+// and call post_change()/post_changes() to marshal events to the loop thread.
 struct fs_event_base {
     event_loop* loop;
     timer debounce_timer;
     kota::event has_events{false};
+    // Accessed only on the event-loop thread; guarded by debounce_timer.
     std::vector<fs_event::change> buffer;
     std::chrono::milliseconds debounce_ms;
     std::atomic<bool> closed{false};
+    // Immutable after create().
     bool recursive = false;
     std::string root_path;
     std::string file_filter;
@@ -51,9 +58,25 @@ struct fs_event_base {
         buffer.push_back(std::move(c));
         has_events.set();
     }
-};
 
-// ── Linux: inotify + uv_poll_t ─────────────────────────────────────
+    void post_change(std::weak_ptr<fs_event_base> weak, fs_event::change c) {
+        loop->post([weak = std::move(weak), c = std::move(c)]() mutable {
+            if(auto s = weak.lock()) {
+                s->push_event(std::move(c));
+            }
+        });
+    }
+
+    void post_changes(std::weak_ptr<fs_event_base> weak, std::vector<fs_event::change> changes) {
+        loop->post([weak = std::move(weak), changes = std::move(changes)]() mutable {
+            if(auto s = weak.lock()) {
+                for(auto& c: changes) {
+                    s->push_event(std::move(c));
+                }
+            }
+        });
+    }
+};
 
 #if defined(__linux__)
 
@@ -73,7 +96,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     std::unordered_map<int, std::string> wd_to_path;
     std::unordered_map<std::string, int> path_to_wd;
 
-    // Safety net: stop_inotify() handles the full teardown; this only
+    // Safety net: stop_platform() handles the full teardown; this only
     // closes the fd in case Self outlives the fs_event wrapper.
     ~Self() {
         if(inotify_fd >= 0) {
@@ -84,7 +107,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         path_to_wd.clear();
     }
 
-    void stop_inotify() {
+    void stop_platform() {
         if(poll_initialized) {
             uv_poll_stop(&poll_handle);
             auto prevent_destroy = new std::shared_ptr<Self>(shared_from_this());
@@ -112,11 +135,13 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         return true;
     }
 
-    void scan_directory(const std::string& path) {
+    constexpr static int max_scan_depth = 128;
+
+    void scan_directory(const std::string& path, int depth = 0) {
         if(!add_watch(path)) {
             return;
         }
-        if(!recursive) {
+        if(!recursive || depth >= max_scan_depth) {
             return;
         }
         std::error_code ec;
@@ -124,7 +149,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             if(ec)
                 break;
             if(entry.is_directory(ec) && !ec) {
-                scan_directory(entry.path().string());
+                scan_directory(entry.path().string(), depth + 1);
             }
         }
     }
@@ -271,8 +296,6 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     }
 };
 
-// ── macOS: FSEvents + CFRunLoop thread ──────────────────────────────
-
 #elif defined(__APPLE__)
 
 namespace {
@@ -293,10 +316,10 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     dispatch_queue_t dispatch_queue = nullptr;
 
     ~Self() {
-        stop_fsevents();
+        stop_platform();
     }
 
-    void stop_fsevents() {
+    void stop_platform() {
         if(stream) {
             FSEventStreamStop(stream);
             FSEventStreamInvalidate(stream);
@@ -368,13 +391,6 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                 }
             }
 
-            if(!shared->file_filter.empty()) {
-                auto slash = path.rfind('/');
-                auto filename = (slash != std::string::npos) ? path.substr(slash + 1) : path;
-                if(filename != shared->file_filter)
-                    continue;
-            }
-
             if(shared->closed.load(std::memory_order_acquire))
                 continue;
 
@@ -415,8 +431,8 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                 // modifications of existing files. Use birthtime vs mtime to
                 // disambiguate: a freshly created file has birthtime ≈ mtime.
                 long long diff_ms =
-                    (st.st_ctimespec.tv_sec - st.st_birthtimespec.tv_sec) * 1000LL +
-                    (st.st_ctimespec.tv_nsec - st.st_birthtimespec.tv_nsec) / 1000000LL;
+                    (st.st_mtimespec.tv_sec - st.st_birthtimespec.tv_sec) * 1000LL +
+                    (st.st_mtimespec.tv_nsec - st.st_birthtimespec.tv_nsec) / 1000000LL;
                 constexpr long long create_detect_threshold_ms = 200;
                 if(diff_ms < create_detect_threshold_ms) {
                     changes.push_back(change{std::move(path), effect::create, {}});
@@ -438,18 +454,9 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         if(shared->closed.load(std::memory_order_acquire))
             return;
 
-        std::weak_ptr<Self> weak = shared;
-        shared->loop->post([weak, changes = std::move(changes)]() mutable {
-            if(auto s = weak.lock()) {
-                for(auto& c: changes) {
-                    s->push_event(std::move(c));
-                }
-            }
-        });
+        shared->post_changes(shared, std::move(changes));
     }
 };
-
-// ── Windows: ReadDirectoryChangesW + APC completion routine ────────
 
 #elif defined(_WIN32)
 
@@ -468,14 +475,14 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     OVERLAPPED overlapped{};
 
     ~Self() {
-        stop_win();
+        stop_platform();
     }
 
-    void stop_win() {
+    void stop_platform() {
         if(!worker_thread.joinable())
             return;
 
-        QueueUserAPC(
+        DWORD apc_ok = QueueUserAPC(
             [](ULONG_PTR param) {
                 auto* s = reinterpret_cast<Self*>(param);
                 s->running = false;
@@ -485,6 +492,12 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             },
             worker_thread.native_handle(),
             reinterpret_cast<ULONG_PTR>(this));
+        if(!apc_ok) {
+            running = false;
+            if(dir_handle != INVALID_HANDLE_VALUE) {
+                CancelIoEx(dir_handle, nullptr);
+            }
+        }
         worker_thread.join();
     }
 
@@ -502,14 +515,16 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         if(size <= 0)
             return {};
         std::string result(size, '\0');
-        WideCharToMultiByte(CP_UTF8,
-                            0,
-                            str,
-                            static_cast<int>(len),
-                            result.data(),
-                            size,
-                            nullptr,
-                            nullptr);
+        int written = WideCharToMultiByte(CP_UTF8,
+                                          0,
+                                          str,
+                                          static_cast<int>(len),
+                                          result.data(),
+                                          size,
+                                          nullptr,
+                                          nullptr);
+        if(written <= 0)
+            return {};
         return result;
     }
 
@@ -533,13 +548,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 
         if(!ok) {
             running = false;
-            std::weak_ptr<Self> weak = shared_from_this();
-            std::string path = root_path;
-            loop->post([weak, path = std::move(path)]() {
-                if(auto s = weak.lock()) {
-                    s->push_event(change{std::string(path), effect::destroy, {}});
-                }
-            });
+            post_change(shared_from_this(), change{root_path, effect::destroy, {}});
         }
     }
 
@@ -554,28 +563,16 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                 write_buffer.resize(NETWORK_BUF_SIZE);
                 poll();
                 return;
-            case ERROR_NOTIFY_ENUM_DIR: {
-                std::weak_ptr<Self> weak = shared_from_this();
-                loop->post([weak]() {
-                    if(auto s = weak.lock()) {
-                        s->push_event(change{{}, effect::overflow, {}});
-                    }
-                });
+            case ERROR_NOTIFY_ENUM_DIR:
+                post_change(shared_from_this(), change{{}, effect::overflow, {}});
                 poll();
                 return;
-            }
             case ERROR_ACCESS_DENIED: {
                 DWORD attrs = GetFileAttributesW(root_wpath.c_str());
                 bool is_dir =
                     attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
                 if(!is_dir) {
-                    std::weak_ptr<Self> weak = shared_from_this();
-                    std::string path = root_path;
-                    loop->post([weak, path = std::move(path)]() {
-                        if(auto s = weak.lock()) {
-                            s->push_event(change{std::string(path), effect::destroy, {}});
-                        }
-                    });
+                    post_change(shared_from_this(), change{root_path, effect::destroy, {}});
                     running = false;
                     return;
                 }
@@ -585,13 +582,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             default:
                 if(error_code != ERROR_SUCCESS) {
                     running = false;
-                    std::weak_ptr<Self> weak = shared_from_this();
-                    std::string path = root_path;
-                    loop->post([weak, path = std::move(path)]() {
-                        if(auto s = weak.lock()) {
-                            s->push_event(change{std::string(path), effect::destroy, {}});
-                        }
-                    });
+                    post_change(shared_from_this(), change{root_path, effect::destroy, {}});
                     return;
                 }
         }
@@ -655,14 +646,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         }
 
         if(!changes.empty()) {
-            std::weak_ptr<Self> weak = shared_from_this();
-            loop->post([weak, changes = std::move(changes)]() mutable {
-                if(auto s = weak.lock()) {
-                    for(auto& c: changes) {
-                        s->push_event(std::move(c));
-                    }
-                }
-            });
+            post_changes(shared_from_this(), std::move(changes));
         }
     }
 
@@ -680,8 +664,6 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 };
 
 #endif
-
-// ── Common implementation ───────────────────────────────────────────
 
 fs_event::fs_event() noexcept = default;
 
@@ -768,7 +750,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     rc = uv_poll_start(&s->poll_handle, UV_READABLE, Self::on_poll);
     if(rc < 0) {
-        s->stop_inotify();
+        s->stop_platform();
         return outcome_error(error(rc));
     }
 
@@ -870,6 +852,10 @@ result<fs_event> fs_event::create(std::string_view path, event_loop& loop) {
     return create(path, options{}, loop);
 }
 
+// Flow: wait for events → debounce → drain buffer → apply file_filter.
+// The outer loop retries when file_filter discards everything in a batch.
+// stop() wakes both has_events.wait() and debounce_timer.wait() via the
+// closed flag, guaranteeing this coroutine never deadlocks.
 task<std::vector<fs_event::change>, error> fs_event::next() {
     if(!self || self->closed.load(std::memory_order_acquire)) {
         co_await fail(error::invalid_argument);
@@ -890,6 +876,10 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
 
         self->debounce_timer.start(self->debounce_ms);
         co_await self->debounce_timer.wait();
+
+        if(self->closed.load(std::memory_order_acquire)) {
+            co_await fail(error::operation_aborted);
+        }
 
         auto batch = std::exchange(self->buffer, {});
 
@@ -923,15 +913,11 @@ void fs_event::stop() {
 
     self->closed.store(true, std::memory_order_release);
     self->has_events.set();
-    self->debounce_timer.stop();
+    // Fire immediately instead of stopping: stop() only cancels the timer
+    // but does not wake a coroutine suspended on debounce_timer.wait().
+    self->debounce_timer.start(std::chrono::milliseconds{0});
 
-#if defined(__linux__)
-    self->stop_inotify();
-#elif defined(__APPLE__)
-    self->stop_fsevents();
-#elif defined(_WIN32)
-    self->stop_win();
-#endif
+    self->stop_platform();
 }
 
 }  // namespace kota
