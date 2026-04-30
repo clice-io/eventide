@@ -563,6 +563,13 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
         if(!ok) {
             running = false;
+            std::weak_ptr<Self> weak = shared_from_this();
+            std::string path = root_path;
+            loop->post([weak, path = std::move(path)]() {
+                if(auto s = weak.lock()) {
+                    s->push_event(change{std::string(path), effect::destroy, {}});
+                }
+            });
         }
     }
 
@@ -606,8 +613,17 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 return;
             }
             default:
-                if(error_code != ERROR_SUCCESS)
+                if(error_code != ERROR_SUCCESS) {
+                    running = false;
+                    std::weak_ptr<Self> weak = shared_from_this();
+                    std::string path = root_path;
+                    loop->post([weak, path = std::move(path)]() {
+                        if(auto s = weak.lock()) {
+                            s->push_event(change{std::string(path), effect::destroy, {}});
+                        }
+                    });
                     return;
+                }
         }
 
         std::swap(read_buffer, write_buffer);

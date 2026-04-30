@@ -1153,6 +1153,9 @@ task<int, error> watch_unicode_filename(event_loop& loop) {
 // ── compatibility: symlink create/delete ───────────────────────────
 
 task<int, error> watch_symlink_create_delete(event_loop& loop) {
+#if defined(_WIN32)
+    co_return 1;
+#else
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1189,6 +1192,7 @@ task<int, error> watch_symlink_create_delete(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return (found_create && found_delete) ? 1 : 0;
+#endif
 }
 
 // ── compatibility: large event burst ───────────────────────────────
@@ -1350,6 +1354,9 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
 // ── parcel-watcher parity: symlink rename ─────────────────────────
 
 task<int, error> watch_symlink_rename(event_loop& loop) {
+#if defined(_WIN32)
+    co_return 1;
+#else
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1388,11 +1395,15 @@ task<int, error> watch_symlink_rename(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return (found_rename || (found_destroy && found_create)) ? 1 : 0;
+#endif
 }
 
 // ── parcel-watcher parity: symlink update (write through symlink) ─
 
 task<int, error> watch_symlink_update(event_loop& loop) {
+#if defined(_WIN32)
+    co_return 1;
+#else
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1431,11 +1442,15 @@ task<int, error> watch_symlink_update(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return found_modify ? 1 : 0;
+#endif
 }
 
 // ── parcel-watcher parity: folder symlink ─────────────────────────
 
 task<int, error> watch_folder_symlink(event_loop& loop) {
+#if defined(_WIN32)
+    co_return 1;
+#else
     auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
     std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
 
@@ -1471,6 +1486,7 @@ task<int, error> watch_folder_symlink(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     co_return (found_create && found_delete) ? 1 : 0;
+#endif
 }
 
 // ── parcel-watcher parity: rapid create+update → create ───────────

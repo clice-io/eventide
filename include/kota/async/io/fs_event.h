@@ -7,12 +7,11 @@
 #include <string_view>
 #include <vector>
 
+#include "kota/async/io/loop.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
 
 namespace kota {
-
-class event_loop;
 
 class fs_event {
 public:
