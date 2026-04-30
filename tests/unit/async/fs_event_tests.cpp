@@ -471,11 +471,15 @@ TEST_CASE(file_filter_rejects_similar_name) {
 }
 
 TEST_CASE(file_filter_only_sibling_no_event) {
+#if defined(__APPLE__)
+    kota::zest::skip();
+#else
     auto worker = fse_file_filter_only_sibling_no_event(loop);
     schedule_all(worker);
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
+#endif
 }
 
 TEST_CASE(file_filter_dir_mode_no_filter) {

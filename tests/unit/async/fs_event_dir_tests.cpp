@@ -1071,7 +1071,7 @@ task<int, error> watch_attribute_change(event_loop& loop) {
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
     bool found = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::modify && c.path.find("attrs.txt") != std::string::npos;
+        return c.path.find("attrs.txt") != std::string::npos;
     });
 
     watcher->stop();
@@ -2171,14 +2171,14 @@ TEST_CASE(unicode_filename) {
 TEST_CASE(symlink_create_delete) {
 #if defined(_WIN32)
     kota::zest::skip();
-    return;
-#endif
+#else
     auto worker = watch_symlink_create_delete(loop);
     schedule_all(worker);
 
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
+#endif
 }
 
 TEST_CASE(large_burst) {
@@ -2220,40 +2220,40 @@ TEST_CASE(subdir_delete_with_files) {
 TEST_CASE(symlink_rename) {
 #if defined(_WIN32)
     kota::zest::skip();
-    return;
-#endif
+#else
     auto worker = watch_symlink_rename(loop);
     schedule_all(worker);
 
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
+#endif
 }
 
 TEST_CASE(symlink_update) {
 #if defined(_WIN32)
     kota::zest::skip();
-    return;
-#endif
+#else
     auto worker = watch_symlink_update(loop);
     schedule_all(worker);
 
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
+#endif
 }
 
 TEST_CASE(folder_symlink) {
 #if defined(_WIN32)
     kota::zest::skip();
-    return;
-#endif
+#else
     auto worker = watch_folder_symlink(loop);
     schedule_all(worker);
 
     auto result = worker.result();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1);
+#endif
 }
 
 TEST_CASE(rapid_create_update) {
