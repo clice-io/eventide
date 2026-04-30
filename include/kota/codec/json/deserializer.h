@@ -380,6 +380,16 @@ public:
             false);
     }
 
+    result_t<meta::type_kind> peek_kind() {
+        KOTA_EXPECTED_TRY_V(auto type, peek_type());
+        std::optional<simdjson::ondemand::number_type> nt;
+        if(type == simdjson::ondemand::json_type::number) {
+            KOTA_EXPECTED_TRY_V(auto ntype, peek_number_type());
+            nt = ntype;
+        }
+        return map_to_kind(type, nt);
+    }
+
     result_t<std::string> scan_object_field(std::string_view field_name) {
         KOTA_EXPECTED_TRY_V(
             auto obj,
@@ -678,9 +688,11 @@ private:
             case simdjson::ondemand::json_type::null: return meta::type_kind::null;
             case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
             case simdjson::ondemand::json_type::number:
-                if(number_type.has_value() &&
-                   *number_type == simdjson::ondemand::number_type::floating_point_number) {
-                    return meta::type_kind::float64;
+                if(number_type.has_value()) {
+                    if(*number_type == simdjson::ondemand::number_type::floating_point_number)
+                        return meta::type_kind::float64;
+                    if(*number_type == simdjson::ondemand::number_type::unsigned_integer)
+                        return meta::type_kind::uint64;
                 }
                 return meta::type_kind::int64;
             case simdjson::ondemand::json_type::string: return meta::type_kind::string;

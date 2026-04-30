@@ -342,6 +342,14 @@ public:
         return **array;
     }
 
+    result_t<meta::type_kind> peek_kind() {
+        auto node = peek_node();
+        if(!node) {
+            return std::unexpected(node.error());
+        }
+        return toml_source_adapter::kind_of(*node);
+    }
+
     result_t<std::string> scan_object_field(std::string_view field_name) {
         auto node = peek_node();
         if(!node) {
