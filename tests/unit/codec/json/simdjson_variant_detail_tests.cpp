@@ -251,6 +251,97 @@ TEST_CASE(variant_roundtrip_all_scalars) {
     EXPECT_TRUE(check(std::string("test")));
 }
 
+TEST_CASE(nested_variant) {
+    using Inner = std::variant<int, std::string>;
+    using Outer = std::variant<Inner, double>;
+
+    Outer out{};
+    // integer → Inner accepts int, double accepts int; Inner is variant so recurse
+    // Inner's int alternative matches exactly → selects Inner
+    ASSERT_TRUE(from_json("42", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    auto& inner = std::get<Inner>(out);
+    EXPECT_EQ(inner.index(), 0U);
+    EXPECT_EQ(std::get<int>(inner), 42);
+
+    // string → only Inner accepts string
+    ASSERT_TRUE(from_json(R"("hello")", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    auto& inner2 = std::get<Inner>(out);
+    EXPECT_EQ(inner2.index(), 1U);
+    EXPECT_EQ(std::get<std::string>(inner2), "hello");
+
+    // floating → double accepts float, Inner's int doesn't, Inner's string doesn't
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<double>(out), 3.14);
+}
+
+TEST_CASE(nested_variant_no_match_falls_through) {
+    using Inner = std::variant<int, std::string>;
+    using Outer = std::variant<Inner, bool>;
+
+    Outer out{};
+    // bool → Inner doesn't accept bool (int doesn't, string doesn't), bool does
+    ASSERT_TRUE(from_json("true", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<bool>(out), true);
+
+    // object → neither Inner nor bool accepts object
+    EXPECT_FALSE(from_json(R"({"x":1})", out).has_value());
+}
+
+TEST_CASE(int64_vs_uint64) {
+    using V = std::variant<std::int64_t, std::uint64_t>;
+
+    V out{};
+    // positive integer within int64 range → both accept, but numeric tiebreaker
+    // should prefer the exact source kind
+    ASSERT_TRUE(from_json("42", out).has_value());
+    // simdjson parses 42 as signed_integer → int64
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 42);
+
+    // large unsigned → simdjson parses as unsigned_integer → uint64
+    ASSERT_TRUE(from_json("18446744073709551615", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::uint64_t>(out), UINT64_MAX);
+}
+
+TEST_CASE(uint64_before_int64) {
+    using V = std::variant<std::uint64_t, std::int64_t>;
+
+    V out{};
+    // large unsigned → uint64
+    ASSERT_TRUE(from_json("18446744073709551615", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::uint64_t>(out), UINT64_MAX);
+
+    // negative → only int64 accepts
+    ASSERT_TRUE(from_json("-1", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), -1);
+}
+
+TEST_CASE(optional_variant) {
+    using V = std::variant<int, std::string>;
+    using OV = std::optional<V>;
+
+    OV out{};
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_FALSE(out.has_value());
+
+    ASSERT_TRUE(from_json("42", out).has_value());
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(out->index(), 0U);
+    EXPECT_EQ(std::get<int>(*out), 42);
+
+    ASSERT_TRUE(from_json(R"("test")", out).has_value());
+    ASSERT_TRUE(out.has_value());
+    EXPECT_EQ(out->index(), 1U);
+    EXPECT_EQ(std::get<std::string>(*out), "test");
+}
+
 };  // TEST_SUITE(serde_variant_untagged)
 
 TEST_SUITE(serde_variant_ext) {
