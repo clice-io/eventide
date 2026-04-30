@@ -117,10 +117,9 @@ task<int, error> watch_file_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_relevant = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-               c.type == fs_event::effect::destroy;
-    });
+    bool found_relevant = has_effect(changes, fs_event::effect::rename) ||
+                          has_effect(changes, fs_event::effect::create) ||
+                          has_effect(changes, fs_event::effect::destroy);
 
     watcher->stop();
     co_await fs::unlink(dst, loop).or_fail();
@@ -295,7 +294,7 @@ task<int, error> watch_debounce_batching(event_loop& loop) {
     co_await fs::unlink(file3, loop).or_fail();
     co_await fs::rmdir(dir, loop).or_fail();
 
-    co_return changes.size() >= 2 ? 1 : 0;
+    co_return changes.size() >= 3 ? 1 : 0;
 }
 
 task<int, error> watch_subdirectory_changes(event_loop& loop) {
@@ -522,10 +521,9 @@ task<int, error> watch_rename_existing_file(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-               c.type == fs_event::effect::destroy;
-    });
+    bool found = has_effect(changes, fs_event::effect::rename) ||
+                 has_effect(changes, fs_event::effect::create) ||
+                 has_effect(changes, fs_event::effect::destroy);
 
     watcher->stop();
     co_await fs::unlink(dst, loop).or_fail();
@@ -580,10 +578,9 @@ task<int, error> watch_directory_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_relevant = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-               c.type == fs_event::effect::destroy;
-    });
+    bool found_relevant = has_effect(changes, fs_event::effect::rename) ||
+                          has_effect(changes, fs_event::effect::create) ||
+                          has_effect(changes, fs_event::effect::destroy);
 
     watcher->stop();
     co_await fs::rmdir(sub2, loop).or_fail();
@@ -853,10 +850,9 @@ task<int, error> watch_subdir_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_relevant = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::rename || c.type == fs_event::effect::create ||
-               c.type == fs_event::effect::destroy;
-    });
+    bool found_relevant = has_effect(changes, fs_event::effect::rename) ||
+                          has_effect(changes, fs_event::effect::create) ||
+                          has_effect(changes, fs_event::effect::destroy);
 
     watcher->stop();
     co_await fs::rmdir(sub2, loop).or_fail();
@@ -1377,6 +1373,7 @@ task<int, error> watch_subdir_delete_with_files(event_loop& loop) {
     co_return (found_file_delete && found_dir_delete) ? 1 : 0;
 }
 
+// See watch_symlink_create_delete for why Windows is skipped.
 task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
@@ -1422,6 +1419,7 @@ task<int, error> watch_symlink_rename([[maybe_unused]] event_loop& loop) {
 #endif
 }
 
+// See watch_symlink_create_delete for why Windows is skipped.
 task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
@@ -1465,6 +1463,7 @@ task<int, error> watch_symlink_update([[maybe_unused]] event_loop& loop) {
 #endif
 }
 
+// See watch_symlink_create_delete for why Windows is skipped.
 task<int, error> watch_folder_symlink([[maybe_unused]] event_loop& loop) {
 #if defined(_WIN32)
     co_return 1;
@@ -1638,10 +1637,9 @@ task<int, error> watch_case_only_rename(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool saw_event = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::create || c.type == fs_event::effect::destroy ||
-               c.type == fs_event::effect::rename;
-    });
+    bool saw_event = has_effect(changes, fs_event::effect::create) ||
+                     has_effect(changes, fs_event::effect::destroy) ||
+                     has_effect(changes, fs_event::effect::rename);
 
     watcher->stop();
     co_await fs::unlink(upper, loop).or_fail();

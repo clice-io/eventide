@@ -294,6 +294,40 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             self->process_inotify_events();
         }
     }
+
+    error init_platform(std::shared_ptr<Self>& s, event_loop& loop) {
+        inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+        if(inotify_fd < 0) {
+            return error::unknown_error;
+        }
+
+        scan_directory(root_path);
+        if(wd_to_path.empty()) {
+            ::close(inotify_fd);
+            inotify_fd = -1;
+            return error::permission_denied;
+        }
+
+        uv_loop_t& uv = loop;
+        int rc = uv_poll_init(&uv, &poll_handle, inotify_fd);
+        if(rc < 0) {
+            ::close(inotify_fd);
+            inotify_fd = -1;
+            return error(rc);
+        }
+
+        poll_handle.data = s.get();
+        poll_initialized = true;
+
+        rc = uv_poll_start(&poll_handle, UV_READABLE, Self::on_poll);
+        if(rc < 0) {
+            stop_platform();
+            return error(rc);
+        }
+
+        uv_unref(reinterpret_cast<uv_handle_t*>(&poll_handle));
+        return error{};
+    }
 };
 
 #elif defined(__APPLE__)
@@ -456,6 +490,55 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 
         shared->post_changes(shared, std::move(changes));
     }
+
+    error init_platform(std::shared_ptr<Self>& s, [[maybe_unused]] event_loop& loop) {
+        CFStringRef cf_path =
+            CFStringCreateWithCString(nullptr, root_path.c_str(), kCFStringEncodingUTF8);
+        if(!cf_path) {
+            return error::unknown_error;
+        }
+
+        CFArrayRef paths_to_watch = CFArrayCreate(nullptr,
+                                                  reinterpret_cast<const void**>(&cf_path),
+                                                  1,
+                                                  &kCFTypeArrayCallBacks);
+        CFRelease(cf_path);
+
+        if(!paths_to_watch) {
+            return error::unknown_error;
+        }
+
+        FSEventStreamContext ctx{};
+        ctx.info = s.get();
+
+        constexpr double latency_sec = 0.001;
+        FSEventStreamCreateFlags fs_flags = kFSEventStreamCreateFlagFileEvents;
+
+        stream = FSEventStreamCreate(nullptr,
+                                     &Self::fsevents_callback,
+                                     &ctx,
+                                     paths_to_watch,
+                                     kFSEventStreamEventIdSinceNow,
+                                     latency_sec,
+                                     fs_flags);
+
+        CFRelease(paths_to_watch);
+
+        if(!stream) {
+            return error::unknown_error;
+        }
+
+        dispatch_queue = dispatch_queue_create("kota.fs_event", DISPATCH_QUEUE_SERIAL);
+        if(!dispatch_queue) {
+            FSEventStreamRelease(stream);
+            stream = nullptr;
+            return error::unknown_error;
+        }
+
+        FSEventStreamSetDispatchQueue(stream, dispatch_queue);
+        FSEventStreamStart(stream);
+        return error{};
+    }
 };
 
 #elif defined(_WIN32)
@@ -465,7 +548,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 
     HANDLE dir_handle = INVALID_HANDLE_VALUE;
     std::thread worker_thread;
-    bool running = false;
+    std::atomic<bool> running{false};
 
     constexpr static DWORD DEFAULT_BUF_SIZE = 1024 * 1024;
     constexpr static DWORD NETWORK_BUF_SIZE = 64 * 1024;
@@ -485,7 +568,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         DWORD apc_ok = QueueUserAPC(
             [](ULONG_PTR param) {
                 auto* s = reinterpret_cast<Self*>(param);
-                s->running = false;
+                s->running.store(false, std::memory_order_release);
                 if(s->dir_handle != INVALID_HANDLE_VALUE) {
                     CancelIoEx(s->dir_handle, nullptr);
                 }
@@ -493,7 +576,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             worker_thread.native_handle(),
             reinterpret_cast<ULONG_PTR>(this));
         if(!apc_ok) {
-            running = false;
+            running.store(false, std::memory_order_release);
             if(dir_handle != INVALID_HANDLE_VALUE) {
                 CancelIoEx(dir_handle, nullptr);
             }
@@ -529,7 +612,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     }
 
     void poll() {
-        if(!running)
+        if(!running.load(std::memory_order_acquire))
             return;
 
         BOOL ok = ReadDirectoryChangesW(dir_handle,
@@ -547,13 +630,13 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                                         });
 
         if(!ok) {
-            running = false;
+            running.store(false, std::memory_order_release);
             post_change(shared_from_this(), change{root_path, effect::destroy, {}});
         }
     }
 
     void on_completion(DWORD error_code, DWORD num_bytes) {
-        if(!running)
+        if(!running.load(std::memory_order_acquire))
             return;
 
         switch(error_code) {
@@ -573,7 +656,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                     attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
                 if(!is_dir) {
                     post_change(shared_from_this(), change{root_path, effect::destroy, {}});
-                    running = false;
+                    running.store(false, std::memory_order_release);
                     return;
                 }
                 poll();
@@ -581,7 +664,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             }
             default:
                 if(error_code != ERROR_SUCCESS) {
-                    running = false;
+                    running.store(false, std::memory_order_release);
                     post_change(shared_from_this(), change{root_path, effect::destroy, {}});
                     return;
                 }
@@ -652,7 +735,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 
     void worker_entry() {
         poll();
-        while(running) {
+        while(running.load(std::memory_order_acquire)) {
             SleepEx(INFINITE, TRUE);
         }
         while(SleepEx(0, TRUE) == WAIT_IO_COMPLETION) {}
@@ -660,6 +743,48 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             CloseHandle(dir_handle);
             dir_handle = INVALID_HANDLE_VALUE;
         }
+    }
+
+    error init_platform(std::shared_ptr<Self>& s, [[maybe_unused]] event_loop& loop) {
+        std::wstring wpath;
+        {
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, root_path.c_str(), -1, nullptr, 0);
+            if(wlen <= 0)
+                return error::invalid_argument;
+            wpath.resize(wlen - 1);
+            MultiByteToWideChar(CP_UTF8, 0, root_path.c_str(), -1, wpath.data(), wlen);
+        }
+
+        dir_handle = CreateFileW(wpath.c_str(),
+                                 FILE_LIST_DIRECTORY,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 nullptr,
+                                 OPEN_EXISTING,
+                                 FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+                                 nullptr);
+
+        if(dir_handle == INVALID_HANDLE_VALUE) {
+            return error::no_such_file_or_directory;
+        }
+
+        BY_HANDLE_FILE_INFORMATION file_info;
+        if(!GetFileInformationByHandle(dir_handle, &file_info) ||
+           !(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            CloseHandle(dir_handle);
+            dir_handle = INVALID_HANDLE_VALUE;
+            return error::invalid_argument;
+        }
+
+        root_wpath = std::move(wpath);
+        read_buffer.resize(DEFAULT_BUF_SIZE);
+        write_buffer.resize(DEFAULT_BUF_SIZE);
+        ZeroMemory(&overlapped, sizeof(OVERLAPPED));
+        overlapped.hEvent = reinterpret_cast<HANDLE>(s.get());
+        running.store(true, std::memory_order_release);
+
+        auto shared_for_thread = s;
+        worker_thread = std::thread([shared_for_thread]() { shared_for_thread->worker_entry(); });
+        return error{};
     }
 };
 
@@ -724,126 +849,10 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     s->debounce_timer = timer::create(loop);
 
-#if defined(__linux__)
-    s->inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    if(s->inotify_fd < 0) {
-        return outcome_error(error::unknown_error);
+    auto init_err = s->init_platform(s, loop);
+    if(init_err != error{}) {
+        return outcome_error(init_err);
     }
-
-    s->scan_directory(s->root_path);
-    if(s->wd_to_path.empty()) {
-        ::close(s->inotify_fd);
-        s->inotify_fd = -1;
-        return outcome_error(error::permission_denied);
-    }
-
-    uv_loop_t& uv = loop;
-    int rc = uv_poll_init(&uv, &s->poll_handle, s->inotify_fd);
-    if(rc < 0) {
-        ::close(s->inotify_fd);
-        s->inotify_fd = -1;
-        return outcome_error(error(rc));
-    }
-
-    s->poll_handle.data = s.get();
-    s->poll_initialized = true;
-
-    rc = uv_poll_start(&s->poll_handle, UV_READABLE, Self::on_poll);
-    if(rc < 0) {
-        s->stop_platform();
-        return outcome_error(error(rc));
-    }
-
-    uv_unref(reinterpret_cast<uv_handle_t*>(&s->poll_handle));
-
-#elif defined(__APPLE__)
-    CFStringRef cf_path =
-        CFStringCreateWithCString(nullptr, s->root_path.c_str(), kCFStringEncodingUTF8);
-    if(!cf_path) {
-        return outcome_error(error::unknown_error);
-    }
-
-    CFArrayRef paths_to_watch =
-        CFArrayCreate(nullptr, reinterpret_cast<const void**>(&cf_path), 1, &kCFTypeArrayCallBacks);
-    CFRelease(cf_path);
-
-    if(!paths_to_watch) {
-        return outcome_error(error::unknown_error);
-    }
-
-    FSEventStreamContext ctx{};
-    ctx.info = s.get();
-
-    constexpr double latency_sec = 0.001;
-    FSEventStreamCreateFlags fs_flags = kFSEventStreamCreateFlagFileEvents;
-
-    s->stream = FSEventStreamCreate(nullptr,
-                                    &Self::fsevents_callback,
-                                    &ctx,
-                                    paths_to_watch,
-                                    kFSEventStreamEventIdSinceNow,
-                                    latency_sec,
-                                    fs_flags);
-
-    CFRelease(paths_to_watch);
-
-    if(!s->stream) {
-        return outcome_error(error::unknown_error);
-    }
-
-    s->dispatch_queue = dispatch_queue_create("kota.fs_event", DISPATCH_QUEUE_SERIAL);
-    if(!s->dispatch_queue) {
-        FSEventStreamRelease(s->stream);
-        s->stream = nullptr;
-        return outcome_error(error::unknown_error);
-    }
-
-    FSEventStreamSetDispatchQueue(s->stream, s->dispatch_queue);
-    FSEventStreamStart(s->stream);
-
-#elif defined(_WIN32)
-    std::wstring wpath;
-    {
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, s->root_path.c_str(), -1, nullptr, 0);
-        if(wlen <= 0)
-            return outcome_error(error::invalid_argument);
-        wpath.resize(wlen - 1);
-        MultiByteToWideChar(CP_UTF8, 0, s->root_path.c_str(), -1, wpath.data(), wlen);
-    }
-
-    s->dir_handle = CreateFileW(wpath.c_str(),
-                                FILE_LIST_DIRECTORY,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                nullptr,
-                                OPEN_EXISTING,
-                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
-                                nullptr);
-
-    if(s->dir_handle == INVALID_HANDLE_VALUE) {
-        return outcome_error(error::no_such_file_or_directory);
-    }
-
-    BY_HANDLE_FILE_INFORMATION file_info;
-    if(!GetFileInformationByHandle(s->dir_handle, &file_info) ||
-       !(file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-        CloseHandle(s->dir_handle);
-        s->dir_handle = INVALID_HANDLE_VALUE;
-        return outcome_error(error::invalid_argument);
-    }
-
-    s->root_wpath = std::move(wpath);
-    s->read_buffer.resize(Self::DEFAULT_BUF_SIZE);
-    s->write_buffer.resize(Self::DEFAULT_BUF_SIZE);
-    ZeroMemory(&s->overlapped, sizeof(OVERLAPPED));
-    // APC-only: hEvent is unused by the kernel when a completion routine
-    // is supplied, so we repurpose it to pass `Self*` to the callback.
-    s->overlapped.hEvent = reinterpret_cast<HANDLE>(s.get());
-    s->running = true;
-
-    auto shared_for_thread = s;
-    s->worker_thread = std::thread([shared_for_thread]() { shared_for_thread->worker_entry(); });
-
-#endif
 
     return fs_event(std::move(s));
 }
