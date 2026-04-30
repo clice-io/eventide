@@ -32,28 +32,40 @@
 
 namespace kota {
 
-// ── Linux: inotify + uv_poll_t ─────────────────────────────────────
-
-#if defined(__linux__)
-
-#define INOTIFY_MASK                                                                               \
-    (IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY | IN_MOVE_SELF |               \
-     IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW | IN_ONLYDIR | IN_EXCL_UNLINK)
-
-// All buffer/map mutations happen on the event loop thread (on_poll callback on Linux,
-// loop->post() lambdas on macOS/Windows), so no mutex is needed. Only `closed` is
-// accessed cross-thread and uses std::atomic with acquire/release ordering.
-struct fs_event::Self : std::enable_shared_from_this<Self> {
+// Fields and push_event() are identical across all three platform Self
+// structs.  They are defined once here; each platform Self inherits them.
+struct fs_event_base {
     event_loop* loop;
     timer debounce_timer;
     kota::event has_events{false};
-    std::vector<change> buffer;
+    std::vector<fs_event::change> buffer;
     std::chrono::milliseconds debounce_ms;
     std::atomic<bool> closed{false};
     bool recursive = false;
     std::string root_path;
     std::string file_filter;
 
+    void push_event(fs_event::change c) {
+        if(closed.load(std::memory_order_acquire))
+            return;
+        buffer.push_back(std::move(c));
+        has_events.set();
+    }
+};
+
+// ── Linux: inotify + uv_poll_t ─────────────────────────────────────
+
+#if defined(__linux__)
+
+namespace {
+
+constexpr uint32_t inotify_mask = IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY |
+                                  IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW |
+                                  IN_ONLYDIR | IN_EXCL_UNLINK;
+
+}  // namespace
+
+struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     int inotify_fd = -1;
     uv_poll_t poll_handle{};
     bool poll_initialized = false;
@@ -91,7 +103,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     bool add_watch(const std::string& path) {
-        int wd = inotify_add_watch(inotify_fd, path.c_str(), INOTIFY_MASK);
+        int wd = inotify_add_watch(inotify_fd, path.c_str(), inotify_mask);
         if(wd < 0) {
             return false;
         }
@@ -115,13 +127,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 scan_directory(entry.path().string());
             }
         }
-    }
-
-    void push_event(change c) {
-        if(closed.load(std::memory_order_acquire))
-            return;
-        buffer.push_back(std::move(c));
-        has_events.set();
     }
 
     std::string build_path(int wd, const char* name, uint32_t len) {
@@ -153,7 +158,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     }
 
     void process_inotify_events() {
-        alignas(struct inotify_event) char buf[8192];
+        constexpr size_t inotify_read_buf_size = 8192;
+        alignas(struct inotify_event) char buf[inotify_read_buf_size];
         for(;;) {
             ssize_t n = ::read(inotify_fd, buf, sizeof(buf));
             if(n <= 0)
@@ -282,22 +288,10 @@ constexpr FSEventStreamEventFlags IGNORED_FLAGS =
 
 }  // namespace
 
-struct fs_event::Self : std::enable_shared_from_this<Self> {
-    event_loop* loop;
-    timer debounce_timer;
-    kota::event has_events{false};
-    std::vector<change> buffer;
-    std::chrono::milliseconds debounce_ms;
-    std::atomic<bool> closed{false};
-    bool recursive = false;
-    std::string root_path;
-    std::string file_filter;
-
+struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     FSEventStreamRef stream = nullptr;
     dispatch_queue_t dispatch_queue = nullptr;
 
-    // Safety net: fs_event::stop() calls stop_fsevents() first; this
-    // guards against Self outliving the fs_event wrapper.
     ~Self() {
         stop_fsevents();
     }
@@ -314,13 +308,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
             dispatch_release(dispatch_queue);
             dispatch_queue = nullptr;
         }
-    }
-
-    void push_event(change c) {
-        if(closed.load(std::memory_order_acquire))
-            return;
-        buffer.push_back(std::move(c));
-        has_events.set();
     }
 
     static void fsevents_callback(ConstFSEventStreamRef,
@@ -430,7 +417,8 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
                 long long diff_ms =
                     (st.st_ctimespec.tv_sec - st.st_birthtimespec.tv_sec) * 1000LL +
                     (st.st_ctimespec.tv_nsec - st.st_birthtimespec.tv_nsec) / 1000000LL;
-                if(diff_ms < 200) {
+                constexpr long long create_detect_threshold_ms = 200;
+                if(diff_ms < create_detect_threshold_ms) {
                     changes.push_back(change{std::move(path), effect::create, {}});
                 } else {
                     changes.push_back(change{std::move(path), effect::modify, {}});
@@ -465,16 +453,7 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
 
 #elif defined(_WIN32)
 
-struct fs_event::Self : std::enable_shared_from_this<Self> {
-    event_loop* loop;
-    timer debounce_timer;
-    kota::event has_events{false};
-    std::vector<change> buffer;
-    std::chrono::milliseconds debounce_ms;
-    std::atomic<bool> closed{false};
-    bool recursive = false;
-    std::string root_path;
-    std::string file_filter;
+struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     std::wstring root_wpath;
 
     HANDLE dir_handle = INVALID_HANDLE_VALUE;
@@ -488,8 +467,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
     std::vector<BYTE> write_buffer;
     OVERLAPPED overlapped{};
 
-    // Safety net: fs_event::stop() calls stop_win() first; this
-    // guards against Self outliving the fs_event wrapper.
     ~Self() {
         stop_win();
     }
@@ -509,13 +486,6 @@ struct fs_event::Self : std::enable_shared_from_this<Self> {
             worker_thread.native_handle(),
             reinterpret_cast<ULONG_PTR>(this));
         worker_thread.join();
-    }
-
-    void push_event(change c) {
-        if(closed.load(std::memory_order_acquire))
-            return;
-        buffer.push_back(std::move(c));
-        has_events.set();
     }
 
     static std::string wide_to_utf8(const wchar_t* str, size_t len) {
@@ -822,7 +792,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
     FSEventStreamContext ctx{};
     ctx.info = s.get();
 
-    double latency_sec = 0.001;
+    constexpr double latency_sec = 0.001;
     FSEventStreamCreateFlags fs_flags = kFSEventStreamCreateFlagFileEvents;
 
     s->stream = FSEventStreamCreate(nullptr,
@@ -883,6 +853,8 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
     s->read_buffer.resize(Self::DEFAULT_BUF_SIZE);
     s->write_buffer.resize(Self::DEFAULT_BUF_SIZE);
     ZeroMemory(&s->overlapped, sizeof(OVERLAPPED));
+    // APC-only: hEvent is unused by the kernel when a completion routine
+    // is supplied, so we repurpose it to pass `Self*` to the callback.
     s->overlapped.hEvent = reinterpret_cast<HANDLE>(s.get());
     s->running = true;
 
@@ -905,6 +877,9 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
 
     while(true) {
         while(self->buffer.empty()) {
+            if(self->closed.load(std::memory_order_acquire)) {
+                co_await fail(error::operation_aborted);
+            }
             self->has_events.reset();
             co_await self->has_events.wait();
 

@@ -28,9 +28,7 @@ task<int, error> watch_file_create(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::create;
-    });
+    bool found = has_effect(changes, fs_event::effect::create);
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -62,9 +60,7 @@ task<int, error> watch_file_modify(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::modify;
-    });
+    bool found = has_effect(changes, fs_event::effect::modify);
 
     watcher->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -92,9 +88,7 @@ task<int, error> watch_file_delete(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::destroy;
-    });
+    bool found = has_effect(changes, fs_event::effect::destroy);
 
     watcher->stop();
     co_await fs::rmdir(dir, loop).or_fail();
@@ -164,6 +158,37 @@ task<int, error> watch_close_then_next(event_loop& loop) {
     }
 
     co_return result.error() == error::invalid_argument ? 1 : 0;
+}
+
+task<int, error> watch_stop_during_next(event_loop& loop) {
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-dw-XXXXXX").string();
+    std::string dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+
+    auto watcher = fs_event::create(dir, fs_event::options{std::chrono::milliseconds{50}}, loop);
+    if(!watcher.has_value()) {
+        co_await fail(watcher.error());
+    }
+
+    co_await sleep(500, loop);
+
+    // Schedule stop() after a short delay; next() should unblock with
+    // operation_aborted rather than deadlocking. The timeout in
+    // next_or_timeout acts as a deadlock detector.
+    auto stopper = [&]() -> task<void, error> {
+        co_await sleep(100, loop);
+        watcher->stop();
+    };
+    auto stop_task = stopper();
+    loop.schedule(stop_task);
+
+    auto result = co_await watcher->next();
+
+    co_await fs::rmdir(dir, loop).or_fail();
+
+    if(!result.has_error()) {
+        co_return 0;
+    }
+    co_return result.error() == error::operation_aborted ? 1 : 0;
 }
 
 task<int, error> watch_multiple_next_calls(event_loop& loop) {
@@ -341,9 +366,7 @@ task<int, error> watch_move_assignment(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher_a, loop).or_fail();
 
-    bool found = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::create;
-    });
+    bool found = has_effect(changes, fs_event::effect::create);
 
     watcher_a->stop();
     co_await fs::unlink(file, loop).or_fail();
@@ -881,12 +904,8 @@ task<int, error> watch_multiple_watchers_same_dir(event_loop& loop) {
     auto changes1 = co_await next_or_timeout(*w1, loop).or_fail();
     auto changes2 = co_await next_or_timeout(*w2, loop).or_fail();
 
-    bool w1_saw = std::ranges::any_of(changes1, [](const auto& c) {
-        return c.type == fs_event::effect::create;
-    });
-    bool w2_saw = std::ranges::any_of(changes2, [](const auto& c) {
-        return c.type == fs_event::effect::create;
-    });
+    bool w1_saw = has_effect(changes1, fs_event::effect::create);
+    bool w2_saw = has_effect(changes2, fs_event::effect::create);
 
     w1->stop();
     w2->stop();
@@ -1432,9 +1451,7 @@ task<int, error> watch_symlink_update(event_loop& loop) {
 
     auto changes = co_await next_or_timeout(*watcher, loop).or_fail();
 
-    bool found_modify = std::ranges::any_of(changes, [](const auto& c) {
-        return c.type == fs_event::effect::modify;
-    });
+    bool found_modify = has_effect(changes, fs_event::effect::modify);
 
     watcher->stop();
     co_await fs::unlink(link, loop).or_fail();
@@ -1805,6 +1822,15 @@ TEST_CASE(error_on_nonexistent_path) {
 
 TEST_CASE(close_then_next_returns_error) {
     auto worker = watch_close_then_next(loop);
+    schedule_all(worker);
+
+    auto result = worker.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
+TEST_CASE(stop_during_next_returns_aborted) {
+    auto worker = watch_stop_during_next(loop);
     schedule_all(worker);
 
     auto result = worker.result();
