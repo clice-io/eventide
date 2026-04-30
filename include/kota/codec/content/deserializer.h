@@ -263,6 +263,27 @@ public:
         return *ptr;
     }
 
+    result_t<std::string> scan_object_field(std::string_view field_name) {
+        auto ref = peek_value_ref();
+        if(!ref) {
+            return std::unexpected(ref.error());
+        }
+        const content::Object* obj = ref->get_object();
+        if(obj == nullptr) {
+            return mark_invalid(error_type::type_mismatch);
+        }
+        for(const auto& entry: *obj) {
+            if(entry.key == field_name) {
+                auto s = entry.value.get_string();
+                if(!s) {
+                    return std::unexpected(error_type::type_mismatch);
+                }
+                return std::string(*s);
+            }
+        }
+        return std::unexpected(error_type::missing_field(field_name));
+    }
+
     status_t begin_object() {
         KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
         const content::Object* obj = ref.get_object();

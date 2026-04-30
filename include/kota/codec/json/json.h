@@ -48,38 +48,116 @@ auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std
 
 namespace kota::codec {
 
-template <typename T>
-concept json_dynamic_dom_type =
-    std::same_as<T, json::Value> || std::same_as<T, json::Array> || std::same_as<T, json::Object>;
-
-template <typename Config, json_dynamic_dom_type T>
-struct deserialize_traits<json::Deserializer<Config>, T> {
+template <typename Config>
+struct deserialize_traits<json::Deserializer<Config>, content::Value> {
+    using D = json::Deserializer<Config>;
     using error_type = json::error;
 
-    static auto deserialize(json::Deserializer<Config>& deserializer, T& value)
-        -> std::expected<void, error_type> {
-        auto dom = deserializer.capture_dom_value();
-        if(!dom) {
-            return std::unexpected(dom.error());
-        }
-        if constexpr(std::same_as<T, json::Value>) {
-            value = std::move(*dom);
-            return {};
-        } else if constexpr(std::same_as<T, json::Array>) {
-            content::Array* arr = dom->get_array();
-            if(arr == nullptr) {
-                return std::unexpected(json::error_kind::type_mismatch);
+    static auto deserialize(D& d, content::Value& value) -> std::expected<void, error_type> {
+        KOTA_EXPECTED_TRY_V(auto type, d.peek_type());
+        switch(type) {
+            case simdjson::ondemand::json_type::null: {
+                KOTA_EXPECTED_TRY_V(auto is_none, d.deserialize_none());
+                (void)is_none;
+                value = content::Value(nullptr);
+                return {};
             }
-            value = std::move(*arr);
-            return {};
-        } else {
-            content::Object* obj = dom->get_object();
-            if(obj == nullptr) {
-                return std::unexpected(json::error_kind::type_mismatch);
+            case simdjson::ondemand::json_type::boolean: {
+                bool b = false;
+                KOTA_EXPECTED_TRY(d.deserialize_bool(b));
+                value = content::Value(b);
+                return {};
             }
-            value = std::move(*obj);
-            return {};
+            case simdjson::ondemand::json_type::number: {
+                KOTA_EXPECTED_TRY_V(auto nt, d.peek_number_type());
+                if(nt == simdjson::ondemand::number_type::floating_point_number) {
+                    double f = 0.0;
+                    KOTA_EXPECTED_TRY(d.deserialize_float(f));
+                    value = content::Value(f);
+                } else if(nt == simdjson::ondemand::number_type::signed_integer) {
+                    std::int64_t i = 0;
+                    KOTA_EXPECTED_TRY(d.deserialize_int(i));
+                    value = content::Value(i);
+                } else {
+                    std::uint64_t u = 0;
+                    KOTA_EXPECTED_TRY(d.deserialize_uint(u));
+                    value = content::Value(u);
+                }
+                return {};
+            }
+            case simdjson::ondemand::json_type::string: {
+                std::string s;
+                KOTA_EXPECTED_TRY(d.deserialize_str(s));
+                value = content::Value(std::move(s));
+                return {};
+            }
+            case simdjson::ondemand::json_type::array: {
+                content::Array arr;
+                KOTA_EXPECTED_TRY(d.begin_array());
+                while(true) {
+                    KOTA_EXPECTED_TRY_V(auto has, d.next_element());
+                    if(!has)
+                        break;
+                    content::Value elem;
+                    KOTA_EXPECTED_TRY(codec::deserialize(d, elem));
+                    arr.push_back(std::move(elem));
+                }
+                KOTA_EXPECTED_TRY(d.end_array());
+                value = content::Value(std::move(arr));
+                return {};
+            }
+            case simdjson::ondemand::json_type::object: {
+                content::Object obj;
+                KOTA_EXPECTED_TRY(d.begin_object());
+                while(true) {
+                    KOTA_EXPECTED_TRY_V(auto key, d.next_field());
+                    if(!key.has_value())
+                        break;
+                    std::string key_copy(*key);
+                    content::Value field_value;
+                    KOTA_EXPECTED_TRY(codec::deserialize(d, field_value));
+                    obj.insert(std::move(key_copy), std::move(field_value));
+                }
+                KOTA_EXPECTED_TRY(d.end_object());
+                value = content::Value(std::move(obj));
+                return {};
+            }
+            default: return std::unexpected(json::error_kind::type_mismatch);
         }
+    }
+};
+
+template <typename Config>
+struct deserialize_traits<json::Deserializer<Config>, content::Array> {
+    using D = json::Deserializer<Config>;
+    using error_type = json::error;
+
+    static auto deserialize(D& d, content::Array& value) -> std::expected<void, error_type> {
+        content::Value v;
+        KOTA_EXPECTED_TRY((deserialize_traits<D, content::Value>::deserialize(d, v)));
+        auto* arr = v.get_array();
+        if(arr == nullptr) {
+            return std::unexpected(json::error_kind::type_mismatch);
+        }
+        value = std::move(*arr);
+        return {};
+    }
+};
+
+template <typename Config>
+struct deserialize_traits<json::Deserializer<Config>, content::Object> {
+    using D = json::Deserializer<Config>;
+    using error_type = json::error;
+
+    static auto deserialize(D& d, content::Object& value) -> std::expected<void, error_type> {
+        content::Value v;
+        KOTA_EXPECTED_TRY((deserialize_traits<D, content::Value>::deserialize(d, v)));
+        auto* obj = v.get_object();
+        if(obj == nullptr) {
+            return std::unexpected(json::error_kind::type_mismatch);
+        }
+        value = std::move(*obj);
+        return {};
     }
 };
 

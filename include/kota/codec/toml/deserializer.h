@@ -342,6 +342,30 @@ public:
         return **array;
     }
 
+    result_t<std::string> scan_object_field(std::string_view field_name) {
+        auto node = peek_node();
+        if(!node) {
+            return std::unexpected(node.error());
+        }
+        if(*node == nullptr) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        const auto* table = (*node)->as_table();
+        if(table == nullptr) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        auto it = table->find(field_name);
+        if(it == table->cend()) {
+            return std::unexpected(
+                error_type::custom(std::format("missing field '{}'", field_name)));
+        }
+        auto val = it->second.template value<std::string_view>();
+        if(!val.has_value()) {
+            return mark_invalid(error_kind::type_mismatch);
+        }
+        return std::string(*val);
+    }
+
     status_t begin_object() {
         KOTA_EXPECTED_TRY_V(auto table, open_as<::toml::table>());
         deser_frame frame;

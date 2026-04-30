@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -182,6 +183,11 @@ constexpr auto deserialize_externally_tagged(D& d, std::variant<Ts...>& value, T
     return d.end_object();
 }
 
+template <typename D>
+concept can_buffer_raw_field = requires(D& d) {
+    { d.buffer_raw_field_value() } -> std::same_as<typename D::template result_t<std::string>>;
+};
+
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
@@ -203,9 +209,8 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
         return codec::deserialize(d, alt);
     };
 
-    if constexpr(detail::can_buffer_adjacently_tagged_v<D>) {
-        using captured_t = detail::captured_dom_value_t<D>;
-        std::optional<captured_t> buffered_content;
+    if constexpr(can_buffer_raw_field<D>) {
+        std::optional<std::string> buffered_raw;
         bool has_tag = false;
         bool has_content = false;
 
@@ -230,9 +235,8 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
                 if(has_tag) {
                     KOTA_EXPECTED_TRY(deserialize_content_for_tag(read_content_direct));
                 } else {
-                    captured_t captured{};
-                    KOTA_EXPECTED_TRY(codec::deserialize(d, captured));
-                    buffered_content.emplace(std::move(captured));
+                    KOTA_EXPECTED_TRY_V(auto raw, d.buffer_raw_field_value());
+                    buffered_raw.emplace(std::move(raw));
                 }
             } else {
                 KOTA_EXPECTED_TRY(d.skip_field_value());
@@ -246,13 +250,9 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
             return std::unexpected(E::missing_field(TagAttr::field_names[1]));
         }
 
-        if(buffered_content.has_value()) {
+        if(buffered_raw.has_value()) {
             KOTA_EXPECTED_TRY(deserialize_content_for_tag([&](auto& alt) -> std::expected<void, E> {
-                content::Deserializer<typename D::config_type> buffered_deserializer(
-                    *buffered_content);
-                KOTA_EXPECTED_TRY(codec::deserialize(buffered_deserializer, alt));
-                KOTA_EXPECTED_TRY(buffered_deserializer.finish());
-                return {};
+                return d.replay_buffered_field(*buffered_raw, alt);
             }));
         }
 
@@ -280,39 +280,11 @@ constexpr auto deserialize_adjacently_tagged(D& d, std::variant<Ts...>& value, T
 template <typename E, typename D, typename... Ts, typename TagAttr>
 constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, TagAttr)
     -> std::expected<void, E> {
-    using config_t = config::config_of<D>;
-
-    // Requires capture_dom_value() — buffer to content DOM, then two-pass dispatch
-    KOTA_EXPECTED_TRY_V(auto dom_result, d.capture_dom_value());
-
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    auto dom_cursor = dom_result.cursor();
-    const content::Object* obj = dom_cursor.get_object();
-    if(obj == nullptr) {
-        return std::unexpected(E::invalid_type("object", "non-object"));
-    }
+    KOTA_EXPECTED_TRY_V(auto tag_value, d.scan_object_field(tag_field));
 
-    // Pass 1: find tag
-    std::string_view tag_value;
-    bool found = false;
-    for(const auto& entry: *obj) {
-        if(entry.key == tag_field) {
-            auto s = entry.value.get_string();
-            if(!s) {
-                return std::unexpected(E::invalid_type("string", "non-string"));
-            }
-            tag_value = *s;
-            found = true;
-            break;
-        }
-    }
-    if(!found) {
-        return std::unexpected(E::missing_field(tag_field));
-    }
-
-    // Pass 2: match tag -> deserialize full object as that struct type
     return match_and_deserialize_alt<E>(tag_value,
                                         names,
                                         value,
@@ -321,11 +293,7 @@ constexpr auto deserialize_internally_tagged(D& d, std::variant<Ts...>& value, T
                                             static_assert(
                                                 meta::reflectable_class<alt_t>,
                                                 "internally_tagged requires struct alternatives");
-
-                                            content::Deserializer<config_t> deser(dom_cursor);
-                                            KOTA_EXPECTED_TRY(codec::deserialize(deser, alt));
-                                            KOTA_EXPECTED_TRY(deser.finish());
-                                            return {};
+                                            return codec::deserialize(d, alt);
                                         });
 }
 

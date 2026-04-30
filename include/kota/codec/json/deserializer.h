@@ -13,8 +13,6 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/content/deserializer.h"
-#include "kota/codec/content/document.h"
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
@@ -365,29 +363,6 @@ public:
         return end_array();
     }
 
-    result_t<content::Value> capture_dom_value() {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-
-        content::Value out;
-        if(current_value != nullptr) {
-            KOTA_EXPECTED_TRY(build_dom_from_value(*current_value, out));
-        } else {
-            if(root_consumed) {
-                return mark_invalid();
-            }
-            simdjson::ondemand::value root_value;
-            auto err = document.get_value().get(root_value);
-            if(err != simdjson::SUCCESS) {
-                return mark_invalid(err);
-            }
-            root_consumed = true;
-            KOTA_EXPECTED_TRY(build_dom_from_value(root_value, out));
-        }
-        return out;
-    }
-
     result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
         return consume_raw_json_view();
     }
@@ -396,6 +371,75 @@ public:
         return read_source<simdjson::ondemand::json_type>([](auto& doc) { return doc.type(); },
                                                           [](auto& val) { return val.type(); },
                                                           false);
+    }
+
+    result_t<simdjson::ondemand::number_type> peek_number_type() {
+        return read_source<simdjson::ondemand::number_type>(
+            [](auto& doc) { return doc.get_number_type(); },
+            [](auto& val) { return val.get_number_type(); },
+            false);
+    }
+
+    result_t<std::string> scan_object_field(std::string_view field_name) {
+        KOTA_EXPECTED_TRY_V(
+            auto obj,
+            read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
+                                                    [](auto& val) { return val.get_object(); }));
+        std::string result;
+        bool found = false;
+        for(auto field_result: obj) {
+            simdjson::ondemand::field field;
+            if(std::move(field_result).get(field) != simdjson::SUCCESS)
+                break;
+            std::string_view key;
+            if(field.unescaped_key().get(key) != simdjson::SUCCESS)
+                break;
+            if(key == field_name) {
+                std::string_view val;
+                auto err = std::move(field).value().get_string().get(val);
+                if(err != simdjson::SUCCESS) {
+                    return mark_invalid(err);
+                }
+                result = std::string(val);
+                found = true;
+                break;
+            }
+        }
+        if(!found) {
+            return std::unexpected(
+                error_type::custom(std::format("missing field '{}'", field_name)));
+        }
+        obj.reset();
+        pending_object.emplace(std::move(obj));
+        return result;
+    }
+
+    result_t<std::string> buffer_raw_field_value() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+        if(!frame.has_pending_value) {
+            return mark_invalid();
+        }
+        std::string_view raw;
+        auto err = frame.pending_value.raw_json().get(raw);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
+        std::string result(raw);
+        ++frame.iter;
+        frame.has_pending_value = false;
+        current_value = nullptr;
+        return result;
+    }
+
+    template <typename T>
+    status_t replay_buffered_field(std::string_view raw_json, T& value) {
+        Deserializer sub(raw_json);
+        KOTA_EXPECTED_TRY(codec::deserialize(sub, value));
+        KOTA_EXPECTED_TRY(sub.finish());
+        return {};
     }
 
     status_t begin_object() {
@@ -572,117 +616,6 @@ private:
         return {};
     }
 
-    status_t build_dom_from_value(simdjson::ondemand::value& value, content::Value& out) {
-        simdjson::ondemand::json_type type;
-        auto err = value.type().get(type);
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
-        }
-
-        switch(type) {
-            case simdjson::ondemand::json_type::null: {
-                out = content::Value(nullptr);
-                return {};
-            }
-            case simdjson::ondemand::json_type::boolean: {
-                bool b = false;
-                err = value.get_bool().get(b);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(b);
-                return {};
-            }
-            case simdjson::ondemand::json_type::number: {
-                simdjson::ondemand::number_type nt{};
-                err = value.get_number_type().get(nt);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                if(nt == simdjson::ondemand::number_type::signed_integer) {
-                    std::int64_t i = 0;
-                    err = value.get_int64().get(i);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(i);
-                } else if(nt == simdjson::ondemand::number_type::unsigned_integer) {
-                    std::uint64_t u = 0;
-                    err = value.get_uint64().get(u);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(u);
-                } else {
-                    double d = 0.0;
-                    err = value.get_double().get(d);
-                    if(err != simdjson::SUCCESS) {
-                        return mark_invalid(err);
-                    }
-                    out = content::Value(d);
-                }
-                return {};
-            }
-            case simdjson::ondemand::json_type::string: {
-                std::string_view s;
-                err = value.get_string().get(s);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                out = content::Value(std::string(s));
-                return {};
-            }
-            case simdjson::ondemand::json_type::array: {
-                simdjson::ondemand::array arr;
-                err = value.get_array().get(arr);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                content::Array out_arr;
-                for(auto item: arr) {
-                    simdjson::ondemand::value child_v;
-                    auto item_err = std::move(item).get(child_v);
-                    if(item_err != simdjson::SUCCESS) {
-                        return mark_invalid(item_err);
-                    }
-                    content::Value child;
-                    KOTA_EXPECTED_TRY(build_dom_from_value(child_v, child));
-                    out_arr.push_back(std::move(child));
-                }
-                out = content::Value(std::move(out_arr));
-                return {};
-            }
-            case simdjson::ondemand::json_type::object: {
-                simdjson::ondemand::object obj;
-                err = value.get_object().get(obj);
-                if(err != simdjson::SUCCESS) {
-                    return mark_invalid(err);
-                }
-                content::Object out_obj;
-                for(auto field_result: obj) {
-                    simdjson::ondemand::field field;
-                    auto ferr = std::move(field_result).get(field);
-                    if(ferr != simdjson::SUCCESS) {
-                        return mark_invalid(ferr);
-                    }
-                    std::string key;
-                    auto kerr = field.unescaped_key(key);
-                    if(kerr != simdjson::SUCCESS) {
-                        return mark_invalid(kerr);
-                    }
-                    auto child_v = std::move(field).value();
-                    content::Value child;
-                    KOTA_EXPECTED_TRY(build_dom_from_value(child_v, child));
-                    out_obj.insert(std::move(key), std::move(child));
-                }
-                out = content::Value(std::move(out_obj));
-                return {};
-            }
-            default: break;
-        }
-        return mark_invalid();
-    }
-
     /// Unified root-vs-value dispatch. Calls `doc_fn(document)` or `val_fn(*current_value)`,
     /// each returning a simdjson result whose `.get(T&)` populates the output.
     /// When `consume` is true, marks root as consumed on success.
@@ -737,13 +670,6 @@ private:
             read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
                                           [](auto& val) { return val.raw_json(); }));
         return to_padded_subview(raw);
-    }
-
-    result_t<simdjson::ondemand::number_type> peek_number_type() {
-        return read_source<simdjson::ondemand::number_type>(
-            [](auto& doc) { return doc.get_number_type(); },
-            [](auto& val) { return val.get_number_type(); },
-            false);
     }
 
     static meta::type_kind map_to_kind(simdjson::ondemand::json_type json_type,
