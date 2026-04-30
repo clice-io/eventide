@@ -353,6 +353,34 @@ constexpr bool kind_compatible(meta::type_kind target, meta::type_kind source) n
     return false;
 }
 
+constexpr std::size_t kind_match_quality(meta::type_kind target, meta::type_kind source) noexcept {
+    if(target == source)
+        return 3;
+    if(target == meta::type_kind::any || target == meta::type_kind::unknown ||
+       source == meta::type_kind::any || source == meta::type_kind::unknown)
+        return 1;
+    if(meta::is_integer_kind(target) && meta::is_integer_kind(source))
+        return 2;
+    if(meta::is_floating_kind(target) && meta::is_floating_kind(source))
+        return 2;
+    if(meta::is_floating_kind(target) && meta::is_integer_kind(source))
+        return 1;
+    if((target == meta::type_kind::string || target == meta::type_kind::character) &&
+       (source == meta::type_kind::string || source == meta::type_kind::character))
+        return 2;
+    if(meta::is_object_kind(target) && meta::is_object_kind(source))
+        return 2;
+    if(meta::is_sequence_kind(target) && meta::is_sequence_kind(source))
+        return 2;
+    if(target == meta::type_kind::bytes &&
+       (meta::is_sequence_kind(source) || source == meta::type_kind::string))
+        return 1;
+    if(target == meta::type_kind::enumeration &&
+       (meta::is_integer_kind(source) || source == meta::type_kind::string))
+        return 1;
+    return 0;
+}
+
 template <typename T>
 constexpr bool accepts_kind(meta::type_kind source) noexcept {
     constexpr auto k = meta::kind_of<T>();
@@ -411,18 +439,6 @@ struct content_source_adapter {
 
 namespace detail {
 
-template <typename T>
-consteval meta::type_kind resolved_alt_kind() noexcept {
-    constexpr auto k = meta::kind_of<T>();
-    if constexpr(k == meta::type_kind::optional) {
-        return resolved_alt_kind<typename T::value_type>();
-    } else if constexpr(k == meta::type_kind::pointer) {
-        return resolved_alt_kind<typename T::element_type>();
-    } else {
-        return k;
-    }
-}
-
 struct variant_candidate {
     std::size_t index;
     const meta::type_info* type;
@@ -433,6 +449,25 @@ const inline meta::type_info* unwrap_indirect(const meta::type_info* info) {
         info = &static_cast<const meta::optional_type_info&>(*info).inner();
     }
     return info;
+}
+
+inline std::size_t score_type_info(const meta::type_info* info, meta::type_kind source_kind) {
+    if(info->kind == meta::type_kind::optional || info->kind == meta::type_kind::pointer) {
+        if(source_kind == meta::type_kind::null)
+            return 3 * 16;
+        auto& oi = static_cast<const meta::optional_type_info&>(*info);
+        return score_type_info(&oi.inner(), source_kind);
+    }
+    if(info->kind == meta::type_kind::variant) {
+        auto& vi = static_cast<const meta::variant_type_info&>(*info);
+        std::size_t best = 0;
+        for(const auto& alt_fn: vi.alternatives) {
+            best = std::max(best, score_type_info(&alt_fn(), source_kind));
+        }
+        return best;
+    }
+    auto q = kind_match_quality(info->kind, source_kind);
+    return q * 16 + kind_width(info->kind);
 }
 
 template <typename F>
@@ -457,8 +492,26 @@ void multi_score(typename Adapter::node_type node,
     variant_candidate seq_cands[64];
     std::size_t seq_n = 0;
 
+    variant_candidate expanded[64];
+    std::size_t exp_n = 0;
     for(std::size_t i = 0; i < count; ++i) {
         const auto* info = unwrap_indirect(candidates[i].type);
+        if(info->kind == meta::type_kind::variant) {
+            auto& vi = static_cast<const meta::variant_type_info&>(*info);
+            for(const auto& alt_fn: vi.alternatives) {
+                if(exp_n < 64)
+                    expanded[exp_n++] = {candidates[i].index, &alt_fn()};
+            }
+        }
+    }
+    if(exp_n > 0) {
+        multi_score<Adapter>(node, expanded, exp_n, scores);
+    }
+
+    for(std::size_t i = 0; i < count; ++i) {
+        const auto* info = unwrap_indirect(candidates[i].type);
+        if(info->kind == meta::type_kind::variant)
+            continue;
         if(!kind_compatible(info->kind, source_kind))
             continue;
 
@@ -531,38 +584,23 @@ void multi_score(typename Adapter::node_type node,
 
 }  // namespace detail
 
-template <typename... Ts>
-std::size_t numeric_tiebreaker(std::uint64_t live, meta::type_kind source_kind) {
-    constexpr meta::type_kind alt_kinds[] = {detail::resolved_alt_kind<Ts>()...};
-    bool all_integer = true;
-    bool all_float = true;
-    {
-        std::uint64_t mask = live;
-        while(mask) {
-            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
-            if(!meta::is_integer_kind(alt_kinds[idx]))
-                all_integer = false;
-            if(!meta::is_floating_kind(alt_kinds[idx]))
-                all_float = false;
-            mask &= mask - 1;
+template <typename Config, typename... Ts>
+std::size_t score_and_select(std::uint64_t live, meta::type_kind source_kind) {
+    constexpr std::size_t N = sizeof...(Ts);
+    constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
+    std::size_t best_score = 0;
+    std::size_t best_idx = N;
+    std::uint64_t mask = live;
+    while(mask) {
+        std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
+        auto s = detail::score_type_info(&info_fns[idx](), source_kind);
+        if(s > best_score) {
+            best_score = s;
+            best_idx = idx;
         }
+        mask &= mask - 1;
     }
-    if(all_integer || all_float) {
-        std::size_t best_idx = static_cast<std::size_t>(std::countr_zero(live));
-        std::size_t best_width = kind_width(alt_kinds[best_idx]);
-        std::uint64_t mask = live & (live - 1);
-        while(mask) {
-            std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
-            std::size_t w = kind_width(alt_kinds[idx]);
-            if(w > best_width || (w == best_width && alt_kinds[idx] == source_kind)) {
-                best_width = w;
-                best_idx = idx;
-            }
-            mask &= mask - 1;
-        }
-        return best_idx;
-    }
-    return static_cast<std::size_t>(std::countr_zero(live));
+    return best_idx < N ? best_idx : static_cast<std::size_t>(std::countr_zero(live));
 }
 
 template <typename Adapter, typename Config, typename... Ts>
@@ -625,7 +663,7 @@ std::size_t select_variant_index(typename Adapter::node_type node) {
     if(best_idx < N)
         return best_idx;
 
-    return numeric_tiebreaker<Ts...>(live, source_kind);
+    return score_and_select<Config, Ts...>(live, source_kind);
 }
 
 template <typename Config, typename... Ts>
@@ -653,7 +691,7 @@ std::size_t select_variant_index(meta::type_kind source_kind) {
     if(live_count == 1)
         return static_cast<std::size_t>(std::countr_zero(live));
 
-    return numeric_tiebreaker<Ts...>(live, source_kind);
+    return score_and_select<Config, Ts...>(live, source_kind);
 }
 
 template <typename E, typename D, typename... Ts>

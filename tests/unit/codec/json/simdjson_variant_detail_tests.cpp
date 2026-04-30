@@ -114,13 +114,14 @@ TEST_CASE(int_before_double) {
 }
 
 TEST_CASE(double_before_int) {
-    // When double comes first, integer JSON matches double (it accepts integer | floating)
+    // Even when double comes first, integer JSON matches int (more precise kind match).
+    // Floating-point JSON still matches double.
     using V = std::variant<double, int>;
 
     V out{};
     ASSERT_TRUE(from_json("42", out).has_value());
-    EXPECT_EQ(out.index(), 0U);
-    EXPECT_EQ(std::get<double>(out), 42.0);
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 42);
 
     ASSERT_TRUE(from_json("3.14", out).has_value());
     EXPECT_EQ(out.index(), 0U);
