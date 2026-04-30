@@ -193,6 +193,100 @@ public:
         return is_none;
     }
 
+    status_t deserialize_bool(bool& value) {
+        return read_scalar(value, [](auto& src) { return src.get_bool(); });
+    }
+
+    template <codec::int_like T>
+    status_t deserialize_int(T& value) {
+        return read_and_narrow<std::int64_t>(
+            value,
+            [](auto& src) { return src.get_int64(); },
+            [](auto p) {
+                return codec::detail::narrow_int<T>(p, error_type::number_out_of_range);
+            });
+    }
+
+    template <codec::uint_like T>
+    status_t deserialize_uint(T& value) {
+        return read_and_narrow<std::uint64_t>(
+            value,
+            [](auto& src) { return src.get_uint64(); },
+            [](auto p) {
+                return codec::detail::narrow_uint<T>(p, error_type::number_out_of_range);
+            });
+    }
+
+    template <codec::floating_like T>
+    status_t deserialize_float(T& value) {
+        return read_and_narrow<double>(
+            value,
+            [](auto& src) { return src.get_double(); },
+            [](auto p) {
+                return codec::detail::narrow_float<T>(p, error_type::number_out_of_range);
+            });
+    }
+
+    status_t deserialize_char(char& value) {
+        return read_and_narrow<std::string_view>(
+            value,
+            [](auto& src) { return src.get_string(); },
+            [](auto p) { return codec::detail::narrow_char(p, error_type::type_mismatch); });
+    }
+
+    status_t deserialize_str(std::string& value) {
+        std::string_view text;
+        KOTA_EXPECTED_TRY(read_scalar(text, [](auto& src) { return src.get_string(); }));
+        value.assign(text.data(), text.size());
+        return {};
+    }
+
+    status_t deserialize_bytes(std::vector<std::byte>& value) {
+        KOTA_EXPECTED_TRY(begin_array());
+        value.clear();
+        while(true) {
+            KOTA_EXPECTED_TRY_V(auto has_next, next_element());
+            if(!has_next) {
+                break;
+            }
+            std::uint64_t byte_val = 0;
+            KOTA_EXPECTED_TRY(deserialize_uint(byte_val));
+            if(byte_val > 255U) {
+                return mark_invalid(error_kind::number_out_of_range);
+            }
+            value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
+        }
+        return end_array();
+    }
+
+    result_t<simdjson::ondemand::json_type> peek_type() {
+        return read_source<simdjson::ondemand::json_type>([](auto& src) { return src.type(); },
+                                                          false);
+    }
+
+    result_t<simdjson::ondemand::number_type> peek_number_type() {
+        return read_source<simdjson::ondemand::number_type>(
+            [](auto& src) { return src.get_number_type(); },
+            false);
+    }
+
+    result_t<meta::type_kind> peek_kind() {
+        KOTA_EXPECTED_TRY_V(auto type, peek_type());
+        std::optional<simdjson::ondemand::number_type> nt;
+        if(type == simdjson::ondemand::json_type::number) {
+            KOTA_EXPECTED_TRY_V(auto ntype, peek_number_type());
+            nt = ntype;
+        }
+        return map_to_kind(type, nt);
+    }
+
+    result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
+        KOTA_EXPECTED_TRY_V(auto raw, read_source<std::string_view>([](auto& src) {
+                                return src.raw_json();
+                            }));
+        return to_padded_subview(raw);
+    }
+
     template <typename... Ts>
     status_t deserialize_variant(std::variant<Ts...>& value) {
         static_assert((std::default_initializable<Ts> && ...),
@@ -208,19 +302,17 @@ public:
         using adapter = detail::simdjson_source_adapter;
 
         if(*json_type == simdjson::ondemand::json_type::object) {
-            KOTA_EXPECTED_TRY_V(auto obj,
-                                read_source<simdjson::ondemand::object>(
-                                    [](auto& doc) { return doc.get_object(); },
-                                    [](auto& val) { return val.get_object(); }));
+            KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
+                                    return src.get_object();
+                                }));
             best =
                 codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&obj));
             obj.reset();
             pending_object.emplace(std::move(obj));
         } else if(*json_type == simdjson::ondemand::json_type::array) {
-            KOTA_EXPECTED_TRY_V(
-                auto arr,
-                read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                       [](auto& val) { return val.get_array(); }));
+            KOTA_EXPECTED_TRY_V(auto arr, read_source<simdjson::ondemand::array>([](auto& src) {
+                                    return src.get_array();
+                                }));
             best =
                 codec::select_variant_index<adapter, config_type, Ts...>(adapter::node_type(&arr));
             arr.reset();
@@ -247,122 +339,140 @@ public:
         return result;
     }
 
-    status_t deserialize_bool(bool& value) {
-        return read_scalar(
-            value,
-            [](simdjson::ondemand::document& doc) { return doc.get_bool(); },
-            [](simdjson::ondemand::value& value) { return value.get_bool(); });
+    status_t begin_object() {
+        if(pending_object) {
+            auto obj = std::move(*pending_object);
+            pending_object.reset();
+            return begin_object(std::move(obj));
+        }
+        KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
+                                return src.get_object();
+                            }));
+        return begin_object(std::move(obj));
     }
 
-    template <codec::int_like T>
-    status_t deserialize_int(T& value) {
-        return read_and_narrow<std::int64_t>(
-            value,
-            [](auto& doc) { return doc.get_int64(); },
-            [](auto& val) { return val.get_int64(); },
-            [](auto p) {
-                return codec::detail::narrow_int<T>(p, error_type::number_out_of_range);
-            });
-    }
+    result_t<std::optional<std::string_view>> next_field() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
 
-    template <codec::uint_like T>
-    status_t deserialize_uint(T& value) {
-        return read_and_narrow<std::uint64_t>(
-            value,
-            [](auto& doc) { return doc.get_uint64(); },
-            [](auto& val) { return val.get_uint64(); },
-            [](auto p) {
-                return codec::detail::narrow_uint<T>(p, error_type::number_out_of_range);
-            });
-    }
-
-    template <codec::floating_like T>
-    status_t deserialize_float(T& value) {
-        return read_and_narrow<double>(
-            value,
-            [](auto& doc) { return doc.get_double(); },
-            [](auto& val) { return val.get_double(); },
-            [](auto p) {
-                return codec::detail::narrow_float<T>(p, error_type::number_out_of_range);
-            });
-    }
-
-    status_t deserialize_char(char& value) {
-        return read_and_narrow<std::string_view>(
-            value,
-            [](auto& doc) { return doc.get_string(); },
-            [](auto& val) { return val.get_string(); },
-            [](auto p) { return codec::detail::narrow_char(p, error_type::type_mismatch); });
-    }
-
-    status_t deserialize_str(std::string& value) {
-        std::string_view text;
-        auto status = read_scalar(
-            text,
-            [](simdjson::ondemand::document& doc) { return doc.get_string(); },
-            [](simdjson::ondemand::value& value) { return value.get_string(); });
-        if(!status) {
-            return std::unexpected(status.error());
+        if(frame.has_pending_value) {
+            ++frame.iter;
+            frame.has_pending_value = false;
         }
 
-        value.assign(text.data(), text.size());
+        if(frame.iter == frame.end_iter) {
+            current_value = nullptr;
+            return std::optional<std::string_view>(std::nullopt);
+        }
+
+        simdjson::ondemand::field field{};
+        auto field_result = *frame.iter;
+        auto field_err = std::move(field_result).get(field);
+        if(field_err != simdjson::SUCCESS) {
+            return mark_invalid(field_err);
+        }
+
+        auto key_err = field.unescaped_key(frame.pending_key);
+        if(key_err != simdjson::SUCCESS) {
+            return mark_invalid(key_err);
+        }
+
+        frame.pending_value = std::move(field).value();
+        frame.has_pending_value = true;
+        current_value = &frame.pending_value;
+        return std::optional<std::string_view>(std::string_view(frame.pending_key));
+    }
+
+    status_t skip_field_value() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = deser_stack.back();
+        if(!frame.has_pending_value) {
+            return mark_invalid();
+        }
+        std::string_view raw{};
+        auto err = frame.pending_value.raw_json().get(raw);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
+        ++frame.iter;
+        frame.has_pending_value = false;
+        current_value = nullptr;
         return {};
     }
 
-    status_t deserialize_bytes(std::vector<std::byte>& value) {
-        KOTA_EXPECTED_TRY(begin_array());
-        value.clear();
-        while(true) {
-            KOTA_EXPECTED_TRY_V(auto has_next, next_element());
-            if(!has_next) {
-                break;
-            }
-            std::uint64_t byte_val = 0;
-            KOTA_EXPECTED_TRY(deserialize_uint(byte_val));
-            if(byte_val > 255U) {
-                return mark_invalid(error_kind::number_out_of_range);
-            }
-            value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
+    status_t end_object() {
+        if(!is_valid || deser_stack.empty()) {
+            return mark_invalid();
         }
-        return end_array();
-    }
-
-    result_t<simdjson::padded_string_view> deserialize_raw_json_view() {
-        KOTA_EXPECTED_TRY_V(
-            auto raw,
-            read_source<std::string_view>([](auto& doc) { return doc.raw_json(); },
-                                          [](auto& val) { return val.raw_json(); }));
-        return to_padded_subview(raw);
-    }
-
-    result_t<simdjson::ondemand::json_type> peek_type() {
-        return read_source<simdjson::ondemand::json_type>([](auto& doc) { return doc.type(); },
-                                                          [](auto& val) { return val.type(); },
-                                                          false);
-    }
-
-    result_t<simdjson::ondemand::number_type> peek_number_type() {
-        return read_source<simdjson::ondemand::number_type>(
-            [](auto& doc) { return doc.get_number_type(); },
-            [](auto& val) { return val.get_number_type(); },
-            false);
-    }
-
-    result_t<meta::type_kind> peek_kind() {
-        KOTA_EXPECTED_TRY_V(auto type, peek_type());
-        std::optional<simdjson::ondemand::number_type> nt;
-        if(type == simdjson::ondemand::json_type::number) {
-            KOTA_EXPECTED_TRY_V(auto ntype, peek_number_type());
-            nt = ntype;
+        auto& frame = deser_stack.back();
+        if(frame.has_pending_value) {
+            ++frame.iter;
         }
-        return map_to_kind(type, nt);
+        deser_stack.pop_back();
+        current_value = nullptr;
+        return {};
+    }
+
+    status_t begin_array() {
+        if(pending_array) {
+            auto arr = std::move(*pending_array);
+            pending_array.reset();
+            return begin_array(std::move(arr));
+        }
+        KOTA_EXPECTED_TRY_V(auto arr, read_source<simdjson::ondemand::array>([](auto& src) {
+                                return src.get_array();
+                            }));
+        return begin_array(std::move(arr));
+    }
+
+    result_t<bool> next_element() {
+        if(!is_valid || array_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = array_stack.back();
+
+        if(frame.has_pending_value) {
+            ++frame.iter;
+            frame.has_pending_value = false;
+        }
+
+        if(frame.iter == frame.end_iter) {
+            current_value = nullptr;
+            return false;
+        }
+
+        auto value_result = *frame.iter;
+        auto err = std::move(value_result).get(frame.pending_value);
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
+
+        frame.has_pending_value = true;
+        current_value = &frame.pending_value;
+        return true;
+    }
+
+    status_t end_array() {
+        if(!is_valid || array_stack.empty()) {
+            return mark_invalid();
+        }
+        auto& frame = array_stack.back();
+        if(frame.has_pending_value) {
+            ++frame.iter;
+        }
+        array_stack.pop_back();
+        current_value = nullptr;
+        return {};
     }
 
     result_t<std::string> scan_object_field(std::string_view field_name) {
-        KOTA_EXPECTED_TRY_V(
-            auto obj,
-            read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
-                                                    [](auto& val) { return val.get_object(); }));
+        KOTA_EXPECTED_TRY_V(auto obj, read_source<simdjson::ondemand::object>([](auto& src) {
+                                return src.get_object();
+                            }));
         std::string result;
         bool found = false;
         for(auto field_result: obj) {
@@ -420,142 +530,55 @@ public:
         return {};
     }
 
-    status_t begin_object() {
-        if(pending_object) {
-            auto obj = std::move(*pending_object);
-            pending_object.reset();
-            return begin_object(std::move(obj));
-        }
-        KOTA_EXPECTED_TRY_V(
-            auto obj,
-            read_source<simdjson::ondemand::object>([](auto& doc) { return doc.get_object(); },
-                                                    [](auto& val) { return val.get_object(); }));
-        return begin_object(std::move(obj));
-    }
-
-    result_t<std::optional<std::string_view>> next_field() {
-        if(!is_valid || deser_stack.empty()) {
-            return mark_invalid();
-        }
-        auto& frame = deser_stack.back();
-
-        // Advance past the previous field
-        if(frame.has_pending_value) {
-            ++frame.iter;
-            frame.has_pending_value = false;
-        }
-
-        if(frame.iter == frame.end_iter) {
-            current_value = nullptr;
-            return std::optional<std::string_view>(std::nullopt);
-        }
-
-        simdjson::ondemand::field field{};
-        auto field_result = *frame.iter;
-        auto field_err = std::move(field_result).get(field);
-        if(field_err != simdjson::SUCCESS) {
-            return mark_invalid(field_err);
-        }
-
-        auto key_err = field.unescaped_key(frame.pending_key);
-        if(key_err != simdjson::SUCCESS) {
-            return mark_invalid(key_err);
-        }
-
-        frame.pending_value = std::move(field).value();
-        frame.has_pending_value = true;
-        current_value = &frame.pending_value;
-        return std::optional<std::string_view>(std::string_view(frame.pending_key));
-    }
-
-    status_t skip_field_value() {
-        if(!is_valid || deser_stack.empty()) {
-            return mark_invalid();
-        }
-        auto& frame = deser_stack.back();
-        if(!frame.has_pending_value) {
-            return mark_invalid();
-        }
-        std::string_view raw{};
-        auto err = frame.pending_value.raw_json().get(raw);
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
-        }
-        ++frame.iter;
-        frame.has_pending_value = false;
-        current_value = nullptr;
-        return {};
-    }
-
-    status_t end_object() {
-        if(!is_valid || deser_stack.empty()) {
-            return mark_invalid();
-        }
-        auto& frame = deser_stack.back();
-        // Advance past the last consumed field if needed
-        if(frame.has_pending_value) {
-            ++frame.iter;
-        }
-        deser_stack.pop_back();
-        current_value = nullptr;
-        return {};
-    }
-
-    status_t begin_array() {
-        if(pending_array) {
-            auto arr = std::move(*pending_array);
-            pending_array.reset();
-            return begin_array(std::move(arr));
-        }
-        KOTA_EXPECTED_TRY_V(
-            auto arr,
-            read_source<simdjson::ondemand::array>([](auto& doc) { return doc.get_array(); },
-                                                   [](auto& val) { return val.get_array(); }));
-        return begin_array(std::move(arr));
-    }
-
-    result_t<bool> next_element() {
-        if(!is_valid || array_stack.empty()) {
-            return mark_invalid();
-        }
-        auto& frame = array_stack.back();
-
-        // Advance past previous element
-        if(frame.has_pending_value) {
-            ++frame.iter;
-            frame.has_pending_value = false;
-        }
-
-        if(frame.iter == frame.end_iter) {
-            current_value = nullptr;
-            return false;
-        }
-
-        auto value_result = *frame.iter;
-        auto err = std::move(value_result).get(frame.pending_value);
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
-        }
-
-        frame.has_pending_value = true;
-        current_value = &frame.pending_value;
-        return true;
-    }
-
-    status_t end_array() {
-        if(!is_valid || array_stack.empty()) {
-            return mark_invalid();
-        }
-        auto& frame = array_stack.back();
-        if(frame.has_pending_value) {
-            ++frame.iter;
-        }
-        array_stack.pop_back();
-        current_value = nullptr;
-        return {};
-    }
-
 private:
+    template <typename T, typename Fn>
+    result_t<T> read_source(Fn&& fn, bool consume = true) {
+        if(!is_valid) {
+            return std::unexpected(last_error);
+        }
+
+        T out{};
+        simdjson::error_code err = simdjson::SUCCESS;
+        if(current_value != nullptr) {
+            err = fn(*current_value).get(out);
+        } else {
+            if(root_consumed) {
+                return mark_invalid();
+            }
+            err = fn(document).get(out);
+            if(err == simdjson::SUCCESS && consume) {
+                root_consumed = true;
+            }
+        }
+
+        if(err != simdjson::SUCCESS) {
+            return mark_invalid(err);
+        }
+        return out;
+    }
+
+    template <typename T, typename Fn>
+    status_t read_scalar(T& out, Fn&& fn) {
+        auto result = read_source<T>(std::forward<Fn>(fn));
+        if(!result) {
+            return std::unexpected(result.error());
+        }
+        out = std::move(*result);
+        return {};
+    }
+
+    template <typename Parsed, typename T, typename Fn, typename NarrowFn>
+    status_t read_and_narrow(T& value, Fn&& fn, NarrowFn&& narrow_fn) {
+        Parsed parsed{};
+        KOTA_EXPECTED_TRY(read_scalar(parsed, std::forward<Fn>(fn)));
+        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
+        if(!narrowed) {
+            return mark_invalid(narrowed.error());
+        }
+        value = *narrowed;
+        return {};
+    }
+
     status_t begin_object(simdjson::ondemand::object obj) {
         current_value = nullptr;
         deser_frame frame;
@@ -595,58 +618,6 @@ private:
         }
 
         array_stack.push_back(std::move(frame));
-        return {};
-    }
-
-    /// Unified root-vs-value dispatch. Calls `doc_fn(document)` or `val_fn(*current_value)`,
-    /// each returning a simdjson result whose `.get(T&)` populates the output.
-    /// When `consume` is true, marks root as consumed on success.
-    template <typename T, typename DocFn, typename ValFn>
-    result_t<T> read_source(DocFn&& doc_fn, ValFn&& val_fn, bool consume = true) {
-        if(!is_valid) {
-            return std::unexpected(last_error);
-        }
-
-        T out{};
-        simdjson::error_code err = simdjson::SUCCESS;
-        if(current_value != nullptr) {
-            err = std::forward<ValFn>(val_fn)(*current_value).get(out);
-        } else {
-            if(root_consumed) {
-                return mark_invalid();
-            }
-            err = std::forward<DocFn>(doc_fn)(document).get(out);
-            if(err == simdjson::SUCCESS && consume) {
-                root_consumed = true;
-            }
-        }
-
-        if(err != simdjson::SUCCESS) {
-            return mark_invalid(err);
-        }
-        return out;
-    }
-
-    template <typename T, typename DocFn, typename ValFn>
-    status_t read_scalar(T& out, DocFn&& doc_fn, ValFn&& val_fn) {
-        auto result = read_source<T>(std::forward<DocFn>(doc_fn), std::forward<ValFn>(val_fn));
-        if(!result) {
-            return std::unexpected(result.error());
-        }
-        out = std::move(*result);
-        return {};
-    }
-
-    template <typename Parsed, typename T, typename DocFn, typename ValFn, typename NarrowFn>
-    status_t read_and_narrow(T& value, DocFn&& doc_fn, ValFn&& val_fn, NarrowFn&& narrow_fn) {
-        Parsed parsed{};
-        KOTA_EXPECTED_TRY(
-            read_scalar(parsed, std::forward<DocFn>(doc_fn), std::forward<ValFn>(val_fn)));
-        auto narrowed = std::forward<NarrowFn>(narrow_fn)(parsed);
-        if(!narrowed) {
-            return mark_invalid(narrowed.error());
-        }
-        value = *narrowed;
         return {};
     }
 
@@ -735,7 +706,6 @@ private:
             offset = total;
         }
 
-        // Compute line and column by scanning input
         std::size_t line = 1;
         std::size_t col = 1;
         for(std::size_t i = 0; i < offset; ++i) {
@@ -749,15 +719,6 @@ private:
 
         return codec::source_location{line, col, offset};
     }
-
-private:
-    bool is_valid = true;
-    bool root_consumed = false;
-    error_type last_error;
-    simdjson::ondemand::value* current_value = nullptr;
-
-    std::optional<simdjson::ondemand::object> pending_object;
-    std::optional<simdjson::ondemand::array> pending_array;
 
     struct deser_frame {
         simdjson::ondemand::object object{};
@@ -775,6 +736,14 @@ private:
         simdjson::ondemand::value pending_value{};
         bool has_pending_value = false;
     };
+
+    bool is_valid = true;
+    bool root_consumed = false;
+    error_type last_error;
+    simdjson::ondemand::value* current_value = nullptr;
+
+    std::optional<simdjson::ondemand::object> pending_object;
+    std::optional<simdjson::ondemand::array> pending_array;
 
     std::vector<deser_frame> deser_stack;
     std::vector<array_frame> array_stack;
