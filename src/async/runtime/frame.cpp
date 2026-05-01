@@ -133,8 +133,11 @@ void async_node::cancel() {
 
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::Scope: {
+        case NodeKind::TaskGroup: {
             auto* self = static_cast<aggregate_op*>(this);
+            if(kind == NodeKind::TaskGroup) {
+                static_cast<task_group_node*>(this)->stopped = true;
+            }
             const bool was_arming = self->phase == aggregate_op::Phase::Arming;
             self->phase = aggregate_op::Phase::Cancelling;
             for(auto* child: self->awaitees) {
@@ -219,7 +222,7 @@ std::coroutine_handle<> async_node::link_continuation(async_node* awaiter,
         }
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::Scope: break;
+        case NodeKind::TaskGroup: break;
         case NodeKind::SystemIO: {
             auto self = static_cast<system_op*>(this);
             self->awaiter = awaiter;
@@ -251,7 +254,7 @@ std::coroutine_handle<> async_node::final_transition() {
         case NodeKind::EventWaiter:
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::Scope:
+        case NodeKind::TaskGroup:
         case NodeKind::SystemIO: break;
     }
 
@@ -266,7 +269,7 @@ std::coroutine_handle<> async_node::final_transition() {
 ///   - Cancellation: cancels all siblings, propagates upward.
 ///   - Failed child (exception or structured error): cancels all siblings, resumes awaiter.
 ///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
-///   - WhenAll/Scope completion: increments counter, resumes awaiter when all done.
+///   - WhenAll completion: increments counter, resumes awaiter when all done.
 std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
     assert(child && child != this && "invalid parameter!");
 
@@ -301,8 +304,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
         }
 
         case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::Scope: {
+        case NodeKind::WhenAny: {
             auto self = static_cast<aggregate_op*>(this);
             if(self->is_settled()) {
                 return std::noop_coroutine();
@@ -397,6 +399,51 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node* child) {
             }
 
             return std::noop_coroutine();
+        }
+
+        case NodeKind::TaskGroup: {
+            auto* self = static_cast<task_group_node*>(this);
+
+            if(self->is_settled()) {
+                return std::noop_coroutine();
+            }
+
+            self->completed += 1;
+
+            if(child->state == Failed) {
+                for(std::size_t i = 0; i < self->awaitees.size(); ++i) {
+                    if(self->awaitees[i] == child) {
+                        if(i < self->error_handlers.size() && self->error_handlers[i]) {
+                            self->error_handlers[i](child, self);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if((child->state == Failed || child->state == Cancelled) && !self->stopped &&
+               self->phase == aggregate_op::Phase::Open) {
+                self->stopped = true;
+                if(self->completed < self->total) {
+                    self->cancel_children(child);
+                }
+            }
+
+            if(self->completed < self->total) {
+                return std::noop_coroutine();
+            }
+
+            if(!self->awaiter) {
+                return std::noop_coroutine();
+            }
+
+            const bool deferring = self->is_deferring();
+            self->phase = aggregate_op::Phase::Settled;
+            self->defer_resume();
+            if(deferring) {
+                return std::noop_coroutine();
+            }
+            return self->deliver_deferred();
         }
 
         case NodeKind::MutexWaiter:
