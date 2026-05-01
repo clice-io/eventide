@@ -20,8 +20,10 @@ public:
 
         void cancel() noexcept {
             bool expected = false;
-            if(!cancelled.compare_exchange_strong(
-                   expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            if(!cancelled.compare_exchange_strong(expected,
+                                                  true,
+                                                  std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
                 return;
             }
             event.set();

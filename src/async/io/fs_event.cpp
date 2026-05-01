@@ -486,8 +486,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         }
 
         if(!shared->pending_old_name.empty()) {
-            changes.push_back(
-                change{std::move(shared->pending_old_name), effect::destroy, {}});
+            changes.push_back(change{std::move(shared->pending_old_name), effect::destroy, {}});
             shared->pending_old_name.clear();
         }
 
