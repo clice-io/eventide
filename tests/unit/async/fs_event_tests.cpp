@@ -261,10 +261,7 @@ task<int, error> fse_stop_during_next(event_loop& loop) {
     co_await fs::rmdir(dir, loop).or_fail();
 
     if(result.has_error()) {
-        co_return (result.error() == error::operation_aborted ||
-                   result.error() == error::connection_timed_out)
-            ? 1
-            : 0;
+        co_return result.error() == error::operation_aborted ? 1 : 0;
     }
     co_return 1;
 }

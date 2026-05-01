@@ -19,19 +19,11 @@ public:
         }
 
         void cancel() noexcept {
-            if(cancelled.load(std::memory_order_acquire)) {
+            bool expected = false;
+            if(!cancelled.compare_exchange_strong(
+                   expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
                 return;
             }
-            cancelled.store(true, std::memory_order_release);
-            // This event represents the sticky fact "cancellation has already
-            // happened", not the transient action "cancel whoever is currently
-            // waiting". That is why this uses set() instead of interrupt():
-            // future waiters must also observe the cancelled state
-            // immediately.
-            //
-            // Using interrupt() here introduces a lost-wakeup window between
-            // the pre-check in cancellation_token::wait() and the moment the
-            // event wait is actually linked.
             event.set();
         }
 

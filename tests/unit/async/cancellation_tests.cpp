@@ -680,6 +680,7 @@ TEST_CASE(cancel_void_task_in_flight) {
     EXPECT_TRUE(started);
     EXPECT_FALSE(finished);
     EXPECT_TRUE(source.cancelled());
+    EXPECT_TRUE(guarded.result().is_cancelled());
 }
 
 };  // TEST_SUITE(cancellation)

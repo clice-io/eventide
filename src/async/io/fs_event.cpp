@@ -354,6 +354,7 @@ constexpr FSEventStreamEventFlags IGNORED_FLAGS =
 struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     FSEventStreamRef stream = nullptr;
     dispatch_queue_t dispatch_queue = nullptr;
+    std::string pending_old_name;
 
     ~Self() {
         stop_platform();
@@ -389,8 +390,6 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 
         std::vector<change> changes;
         changes.reserve(num_events);
-
-        std::string pending_old_name;
 
         for(size_t i = 0; i < num_events; ++i) {
             if(flags[i] & kFSEventStreamEventFlagMustScanSubDirs) {
@@ -445,15 +444,17 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             if(is_renamed) {
                 struct stat st;
                 if(stat(path.c_str(), &st) != 0) {
-                    if(!pending_old_name.empty()) {
-                        changes.push_back(change{std::move(pending_old_name), effect::destroy, {}});
-                    }
-                    pending_old_name = std::move(path);
-                } else {
-                    if(!pending_old_name.empty()) {
+                    if(!shared->pending_old_name.empty()) {
                         changes.push_back(
-                            change{std::move(path), effect::rename, std::move(pending_old_name)});
-                        pending_old_name.clear();
+                            change{std::move(shared->pending_old_name), effect::destroy, {}});
+                    }
+                    shared->pending_old_name = std::move(path);
+                } else {
+                    if(!shared->pending_old_name.empty()) {
+                        changes.push_back(change{std::move(path),
+                                                 effect::rename,
+                                                 std::move(shared->pending_old_name)});
+                        shared->pending_old_name.clear();
                     } else {
                         changes.push_back(change{std::move(path), effect::create, {}});
                     }
@@ -484,8 +485,10 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             }
         }
 
-        if(!pending_old_name.empty()) {
-            changes.push_back(change{std::move(pending_old_name), effect::destroy, {}});
+        if(!shared->pending_old_name.empty()) {
+            changes.push_back(
+                change{std::move(shared->pending_old_name), effect::destroy, {}});
+            shared->pending_old_name.clear();
         }
 
         if(changes.empty())
@@ -576,7 +579,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                 auto* s = reinterpret_cast<Self*>(param);
                 s->running.store(false, std::memory_order_release);
                 if(s->dir_handle != INVALID_HANDLE_VALUE) {
-                    CancelIoEx(s->dir_handle, nullptr);
+                    CancelIoEx(s->dir_handle, &s->overlapped);
                 }
             },
             worker_thread.native_handle(),
@@ -584,7 +587,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         if(!apc_ok) {
             running.store(false, std::memory_order_release);
             if(dir_handle != INVALID_HANDLE_VALUE) {
-                CancelIoEx(dir_handle, nullptr);
+                CancelIoEx(dir_handle, &overlapped);
             }
         }
         worker_thread.join();
@@ -614,6 +617,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
                                           nullptr);
         if(written <= 0)
             return {};
+        result.resize(written);
         return result;
     }
 
@@ -858,7 +862,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
     s->debounce_timer = timer::create(loop);
 
     auto init_err = s->init_platform(s);
-    if(init_err != error{}) {
+    if(init_err) {
         return outcome_error(init_err);
     }
 
@@ -916,8 +920,12 @@ task<std::vector<fs_event::change>, error> fs_event::next() {
             filtered.push_back(std::move(c));
         }
 
-        if(filtered.empty())
+        if(filtered.empty()) {
+            if(self->closed.load(std::memory_order_acquire)) {
+                co_await fail(error::operation_aborted);
+            }
             continue;
+        }
 
         co_return filtered;
     }
@@ -930,7 +938,10 @@ void fs_event::stop() {
         return;
     }
 
-    self->closed.store(true, std::memory_order_release);
+    if(self->closed.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+
     self->has_events.set();
     // Fire immediately instead of stopping: stop() only cancels the timer
     // but does not wake a coroutine suspended on debounce_timer.wait().
