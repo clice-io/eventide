@@ -53,7 +53,7 @@ struct simdjson_source_adapter {
             case simdjson::ondemand::json_type::number: {
                 simdjson::ondemand::number_type nt;
                 if(node.val.get_number_type().get(nt) != simdjson::SUCCESS)
-                    return meta::type_kind::int64;
+                    return meta::type_kind::any;
                 if(nt == simdjson::ondemand::number_type::floating_point_number)
                     return meta::type_kind::float64;
                 if(nt == simdjson::ondemand::number_type::unsigned_integer)
@@ -77,7 +77,8 @@ struct simdjson_source_adapter {
                 std::string_view key;
                 if(field.unescaped_key().get(key) != simdjson::SUCCESS)
                     break;
-                fn(key, node_type(std::move(field).value()));
+                auto field_value = std::move(field).value();
+                fn(key, node_type(std::move(field_value)));
             }
         };
 
@@ -499,8 +500,7 @@ public:
             }
         }
         if(!found) {
-            return std::unexpected(
-                error_type::custom(std::format("missing field '{}'", field_name)));
+            return std::unexpected(error_type::missing_field(field_name));
         }
         if(auto r = obj.reset(); r.error() != simdjson::SUCCESS) {
             return mark_invalid(r.error());

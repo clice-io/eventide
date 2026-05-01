@@ -335,8 +335,7 @@ public:
         }
         auto it = table->find(field_name);
         if(it == table->cend()) {
-            return std::unexpected(
-                error_type::custom(std::format("missing field '{}'", field_name)));
+            return std::unexpected(error_type::missing_field(field_name));
         }
         auto val = it->second.template value<std::string_view>();
         if(!val.has_value()) {

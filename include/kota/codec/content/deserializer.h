@@ -271,8 +271,8 @@ public:
             case ValueKind::string: return meta::type_kind::string;
             case ValueKind::array: return meta::type_kind::array;
             case ValueKind::object: return meta::type_kind::structure;
+            default: return meta::type_kind::unknown;
         }
-        return meta::type_kind::any;
     }
 
     result_t<std::string> scan_object_field(std::string_view field_name) {

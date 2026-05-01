@@ -424,8 +424,8 @@ struct content_source_adapter {
             case content::ValueKind::string: return meta::type_kind::string;
             case content::ValueKind::array: return meta::type_kind::array;
             case content::ValueKind::object: return meta::type_kind::structure;
+            default: return meta::type_kind::unknown;
         }
-        return meta::type_kind::any;
     }
 
     template <typename Fn>
@@ -459,6 +459,7 @@ struct variant_candidate {
     const meta::type_info* type;
 };
 
+// Both optional and pointer kinds use optional_type_info in type_instance_impl.
 const inline meta::type_info* unwrap_indirect(const meta::type_info* info) {
     while(info->kind == meta::type_kind::optional || info->kind == meta::type_kind::pointer) {
         info = &static_cast<const meta::optional_type_info&>(*info).inner();
@@ -466,10 +467,13 @@ const inline meta::type_info* unwrap_indirect(const meta::type_info* info) {
     return info;
 }
 
+// Separates quality (0-3) from width (0-8) into distinct score bands.
+constexpr std::size_t quality_scale = 16;
+
 inline std::size_t score_type_info(const meta::type_info* info, meta::type_kind source_kind) {
     if(info->kind == meta::type_kind::optional || info->kind == meta::type_kind::pointer) {
         if(source_kind == meta::type_kind::null)
-            return 3 * 16;
+            return 3 * quality_scale;
         auto& oi = static_cast<const meta::optional_type_info&>(*info);
         return score_type_info(&oi.inner(), source_kind);
     }
@@ -482,7 +486,7 @@ inline std::size_t score_type_info(const meta::type_info* info, meta::type_kind 
         return best;
     }
     auto q = kind_match_quality(info->kind, source_kind);
-    return q * 16 + kind_width(info->kind);
+    return q * quality_scale + kind_width(info->kind);
 }
 
 template <typename F>
