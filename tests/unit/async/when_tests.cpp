@@ -1907,6 +1907,7 @@ TEST_CASE(exception_takes_precedence_over_error) {
     EXPECT_THROWS(t.result());
 }
 
+#if !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 TEST_CASE(only_first_exception_rethrown) {
     std::string caught_what;
 
@@ -1933,6 +1934,7 @@ TEST_CASE(only_first_exception_rethrown) {
     EXPECT_TRUE(t->is_failed());
     EXPECT_EQ(caught_what, "first");
 }
+#endif  // !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 #endif
 
 // Fail-fast cancels siblings after the first error, so the error vector
