@@ -14,7 +14,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, flatbuffers::object
         return std::unexpected(encoded.error());
     }
     if(encoded->empty()) {
-        return std::unexpected(flatbuffers::object_error_code::invalid_state);
+        return std::unexpected(flatbuffers::object_error_code::InvalidState);
     }
     return flatbuffers::from_flatbuffer<T>(*encoded);
 };

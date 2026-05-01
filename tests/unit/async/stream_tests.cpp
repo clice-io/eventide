@@ -165,7 +165,7 @@ task<> write_two_pipe_chunks(int fd, event_loop& loop, event& first_chunk_consum
     }
 
     co_await first_chunk_consumed.wait();
-    (void)write_fd(fd, second.data(), second.size());
+    [[maybe_unused]] auto _ = write_fd(fd, second.data(), second.size());
     close_fd(fd);
 }
 

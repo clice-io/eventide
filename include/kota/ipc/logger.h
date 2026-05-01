@@ -7,11 +7,11 @@
 namespace kota::ipc {
 
 enum class LogLevel : std::uint8_t {
-    trace = 0,
-    debug = 1,
-    info = 2,
-    warn = 3,
-    error = 4,
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warn = 3,
+    Error = 4,
 };
 
 using LogCallback = std::function<void(LogLevel, std::string)>;

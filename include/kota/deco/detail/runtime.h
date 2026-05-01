@@ -4,12 +4,12 @@
 #include <expected>
 #include <format>
 #include <functional>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
 #include <print>
+#include <sstream>
 #include <set>
 #include <string>
 #include <string_view>
@@ -113,16 +113,19 @@ struct Invocation {
         }
     }
 
-    auto print_usage(bool include_help = true, std::ostream& os = std::cout) const -> void {
+    auto print_usage(bool include_help = true) const -> void {
+        std::ostringstream oss;
+        usage(oss, include_help);
+        std::print("{}", oss.str());
+    }
+
+    auto print_usage(std::ostream& os, bool include_help = true) const -> void {
         usage(os, include_help);
     }
 };
 
 template <typename T>
 using ParsedResult = Invocation<T>;
-
-template <typename T>
-constexpr inline bool always_false_v = false;
 
 namespace detail {
 
@@ -390,8 +393,12 @@ public:
         invocation().usage(os, include_help);
     }
 
-    auto print_usage(bool include_help = true, std::ostream& os = std::cout) const -> void {
-        invocation().print_usage(include_help, os);
+    auto print_usage(bool include_help = true) const -> void {
+        invocation().print_usage(include_help);
+    }
+
+    auto print_usage(std::ostream& os, bool include_help = true) const -> void {
+        invocation().print_usage(os, include_help);
     }
 
     auto next() const -> decl::ParseControl {
@@ -482,7 +489,7 @@ std::string check_valid(const T& options,
         return err;
     }
     // check category requirements
-    const auto& c_map = storage.category_map();
+    const auto& c_map = storage.get_category_map();
     std::set<const decl::Category*> required_categories;
     // 0 is dummy
     for(std::size_t i = 1; i < c_map.size(); ++i) {
@@ -492,7 +499,7 @@ std::string check_valid(const T& options,
         }
     }
     if(storage.has_trailing_option()) {
-        if(const auto* trailing = storage.trailing_category();
+        if(const auto* trailing = storage.get_trailing_category();
            trailing != nullptr && trailing->required) {
             required_categories.insert(trailing);
         }
@@ -585,8 +592,8 @@ std::expected<Invocation<T>, ParseError>
                         return false;
                     }
                     opt_raw_ptr = storage.trailing_ptr_of(res.options);
-                    category = storage.trailing_category();
-                    option_callback = storage.trailing_callback();
+                    category = storage.get_trailing_category();
+                    option_callback = storage.get_trailing_callback();
                 }
 
                 category = category ? category : storage.category_of(raw_parg.option_id);
@@ -833,7 +840,7 @@ class Command {
                 } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
                     handler(invocation);
                 } else {
-                    static_assert(always_false_v<HandlerTy>,
+                    static_assert(kota::dependent_false<HandlerTy>,
                                   "Command handler must accept Invocation<T>&.");
                 }
             });
@@ -853,7 +860,7 @@ class Command {
                 } else if constexpr(std::is_invocable_v<HandlerTy&, const invocation_t&>) {
                     handler(invocation);
                 } else {
-                    static_assert(always_false_v<HandlerTy>,
+                    static_assert(kota::dependent_false<HandlerTy>,
                                   "Command match handler must accept T or Invocation<T>.");
                 }
             });
@@ -867,24 +874,24 @@ class Command {
         return std::string(overview.substr(0, pos));
     }
 
-    std::string commandOverview;
-    std::string commandName;
-    std::vector<AfterHook> afterHooks;
+    std::string command_overview;
+    std::string command_name;
+    std::vector<AfterHook> after_hooks;
     std::vector<finalize_handler_t> finalizers;
-    std::vector<CategoryMatch> categoryMatches;
-    std::optional<match_handler_t> matchAllHandler;
-    std::optional<text::Renderer> textRenderer;
-    config::ConfigOverride configOverride{};
-    error_fn_t errorHandler = [](const ParseError& err) {
+    std::vector<CategoryMatch> category_matches;
+    std::optional<match_handler_t> match_all_handler;
+    std::optional<text::Renderer> text_renderer;
+    config::ConfigOverride config_override{};
+    error_fn_t error_handler = [](const ParseError& err) {
         std::println(stderr, "{}", err.message);
     };
 
     auto renderer_ptr() const -> const text::Renderer* {
-        return textRenderer.has_value() ? &*textRenderer : nullptr;
+        return text_renderer.has_value() ? &*text_renderer : nullptr;
     }
 
     auto resolved_config() const -> config::Config {
-        return config::merge(config::get(), configOverride);
+        return config::merge(config::get(), config_override);
     }
 
     auto make_fallback_renderer() const -> std::optional<text::Renderer> {
@@ -899,18 +906,18 @@ class Command {
 
     auto bind_runtime(invocation_t& invocation,
                       const text::Renderer* active_renderer = nullptr) const -> void {
-        invocation.command_overview = commandOverview;
+        invocation.command_overview = command_overview;
         invocation.usage_config = resolved_config();
         invocation.usage_writer = &write_usage_for<T>;
         invocation.renderer_ptr = active_renderer != nullptr ? active_renderer : renderer_ptr();
-        if(!commandName.empty() && invocation.command_path.empty()) {
-            invocation.command_path = {commandName};
+        if(!command_name.empty() && invocation.command_path.empty()) {
+            invocation.command_path = {command_name};
         }
     }
 
 public:
     explicit Command(std::string_view command_overview) :
-        commandOverview(command_overview), commandName(default_command_name(command_overview)) {}
+        command_overview(command_overview), command_name(default_command_name(command_overview)) {}
 
     template <auto... Members, typename Fn>
     auto& after(Fn&& fn) {
@@ -951,7 +958,7 @@ public:
                 }
             },
         };
-        afterHooks.push_back(std::move(hook));
+        after_hooks.push_back(std::move(hook));
         return *this;
     }
 
@@ -969,13 +976,13 @@ public:
                   std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t&> ||
                   std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>)
     auto& match(const decl::Category& category, Handler&& handler) {
-        for(auto& item: categoryMatches) {
+        for(auto& item: category_matches) {
             if(item.category == &category) {
                 item.handler = adapt_match_handler(std::forward<Handler>(handler));
                 return *this;
             }
         }
-        categoryMatches.push_back(
+        category_matches.push_back(
             CategoryMatch{.category = &category,
                           .handler = adapt_match_handler(std::forward<Handler>(handler))});
         return *this;
@@ -987,29 +994,29 @@ public:
                   std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t&> ||
                   std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>)
     auto& matchAll(Handler&& handler) {
-        matchAllHandler = adapt_match_handler(std::forward<Handler>(handler));
+        match_all_handler = adapt_match_handler(std::forward<Handler>(handler));
         return *this;
     }
 
     auto& on_error(error_fn_t handler) {
-        errorHandler = std::move(handler);
+        error_handler = std::move(handler);
         return *this;
     }
 
     auto& on_error(std::ostream& os) {
-        errorHandler = [&os](const ParseError& err) {
+        error_handler = [&os](const ParseError& err) {
             os << err.message << "\n";
         };
         return *this;
     }
 
     auto& render_with(text::Renderer renderer) {
-        textRenderer = std::move(renderer);
+        text_renderer = std::move(renderer);
         return *this;
     }
 
     auto& config(config::ConfigOverride override_config) {
-        configOverride = std::move(override_config);
+        config_override = std::move(override_config);
         return *this;
     }
 
@@ -1035,12 +1042,12 @@ public:
                                     const backend::ParsedArgumentOwning& arg,
                                     unsigned cursor,
                                     std::span<std::string> active_argv) {
-                if(afterHooks.empty()) {
+                if(after_hooks.empty()) {
                     return decl::ParseControl::next();
                 }
                 bind_runtime(invocation, active_renderer);
                 auto* accessor_ptr = &accessor;
-                for(auto& hook: afterHooks) {
+                for(auto& hook: after_hooks) {
                     if(hook.matches != nullptr && hook.matches(invocation.options, accessor_ptr)) {
                         const auto control =
                             hook.handler(invocation, arg, cursor, active_argv, accessor);
@@ -1073,7 +1080,7 @@ public:
         const auto usage_config = resolved_config();
         const auto fallback_renderer = make_fallback_renderer();
         write_usage_for<T>(os,
-                           commandOverview,
+                           command_overview,
                            include_help,
                            &usage_config,
                            fallback_renderer.has_value() ? &*fallback_renderer : renderer_ptr());
@@ -1082,18 +1089,18 @@ public:
     auto execute(std::span<std::string> argv) -> void {
         auto res = invoke(argv);
         if(!res.has_value()) {
-            errorHandler(std::move(res.error()));
+            error_handler(std::move(res.error()));
             return;
         }
 
-        for(auto& item: categoryMatches) {
+        for(auto& item: category_matches) {
             if(res->matched(*item.category)) {
                 item.handler(*res);
                 return;
             }
         }
-        if(matchAllHandler.has_value()) {
-            (*matchAllHandler)(*res);
+        if(match_all_handler.has_value()) {
+            (*match_all_handler)(*res);
         }
     }
 
@@ -1131,34 +1138,34 @@ class SubCommander {
                 handler(match);
             } else {
                 static_assert(
-                    always_false_v<HandlerTy>,
+                    kota::dependent_false<HandlerTy>,
                     "SubCommander handler must accept std::span<std::string> or " "SubCommandMatch.");
             }
         });
     }
 
-    error_fn_t errorHandler = [](const SubCommandError& err) {
+    error_fn_t error_handler = [](const SubCommandError& err) {
         std::println(stderr, "{}", err.message);
     };
-    std::optional<handler_fn_t> defaultHandler;
+    std::optional<handler_fn_t> default_handler;
     std::vector<SubCommandHandler> handlers;
-    std::map<std::string, std::size_t, std::less<>> commandToHandler;
+    std::map<std::string, std::size_t, std::less<>> command_to_handler;
 
-    std::string commandOverview;
+    std::string command_overview;
     std::string overview;
-    std::optional<text::Renderer> textRenderer;
-    config::ConfigOverride configOverride{};
+    std::optional<text::Renderer> text_renderer;
+    config::ConfigOverride config_override{};
 
     static auto command_of(const decl::SubCommand& subcommand) -> std::string;
     static auto display_name_of(const decl::SubCommand& subcommand, std::string_view command)
         -> std::string;
 
     auto renderer_ptr() const -> const text::Renderer* {
-        return textRenderer.has_value() ? &*textRenderer : nullptr;
+        return text_renderer.has_value() ? &*text_renderer : nullptr;
     }
 
     auto resolved_config() const -> config::Config {
-        return config::merge(config::get(), configOverride);
+        return config::merge(config::get(), config_override);
     }
 
 public:
@@ -1199,7 +1206,7 @@ public:
     }
 
     auto& render_with(text::Renderer renderer) {
-        textRenderer = std::move(renderer);
+        text_renderer = std::move(renderer);
         return *this;
     }
 
@@ -1212,7 +1219,7 @@ public:
     }
 
     auto& config(config::ConfigOverride override_config) {
-        configOverride = std::move(override_config);
+        config_override = std::move(override_config);
         return *this;
     }
 

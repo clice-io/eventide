@@ -122,7 +122,7 @@ struct Peer<CodecT>::Self {
     event write_event;
 
     LogCallback logger;
-    LogLevel min_level = LogLevel::info;
+    LogLevel min_level = LogLevel::Info;
 
     explicit Self(event_loop& external_loop, CodecT codec_arg) :
         loop(external_loop), codec(std::move(codec_arg)) {}
@@ -131,7 +131,7 @@ struct Peer<CodecT>::Self {
         if(closed) {
             return;
         }
-        ET_IPC_LOG(this, LogLevel::trace, "send: {}", payload);
+        ET_IPC_LOG(this, LogLevel::Trace, "send: {}", payload);
         outgoing_queue.push_back(std::move(payload));
         write_event.set();
     }
@@ -157,7 +157,7 @@ struct Peer<CodecT>::Self {
             auto written = co_await transport->write_message(payload);
             if(!written) {
                 ET_IPC_LOG(this,
-                           LogLevel::error,
+                           LogLevel::Error,
                            "transport write failed: {}",
                            written.error().message);
                 outgoing_queue.clear();
@@ -169,7 +169,7 @@ struct Peer<CodecT>::Self {
     }
 
     void send_error(const protocol::RequestID& id, const Error& error) {
-        ET_IPC_LOG(this, LogLevel::error, "error response: {}", error.message);
+        ET_IPC_LOG(this, LogLevel::Error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
         if(response) {
             enqueue_outgoing(std::move(*response));
@@ -179,11 +179,11 @@ struct Peer<CodecT>::Self {
     void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
-            ET_IPC_LOG(this, LogLevel::warn, "orphan response for id={}", id);
+            ET_IPC_LOG(this, LogLevel::Warn, "orphan response for id={}", id);
             return;
         }
 
-        ET_IPC_LOG(this, LogLevel::debug, "response received for id={}", id);
+        ET_IPC_LOG(this, LogLevel::Debug, "response received for id={}", id);
 
         auto pending = std::move(it->second);
         pending_requests.erase(it);
@@ -197,7 +197,7 @@ struct Peer<CodecT>::Self {
         }
 
         ET_IPC_LOG(this,
-                   LogLevel::error,
+                   LogLevel::Error,
                    "failing {} pending request(s): {}",
                    pending_requests.size(),
                    message);
@@ -213,7 +213,7 @@ struct Peer<CodecT>::Self {
     }
 
     void dispatch_notification(const std::string& method, std::string_view params) {
-        ET_IPC_LOG(this, LogLevel::debug, "notification: {}", method);
+        ET_IPC_LOG(this, LogLevel::Debug, "notification: {}", method);
 
         if(method == "$/cancelRequest") {
             auto parsed = codec.template deserialize_value<protocol::CancelRequestParams>(params);
@@ -230,7 +230,7 @@ struct Peer<CodecT>::Self {
         if(auto it = notification_callbacks.find(method); it != notification_callbacks.end()) {
             it->second(params);
         } else {
-            ET_IPC_LOG(this, LogLevel::warn, "unhandled notification: {}", method);
+            ET_IPC_LOG(this, LogLevel::Warn, "unhandled notification: {}", method);
         }
     }
 
@@ -238,7 +238,7 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           std::string_view params,
                           task_group<>& request_group) {
-        ET_IPC_LOG(this, LogLevel::debug, "request: {} id={}", method, id);
+        ET_IPC_LOG(this, LogLevel::Debug, "request: {} id={}", method, id);
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));
@@ -286,7 +286,7 @@ struct Peer<CodecT>::Self {
     }
 
     void dispatch_incoming_message(std::string_view payload, task_group<>& request_group) {
-        ET_IPC_LOG(this, LogLevel::trace, "recv: {}", payload);
+        ET_IPC_LOG(this, LogLevel::Trace, "recv: {}", payload);
         auto msg = codec.parse_message(payload);
         std::visit(
             [&](auto& m) {
@@ -331,7 +331,7 @@ task<> Peer<CodecT>::run() {
     task_group<> request_group(self->loop);
 
     auto read_and_dispatch = [this, &request_group]() -> task<> {
-        ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
+        ET_IPC_LOG(self.get(), LogLevel::Info, "{}", "read loop started");
         while(self->transport) {
             auto payload = co_await self->transport->read_message();
             if(!payload.has_value()) {
@@ -340,7 +340,7 @@ task<> Peer<CodecT>::run() {
             }
             self->dispatch_incoming_message(*payload, request_group);
         }
-        ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
+        ET_IPC_LOG(self.get(), LogLevel::Info, "{}", "read loop ended");
     };
 
     auto read_loop = [&]() -> task<> {
@@ -365,7 +365,7 @@ Result<void> Peer<CodecT>::close() {
     }
 
     self->closed = true;
-    ET_IPC_LOG(self.get(), LogLevel::info, "{}", "peer closing");
+    ET_IPC_LOG(self.get(), LogLevel::Info, "{}", "peer closing");
 
     // Cancel in-flight incoming requests. Copy sources first because
     // cancel() may synchronously resume coroutines that erase entries.
@@ -697,7 +697,7 @@ void Peer<CodecT>::bind_request_callback(std::string_view method, Callback&& cal
             protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
             ET_IPC_LOG(peer->self.get(),
-                       LogLevel::warn,
+                       LogLevel::Warn,
                        "request '{}' params deserialization failed: {}",
                        method_name,
                        parsed_params.error().message);
@@ -727,7 +727,7 @@ void Peer<CodecT>::bind_notification_callback(std::string_view method, Callback&
         auto parsed_params = peer->self->codec.template deserialize_value<Params>(params_raw);
         if(!parsed_params) {
             ET_IPC_LOG(peer->self.get(),
-                       LogLevel::warn,
+                       LogLevel::Warn,
                        "notification params deserialization failed: {}",
                        parsed_params.error().message);
             return;

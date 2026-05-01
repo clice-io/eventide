@@ -42,7 +42,7 @@ public:
             return std::unexpected(last_error);
         }
         if(!stack.empty() || !root_written) {
-            return std::unexpected(error_kind::invalid_state);
+            return std::unexpected(error_kind::InvalidState);
         }
 
         std::string_view out{};
@@ -63,7 +63,7 @@ public:
         stack.clear();
         root_written = false;
         is_valid = true;
-        last_error = error_kind::ok;
+        last_error = error_kind::Ok;
     }
 
     bool valid() const {
@@ -306,9 +306,9 @@ private:
         return true;
     }
 
-    void mark_invalid(error_kind error = error_kind::invalid_state) {
+    void mark_invalid(error_kind error = error_kind::InvalidState) {
         is_valid = false;
-        if(last_error == error_kind::ok) {
+        if(last_error == error_kind::Ok) {
             last_error = error;
         }
     }
@@ -323,7 +323,7 @@ private:
 private:
     bool is_valid = true;
     bool root_written = false;
-    error_type last_error = error_kind::ok;
+    error_type last_error = error_kind::Ok;
     std::vector<container_frame> stack;
     simdjson::builder::string_builder builder;
 };

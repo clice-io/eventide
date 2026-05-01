@@ -29,7 +29,7 @@ TEST_CASE(missing_required_field) {
     person parsed{};
     auto status = from_json(R"({"age": 25, "addr": {"city": "NY", "zip": 10001}})", parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().kind, json::error_kind::type_mismatch);
+    EXPECT_EQ(status.error().kind, json::error_kind::TypeMismatch);
     EXPECT_EQ(status.error().message(), "missing required field 'name'");
 }
 
@@ -37,7 +37,7 @@ TEST_CASE(unknown_field_denied) {
     strict_payload parsed{};
     auto status = from_json(R"({"id": 1, "name": "ok", "extra": true})", parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().kind, json::error_kind::type_mismatch);
+    EXPECT_EQ(status.error().kind, json::error_kind::TypeMismatch);
     EXPECT_EQ(status.error().message(), "unknown field 'extra'");
 }
 
@@ -78,7 +78,7 @@ TEST_CASE(number_out_of_range) {
     std::uint8_t parsed = 0;
     auto status = from_json("300", parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error().kind, json::error_kind::number_out_of_range);
+    EXPECT_EQ(status.error().kind, json::error_kind::NumberOutOfRange);
     EXPECT_EQ(status.error().message(), "number out of range");
 }
 

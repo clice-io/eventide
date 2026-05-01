@@ -66,14 +66,14 @@ TEST_CASE(invalid_optional_tag_poison_deserializer) {
 
     auto none = deserializer.deserialize_none();
     ASSERT_FALSE(none.has_value());
-    EXPECT_EQ(none.error(), bincode::error_kind::type_mismatch);
+    EXPECT_EQ(none.error(), bincode::error_kind::TypeMismatch);
     EXPECT_FALSE(deserializer.valid());
-    EXPECT_EQ(deserializer.error(), bincode::error_kind::type_mismatch);
+    EXPECT_EQ(deserializer.error(), bincode::error_kind::TypeMismatch);
 
     bool value = false;
     auto status = deserializer.deserialize_bool(value);
     ASSERT_FALSE(status.has_value());
-    EXPECT_EQ(status.error(), bincode::error_kind::type_mismatch);
+    EXPECT_EQ(status.error(), bincode::error_kind::TypeMismatch);
 }
 
 TEST_CASE(struct_deserialize_respects_schema_skip) {

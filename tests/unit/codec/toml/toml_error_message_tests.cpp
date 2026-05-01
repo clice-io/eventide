@@ -37,7 +37,7 @@ zip = 10001
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
     EXPECT_EQ(e.message(), "missing required field 'name'");
-    EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
+    EXPECT_EQ(e.kind, toml::error_kind::TypeMismatch);
 }
 
 TEST_CASE(unknown_field_denied) {
@@ -49,7 +49,7 @@ extra = true
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
     EXPECT_EQ(e.message(), "unknown field 'extra'");
-    EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
+    EXPECT_EQ(e.kind, toml::error_kind::TypeMismatch);
 }
 
 TEST_CASE(nested_field_error_path) {
@@ -64,7 +64,7 @@ zip = "wrong"
     auto& e = result.error();
     EXPECT_EQ(e.format_path(), "addr.zip");
     EXPECT_EQ(e.message(), "type mismatch");
-    EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
+    EXPECT_EQ(e.kind, toml::error_kind::TypeMismatch);
 }
 
 TEST_CASE(sequence_element_error_path) {
@@ -78,7 +78,7 @@ scores = ["bad"]
     ASSERT_FALSE(result.has_value());
     auto& e = result.error();
     EXPECT_EQ(e.format_path(), "scores[0]");
-    EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
+    EXPECT_EQ(e.kind, toml::error_kind::TypeMismatch);
 }
 
 TEST_CASE(enum_string_error_message) {
@@ -89,7 +89,7 @@ TEST_CASE(enum_string_error_message) {
     ASSERT_FALSE(status.has_value());
     auto& e = status.error();
     EXPECT_EQ(e.message(), "unknown enum string value 'purple'");
-    EXPECT_EQ(e.kind, toml::error_kind::type_mismatch);
+    EXPECT_EQ(e.kind, toml::error_kind::TypeMismatch);
 }
 
 TEST_CASE(error_has_location) {

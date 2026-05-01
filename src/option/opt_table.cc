@@ -127,7 +127,7 @@ OptTable& OptTable::build() {
                input_random_index) {
                 continue;
             }
-            for(auto prefix: Info.prefixes()) {
+            for(auto prefix: Info.prefixes) {
                 tmp_prefixes_union.insert(prefix);
             }
         }
@@ -135,7 +135,7 @@ OptTable& OptTable::build() {
             std::vector<std::string_view>(tmp_prefixes_union.begin(), tmp_prefixes_union.end());
     }
 
-    buildPrefixChars();
+    build_prefix_chars();
     return *this;
 }
 
@@ -163,7 +163,7 @@ static bool is_input(const OptTable* o_table, std::string_view arg) {
 /// \returns Matched size. 0 means no match.
 static unsigned match_opt(const OptTable::Info* i, std::string_view str, bool ignore_case) {
     auto name = i->name();
-    for(auto prefix: i->prefixes()) {
+    for(auto prefix: i->prefixes) {
         if(str.starts_with(prefix)) {
             auto rest = str.substr(prefix.size());
             bool matched =

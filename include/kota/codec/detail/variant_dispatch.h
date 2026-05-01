@@ -60,7 +60,7 @@ constexpr auto match_and_deserialize_alt(std::string_view tag_value,
                      value = std::move(alt);
                  }
              } else {
-                 status = std::unexpected(E::invalid_state);
+                 status = std::unexpected(E::InvalidState);
              }
          }()),
          ...);
@@ -416,14 +416,14 @@ struct content_source_adapter {
         if(!node)
             return meta::type_kind::null;
         switch(node->kind()) {
-            case content::ValueKind::null_value: return meta::type_kind::null;
-            case content::ValueKind::boolean: return meta::type_kind::boolean;
-            case content::ValueKind::signed_int: return meta::type_kind::int64;
-            case content::ValueKind::unsigned_int: return meta::type_kind::uint64;
-            case content::ValueKind::floating: return meta::type_kind::float64;
-            case content::ValueKind::string: return meta::type_kind::string;
-            case content::ValueKind::array: return meta::type_kind::array;
-            case content::ValueKind::object: return meta::type_kind::structure;
+            case content::ValueKind::NullValue: return meta::type_kind::null;
+            case content::ValueKind::Boolean: return meta::type_kind::boolean;
+            case content::ValueKind::SignedInt: return meta::type_kind::int64;
+            case content::ValueKind::UnsignedInt: return meta::type_kind::uint64;
+            case content::ValueKind::Floating: return meta::type_kind::float64;
+            case content::ValueKind::String: return meta::type_kind::string;
+            case content::ValueKind::Array: return meta::type_kind::array;
+            case content::ValueKind::Object: return meta::type_kind::structure;
             default: return meta::type_kind::unknown;
         }
     }
@@ -751,7 +751,7 @@ std::optional<std::size_t> select_variant_index(meta::type_kind source_kind) {
 template <typename E, typename D, typename... Ts>
 auto deserialize_variant_at(D& d, std::variant<Ts...>& value, std::size_t best)
     -> std::expected<void, E> {
-    std::expected<void, E> result = std::unexpected(E::type_mismatch);
+    std::expected<void, E> result = std::unexpected(E::TypeMismatch);
     std::size_t idx = 0;
     auto try_alt = [&](auto type_tag) {
         if(idx++ != best)

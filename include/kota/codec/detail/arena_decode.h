@@ -84,7 +84,7 @@ auto decode_unboxed(const B& d, typename B::TableView view, T& out)
                         !std::ranges::input_range<U>) {
         return decode_table<Config>(d, view, out);
     } else {
-        return std::unexpected(B::error_type::unsupported_type);
+        return std::unexpected(B::error_type::UnsupportedType);
     }
 }
 
@@ -112,7 +112,7 @@ auto decode_root(const B& d, T& out) -> std::expected<void, typename B::error_ty
                 if constexpr(std::default_initializable<value_t>) {
                     out.emplace();
                 } else {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 }
             }
 
@@ -132,7 +132,7 @@ auto decode_root(const B& d, T& out) -> std::expected<void, typename B::error_ty
                     if constexpr(std::default_initializable<value_t>) {
                         out.emplace();
                     } else {
-                        return std::unexpected(E::unsupported_type);
+                        return std::unexpected(E::UnsupportedType);
                     }
                 }
                 auto status = decode_value_at<Config, B, value_t, std::tuple<>>(d,
@@ -192,7 +192,7 @@ auto decode_table(const B& d, typename B::TableView view, T& out)
     static_assert(meta::reflectable_class<U>, "decode_table requires reflectable class");
 
     if(!view.valid()) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
 
     using schema = meta::virtual_schema<U, Config>;
@@ -222,7 +222,7 @@ auto decode_tuple_like(const B& d, typename B::TableView view, T& out)
     -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
     if(!view.valid()) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
 
     using U = std::remove_cvref_t<T>;
@@ -263,17 +263,17 @@ auto decode_variant(const B& d, typename B::TableView view, T& out)
     static_assert(is_specialization_of<std::variant, U>, "decode_variant requires variant");
 
     if(!view.valid()) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
 
     const auto tag_sid = B::variant_tag_slot_id();
     if(!view.has(tag_sid)) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
 
     const auto index = static_cast<std::size_t>(view.template get_scalar<std::uint32_t>(tag_sid));
     if(index >= std::variant_size_v<U>) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
 
     std::expected<void, E> status{};
@@ -292,7 +292,7 @@ auto decode_variant(const B& d, typename B::TableView view, T& out)
              }
              using alt_t = std::variant_alternative_t<Is, U>;
              if constexpr(!std::default_initializable<alt_t>) {
-                 status = std::unexpected(E::unsupported_type);
+                 status = std::unexpected(E::UnsupportedType);
              } else {
                  alt_t alt{};
                  auto r = decode_value_at<Config, B, alt_t, std::tuple<>>(d,
@@ -311,7 +311,7 @@ auto decode_variant(const B& d, typename B::TableView view, T& out)
     }(std::make_index_sequence<std::variant_size_v<U>>{});
 
     if(!matched) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
     if(!status) {
         return std::unexpected(status.error());
@@ -338,7 +338,7 @@ auto decode_value_at(const B& d,
     } else if constexpr(kota::tuple_count_of_v<Attrs, meta::is_behavior_provider> > 0) {
         if(!view.has(sid)) {
             if(required) {
-                return std::unexpected(E::invalid_state);
+                return std::unexpected(E::InvalidState);
             }
             return {};
         }
@@ -374,7 +374,7 @@ auto decode_value_at(const B& d,
         using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {
-                return std::unexpected(E::invalid_state);
+                return std::unexpected(E::InvalidState);
             }
             return {};
         }
@@ -400,7 +400,7 @@ auto decode_value_at(const B& d,
                 if constexpr(std::default_initializable<value_t>) {
                     out.emplace();
                 } else {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 }
             }
 
@@ -461,7 +461,7 @@ auto decode_value_at(const B& d,
         } else {
             if(!view.has(sid)) {
                 if(required) {
-                    return std::unexpected(E::invalid_state);
+                    return std::unexpected(E::InvalidState);
                 }
                 return {};
             }
@@ -501,7 +501,7 @@ auto decode_value_at(const B& d,
                     out = U(text.data(), text.size());
                     return {};
                 } else {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 }
             } else if constexpr(codec::bytes_like<clean_u_t>) {
                 if constexpr(std::same_as<U, std::vector<std::byte>>) {
@@ -512,7 +512,7 @@ auto decode_value_at(const B& d,
                     }
                     return {};
                 } else {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 }
             } else if constexpr(is_specialization_of<std::variant, U>) {
                 KOTA_EXPECTED_TRY_V(auto nested, d.get_table(view, sid));
@@ -536,7 +536,7 @@ auto decode_value_at(const B& d,
                 KOTA_EXPECTED_TRY_V(auto nested, d.get_table(view, sid));
                 return decode_table<Config>(d, nested, out);
             } else {
-                return std::unexpected(E::unsupported_type);
+                return std::unexpected(E::UnsupportedType);
             }
         }
     }
@@ -558,7 +558,7 @@ auto decode_sequence(const B& d,
         using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {
-                return std::unexpected(E::invalid_state);
+                return std::unexpected(E::InvalidState);
             }
             return {};
         }
@@ -572,14 +572,14 @@ auto decode_sequence(const B& d,
                 out,
                 static_cast<element_t>(traits::deserialize(d, std::move(w))));
             if(!ok) {
-                return std::unexpected(E::unsupported_type);
+                return std::unexpected(E::UnsupportedType);
             }
         }
         return {};
     } else {
         if(!view.has(sid)) {
             if(required) {
-                return std::unexpected(E::invalid_state);
+                return std::unexpected(E::InvalidState);
             }
             return {};
         }
@@ -600,7 +600,7 @@ auto decode_sequence(const B& d,
             if constexpr(index_assignable_fixed_size) {
                 constexpr auto expected_count = std::tuple_size_v<U>;
                 if(written_count >= expected_count) {
-                    return std::unexpected(E::invalid_state);
+                    return std::unexpected(E::InvalidState);
                 }
                 out[written_count] =
                     static_cast<element_t>(std::forward<decltype(element)>(element));
@@ -611,7 +611,7 @@ auto decode_sequence(const B& d,
                     out,
                     static_cast<element_t>(std::forward<decltype(element)>(element)));
                 if(!ok) {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 }
                 return {};
             }
@@ -621,7 +621,7 @@ auto decode_sequence(const B& d,
             if constexpr(index_assignable_fixed_size) {
                 constexpr auto expected_count = std::tuple_size_v<U>;
                 if(written_count != expected_count) {
-                    return std::unexpected(E::invalid_state);
+                    return std::unexpected(E::InvalidState);
                 }
             }
             return {};
@@ -682,7 +682,7 @@ auto decode_sequence(const B& d,
                 } else if constexpr(std::constructible_from<element_t, const char*, std::size_t>) {
                     KOTA_EXPECTED_TRY(store_element(element_t(text.data(), text.size())));
                 } else {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 }
             }
             return finalize_sequence();
@@ -691,7 +691,7 @@ auto decode_sequence(const B& d,
             for(std::size_t i = 0; i < vec.size(); ++i) {
                 using dec_t = std::remove_cvref_t<element_t>;
                 if constexpr(!std::default_initializable<dec_t>) {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 } else {
                     dec_t element{};
                     auto nested = vec[i];
@@ -712,7 +712,7 @@ auto decode_sequence(const B& d,
             for(std::size_t i = 0; i < vec.size(); ++i) {
                 using dec_t = std::remove_cvref_t<element_t>;
                 if constexpr(!std::default_initializable<dec_t>) {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 } else {
                     dec_t element{};
                     auto nested = vec[i];
@@ -726,7 +726,7 @@ auto decode_sequence(const B& d,
             for(std::size_t i = 0; i < vec.size(); ++i) {
                 using dec_t = std::remove_cvref_t<element_t>;
                 if constexpr(!std::default_initializable<dec_t>) {
-                    return std::unexpected(E::unsupported_type);
+                    return std::unexpected(E::UnsupportedType);
                 } else {
                     dec_t element{};
                     auto nested = vec[i];
@@ -767,7 +767,7 @@ auto decode_map(const B& d,
 
     if(!view.has(sid)) {
         if(required) {
-            return std::unexpected(E::invalid_state);
+            return std::unexpected(E::InvalidState);
         }
         return {};
     }
@@ -783,7 +783,7 @@ auto decode_map(const B& d,
     for(std::size_t i = 0; i < entries.size(); ++i) {
         auto entry = entries[i];
         if(!entry.valid()) {
-            return std::unexpected(E::invalid_state);
+            return std::unexpected(E::InvalidState);
         }
 
         key_t key{};
@@ -809,7 +809,7 @@ auto decode_map(const B& d,
 
         auto ok = kota::detail::insert_map_entry(out, std::move(key), std::move(mapped));
         if(!ok) {
-            return std::unexpected(E::unsupported_type);
+            return std::unexpected(E::UnsupportedType);
         }
     }
 

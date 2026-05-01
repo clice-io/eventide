@@ -151,6 +151,9 @@ struct is_rename_attr<attrs::rename<N>> {
 };
 
 template <typename T>
+constexpr bool is_rename_attr_v = is_rename_attr<T>::value;
+
+template <typename T>
 struct is_alias_attr {
     constexpr static bool value = false;
 };
@@ -159,6 +162,9 @@ template <fixed_string... Ns>
 struct is_alias_attr<attrs::alias<Ns...>> {
     constexpr static bool value = true;
 };
+
+template <typename T>
+constexpr bool is_alias_attr_v = is_alias_attr<T>::value;
 
 template <typename T>
 struct is_literal_attr {
@@ -170,6 +176,9 @@ struct is_literal_attr<attrs::literal<N>> {
     constexpr static bool value = true;
 };
 
+template <typename T>
+constexpr bool is_literal_attr_v = is_literal_attr<T>::value;
+
 /// Unified predicate for all tagged attrs (tagged<...> and tagged<...>::names<...>).
 template <typename T>
 struct is_tagged_attr {
@@ -178,6 +187,9 @@ struct is_tagged_attr {
         { T::has_custom_names } -> std::same_as<const bool&>;
     };
 };
+
+template <typename T>
+constexpr bool is_tagged_attr_v = is_tagged_attr<T>::value;
 
 /// Strategy dispatch based on field_names count.
 enum class tagged_strategy { external = 0, internal = 1, adjacent = 2 };
@@ -492,6 +504,9 @@ struct is_behavior_provider {
                                   is_specialization_of<behavior::as, T> ||
                                   is_specialization_of<behavior::enum_string, T>;
 };
+
+template <typename T>
+constexpr bool is_behavior_provider_v = is_behavior_provider<T>::value;
 
 namespace detail {
 

@@ -269,19 +269,19 @@ TEST_CASE(storage_keeps_dummy_alignment_for_id_map) {
     const auto& built = detail::build_storage<ParseAllOpt>();
 
     EXPECT_TRUE(built.opt_size() > 1);
-    EXPECT_TRUE(built.id_map().size() == built.option_infos().size() + 1);
-    EXPECT_TRUE(built.category_map().size() == built.id_map().size());
-    EXPECT_TRUE(built.id_map()[0] == nullptr);
-    EXPECT_TRUE(built.category_map()[0] == nullptr);
+    EXPECT_TRUE(built.get_id_map().size() == built.option_infos().size() + 1);
+    EXPECT_TRUE(built.get_category_map().size() == built.get_id_map().size());
+    EXPECT_TRUE(built.get_id_map()[0] == nullptr);
+    EXPECT_TRUE(built.get_category_map()[0] == nullptr);
     EXPECT_TRUE(built.option_infos().size() == built.opt_size());
     for(size_t i = 0; i < built.option_infos().size(); ++i) {
         EXPECT_TRUE(built.option_infos()[i].id == i + 1);
         if(built.option_infos()[i].kind == option::Option::UnknownClass) {
-            EXPECT_TRUE(built.id_map()[i + 1] == nullptr);
-            EXPECT_TRUE(built.category_map()[i + 1] == nullptr);
+            EXPECT_TRUE(built.get_id_map()[i + 1] == nullptr);
+            EXPECT_TRUE(built.get_category_map()[i + 1] == nullptr);
         } else {
-            EXPECT_TRUE(built.id_map()[i + 1] != nullptr);
-            EXPECT_TRUE(built.category_map()[i + 1] != nullptr);
+            EXPECT_TRUE(built.get_id_map()[i + 1] != nullptr);
+            EXPECT_TRUE(built.get_category_map()[i + 1] != nullptr);
         }
     }
 }
@@ -403,7 +403,7 @@ TEST_CASE(parse_input_and_pack_can_coexist) {
 
     EXPECT_TRUE(built.is_trailing_argument(args[1]));
     EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
-    EXPECT_TRUE(built.trailing_category() == &trailingCategory);
+    EXPECT_TRUE(built.get_trailing_category() == &trailingCategory);
 }
 
 TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
@@ -424,7 +424,7 @@ TEST_CASE(parse_pack_then_input_rebinds_input_id_map) {
     EXPECT_TRUE(built.is_trailing_argument(args[1]));
     EXPECT_TRUE(built.field_ptr_of(args[1].option_id, opt) == static_cast<void*>(&opt.input));
     EXPECT_TRUE(built.trailing_ptr_of(opt) == static_cast<void*>(&opt.pack));
-    EXPECT_TRUE(built.trailing_category() == &trailingCategory);
+    EXPECT_TRUE(built.get_trailing_category() == &trailingCategory);
 }
 
 TEST_CASE(parse_kv_supports_joined_and_separate_styles) {

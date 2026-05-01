@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <unordered_map>
 #include <utility>
@@ -83,7 +85,7 @@ struct fs_event_base {
 
 namespace {
 
-constexpr uint32_t inotify_mask = IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY |
+constexpr std::uint32_t inotify_mask = IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY |
                                   IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW |
                                   IN_ONLYDIR | IN_EXCL_UNLINK;
 
@@ -155,7 +157,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         }
     }
 
-    std::string build_path(int wd, const char* name, uint32_t len) {
+    std::string build_path(int wd, const char* name, std::uint32_t len) {
         auto it = wd_to_path.find(wd);
         if(it == wd_to_path.end())
             return {};
@@ -186,20 +188,20 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
     void process_inotify_events() {
         struct raw_event {
             std::string path;
-            uint32_t mask;
-            uint32_t cookie;
+            std::uint32_t mask;
+            std::uint32_t cookie;
             bool is_dir;
             int wd;
             bool consumed = false;
         };
 
         std::vector<raw_event> events;
-        std::unordered_map<uint32_t, size_t> move_from_cookies;
+        std::unordered_map<std::uint32_t, std::size_t> move_from_cookies;
 
         // Drain all available inotify events before processing so that
         // cookie-paired IN_MOVED_FROM/IN_MOVED_TO are matched even if
         // the kernel delivers them across separate read() buffers.
-        constexpr size_t inotify_read_buf_size = 8192;
+        constexpr std::size_t inotify_read_buf_size = 8192;
         alignas(struct inotify_event) char buf[inotify_read_buf_size];
         for(;;) {
             ssize_t n = ::read(inotify_fd, buf, sizeof(buf));
@@ -233,7 +235,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             }
         }
 
-        for(size_t i = 0; i < events.size(); i++) {
+        for(std::size_t i = 0; i < events.size(); i++) {
             auto& e = events[i];
             if(e.consumed)
                 continue;
@@ -378,7 +380,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
 
     static void fsevents_callback(ConstFSEventStreamRef,
                                   void* info,
-                                  size_t num_events,
+                                  std::size_t num_events,
                                   void* event_paths,
                                   const FSEventStreamEventFlags flags[],
                                   const FSEventStreamEventId[]) {
@@ -393,7 +395,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         std::vector<change> changes;
         changes.reserve(num_events);
 
-        for(size_t i = 0; i < num_events; ++i) {
+        for(std::size_t i = 0; i < num_events; ++i) {
             if(flags[i] & kFSEventStreamEventFlagMustScanSubDirs) {
                 changes.push_back(change{{}, effect::overflow, {}});
                 continue;
@@ -421,7 +423,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             }
 
             if(!shared->recursive) {
-                size_t prefix_len = shared->root_path.size();
+                std::size_t prefix_len = shared->root_path.size();
                 if(shared->root_path.back() != '/')
                     prefix_len += 1;
                 if(path.size() <= prefix_len)
@@ -594,7 +596,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         worker_thread.join();
     }
 
-    static std::string wide_to_utf8(const wchar_t* str, size_t len) {
+    static std::string wide_to_utf8(const wchar_t* str, std::size_t len) {
         if(len == 0)
             return {};
         int size = WideCharToMultiByte(CP_UTF8,
@@ -692,7 +694,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         BYTE* ptr = read_buffer.data();
         for(;;) {
             auto* info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(ptr);
-            size_t name_chars = info->FileNameLength / sizeof(wchar_t);
+            std::size_t name_chars = info->FileNameLength / sizeof(wchar_t);
             std::string name = wide_to_utf8(info->FileName, name_chars);
             std::replace(name.begin(), name.end(), '\\', '/');
             std::string full = root_path + "/" + name;

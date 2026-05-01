@@ -280,11 +280,11 @@ public:
 
 private:
     [[nodiscard]] constexpr const value_type* storage_pointer() const noexcept {
-        return std::addressof(m_storage.value);
+        return std::addressof(storage.value);
     }
 
     [[nodiscard]] constexpr value_type* storage_pointer() noexcept {
-        return std::addressof(m_storage.value);
+        return std::addressof(storage.value);
     }
 
     [[nodiscard]] constexpr const value_type* get_pointer() const noexcept {
@@ -295,7 +295,7 @@ private:
         return std::launder(storage_pointer());
     }
 
-    uninitialized<value_type> m_storage;
+    uninitialized<value_type> storage;
 };
 
 template <typename T>
@@ -310,27 +310,27 @@ public:
     heap_temporary& operator=(heap_temporary&&) noexcept = delete;
 
     template <typename... Args>
-    constexpr explicit heap_temporary(Args&&... args) : m_data(allocate_storage()) {
+    constexpr explicit heap_temporary(Args&&... args) : data(allocate_storage()) {
         KOTA_TRY {
-            construct(m_data, std::forward<Args>(args)...);
+            construct(data, std::forward<Args>(args)...);
         }
         KOTA_CATCH_ALL() {
-            deallocate(m_data, 1);
+            deallocate(data, 1);
             KOTA_RETHROW();
         }
     }
 
     constexpr ~heap_temporary() {
-        destroy(m_data);
-        deallocate(m_data, 1);
+        destroy(data);
+        deallocate(data, 1);
     }
 
     [[nodiscard]] constexpr const value_type& get() const noexcept {
-        return *m_data;
+        return *data;
     }
 
     [[nodiscard]] constexpr value_type&& release() noexcept {
-        return std::move(*m_data);
+        return std::move(*data);
     }
 
 private:
@@ -338,7 +338,7 @@ private:
         return allocate<value_type>(1);
     }
 
-    value_type* m_data;
+    value_type* data;
 };
 
 template <typename T, typename Alloc = std::allocator<T>>
@@ -350,8 +350,8 @@ public:
     using size_type = std::size_t;
 
     constexpr explicit allocation_guard(size_type capacity) :
-        m_data(allocate<value_type, allocator_type>(capacity)), m_capacity(capacity),
-        m_constructed(m_data) {}
+        ptr(allocate<value_type, allocator_type>(capacity)), capacity(capacity),
+        constructed(ptr) {}
 
     allocation_guard(const allocation_guard&) = delete;
     allocation_guard& operator=(const allocation_guard&) = delete;
@@ -359,32 +359,32 @@ public:
     allocation_guard& operator=(allocation_guard&&) noexcept = delete;
 
     constexpr ~allocation_guard() {
-        if(m_data == nullptr) {
+        if(ptr == nullptr) {
             return;
         }
 
-        destroy_range(std::ranges::subrange(m_data, m_constructed));
-        deallocate<value_type, allocator_type>(m_data, m_capacity);
+        destroy_range(std::ranges::subrange(ptr, constructed));
+        deallocate<value_type, allocator_type>(ptr, capacity);
     }
 
     constexpr void mark(pointer p) noexcept {
-        m_constructed = p;
+        constructed = p;
     }
 
     [[nodiscard]] constexpr pointer data() const noexcept {
-        return m_data;
+        return ptr;
     }
 
     [[nodiscard]] constexpr pointer release() noexcept {
-        pointer result = m_data;
-        m_data = nullptr;
+        pointer result = ptr;
+        ptr = nullptr;
         return result;
     }
 
 private:
-    pointer m_data;
-    size_type m_capacity;
-    pointer m_constructed;
+    pointer ptr;
+    size_type capacity;
+    pointer constructed;
 };
 
 template <std::ranges::forward_range Range>

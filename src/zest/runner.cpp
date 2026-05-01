@@ -248,14 +248,14 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
 
     auto parsed = kota::deco::cli::parse<ZestCliOptions>(args, renderer);
     if(!parsed.has_value()) {
-        std::cerr << "Error parsing options: " << parsed.error().message << "\n";
+        std::println(stderr, "Error parsing options: {}", parsed.error().message);
         command.usage(std::cerr);
         std::exit(1);
     }
 
     auto options = to_runner_options(std::move(parsed->options));
     if(!options.has_value()) {
-        std::cerr << "Error parsing options: " << options.error() << "\n";
+        std::println(stderr, "Error parsing options: {}", options.error());
         command.usage(std::cerr);
         std::exit(1);
     }

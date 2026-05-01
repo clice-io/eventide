@@ -53,7 +53,7 @@ void Option::print(std::ostream& o, bool add_new_line) const {
     if(!this->info->has_no_prefix()) {
         o << " Prefixes:[";
         for(size_t i = 0, n = this->info->num_prefixes(); i != n; ++i)
-            o << '"' << this->info->prefixes()[i] << (i == n - 1 ? "\"" : "\", ");
+            o << '"' << this->info->prefixes[i] << (i == n - 1 ? "\"" : "\", ");
         o << ']';
     }
 

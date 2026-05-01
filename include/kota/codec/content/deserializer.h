@@ -89,11 +89,11 @@ public:
             return std::unexpected(ref.error());
         }
 
-        const bool isNone = ref->is_null();
-        if(isNone && !has_current_value) {
+        const bool is_none = ref->is_null();
+        if(is_none && !has_current_value) {
             root_consumed = true;
         }
-        return isNone;
+        return is_none;
     }
 
     template <typename... Ts>
@@ -111,7 +111,7 @@ public:
             codec::select_variant_index<codec::content_source_adapter, config_type, Ts...>(node);
 
         if(!best) {
-            return mark_invalid(error_type::type_mismatch);
+            return mark_invalid(error_type::TypeMismatch);
         }
 
         return codec::deserialize_variant_at<error_type>(*this, value, *best);
@@ -121,7 +121,7 @@ public:
         return read_scalar(value, [](content::Cursor ref) -> result_t<bool> {
             auto parsed = ref.get_bool();
             if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
+                return std::unexpected(error_type::TypeMismatch);
             }
             return *parsed;
         });
@@ -133,7 +133,7 @@ public:
         auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<std::int64_t> {
             auto parsed = ref.get_int();
             if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
+                return std::unexpected(error_type::TypeMismatch);
             }
             return *parsed;
         });
@@ -141,7 +141,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::NumberOutOfRange);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -156,7 +156,7 @@ public:
         auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<std::uint64_t> {
             auto parsed = ref.get_uint();
             if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
+                return std::unexpected(error_type::TypeMismatch);
             }
             return *parsed;
         });
@@ -164,7 +164,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::NumberOutOfRange);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -179,7 +179,7 @@ public:
         auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<double> {
             auto parsed = ref.get_double();
             if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
+                return std::unexpected(error_type::TypeMismatch);
             }
             return *parsed;
         });
@@ -187,7 +187,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::NumberOutOfRange);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -201,7 +201,7 @@ public:
         auto status = read_scalar(text, [](content::Cursor ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
+                return std::unexpected(error_type::TypeMismatch);
             }
             return *parsed;
         });
@@ -209,7 +209,7 @@ public:
             return std::unexpected(status.error());
         }
 
-        auto narrowed = codec::detail::narrow_char(text, error_type::type_mismatch);
+        auto narrowed = codec::detail::narrow_char(text, error_type::TypeMismatch);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -223,7 +223,7 @@ public:
         auto status = read_scalar(text, [](content::Cursor ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
-                return std::unexpected(error_type::type_mismatch);
+                return std::unexpected(error_type::TypeMismatch);
             }
             return *parsed;
         });
@@ -246,7 +246,7 @@ public:
             std::uint64_t byte_val = 0;
             KOTA_EXPECTED_TRY(deserialize_uint(byte_val));
             if(byte_val > 255U) {
-                return mark_invalid(error_type::number_out_of_range);
+                return mark_invalid(error_type::NumberOutOfRange);
             }
             value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
         }
@@ -263,14 +263,14 @@ public:
             return mark_invalid();
         }
         switch(*k) {
-            case ValueKind::null_value: return meta::type_kind::null;
-            case ValueKind::boolean: return meta::type_kind::boolean;
-            case ValueKind::signed_int: return meta::type_kind::int64;
-            case ValueKind::unsigned_int: return meta::type_kind::uint64;
-            case ValueKind::floating: return meta::type_kind::float64;
-            case ValueKind::string: return meta::type_kind::string;
-            case ValueKind::array: return meta::type_kind::array;
-            case ValueKind::object: return meta::type_kind::structure;
+            case ValueKind::NullValue: return meta::type_kind::null;
+            case ValueKind::Boolean: return meta::type_kind::boolean;
+            case ValueKind::SignedInt: return meta::type_kind::int64;
+            case ValueKind::UnsignedInt: return meta::type_kind::uint64;
+            case ValueKind::Floating: return meta::type_kind::float64;
+            case ValueKind::String: return meta::type_kind::string;
+            case ValueKind::Array: return meta::type_kind::array;
+            case ValueKind::Object: return meta::type_kind::structure;
             default: return meta::type_kind::unknown;
         }
     }
@@ -282,13 +282,13 @@ public:
         }
         const content::Object* obj = ref->get_object();
         if(obj == nullptr) {
-            return mark_invalid(error_type::type_mismatch);
+            return mark_invalid(error_type::TypeMismatch);
         }
         for(const auto& entry: *obj) {
             if(entry.key == field_name) {
                 auto s = entry.value.get_string();
                 if(!s) {
-                    return std::unexpected(error_type::type_mismatch);
+                    return std::unexpected(error_type::TypeMismatch);
                 }
                 return std::string(*s);
             }
@@ -300,7 +300,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
         const content::Object* obj = ref.get_object();
         if(obj == nullptr) {
-            return mark_invalid(error_type::type_mismatch);
+            return mark_invalid(error_type::TypeMismatch);
         }
         deser_stack.push_back(deser_frame{.object = obj, .it = obj->begin()});
         return {};
@@ -343,7 +343,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
         const content::Array* arr = ref.get_array();
         if(arr == nullptr) {
-            return mark_invalid(error_type::type_mismatch);
+            return mark_invalid(error_type::TypeMismatch);
         }
         array_stack.push_back({arr, 0});
         return {};
@@ -433,9 +433,9 @@ private:
         return access_value_ref(true);
     }
 
-    std::unexpected<error_type> mark_invalid(error_type error = error_type::invalid_state) {
+    std::unexpected<error_type> mark_invalid(error_type error = error_type::InvalidState) {
         is_valid = false;
-        if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
+        if(last_error == error_type::InvalidState || error != error_type::InvalidState) {
             last_error = error;
         }
         return std::unexpected(last_error);
@@ -454,7 +454,7 @@ private:
 
     bool is_valid = true;
     bool root_consumed = false;
-    error_type last_error = error_type::invalid_state;
+    error_type last_error = error_type::InvalidState;
     std::optional<content::Value> owned_root_value{};
     content::Cursor root_value{};
     bool has_current_value = false;
@@ -497,7 +497,7 @@ struct deserialize_traits<content::Deserializer<Config>, content::Array> {
         }
         content::Array* arr = dom->get_array();
         if(arr == nullptr) {
-            return std::unexpected(content::error::type_mismatch);
+            return std::unexpected(content::error::TypeMismatch);
         }
         value = std::move(*arr);
         return {};
@@ -516,7 +516,7 @@ struct deserialize_traits<content::Deserializer<Config>, content::Object> {
         }
         content::Object* obj = dom->get_object();
         if(obj == nullptr) {
-            return std::unexpected(content::error::type_mismatch);
+            return std::unexpected(content::error::TypeMismatch);
         }
         value = std::move(*obj);
         return {};
@@ -586,7 +586,7 @@ struct deserialize_traits<D, content::Value> {
             KOTA_EXPECTED_TRY(d.end_object());
             value = content::Value(std::move(obj));
         } else {
-            return std::unexpected(error_type::type_mismatch);
+            return std::unexpected(error_type::TypeMismatch);
         }
         return {};
     }
@@ -602,7 +602,7 @@ struct deserialize_traits<D, content::Array> {
         KOTA_EXPECTED_TRY((deserialize_traits<D, content::Value>::deserialize(d, v)));
         auto* arr = v.get_array();
         if(arr == nullptr) {
-            return std::unexpected(error_type::type_mismatch);
+            return std::unexpected(error_type::TypeMismatch);
         }
         value = std::move(*arr);
         return {};
@@ -619,7 +619,7 @@ struct deserialize_traits<D, content::Object> {
         KOTA_EXPECTED_TRY((deserialize_traits<D, content::Value>::deserialize(d, v)));
         auto* obj = v.get_object();
         if(obj == nullptr) {
-            return std::unexpected(error_type::type_mismatch);
+            return std::unexpected(error_type::TypeMismatch);
         }
         value = std::move(*obj);
         return {};

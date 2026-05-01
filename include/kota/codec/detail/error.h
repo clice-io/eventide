@@ -26,11 +26,11 @@ template <typename Kind>
 struct serde_error {
     Kind kind;
 
-    constexpr static Kind type_mismatch = Kind::type_mismatch;
-    constexpr static Kind number_out_of_range = Kind::number_out_of_range;
-    constexpr static Kind invalid_state = Kind::invalid_state;
+    constexpr static Kind TypeMismatch = Kind::TypeMismatch;
+    constexpr static Kind NumberOutOfRange = Kind::NumberOutOfRange;
+    constexpr static Kind InvalidState = Kind::InvalidState;
 
-    serde_error() : kind(Kind::ok) {}
+    serde_error() : kind(Kind::Ok) {}
 
     serde_error(Kind k) : kind(k) {}
 
@@ -55,29 +55,29 @@ struct serde_error {
     }
 
     static serde_error missing_field(std::string_view field_name) {
-        return {Kind::type_mismatch, std::format("missing required field '{}'", field_name)};
+        return {Kind::TypeMismatch, std::format("missing required field '{}'", field_name)};
     }
 
     static serde_error unknown_field(std::string_view field_name) {
-        return {Kind::type_mismatch, std::format("unknown field '{}'", field_name)};
+        return {Kind::TypeMismatch, std::format("unknown field '{}'", field_name)};
     }
 
     static serde_error duplicate_field(std::string_view field_name) {
-        return {Kind::type_mismatch, std::format("duplicate field '{}'", field_name)};
+        return {Kind::TypeMismatch, std::format("duplicate field '{}'", field_name)};
     }
 
     static serde_error invalid_type(std::string_view expected, std::string_view got) {
-        return {Kind::type_mismatch,
+        return {Kind::TypeMismatch,
                 std::format("invalid type: expected {}, got {}", expected, got)};
     }
 
     static serde_error invalid_length(std::size_t expected, std::size_t got) {
-        return {Kind::type_mismatch,
+        return {Kind::TypeMismatch,
                 std::format("invalid length: expected {}, got {}", expected, got)};
     }
 
     static serde_error custom(std::string_view msg) {
-        return {Kind::type_mismatch, std::string(msg)};
+        return {Kind::TypeMismatch, std::string(msg)};
     }
 
     static serde_error custom(Kind k, std::string_view msg) {

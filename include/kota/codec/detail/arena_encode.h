@@ -199,7 +199,7 @@ auto encode_variant(B& b, const T& value)
     }(std::make_index_sequence<std::variant_size_v<U>>{});
 
     if(!matched) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     }
     if(!status) {
         return std::unexpected(status.error());

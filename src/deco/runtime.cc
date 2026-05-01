@@ -35,21 +35,21 @@ auto SubCommander::display_name_of(const decl::SubCommand& subcommand, std::stri
 }
 
 SubCommander::SubCommander(std::string_view command_overview, std::string_view overview) :
-    commandOverview(command_overview), overview(overview) {}
+    command_overview(command_overview), overview(overview) {}
 
 auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler_fn_t handler)
     -> SubCommander& {
     std::string command = command_of(subcommand);
     if(command.empty()) {
-        errorHandler(SubCommandError{SubCommandError::Type::Internal,
-                                     "subcommand name/command must not be empty"});
+        error_handler(SubCommandError{SubCommandError::Type::Internal,
+                                      "subcommand name/command must not be empty"});
         return *this;
     }
 
     std::string name = display_name_of(subcommand, command);
     std::string description(subcommand.description);
 
-    if(auto it = commandToHandler.find(command); it != commandToHandler.end()) {
+    if(auto it = command_to_handler.find(command); it != command_to_handler.end()) {
         auto& target = handlers[it->second];
         target.name = std::move(name);
         target.description = std::move(description);
@@ -58,7 +58,7 @@ auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler
         return *this;
     }
 
-    commandToHandler[command] = handlers.size();
+    command_to_handler[command] = handlers.size();
     handlers.push_back({
         .name = std::move(name),
         .description = std::move(description),
@@ -69,17 +69,17 @@ auto SubCommander::add(const decl::SubCommand& subcommand, SubCommander::handler
 }
 
 auto SubCommander::add(SubCommander::handler_fn_t default_handler) -> SubCommander& {
-    defaultHandler = std::move(default_handler);
+    this->default_handler = std::move(default_handler);
     return *this;
 }
 
 auto SubCommander::when_err(SubCommander::error_fn_t error_handler) -> SubCommander& {
-    errorHandler = std::move(error_handler);
+    this->error_handler = std::move(error_handler);
     return *this;
 }
 
 auto SubCommander::when_err(std::ostream& os) -> SubCommander& {
-    errorHandler = [&os](const SubCommandError& err) {
+    error_handler = [&os](const SubCommandError& err) {
         os << err.message << "\n";
     };
     return *this;
@@ -93,8 +93,8 @@ void SubCommander::usage(std::ostream& os) const {
     }
     text::SubCommandDocument document{
         .overview = overview,
-        .usage_line = commandOverview,
-        .has_usage_line = defaultHandler.has_value(),
+        .usage_line = command_overview,
+        .has_usage_line = default_handler.has_value(),
         .entries = {},
     };
     document.entries.reserve(handlers.size());
@@ -125,7 +125,7 @@ auto SubCommander::match(std::span<std::string> argv) const
     };
 
     if(!argv.empty()) {
-        if(auto it = commandToHandler.find(argv.front()); it != commandToHandler.end()) {
+        if(auto it = command_to_handler.find(argv.front()); it != command_to_handler.end()) {
             const auto& handler = handlers[it->second];
             return match_t{
                 .kind = match_t::Kind::Command,
@@ -138,7 +138,7 @@ auto SubCommander::match(std::span<std::string> argv) const
         }
     }
 
-    if(defaultHandler.has_value()) {
+    if(default_handler.has_value()) {
         return match_t{
             .kind = match_t::Kind::Default,
             .original_argv = argv,
@@ -163,28 +163,28 @@ auto SubCommander::match(std::span<std::string> argv) const
 void SubCommander::parse(std::span<std::string> argv) {
     auto matched = match(argv);
     if(!matched.has_value()) {
-        errorHandler(std::move(matched.error()));
+        error_handler(std::move(matched.error()));
         return;
     }
 
     if(matched->is_command()) {
-        if(auto it = commandToHandler.find(matched->command); it != commandToHandler.end()) {
+        if(auto it = command_to_handler.find(matched->command); it != command_to_handler.end()) {
             handlers[it->second].handler(std::move(*matched));
             return;
         }
-        errorHandler(SubCommandError{
+        error_handler(SubCommandError{
             SubCommandError::Type::Internal,
             std::format("missing handler for subcommand '{}'", matched->command),
         });
         return;
     }
 
-    if(defaultHandler.has_value()) {
-        (*defaultHandler)(std::move(*matched));
+    if(default_handler.has_value()) {
+        (*default_handler)(std::move(*matched));
         return;
     }
 
-    errorHandler(
+    error_handler(
         SubCommandError{SubCommandError::Type::Internal, "default route resolved without handler"});
 }
 

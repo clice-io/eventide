@@ -26,22 +26,22 @@
 namespace kota::codec::flatbuffers {
 
 enum class object_error_code : std::uint8_t {
-    none = 0,
-    invalid_state,
-    unsupported_type,
-    type_mismatch,
-    number_out_of_range,
-    too_many_fields,
+    None = 0,
+    InvalidState,
+    UnsupportedType,
+    TypeMismatch,
+    NumberOutOfRange,
+    TooManyFields,
 };
 
 constexpr std::string_view error_message(object_error_code code) {
     switch(code) {
-        case object_error_code::none: return "none";
-        case object_error_code::invalid_state: return "invalid state";
-        case object_error_code::unsupported_type: return "unsupported type";
-        case object_error_code::type_mismatch: return "type mismatch";
-        case object_error_code::number_out_of_range: return "number out of range";
-        case object_error_code::too_many_fields: return "too many fields";
+        case object_error_code::None: return "none";
+        case object_error_code::InvalidState: return "invalid state";
+        case object_error_code::UnsupportedType: return "unsupported type";
+        case object_error_code::TypeMismatch: return "type mismatch";
+        case object_error_code::NumberOutOfRange: return "number out of range";
+        case object_error_code::TooManyFields: return "too many fields";
     }
     return "invalid state";
 }
@@ -61,7 +61,7 @@ inline auto field_voffset(std::size_t index) -> object_result_t<::flatbuffers::v
     const auto raw =
         static_cast<std::size_t>(first_field) + index * static_cast<std::size_t>(field_step);
     if(raw > max_voffset) {
-        return std::unexpected(object_error_code::too_many_fields);
+        return std::unexpected(object_error_code::TooManyFields);
     }
     return static_cast<::flatbuffers::voffset_t>(raw);
 }
