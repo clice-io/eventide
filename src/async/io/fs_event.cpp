@@ -85,9 +85,9 @@ struct fs_event_base {
 
 namespace {
 
-constexpr std::uint32_t inotify_mask = IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY |
-                                  IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_DONT_FOLLOW |
-                                  IN_ONLYDIR | IN_EXCL_UNLINK;
+constexpr std::uint32_t inotify_mask = IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF |
+                                       IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO |
+                                       IN_DONT_FOLLOW | IN_ONLYDIR | IN_EXCL_UNLINK;
 
 }  // namespace
 

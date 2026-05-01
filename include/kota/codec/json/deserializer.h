@@ -204,9 +204,7 @@ public:
         return read_and_narrow<std::int64_t>(
             value,
             [](auto& src) { return src.get_int64(); },
-            [](auto p) {
-                return codec::detail::narrow_int<T>(p, error_type::NumberOutOfRange);
-            });
+            [](auto p) { return codec::detail::narrow_int<T>(p, error_type::NumberOutOfRange); });
     }
 
     template <codec::uint_like T>
@@ -214,9 +212,7 @@ public:
         return read_and_narrow<std::uint64_t>(
             value,
             [](auto& src) { return src.get_uint64(); },
-            [](auto p) {
-                return codec::detail::narrow_uint<T>(p, error_type::NumberOutOfRange);
-            });
+            [](auto p) { return codec::detail::narrow_uint<T>(p, error_type::NumberOutOfRange); });
     }
 
     template <codec::floating_like T>
@@ -224,9 +220,7 @@ public:
         return read_and_narrow<double>(
             value,
             [](auto& src) { return src.get_double(); },
-            [](auto p) {
-                return codec::detail::narrow_float<T>(p, error_type::NumberOutOfRange);
-            });
+            [](auto p) { return codec::detail::narrow_float<T>(p, error_type::NumberOutOfRange); });
     }
 
     status_t deserialize_char(char& value) {

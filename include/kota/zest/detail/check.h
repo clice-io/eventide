@@ -60,9 +60,9 @@ inline bool check_unary_failure(bool failure,
 }
 
 template <typename L, typename R>
-inline bool check_type_eq_failure([[maybe_unused]] std::string_view exprs_str,
-                                  [[maybe_unused]] std::source_location loc =
-                                      std::source_location::current()) {
+inline bool check_type_eq_failure(
+    [[maybe_unused]] std::string_view exprs_str,
+    [[maybe_unused]] std::source_location loc = std::source_location::current()) {
     if constexpr(std::is_same_v<L, R>) {
         return false;
     } else {

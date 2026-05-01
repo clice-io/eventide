@@ -213,9 +213,7 @@ public:
                 }
                 return *parsed;
             },
-            [](auto p) {
-                return codec::detail::narrow_int<T>(p, error_kind::NumberOutOfRange);
-            });
+            [](auto p) { return codec::detail::narrow_int<T>(p, error_kind::NumberOutOfRange); });
     }
 
     template <codec::uint_like T>
@@ -249,9 +247,7 @@ public:
                 }
                 return *parsed;
             },
-            [](auto p) {
-                return codec::detail::narrow_float<T>(p, error_kind::NumberOutOfRange);
-            });
+            [](auto p) { return codec::detail::narrow_float<T>(p, error_kind::NumberOutOfRange); });
     }
 
     status_t deserialize_char(char& value) {

@@ -652,7 +652,7 @@ private:
         } else {
             item.prefixes = backend::pfx_double;
             item.prefixed_name = suffix.empty() ? str_pool.add("--", normalized_name)
-                                               : str_pool.add("--", normalized_name, suffix);
+                                                : str_pool.add("--", normalized_name, suffix);
         }
     }
 

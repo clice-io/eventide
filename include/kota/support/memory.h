@@ -350,8 +350,7 @@ public:
     using size_type = std::size_t;
 
     constexpr explicit allocation_guard(size_type capacity) :
-        ptr(allocate<value_type, allocator_type>(capacity)), capacity(capacity),
-        constructed(ptr) {}
+        ptr(allocate<value_type, allocator_type>(capacity)), capacity(capacity), constructed(ptr) {}
 
     allocation_guard(const allocation_guard&) = delete;
     allocation_guard& operator=(const allocation_guard&) = delete;
