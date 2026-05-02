@@ -8,26 +8,26 @@
 namespace kota::codec::toml {
 
 enum class error_kind : std::uint16_t {
-    ok = 0,
-    invalid_state,
-    parse_error,
-    type_mismatch,
-    number_out_of_range,
-    unsupported_type,
-    trailing_content,
-    unknown,
+    Ok = 0,
+    InvalidState,
+    ParseError,
+    TypeMismatch,
+    NumberOutOfRange,
+    UnsupportedType,
+    TrailingContent,
+    Unknown,
 };
 
 constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     switch(error) {
-        case error_kind::ok: return "success";
-        case error_kind::invalid_state: return "invalid state";
-        case error_kind::parse_error: return "parse error";
-        case error_kind::type_mismatch: return "type mismatch";
-        case error_kind::number_out_of_range: return "number out of range";
-        case error_kind::unsupported_type: return "unsupported type";
-        case error_kind::trailing_content: return "trailing content";
-        case error_kind::unknown:
+        case error_kind::Ok: return "success";
+        case error_kind::InvalidState: return "invalid state";
+        case error_kind::ParseError: return "parse error";
+        case error_kind::TypeMismatch: return "type mismatch";
+        case error_kind::NumberOutOfRange: return "number out of range";
+        case error_kind::UnsupportedType: return "unsupported type";
+        case error_kind::TrailingContent: return "trailing content";
+        case error_kind::Unknown:
         default: return "unknown toml error";
     }
 }

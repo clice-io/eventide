@@ -15,7 +15,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, bincode::error> {
         return std::unexpected(encoded.error());
     }
     if(encoded->empty()) {
-        return std::unexpected(bincode::error_kind::invalid_state);
+        return std::unexpected(bincode::error_kind::InvalidState);
     }
     return from_bytes<T>(*encoded);
 };

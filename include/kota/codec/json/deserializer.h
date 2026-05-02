@@ -204,9 +204,7 @@ public:
         return read_and_narrow<std::int64_t>(
             value,
             [](auto& src) { return src.get_int64(); },
-            [](auto p) {
-                return codec::detail::narrow_int<T>(p, error_type::number_out_of_range);
-            });
+            [](auto p) { return codec::detail::narrow_int<T>(p, error_type::NumberOutOfRange); });
     }
 
     template <codec::uint_like T>
@@ -214,9 +212,7 @@ public:
         return read_and_narrow<std::uint64_t>(
             value,
             [](auto& src) { return src.get_uint64(); },
-            [](auto p) {
-                return codec::detail::narrow_uint<T>(p, error_type::number_out_of_range);
-            });
+            [](auto p) { return codec::detail::narrow_uint<T>(p, error_type::NumberOutOfRange); });
     }
 
     template <codec::floating_like T>
@@ -224,16 +220,14 @@ public:
         return read_and_narrow<double>(
             value,
             [](auto& src) { return src.get_double(); },
-            [](auto p) {
-                return codec::detail::narrow_float<T>(p, error_type::number_out_of_range);
-            });
+            [](auto p) { return codec::detail::narrow_float<T>(p, error_type::NumberOutOfRange); });
     }
 
     status_t deserialize_char(char& value) {
         return read_and_narrow<std::string_view>(
             value,
             [](auto& src) { return src.get_string(); },
-            [](auto p) { return codec::detail::narrow_char(p, error_type::type_mismatch); });
+            [](auto p) { return codec::detail::narrow_char(p, error_type::TypeMismatch); });
     }
 
     status_t deserialize_str(std::string& value) {
@@ -254,7 +248,7 @@ public:
             std::uint64_t byte_val = 0;
             KOTA_EXPECTED_TRY(deserialize_uint(byte_val));
             if(byte_val > 255U) {
-                return mark_invalid(error_kind::number_out_of_range);
+                return mark_invalid(error_kind::NumberOutOfRange);
             }
             value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
         }
@@ -335,7 +329,7 @@ public:
         if(!best) {
             pending_object.reset();
             pending_array.reset();
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
 
         auto result = codec::deserialize_variant_at<error_type>(*this, value, *best);
@@ -681,7 +675,7 @@ private:
         }
     }
 
-    std::unexpected<error_type> mark_invalid(error_kind err = error_kind::invalid_state) {
+    std::unexpected<error_type> mark_invalid(error_kind err = error_kind::InvalidState) {
         is_valid = false;
         error_type error(err);
         if(auto loc = compute_location()) {

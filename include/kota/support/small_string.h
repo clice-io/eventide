@@ -72,7 +72,7 @@ public:
         }
         this->resize_for_overwrite(size_needed);
         for(const std::string_view& ref: refs) {
-            std::copy(ref.begin(), ref.end(), this->begin() + current_size);
+            std::ranges::copy(ref, this->begin() + current_size);
             current_size += ref.size();
         }
     }

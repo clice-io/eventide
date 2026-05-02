@@ -241,7 +241,7 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
 TEST_CASE(spawn_invalid_file) {
     process::options opts;
 #ifdef _WIN32
-    opts.file = "Z:\\nonexistent\\kotatsu-nope.exe";
+    opts.file = R"(Z:\nonexistent\kotatsu-nope.exe)";
 #else
     opts.file = "/nonexistent/kotatsu-nope";
 #endif

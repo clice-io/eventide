@@ -51,7 +51,7 @@ public:
         // TOML has no null. In array context this is an error.
         // In table context, skip (missing key = null).
         if(!ser_stack.empty() && ser_stack.back().is_array) {
-            return std::unexpected(error_kind::unsupported_type);
+            return std::unexpected(error_kind::UnsupportedType);
         }
         if(!ser_stack.empty()) {
             ser_stack.back().pending_key.clear();
@@ -74,7 +74,7 @@ public:
 
     status_t serialize_uint(std::uint64_t value) {
         if(value > static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)())) {
-            return std::unexpected(error_kind::number_out_of_range);
+            return std::unexpected(error_kind::NumberOutOfRange);
         }
         return insert_value(static_cast<std::int64_t>(value));
     }
@@ -122,7 +122,7 @@ public:
         ser_stack.pop_back();
 
         if(ser_stack.empty()) {
-            root_table_ = std::move(frame.table);
+            root_table = std::move(frame.table);
 
             return {};
         }
@@ -160,7 +160,7 @@ public:
         ser_stack.pop_back();
 
         if(ser_stack.empty()) {
-            root_table_.insert_or_assign(detail::boxed_root_key, std::move(frame.array));
+            root_table.insert_or_assign(detail::boxed_root_key, std::move(frame.array));
             return {};
         }
 
@@ -176,7 +176,7 @@ public:
 
     auto serialize_dom(const ::toml::table& value) -> status_t {
         if(ser_stack.empty()) {
-            root_table_ = value;
+            root_table = value;
 
             return {};
         }
@@ -192,7 +192,7 @@ public:
 
     auto serialize_dom(const ::toml::array& value) -> status_t {
         if(ser_stack.empty()) {
-            root_table_.insert_or_assign(detail::boxed_root_key, value);
+            root_table.insert_or_assign(detail::boxed_root_key, value);
             return {};
         }
         auto& parent = ser_stack.back();
@@ -207,22 +207,22 @@ public:
 
     template <typename T>
     auto dom(const T& value) -> result_t<::toml::table> {
-        root_table_.clear();
+        root_table.clear();
         ser_stack.clear();
         auto status = codec::serialize(*this, value);
         if(!status) {
-            root_table_.clear();
+            root_table.clear();
             ser_stack.clear();
             return std::unexpected(status.error());
         }
-        return std::move(root_table_);
+        return std::move(root_table);
     }
 
 private:
     template <typename V>
     status_t insert_value(V&& v) {
         if(ser_stack.empty()) {
-            root_table_.insert_or_assign(detail::boxed_root_key, std::forward<V>(v));
+            root_table.insert_or_assign(detail::boxed_root_key, std::forward<V>(v));
             return {};
         }
         auto& frame = ser_stack.back();
@@ -242,7 +242,7 @@ private:
         bool is_array = false;
     };
 
-    ::toml::table root_table_;
+    ::toml::table root_table;
     std::vector<ser_frame> ser_stack;
 };
 

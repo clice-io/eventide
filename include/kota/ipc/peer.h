@@ -90,7 +90,7 @@ public:
 
     Result<void> close_output();
 
-    void set_logger(LogCallback callback, LogLevel min_level = LogLevel::info);
+    void set_logger(LogCallback callback, LogLevel min_level = LogLevel::Info);
 
     template <typename Params>
     RequestResult<Params> send_request(const Params& params, request_options opts = {});

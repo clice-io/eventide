@@ -30,7 +30,7 @@ TEST_CASE(trace_logs_traffic) {
     LogEntries logs;
     peer.set_logger(
         [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
-        LogLevel::trace);
+        LogLevel::Trace);
 
     peer.on_request([&](RequestContext&, const AddParams& p) -> RequestResult<AddParams> {
         co_return AddResult{.sum = p.a + p.b};
@@ -43,10 +43,10 @@ TEST_CASE(trace_logs_traffic) {
     bool has_recv = false;
     bool has_send = false;
     for(const auto& entry: logs) {
-        if(entry.level == LogLevel::trace && entry.message.starts_with("recv:")) {
+        if(entry.level == LogLevel::Trace && entry.message.starts_with("recv:")) {
             has_recv = true;
         }
-        if(entry.level == LogLevel::trace && entry.message.starts_with("send:")) {
+        if(entry.level == LogLevel::Trace && entry.message.starts_with("send:")) {
             has_send = true;
         }
     }
@@ -65,7 +65,7 @@ TEST_CASE(level_filtering) {
     LogEntries logs;
     peer.set_logger(
         [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
-        LogLevel::warn);
+        LogLevel::Warn);
 
     peer.on_request([&](RequestContext&, const AddParams& p) -> RequestResult<AddParams> {
         co_return AddResult{.sum = p.a + p.b};
@@ -76,7 +76,7 @@ TEST_CASE(level_filtering) {
 
     // With min_level=warn, no trace/debug/info logs should appear
     for(const auto& entry: logs) {
-        EXPECT_TRUE(entry.level >= LogLevel::warn);
+        EXPECT_TRUE(entry.level >= LogLevel::Warn);
     }
 }
 
@@ -91,7 +91,7 @@ TEST_CASE(deser_failure_warns) {
     LogEntries logs;
     peer.set_logger(
         [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
-        LogLevel::warn);
+        LogLevel::Warn);
 
     bool called = false;
     peer.on_notification([&](const NoteParams&) { called = true; });
@@ -102,7 +102,7 @@ TEST_CASE(deser_failure_warns) {
 
     bool has_deser_warn = false;
     for(const auto& entry: logs) {
-        if(entry.level == LogLevel::warn &&
+        if(entry.level == LogLevel::Warn &&
            entry.message.find("deserialization failed") != std::string::npos) {
             has_deser_warn = true;
         }
@@ -121,14 +121,14 @@ TEST_CASE(unhandled_notification_warns) {
     LogEntries logs;
     peer.set_logger(
         [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
-        LogLevel::warn);
+        LogLevel::Warn);
 
     loop.schedule(peer.run());
     EXPECT_EQ(loop.run(), 0);
 
     bool has_unhandled_warn = false;
     for(const auto& entry: logs) {
-        if(entry.level == LogLevel::warn &&
+        if(entry.level == LogLevel::Warn &&
            entry.message.find("unhandled notification") != std::string::npos) {
             has_unhandled_warn = true;
         }
@@ -165,7 +165,7 @@ TEST_CASE(read_loop_lifecycle) {
     LogEntries logs;
     peer.set_logger(
         [&](LogLevel level, std::string msg) { logs.push_back({level, std::move(msg)}); },
-        LogLevel::info);
+        LogLevel::Info);
 
     loop.schedule(peer.run());
     EXPECT_EQ(loop.run(), 0);
@@ -173,10 +173,10 @@ TEST_CASE(read_loop_lifecycle) {
     bool has_started = false;
     bool has_ended = false;
     for(const auto& entry: logs) {
-        if(entry.level == LogLevel::info && entry.message.find("started") != std::string::npos) {
+        if(entry.level == LogLevel::Info && entry.message.find("started") != std::string::npos) {
             has_started = true;
         }
-        if(entry.level == LogLevel::info && entry.message.find("ended") != std::string::npos) {
+        if(entry.level == LogLevel::Info && entry.message.find("ended") != std::string::npos) {
             has_ended = true;
         }
     }

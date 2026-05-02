@@ -61,9 +61,9 @@ concept result_as = std::same_as<A, std::expected<T, E>>;
 
 template <typename E>
 concept serde_error_like = requires {
-    { E::type_mismatch } -> std::convertible_to<E>;
-    { E::number_out_of_range } -> std::convertible_to<E>;
-    { E::invalid_state } -> std::convertible_to<E>;
+    { E::TypeMismatch } -> std::convertible_to<E>;
+    { E::NumberOutOfRange } -> std::convertible_to<E>;
+    { E::InvalidState } -> std::convertible_to<E>;
 };
 
 template <typename S, typename T = typename S::value_type, typename E = typename S::error_type>
@@ -154,11 +154,11 @@ namespace kota::codec::arena {
 
 template <typename E>
 concept arena_error_like = requires {
-    { E::invalid_state } -> std::convertible_to<E>;
-    { E::unsupported_type } -> std::convertible_to<E>;
-    { E::type_mismatch } -> std::convertible_to<E>;
-    { E::number_out_of_range } -> std::convertible_to<E>;
-    { E::too_many_fields } -> std::convertible_to<E>;
+    { E::InvalidState } -> std::convertible_to<E>;
+    { E::UnsupportedType } -> std::convertible_to<E>;
+    { E::TypeMismatch } -> std::convertible_to<E>;
+    { E::NumberOutOfRange } -> std::convertible_to<E>;
+    { E::TooManyFields } -> std::convertible_to<E>;
 };
 
 template <typename S,

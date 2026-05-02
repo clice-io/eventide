@@ -226,12 +226,12 @@ TEST_CASE(json_to_content_scalars) {
         return parsed->kind() == expected_kind;
     };
 
-    EXPECT_TRUE(test("null", content::ValueKind::null_value));
-    EXPECT_TRUE(test("true", content::ValueKind::boolean));
-    EXPECT_TRUE(test("42", content::ValueKind::signed_int));
-    EXPECT_TRUE(test("18446744073709551615", content::ValueKind::unsigned_int));
-    EXPECT_TRUE(test("3.14", content::ValueKind::floating));
-    EXPECT_TRUE(test(R"("hello")", content::ValueKind::string));
+    EXPECT_TRUE(test("null", content::ValueKind::NullValue));
+    EXPECT_TRUE(test("true", content::ValueKind::Boolean));
+    EXPECT_TRUE(test("42", content::ValueKind::SignedInt));
+    EXPECT_TRUE(test("18446744073709551615", content::ValueKind::UnsignedInt));
+    EXPECT_TRUE(test("3.14", content::ValueKind::Floating));
+    EXPECT_TRUE(test(R"("hello")", content::ValueKind::String));
 }
 
 TEST_CASE(json_to_content_array) {

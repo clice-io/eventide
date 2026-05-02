@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
-#include <cstdio>
 #include <expected>
 #include <set>
 #include <span>
@@ -15,7 +14,7 @@ using namespace kota::option;
 
 namespace {
 
-std::string_view ltrim_all_of(std::string_view str, const std::vector<char>& prefixes) {
+std::string_view ltrim_all_of(std::string_view str, std::span<const char> prefixes) {
     auto pos = str.find_first_not_of(prefixes.data(), 0, prefixes.size());
 
     if(pos != std::string_view::npos) {
@@ -127,7 +126,7 @@ OptTable& OptTable::build() {
                input_random_index) {
                 continue;
             }
-            for(auto prefix: Info.prefixes()) {
+            for(auto prefix: Info.prefixes) {
                 tmp_prefixes_union.insert(prefix);
             }
         }
@@ -135,7 +134,7 @@ OptTable& OptTable::build() {
             std::vector<std::string_view>(tmp_prefixes_union.begin(), tmp_prefixes_union.end());
     }
 
-    buildPrefixChars();
+    build_prefix_chars();
     return *this;
 }
 
@@ -144,7 +143,7 @@ const Option OptTable::option(OptSpecifier opt) const {
     if(id == 0) {
         return Option(nullptr, nullptr);
     }
-    assert((unsigned)(id - 1) < this->num_options() && "Invalid ID.");
+    assert(static_cast<unsigned>(id - 1) < this->num_options() && "Invalid ID.");
     return Option(&this->info(id), this);
 }
 
@@ -163,7 +162,7 @@ static bool is_input(const OptTable* o_table, std::string_view arg) {
 /// \returns Matched size. 0 means no match.
 static unsigned match_opt(const OptTable::Info* i, std::string_view str, bool ignore_case) {
     auto name = i->name();
-    for(auto prefix: i->prefixes()) {
+    for(auto prefix: i->prefixes) {
         if(str.starts_with(prefix)) {
             auto rest = str.substr(prefix.size());
             bool matched =

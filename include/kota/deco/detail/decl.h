@@ -361,7 +361,7 @@ struct AliasForwardField {
 constexpr inline bool is_alias_placeholder_name(std::string_view member_name) {
     return member_name.starts_with("__deco_alias_wrapper") ||
            (!member_name.empty() &&
-            std::all_of(member_name.begin(), member_name.end(), [](char ch) { return ch == '_'; }));
+            std::ranges::all_of(member_name, [](char ch) { return ch == '_'; }));
 }
 
 struct DecoFields {
@@ -545,8 +545,7 @@ struct DecoOptionBase {
     virtual std::optional<std::string> into(backend::ParsedArgument&& arg) = 0;
 
     virtual std::optional<std::string> into(backend::ParsedArgument&& arg,
-                                            const IntoContext& context) {
-        (void)context;
+                                            [[maybe_unused]] const IntoContext& context) {
         return into(std::move(arg));
     }
 };

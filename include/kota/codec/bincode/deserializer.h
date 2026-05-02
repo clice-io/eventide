@@ -62,7 +62,7 @@ public:
             return std::unexpected(last_error);
         }
         if(offset != bytes.size()) {
-            return mark_invalid(error_kind::trailing_bytes);
+            return mark_invalid(error_kind::TrailingBytes);
         }
         return {};
     }
@@ -71,7 +71,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto parsed, read_u8());
 
         if(parsed > 1U) {
-            return mark_invalid(error_type::type_mismatch);
+            return mark_invalid(error_type::TypeMismatch);
         }
         value = parsed == 1U;
         return {};
@@ -81,7 +81,7 @@ public:
     status_t deserialize_int(T& value) {
         KOTA_EXPECTED_TRY_V(auto parsed, read_integral<std::int64_t>());
 
-        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_int<T>(parsed, error_type::NumberOutOfRange);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -93,7 +93,7 @@ public:
     status_t deserialize_uint(T& value) {
         KOTA_EXPECTED_TRY_V(auto parsed, read_integral<std::uint64_t>());
 
-        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_uint<T>(parsed, error_type::NumberOutOfRange);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -106,7 +106,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
         const double parsed = std::bit_cast<double>(raw);
-        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::number_out_of_range);
+        auto narrowed = codec::detail::narrow_float<T>(parsed, error_type::NumberOutOfRange);
         if(!narrowed) {
             return mark_invalid(narrowed.error());
         }
@@ -124,7 +124,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto length, read_length());
 
         if(offset + length > bytes.size()) {
-            return mark_invalid(error_kind::unexpected_eof);
+            return mark_invalid(error_kind::UnexpectedEof);
         }
 
         if(length == 0) {
@@ -142,7 +142,7 @@ public:
         KOTA_EXPECTED_TRY_V(auto length, read_length());
 
         if(offset + length > bytes.size()) {
-            return mark_invalid(error_kind::unexpected_eof);
+            return mark_invalid(error_kind::UnexpectedEof);
         }
 
         if(length == 0) {
@@ -165,7 +165,7 @@ public:
         if(tag == 1U) {
             return false;
         }
-        return mark_invalid(error_type::type_mismatch);
+        return mark_invalid(error_type::TypeMismatch);
     }
 
     template <typename... Ts>
@@ -174,7 +174,7 @@ public:
 
         constexpr std::size_t variant_size = sizeof...(Ts);
         if(index >= variant_size) {
-            return mark_invalid(error_kind::invalid_variant_index);
+            return mark_invalid(error_kind::InvalidVariantIndex);
         }
 
         std::expected<void, error_type> status{};
@@ -193,7 +193,7 @@ public:
         }(std::make_index_sequence<variant_size>{});
 
         if(!matched) {
-            return mark_invalid(error_kind::invalid_variant_index);
+            return mark_invalid(error_kind::InvalidVariantIndex);
         }
         if(!status) {
             return std::unexpected(status.error());
@@ -202,19 +202,19 @@ public:
     }
 
     status_t begin_object() {
-        return mark_invalid(error_kind::unsupported_operation);
+        return mark_invalid(error_kind::UnsupportedOperation);
     }
 
     status_t end_object() {
-        return mark_invalid(error_kind::unsupported_operation);
+        return mark_invalid(error_kind::UnsupportedOperation);
     }
 
     result_t<std::optional<std::string_view>> next_field() {
-        return mark_invalid(error_kind::unsupported_operation);
+        return mark_invalid(error_kind::UnsupportedOperation);
     }
 
     status_t skip_field_value() {
-        return mark_invalid(error_kind::unsupported_operation);
+        return mark_invalid(error_kind::UnsupportedOperation);
     }
 
     status_t begin_array() {
@@ -228,7 +228,7 @@ public:
             return std::unexpected(last_error);
         }
         if(array_stack.empty()) {
-            return mark_invalid(error_type::invalid_state);
+            return mark_invalid(error_type::InvalidState);
         }
         if(array_stack.back() == 0) {
             return false;
@@ -239,10 +239,10 @@ public:
 
     status_t end_array() {
         if(array_stack.empty()) {
-            return mark_invalid(error_type::invalid_state);
+            return mark_invalid(error_type::InvalidState);
         }
         if(array_stack.back() != 0) {
-            return mark_invalid(error_type::invalid_state);
+            return mark_invalid(error_type::InvalidState);
         }
         array_stack.pop_back();
         return {};
@@ -262,7 +262,7 @@ private:
             value = std::move(alt);
             return {};
         } else {
-            return mark_invalid(error_type::invalid_state);
+            return mark_invalid(error_type::InvalidState);
         }
     }
 
@@ -275,7 +275,7 @@ private:
 
         using unsigned_t = std::make_unsigned_t<T>;
         if(offset + sizeof(unsigned_t) > bytes.size()) {
-            return mark_invalid(error_kind::unexpected_eof);
+            return mark_invalid(error_kind::UnexpectedEof);
         }
 
         unsigned_t raw = 0;
@@ -300,7 +300,7 @@ private:
         KOTA_EXPECTED_TRY_V(auto raw, read_integral<std::uint64_t>());
 
         if(raw > static_cast<std::uint64_t>((std::numeric_limits<std::size_t>::max)())) {
-            return mark_invalid(error_type::number_out_of_range);
+            return mark_invalid(error_type::NumberOutOfRange);
         }
 
         return static_cast<std::size_t>(raw);
@@ -317,7 +317,7 @@ private:
     std::size_t offset = 0;
     std::vector<std::size_t> array_stack;
     bool is_valid = true;
-    error_type last_error = error_kind::ok;
+    error_type last_error = error_kind::Ok;
 };
 
 template <typename Config = config::default_config, typename T>

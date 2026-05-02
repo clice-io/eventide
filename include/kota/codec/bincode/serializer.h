@@ -122,7 +122,7 @@ public:
     result_t<value_type> serialize_variant(const std::variant<Ts...>& value) {
         const auto variant_index = value.index();
         if(variant_index > (std::numeric_limits<std::uint32_t>::max)()) {
-            return mark_invalid(error_type::invalid_variant_index);
+            return mark_invalid(error_type::InvalidVariantIndex);
         }
 
         KOTA_EXPECTED_TRY(write_integral(static_cast<std::uint32_t>(variant_index)));
@@ -166,7 +166,7 @@ public:
             return std::unexpected(last_error);
         }
         if(!len.has_value()) {
-            return mark_invalid(error_type::invalid_state);
+            return mark_invalid(error_type::InvalidState);
         }
         return write_length(*len);
     }
@@ -211,7 +211,7 @@ private:
     status_t write_length(std::size_t len) {
         if(static_cast<unsigned long long>(len) >
            static_cast<unsigned long long>((std::numeric_limits<std::uint64_t>::max)())) {
-            return mark_invalid(error_type::invalid_state);
+            return mark_invalid(error_type::InvalidState);
         }
         return write_integral(static_cast<std::uint64_t>(len));
     }
@@ -225,7 +225,7 @@ private:
 private:
     std::vector<std::byte> bytes_buffer;
     bool is_valid = true;
-    error_type last_error = error_type::ok;
+    error_type last_error = error_type::Ok;
 };
 
 template <typename Config = config::default_config, typename T>

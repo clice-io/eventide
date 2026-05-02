@@ -62,7 +62,7 @@ int main() {
         [](ipc::LogLevel lvl, std::string msg) {
             std::println(stderr, "[stub:{}] {}", static_cast<int>(lvl), msg);
         },
-        ipc::LogLevel::trace);
+        ipc::LogLevel::Trace);
 
     bool shutdown_requested = false;
 

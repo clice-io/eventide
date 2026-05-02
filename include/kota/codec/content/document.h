@@ -30,28 +30,28 @@ class Object;
 class Cursor;
 
 enum class ValueKind : std::uint8_t {
-    null_value = 0,
-    boolean = 1,
-    signed_int = 2,
-    unsigned_int = 3,
-    floating = 4,
-    string = 5,
-    array = 6,
-    object = 7,
+    NullValue = 0,
+    Boolean = 1,
+    SignedInt = 2,
+    UnsignedInt = 3,
+    Floating = 4,
+    String = 5,
+    Array = 6,
+    Object = 7,
 };
 
 namespace detail {
 
 inline std::string_view kind_name(ValueKind kind) noexcept {
     switch(kind) {
-        case ValueKind::null_value: return "null";
-        case ValueKind::boolean: return "boolean";
-        case ValueKind::signed_int: return "signed_int";
-        case ValueKind::unsigned_int: return "unsigned_int";
-        case ValueKind::floating: return "float";
-        case ValueKind::string: return "string";
-        case ValueKind::array: return "array";
-        case ValueKind::object: return "object";
+        case ValueKind::NullValue: return "null";
+        case ValueKind::Boolean: return "boolean";
+        case ValueKind::SignedInt: return "signed_int";
+        case ValueKind::UnsignedInt: return "unsigned_int";
+        case ValueKind::Floating: return "float";
+        case ValueKind::String: return "string";
+        case ValueKind::Array: return "array";
+        case ValueKind::Object: return "object";
     }
     return "unknown";
 }

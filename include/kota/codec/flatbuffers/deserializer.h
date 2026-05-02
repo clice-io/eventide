@@ -208,7 +208,7 @@ public:
 
     auto error() const -> error_type {
         if(is_valid) {
-            return object_error_code::none;
+            return object_error_code::None;
         }
         return last_error;
     }
@@ -219,23 +219,23 @@ public:
 
     auto get_string(TableView view, slot_id sid) const -> result_t<std::string_view> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* text = view.raw()->template GetPointer<const ::flatbuffers::String*>(sid);
         if(text == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return std::string_view(text->data(), text->size());
     }
 
     auto get_bytes(TableView view, slot_id sid) const -> result_t<std::span<const std::byte>> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* vector =
             view.raw()->template GetPointer<const ::flatbuffers::Vector<std::uint8_t>*>(sid);
         if(vector == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return std::span<const std::byte>(reinterpret_cast<const std::byte*>(vector->data()),
                                           vector->size());
@@ -245,11 +245,11 @@ public:
     auto get_scalar_vector(TableView view, slot_id sid) const
         -> result_t<detail::scalar_vector_view<T>> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* vector = view.raw()->template GetPointer<const ::flatbuffers::Vector<T>*>(sid);
         if(vector == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return detail::scalar_vector_view<T>(vector);
     }
@@ -257,7 +257,7 @@ public:
     auto get_string_vector(TableView view, slot_id sid) const
         -> result_t<detail::string_vector_view> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* vector =
             view.raw()
@@ -265,7 +265,7 @@ public:
                     const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::String>>*>(
                     sid);
         if(vector == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return detail::string_vector_view(vector);
     }
@@ -273,11 +273,11 @@ public:
     template <typename T>
     auto get_inline_struct(TableView view, slot_id sid) const -> result_t<T> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* value = view.raw()->template GetStruct<const T*>(sid);
         if(value == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return *value;
     }
@@ -286,23 +286,23 @@ public:
     auto get_inline_struct_vector(TableView view, slot_id sid) const
         -> result_t<detail::inline_struct_vector_view<T>> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* vector =
             view.raw()->template GetPointer<const ::flatbuffers::Vector<const T*>*>(sid);
         if(vector == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return detail::inline_struct_vector_view<T>(vector);
     }
 
     auto get_table(TableView view, slot_id sid) const -> result_t<TableView> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* nested = view.raw()->template GetPointer<const ::flatbuffers::Table*>(sid);
         if(nested == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return TableView(nested);
     }
@@ -310,14 +310,14 @@ public:
     auto get_table_vector(TableView view, slot_id sid) const
         -> result_t<detail::table_vector_view<TableView>> {
         if(!view.valid()) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         const auto* vector =
             view.raw()
                 ->template GetPointer<
                     const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(sid);
         if(vector == nullptr) {
-            return std::unexpected(object_error_code::invalid_state);
+            return std::unexpected(object_error_code::InvalidState);
         }
         return detail::table_vector_view<TableView>(vector);
     }
@@ -333,25 +333,25 @@ public:
 private:
     auto initialize(std::span<const std::uint8_t> bytes) -> void {
         if(bytes.empty()) {
-            set_invalid(object_error_code::invalid_state);
+            set_invalid(object_error_code::InvalidState);
             return;
         }
         if(!::flatbuffers::BufferHasIdentifier(
                bytes.data(),
                ::kota::codec::flatbuffers::detail::buffer_identifier)) {
-            set_invalid(object_error_code::invalid_state);
+            set_invalid(object_error_code::InvalidState);
             return;
         }
 
         auto* table = ::flatbuffers::GetRoot<::flatbuffers::Table>(bytes.data());
         if(table == nullptr) {
-            set_invalid(object_error_code::invalid_state);
+            set_invalid(object_error_code::InvalidState);
             return;
         }
 
         ::flatbuffers::Verifier verifier(bytes.data(), bytes.size());
         if(!table->VerifyTableStart(verifier) || !verifier.EndTable()) {
-            set_invalid(object_error_code::invalid_state);
+            set_invalid(object_error_code::InvalidState);
             return;
         }
 
@@ -365,7 +365,7 @@ private:
     }
 
     bool is_valid = true;
-    error_type last_error = object_error_code::none;
+    error_type last_error = object_error_code::None;
     const ::flatbuffers::Table* root = nullptr;
 };
 

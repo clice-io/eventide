@@ -22,7 +22,7 @@ struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::Reques
         -> std::expected<value_type, error_type> {
         auto* int_id = std::get_if<std::int64_t>(&id);
         if(!int_id) {
-            return std::unexpected(error_type::type_mismatch);
+            return std::unexpected(error_type::TypeMismatch);
         }
         return codec::serialize(serializer, *int_id);
     }

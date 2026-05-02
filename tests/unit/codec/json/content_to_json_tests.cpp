@@ -288,7 +288,7 @@ TEST_CASE(object_with_null_field) {
 
 TEST_CASE(object_key_needs_escape) {
     content::Value v{
-        {"key\"with\"quotes", std::int64_t{1}}
+        {R"(key"with"quotes)", std::int64_t{1}}
     };
     auto result = json::to_string(v);
     ASSERT_TRUE(result.has_value());

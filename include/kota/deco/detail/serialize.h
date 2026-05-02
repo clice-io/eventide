@@ -150,8 +150,7 @@ public:
     bool on_input_config(const FieldTy& field,
                          const CfgTy& cfg,
                          std::string_view,
-                         std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
+                         [[maybe_unused]] std::index_sequence<Path...>) {
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -171,8 +170,7 @@ public:
     bool on_trailing_input_config(const FieldTy& field,
                                   const CfgTy& cfg,
                                   std::string_view,
-                                  std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
+                                  [[maybe_unused]] std::index_sequence<Path...>) {
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -185,8 +183,7 @@ public:
     bool on_flag_config(const FieldTy& field,
                         const CfgTy& cfg,
                         std::string_view field_name,
-                        std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
+                        [[maybe_unused]] std::index_sequence<Path...>) {
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -209,8 +206,7 @@ public:
     bool on_kv_config(const FieldTy& field,
                       const CfgTy& cfg,
                       std::string_view field_name,
-                      std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
+                      [[maybe_unused]] std::index_sequence<Path...>) {
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -232,8 +228,7 @@ public:
     bool on_comma_joined_config(const FieldTy& field,
                                 const CfgTy& cfg,
                                 std::string_view field_name,
-                                std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
+                                [[maybe_unused]] std::index_sequence<Path...>) {
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
@@ -254,8 +249,7 @@ public:
     bool on_multi_config(const FieldTy& field,
                          const CfgTy& cfg,
                          std::string_view field_name,
-                         std::index_sequence<Path...>) {
-        (void)sizeof...(Path);
+                         [[maybe_unused]] std::index_sequence<Path...>) {
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }

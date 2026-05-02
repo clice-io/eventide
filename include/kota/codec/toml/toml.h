@@ -19,12 +19,12 @@ inline auto parse_table(std::string_view text) -> std::expected<::toml::table, e
     try {
         return ::toml::parse(text);
     } catch(const ::toml::parse_error&) {
-        return std::unexpected(error_kind::parse_error);
+        return std::unexpected(error_kind::ParseError);
     }
 #else
     auto parsed = ::toml::parse(text);
     if(!parsed) {
-        return std::unexpected(error_kind::parse_error);
+        return std::unexpected(error_kind::ParseError);
     }
     return std::move(parsed).table();
 #endif

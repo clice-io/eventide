@@ -1692,8 +1692,7 @@ TEST_CASE(direct_error_does_not_escape) {
             co_await sleep(1, loop);
             co_await fail(error::connection_refused);
         };
-        auto res = co_await inner();
-        (void)res;
+        [[maybe_unused]] auto res = co_await inner();
     };
 
     auto slow = [&]() -> task<> {
@@ -1897,8 +1896,7 @@ TEST_CASE(exception_takes_precedence_over_error) {
         task_group<error> group(loop);
         group.spawn(thrower());
         group.spawn(failing());
-        auto res = co_await group.join();
-        (void)res;
+        [[maybe_unused]] auto res = co_await group.join();
     };
 
     auto t = driver();

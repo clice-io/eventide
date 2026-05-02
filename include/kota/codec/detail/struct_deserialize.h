@@ -63,7 +63,7 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
         }
     }
 
-    if constexpr(is_specialization_of<std::variant, std::remove_cvref_t<V>> &&
+    if constexpr(is_specialization_of<std::variant, V> &&
                  tuple_any_of_v<Attrs, meta::is_tagged_attr>) {
         using tag_attr = tuple_find_t<Attrs, meta::is_tagged_attr>;
         constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
@@ -118,7 +118,7 @@ auto dispatch_slot_deserialize(D& d, std::size_t slot_index, T& value) -> std::e
          ...);
 
         if(!matched) {
-            return std::unexpected(E::type_mismatch);
+            return std::unexpected(E::TypeMismatch);
         }
         return result;
     }(std::make_index_sequence<N>{});
@@ -213,7 +213,7 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     constexpr bool deny_unknown = schema::deny_unknown || config_deny_unknown_v<Config>;
 
     if constexpr(schema_has_ambiguous_wire_names<T, Config>()) {
-        return std::unexpected(E::invalid_state);
+        return std::unexpected(E::InvalidState);
     } else {
         KOTA_EXPECTED_TRY(d.begin_object());
 

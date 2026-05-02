@@ -2,11 +2,11 @@
 
 #include <cassert>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <memory>
 #include <mutex>
+#include <print>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -133,7 +133,7 @@ std::expected<std::reference_wrapper<manager>, error> manager::try_for_loop(even
 manager& manager::for_loop(event_loop& loop) {
     auto out = try_for_loop(loop);
     if(!out) {
-        std::fprintf(stderr, "fatal: %s\n", out.error().message().c_str());
+        std::println(stderr, "fatal: {}", out.error().message());
         std::abort();
     }
     return out->get();

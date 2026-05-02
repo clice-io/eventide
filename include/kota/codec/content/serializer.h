@@ -113,11 +113,11 @@ public:
 
     result_t<value_type> end_object() {
         if(stack.empty()) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         auto* obj = std::get_if<content::Object>(&stack.back().data);
         if(!obj) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         content::Value result(std::move(*obj));
         stack.pop_back();
@@ -135,11 +135,11 @@ public:
 
     result_t<value_type> end_array() {
         if(stack.empty()) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         auto* arr = std::get_if<content::Array>(&stack.back().data);
         if(!arr) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         content::Value result(std::move(*arr));
         stack.pop_back();
@@ -153,11 +153,11 @@ public:
             return std::unexpected(result.error());
         }
         if(stack.empty()) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         auto* obj = std::get_if<content::Object>(&stack.back().data);
         if(!obj) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         obj->insert(std::string(name), std::move(*result));
         return {};
@@ -170,11 +170,11 @@ public:
             return std::unexpected(result.error());
         }
         if(stack.empty()) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         auto* arr = std::get_if<content::Array>(&stack.back().data);
         if(!arr) {
-            return std::unexpected(error_type::invalid_state);
+            return std::unexpected(error_type::InvalidState);
         }
         arr->push_back(std::move(*result));
         return {};

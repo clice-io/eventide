@@ -41,35 +41,35 @@ ParseCapture parse_all(const OptTable& table, std::vector<std::string> argv) {
 }
 
 enum MainOptionID {
-    MAIN_OPT_INVALID = 0,
-    MAIN_OPT_INPUT = 1,
-    MAIN_OPT_UNKNOWN = 2,
-    MAIN_OPT_HELP,
-    MAIN_OPT_HELP_SHORT,
-    MAIN_OPT_SCRIPT,
+    MainOptInvalid = 0,
+    MainOptInput = 1,
+    MainOptUnknown = 2,
+    MainOptHelp,
+    MainOptHelpShort,
+    MainOptScript,
 };
 
 constexpr auto kMainOptInfos = std::array{
-    OptTable::Info::input(MAIN_OPT_INPUT),
-    OptTable::Info::unknown(MAIN_OPT_UNKNOWN),
+    OptTable::Info::input(MainOptInput),
+    OptTable::Info::unknown(MainOptUnknown),
     OptTable::Info::unaliased_one(pfx_double,
                                   "--help",
-                                  MAIN_OPT_HELP,
+                                  MainOptHelp,
                                   Option::FlagClass,
                                   0,
                                   "Display help",
                                   ""),
     OptTable::Info::unaliased_one(pfx_dash,
                                   "-h",
-                                  MAIN_OPT_HELP_SHORT,
+                                  MainOptHelpShort,
                                   Option::FlagClass,
                                   0,
                                   "Display help",
                                   "")
-        .alias_of(MAIN_OPT_HELP),
+        .alias_of(MainOptHelp),
     OptTable::Info::unaliased_one(pfx_dash,
                                   "-s",
-                                  MAIN_OPT_SCRIPT,
+                                  MainOptScript,
                                   Option::SeparateClass,
                                   1,
                                   "Script path",
@@ -84,26 +84,26 @@ OptTable make_main_opt_table() {
 }
 
 enum ProxyOptionID {
-    PROXY_OPT_INVALID = 0,
-    PROXY_OPT_INPUT = 1,
-    PROXY_OPT_UNKNOWN = 2,
-    PROXY_OPT_PARENT_ID,
-    PROXY_OPT_EXEC,
+    ProxyOptInvalid = 0,
+    ProxyOptInput = 1,
+    ProxyOptUnknown = 2,
+    ProxyOptParentId,
+    ProxyOptExec,
 };
 
 constexpr auto kProxyOptInfos = std::array{
-    OptTable::Info::input(PROXY_OPT_INPUT),
-    OptTable::Info::unknown(PROXY_OPT_UNKNOWN),
+    OptTable::Info::input(ProxyOptInput),
+    OptTable::Info::unknown(ProxyOptUnknown),
     OptTable::Info::unaliased_one(pfx_dash,
                                   "-p",
-                                  PROXY_OPT_PARENT_ID,
+                                  ProxyOptParentId,
                                   Option::SeparateClass,
                                   1,
                                   "Parent process id",
                                   ""),
     OptTable::Info::unaliased_one(pfx_dash_double,
                                   "--exec",
-                                  PROXY_OPT_EXEC,
+                                  ProxyOptExec,
                                   Option::SeparateClass,
                                   1,
                                   "Exec",
@@ -149,9 +149,9 @@ ProxyParsedOption parse_proxy_opt(std::span<std::string> argv_span, bool with_pr
         }
 
         switch(arg->option_id.id()) {
-            case PROXY_OPT_PARENT_ID: option.parent_id = arg->values[0]; break;
-            case PROXY_OPT_EXEC: option.executable = arg->values[0]; break;
-            case PROXY_OPT_INPUT:
+            case ProxyOptParentId: option.parent_id = arg->values[0]; break;
+            case ProxyOptExec: option.executable = arg->values[0]; break;
+            case ProxyOptInput:
                 if(arg->get_spelling_view() == "--") {
                     option.argv = std::vector<std::string>(arg->values.begin(), arg->values.end());
                 } else {
@@ -193,25 +193,25 @@ TEST_CASE(main_option_table_has_expected_options) {
     EXPECT_TRUE(parsed.errors.empty());
     ASSERT_EQ(parsed.args.size(), 5U);
 
-    EXPECT_EQ(parsed.args[0].option_id.id(), MAIN_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[0].option_id.id(), MainOptUnknown);
     EXPECT_EQ(parsed.args[0].get_spelling_view(), "-p");
     EXPECT_EQ(parsed.args[0].index, 0U);
 
-    EXPECT_EQ(parsed.args[1].option_id.id(), MAIN_OPT_INPUT);
+    EXPECT_EQ(parsed.args[1].option_id.id(), MainOptInput);
     EXPECT_EQ(parsed.args[1].get_spelling_view(), "1234");
     EXPECT_EQ(parsed.args[1].index, 1U);
 
-    EXPECT_EQ(parsed.args[2].option_id.id(), MAIN_OPT_SCRIPT);
+    EXPECT_EQ(parsed.args[2].option_id.id(), MainOptScript);
     ASSERT_EQ(parsed.args[2].values.size(), 1U);
     EXPECT_EQ(parsed.args[2].values[0], "script::profile");
     EXPECT_EQ(parsed.args[2].get_spelling_view(), "-s");
     EXPECT_EQ(parsed.args[2].index, 2U);
 
-    EXPECT_EQ(parsed.args[3].option_id.id(), MAIN_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[3].option_id.id(), MainOptUnknown);
     EXPECT_EQ(parsed.args[3].get_spelling_view(), "--dest=114514");
     EXPECT_EQ(parsed.args[3].index, 4U);
 
-    EXPECT_EQ(parsed.args[4].option_id.id(), MAIN_OPT_INPUT);
+    EXPECT_EQ(parsed.args[4].option_id.id(), MainOptInput);
     EXPECT_EQ(parsed.args[4].get_spelling_view(), "--");
     ASSERT_EQ(parsed.args[4].values.size(), 2U);
     EXPECT_EQ(parsed.args[4].values[0], "/usr/bin/clang++");
@@ -221,11 +221,11 @@ TEST_CASE(main_option_table_has_expected_options) {
     parsed = parse_all(table, split2vec("-h"));
     EXPECT_TRUE(parsed.errors.empty());
     ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].option_id.id(), MAIN_OPT_HELP_SHORT);
+    EXPECT_EQ(parsed.args[0].option_id.id(), MainOptHelpShort);
     EXPECT_EQ(parsed.args[0].get_spelling_view(), "-h");
     EXPECT_EQ(parsed.args[0].values.size(), 0U);
     EXPECT_EQ(parsed.args[0].index, 0U);
-    EXPECT_EQ(parsed.args[0].unaliased_opt().id(), MAIN_OPT_HELP);
+    EXPECT_EQ(parsed.args[0].unaliased_opt().id(), MainOptHelp);
 }
 
 TEST_CASE(proxy_option_table_has_expected_options) {
@@ -234,7 +234,7 @@ TEST_CASE(proxy_option_table_has_expected_options) {
     auto parsed = parse_all(table, split2vec("-p 1234"));
     EXPECT_TRUE(parsed.errors.empty());
     ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].option_id.id(), PROXY_OPT_PARENT_ID);
+    EXPECT_EQ(parsed.args[0].option_id.id(), ProxyOptParentId);
     ASSERT_EQ(parsed.args[0].values.size(), 1U);
     EXPECT_EQ(parsed.args[0].values[0], "1234");
     EXPECT_EQ(parsed.args[0].get_spelling_view(), "-p");
@@ -243,7 +243,7 @@ TEST_CASE(proxy_option_table_has_expected_options) {
     parsed = parse_all(table, split2vec("--exec /bin/ls"));
     EXPECT_TRUE(parsed.errors.empty());
     ASSERT_EQ(parsed.args.size(), 1U);
-    EXPECT_EQ(parsed.args[0].option_id.id(), PROXY_OPT_EXEC);
+    EXPECT_EQ(parsed.args[0].option_id.id(), ProxyOptExec);
     ASSERT_EQ(parsed.args[0].values.size(), 1U);
     EXPECT_EQ(parsed.args[0].values[0], "/bin/ls");
     EXPECT_EQ(parsed.args[0].get_spelling_view(), "--exec");
@@ -253,17 +253,17 @@ TEST_CASE(proxy_option_table_has_expected_options) {
     EXPECT_TRUE(parsed.errors.empty());
     ASSERT_EQ(parsed.args.size(), 3U);
 
-    EXPECT_EQ(parsed.args[0].option_id.id(), PROXY_OPT_PARENT_ID);
+    EXPECT_EQ(parsed.args[0].option_id.id(), ProxyOptParentId);
     ASSERT_EQ(parsed.args[0].values.size(), 1U);
     EXPECT_EQ(parsed.args[0].values[0], "12");
     EXPECT_EQ(parsed.args[0].index, 0U);
 
-    EXPECT_EQ(parsed.args[1].option_id.id(), PROXY_OPT_EXEC);
+    EXPECT_EQ(parsed.args[1].option_id.id(), ProxyOptExec);
     ASSERT_EQ(parsed.args[1].values.size(), 1U);
     EXPECT_EQ(parsed.args[1].values[0], "/usr/bin/clang++");
     EXPECT_EQ(parsed.args[1].index, 2U);
 
-    EXPECT_EQ(parsed.args[2].option_id.id(), PROXY_OPT_INPUT);
+    EXPECT_EQ(parsed.args[2].option_id.id(), ProxyOptInput);
     EXPECT_EQ(parsed.args[2].get_spelling_view(), "--");
     ASSERT_EQ(parsed.args[2].values.size(), 2U);
     EXPECT_EQ(parsed.args[2].values[0], "clang++");
@@ -278,12 +278,12 @@ TEST_CASE(proxy_unknown_and_missing_value) {
     EXPECT_TRUE(parsed.errors.empty());
     ASSERT_EQ(parsed.args.size(), 2U);
 
-    EXPECT_EQ(parsed.args[0].option_id.id(), PROXY_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[0].option_id.id(), ProxyOptUnknown);
     EXPECT_EQ(parsed.args[0].get_spelling_view(), "--unknown-option");
     EXPECT_EQ(parsed.args[0].values.size(), 0U);
     EXPECT_EQ(parsed.args[0].index, 0U);
 
-    EXPECT_EQ(parsed.args[1].option_id.id(), PROXY_OPT_INPUT);
+    EXPECT_EQ(parsed.args[1].option_id.id(), ProxyOptInput);
     EXPECT_EQ(parsed.args[1].get_spelling_view(), "value");
     EXPECT_EQ(parsed.args[1].values.size(), 0U);
     EXPECT_EQ(parsed.args[1].index, 1U);

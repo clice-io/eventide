@@ -100,7 +100,7 @@ private:
 
     template <typename OptTy>
     constexpr static void apply_current_config(OptTy& opt,
-                                               const std::vector<config_state>& config_stack) {
+                                               std::span<const config_state> config_stack) {
         for(const auto& cfg_state: config_stack) {
             const auto& cfg = cfg_state.cfg;
             if(cfg.required.is_overridden()) {
@@ -121,7 +121,7 @@ private:
     }
 
     template <typename CfgTy>
-    constexpr static CfgTy make_configured_cfg(const std::vector<config_state>& config_stack) {
+    constexpr static CfgTy make_configured_cfg(std::span<const config_state> config_stack) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, CfgTy>);
         CfgTy cfg{};
         apply_current_config(static_cast<decl::CommonOptionFields&>(cfg), config_stack);
@@ -399,7 +399,7 @@ class StrPool {
     constexpr void add_into(char* mem, std::string_view first, Args&&... args) {
         char* out = mem;
         auto append = [&](std::string_view part) {
-            std::copy(part.data(), part.data() + part.size(), out);
+            std::ranges::copy(part, out);
             out += part.size();
         };
         append(first);
@@ -481,21 +481,21 @@ private:
 
     // Keep a dummy at index 0 so item.id can be used as direct index.
     resource_ty resource{};
-    StrPool<resource_ty> strPool;
-    item_pool_type itemPool{};
-    id_map_type idMap{};
-    category_map_type categoryMap{};
-    callback_map_type callbackMap{};
-    alias_meta_map_type aliasMetaMap{};
-    string_pool_type aliasStringPool{};
+    StrPool<resource_ty> str_pool;
+    item_pool_type item_pool{};
+    id_map_type id_map{};
+    category_map_type category_map{};
+    callback_map_type callback_map{};
+    alias_meta_map_type alias_meta_map{};
+    string_pool_type alias_string_pool{};
 
-    bool hasInputSlot = false;
-    bool hasTrailingSlot = false;
-    bool hasTrailingPack = false;
-    unsigned inputOptionId = 0;
-    accessor_fn trailingAccessor = nullptr;
-    const decl::Category* trailingCategory = nullptr;
-    parse_callback_t trailingCallback{};
+    bool has_input_slot = false;
+    bool has_trailing_slot = false;
+    bool has_trailing_pack = false;
+    unsigned input_option_id = 0;
+    accessor_fn trailing_accessor = nullptr;
+    const decl::Category* trailing_category = nullptr;
+    parse_callback_t trailing_callback{};
 
     constexpr static auto make_default_item(unsigned id) {
         return info_item::unaliased_one(backend::pfx_none,
@@ -508,18 +508,18 @@ private:
     }
 
     constexpr auto& item_by_id(unsigned id) {
-        return itemPool[id];
+        return item_pool[id];
     }
 
     constexpr auto& new_item(accessor_fn mapped_accessor = nullptr) {
-        const auto item_id = static_cast<unsigned>(itemPool.size());
-        itemPool.push_back(make_default_item(item_id));
-        auto& item = itemPool.back();
+        const auto item_id = static_cast<unsigned>(item_pool.size());
+        item_pool.push_back(make_default_item(item_id));
+        auto& item = item_pool.back();
         item.id = item_id;
-        idMap.push_back(mapped_accessor);
-        categoryMap.push_back(nullptr);
-        callbackMap.push_back({});
-        aliasMetaMap.push_back({});
+        id_map.push_back(mapped_accessor);
+        category_map.push_back(nullptr);
+        callback_map.push_back({});
+        alias_meta_map.push_back({});
         return item;
     }
 
@@ -528,27 +528,27 @@ private:
     }
 
     constexpr void set_category_for_item(unsigned item_id, const decl::Category* category) {
-        categoryMap[item_id] = category;
+        category_map[item_id] = category;
     }
 
     constexpr void set_callback_for_item(unsigned item_id, parse_callback_t callback) {
-        callbackMap[item_id] = callback;
+        callback_map[item_id] = callback;
     }
 
     constexpr auto store_alias_tokens(std::span<const std::string_view> tokens)
         -> std::span<const std::string_view> {
-        const auto offset = aliasStringPool.size();
+        const auto offset = alias_string_pool.size();
         for(const auto token: tokens) {
-            aliasStringPool.push_back(strPool.add(token));
+            alias_string_pool.push_back(str_pool.add(token));
         }
-        return std::span<const std::string_view>(aliasStringPool.data() + offset, tokens.size());
+        return std::span<const std::string_view>(alias_string_pool.data() + offset, tokens.size());
     }
 
     constexpr void set_alias_meta_for_item(unsigned item_id, AliasRuntimeMeta meta) {
         if(!meta.static_tokens.empty()) {
             meta.static_tokens = store_alias_tokens(meta.static_tokens);
         }
-        aliasMetaMap[item_id] = meta;
+        alias_meta_map[item_id] = meta;
     }
 
     struct AliasStorageSnapshot {
@@ -556,11 +556,11 @@ private:
     };
 
     constexpr auto snapshot_alias_storage(unsigned item_id) const -> AliasStorageSnapshot {
-        return AliasStorageSnapshot{.meta = aliasMetaMap[item_id]};
+        return AliasStorageSnapshot{.meta = alias_meta_map[item_id]};
     }
 
     constexpr void restore_alias_storage(unsigned item_id, const AliasStorageSnapshot& snapshot) {
-        aliasMetaMap[item_id] = snapshot.meta;
+        alias_meta_map[item_id] = snapshot.meta;
     }
 
     template <typename CallbackTy>
@@ -620,24 +620,24 @@ private:
     constexpr auto& set_common_options(info_item& item, const FieldsTy& fields) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<FieldsTy>>);
         if(!fields.help.empty()) {
-            item.help_text = strPool.add(fields.help).data();
+            item.help_text = str_pool.add(fields.help).data();
         }
         if(!fields.meta_var.empty()) {
-            item.meta_var = strPool.add(fields.meta_var).data();
+            item.meta_var = str_pool.add(fields.meta_var).data();
         }
         return item;
     }
 
     constexpr std::string_view generate_name_from_field(std::string_view field_name,
                                                         bool with_prefix = false) {
-        auto normalized_name = strPool.add_replace(field_name, '_', '-');
+        auto normalized_name = str_pool.add_replace(field_name, '_', '-');
         if(!with_prefix) {
             return normalized_name;
         }
         if(normalized_name.size() == 1) {
-            return strPool.add("-", normalized_name);
+            return str_pool.add("-", normalized_name);
         } else {
-            return strPool.add("--", normalized_name);
+            return str_pool.add("--", normalized_name);
         }
     }
 
@@ -646,20 +646,20 @@ private:
                                                  std::string_view suffix = {}) {
         auto normalized_name = generate_name_from_field(field_name);
         if(normalized_name.size() == 1) {
-            item._prefixes = backend::pfx_dash;
-            item._prefixed_name = suffix.empty() ? strPool.add("-", normalized_name)
-                                                 : strPool.add("-", normalized_name, suffix);
+            item.prefixes = backend::pfx_dash;
+            item.prefixed_name = suffix.empty() ? str_pool.add("-", normalized_name)
+                                                : str_pool.add("-", normalized_name, suffix);
         } else {
-            item._prefixes = backend::pfx_double;
-            item._prefixed_name = suffix.empty() ? strPool.add("--", normalized_name)
-                                                 : strPool.add("--", normalized_name, suffix);
+            item.prefixes = backend::pfx_double;
+            item.prefixed_name = suffix.empty() ? str_pool.add("--", normalized_name)
+                                                : str_pool.add("--", normalized_name, suffix);
         }
     }
 
     constexpr void set_prefixed_name(info_item& target, std::string_view full_name) {
         auto parsed = parse_named_option(full_name);
-        target._prefixes = parsed.prefixes;
-        target._prefixed_name = strPool.add(parsed.prefix, parsed.name);
+        target.prefixes = parsed.prefixes;
+        target.prefixed_name = str_pool.add(parsed.prefix, parsed.name);
     }
 
     template <typename FieldsTy>
@@ -704,40 +704,40 @@ private:
     template <typename CfgTy>
     constexpr void add_input_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
-        if(hasInputSlot) {
+        if(has_input_slot) {
             KOTA_THROW("Only one DecoInput can be declared");
         }
-        hasInputSlot = true;
-        if(inputOptionId == 0) {
+        has_input_slot = true;
+        if(input_option_id == 0) {
             auto& item = new_item(mapped_accessor);
             item = info_item::input(item.id);
-            inputOptionId = item.id;
+            input_option_id = item.id;
         }
-        idMap[inputOptionId] = mapped_accessor;
-        set_common_options(item_by_id(inputOptionId), cfg);
-        set_category_for_item(inputOptionId, cfg.category.ptr());
-        set_callback_for_item(inputOptionId,
+        id_map[input_option_id] = mapped_accessor;
+        set_common_options(item_by_id(input_option_id), cfg);
+        set_category_for_item(input_option_id, cfg.category.ptr());
+        set_callback_for_item(input_option_id,
                               make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed));
     }
 
     template <typename CfgTy>
     constexpr void add_trailing_option(const CfgTy& cfg, accessor_fn mapped_accessor) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, std::remove_cvref_t<CfgTy>>);
-        if(hasTrailingSlot) {
+        if(has_trailing_slot) {
             KOTA_THROW("Only one DecoPack can be declared");
         }
-        hasTrailingSlot = true;
-        hasTrailingPack = true;
-        trailingAccessor = mapped_accessor;
-        trailingCategory = cfg.category.ptr();
-        trailingCallback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
+        has_trailing_slot = true;
+        has_trailing_pack = true;
+        trailing_accessor = mapped_accessor;
+        trailing_category = cfg.category.ptr();
+        trailing_callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
 
         // The backend only has one input id slot. If trailing appears first, reserve that slot
         // now so parse_args can still emit a valid input option id.
-        if(inputOptionId == 0) {
+        if(input_option_id == 0) {
             auto& item = new_item(mapped_accessor);
             item = info_item::input(item.id);
-            inputOptionId = item.id;
+            input_option_id = item.id;
             set_common_options(item, cfg);
             set_category_for_item(item.id, cfg.category.ptr());
         }
@@ -1031,14 +1031,14 @@ public:
     constexpr static unsigned unknown_option_id = 1;
 
     constexpr explicit LLVMOptGenerator() :
-        strPool(resource), itemPool(resource), idMap(resource), categoryMap(resource),
-        callbackMap(resource), aliasMetaMap(resource), aliasStringPool(resource) {
+        str_pool(resource), item_pool(resource), id_map(resource), category_map(resource),
+        callback_map(resource), alias_meta_map(resource), alias_string_pool(resource) {
         // Dummy item: keeps id and index aligned (id 0 => index 0).
-        itemPool.push_back(make_default_item(0));
-        idMap.push_back(nullptr);
-        categoryMap.push_back(nullptr);
-        callbackMap.push_back({});
-        aliasMetaMap.push_back({});
+        item_pool.push_back(make_default_item(0));
+        id_map.push_back(nullptr);
+        category_map.push_back(nullptr);
+        callback_map.push_back({});
+        alias_meta_map.push_back({});
 
         auto& unknown = new_item(nullptr);
         unknown = info_item::unknown(unknown.id);
@@ -1176,39 +1176,39 @@ public:
     }
 
     constexpr bool has_input_option() const {
-        return hasInputSlot;
+        return has_input_slot;
     }
 
     constexpr bool has_trailing_option() const {
-        return hasTrailingSlot;
+        return has_trailing_slot;
     }
 
     constexpr std::size_t opt_size() const {
-        return itemPool.size() - 1;
+        return item_pool.size() - 1;
     }
 
     constexpr std::size_t strpool_size() const {
-        return strPool.size();
+        return str_pool.size();
     }
 
     constexpr auto option_infos() const {
-        return std::span<const info_item>(itemPool.data() + 1, itemPool.size() - 1);
+        return std::span<const info_item>(item_pool.data() + 1, item_pool.size() - 1);
     }
 
-    constexpr auto id_map() const {
-        return std::span<const accessor_fn>(idMap.data(), idMap.size());
+    constexpr auto get_id_map() const {
+        return std::span<const accessor_fn>(id_map.data(), id_map.size());
     }
 
-    constexpr auto category_map() const {
-        return std::span<const decl::Category* const>(categoryMap.data(), categoryMap.size());
+    constexpr auto get_category_map() const {
+        return std::span<const decl::Category* const>(category_map.data(), category_map.size());
     }
 
-    constexpr auto callback_map() const {
-        return std::span<const parse_callback_t>(callbackMap.data(), callbackMap.size());
+    constexpr auto get_callback_map() const {
+        return std::span<const parse_callback_t>(callback_map.data(), callback_map.size());
     }
 
-    constexpr auto alias_meta_map() const {
-        return std::span<const AliasRuntimeMeta>(aliasMetaMap.data(), aliasMetaMap.size());
+    constexpr auto get_alias_meta_map() const {
+        return std::span<const AliasRuntimeMeta>(alias_meta_map.data(), alias_meta_map.size());
     }
 
     constexpr bool is_alias_option_id(backend::OptSpecifier opt) const {
@@ -1216,17 +1216,17 @@ public:
             return false;
         }
         const auto id = opt.id();
-        if(id >= aliasMetaMap.size()) {
+        if(id >= alias_meta_map.size()) {
             return false;
         }
-        return aliasMetaMap[id].kind != AliasRuntimeMeta::Kind::None;
+        return alias_meta_map[id].kind != AliasRuntimeMeta::Kind::None;
     }
 
     constexpr auto alias_meta_of(backend::OptSpecifier opt) const -> const AliasRuntimeMeta* {
         if(!is_alias_option_id(opt)) {
             return nullptr;
         }
-        return &aliasMetaMap[opt.id()];
+        return &alias_meta_map[opt.id()];
     }
 
     constexpr void* field_ptr_of(backend::OptSpecifier opt, RootTy& object) const {
@@ -1234,10 +1234,10 @@ public:
             return nullptr;
         }
         const auto id = opt.id();
-        if(id >= id_map().size()) {
+        if(id >= get_id_map().size()) {
             return nullptr;
         }
-        auto accessor = idMap[id];
+        auto accessor = id_map[id];
         if(accessor == nullptr) {
             return nullptr;
         }
@@ -1245,32 +1245,32 @@ public:
     }
 
     constexpr bool is_input_argument(const backend::ParsedArgument& arg) const {
-        if(arg.option_id.id() != inputOptionId) {
+        if(arg.option_id.id() != input_option_id) {
             return false;
         }
         return !is_trailing_argument(arg);
     }
 
     constexpr bool is_trailing_argument(const backend::ParsedArgument& arg) const {
-        if(arg.option_id.id() != inputOptionId) {
+        if(arg.option_id.id() != input_option_id) {
             return false;
         }
         return arg.get_spelling_view() == "--";
     }
 
     constexpr void* trailing_ptr_of(RootTy& object) const {
-        if(trailingAccessor == nullptr) {
+        if(trailing_accessor == nullptr) {
             return nullptr;
         }
-        return trailingAccessor(static_cast<void*>(&object));
+        return trailing_accessor(static_cast<void*>(&object));
     }
 
-    constexpr const decl::Category* trailing_category() const {
-        return trailingCategory;
+    constexpr const decl::Category* get_trailing_category() const {
+        return trailing_category;
     }
 
-    constexpr parse_callback_t trailing_callback() const {
-        return trailingCallback;
+    constexpr parse_callback_t get_trailing_callback() const {
+        return trailing_callback;
     }
 
     constexpr const decl::Category* category_of(backend::OptSpecifier opt) const {
@@ -1278,10 +1278,10 @@ public:
             return nullptr;
         }
         const auto id = opt.id();
-        if(id >= category_map().size()) {
+        if(id >= get_category_map().size()) {
             return nullptr;
         }
-        return categoryMap[id];
+        return category_map[id];
     }
 
     constexpr parse_callback_t callback_of(backend::OptSpecifier opt) const {
@@ -1289,18 +1289,18 @@ public:
             return {};
         }
         const auto id = opt.id();
-        if(id >= callback_map().size()) {
+        if(id >= get_callback_map().size()) {
             return {};
         }
-        return callbackMap[id];
+        return callback_map[id];
     }
 
     auto make_opt_table() const& {
         return backend::OptTable(option_infos(), false, {}, false)
             .set_tablegen_mode(false)
             .set_input_random_index(true)
-            .set_dash_dash_parsing(hasTrailingPack)
-            .set_dash_dash_as_single_pack(hasTrailingPack)
+            .set_dash_dash_parsing(has_trailing_pack)
+            .set_dash_dash_as_single_pack(has_trailing_pack)
             .build();
     }
 

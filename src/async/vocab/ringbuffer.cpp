@@ -6,16 +6,16 @@
 
 namespace kota {
 
-size_t ring_buffer::read(char* dest, size_t len) {
-    const size_t to_read = std::min(len, size);
+std::size_t ring_buffer::read(char* dest, std::size_t len) {
+    const std::size_t to_read = std::min(len, size);
     if(to_read == 0) {
         return 0;
     }
 
-    const size_t first_chunk = std::min(to_read, data.size() - head);
+    const std::size_t first_chunk = std::min(to_read, data.size() - head);
     std::memcpy(dest, data.data() + head, first_chunk);
 
-    const size_t remaining = to_read - first_chunk;
+    const std::size_t remaining = to_read - first_chunk;
     if(remaining > 0) {
         std::memcpy(dest + first_chunk, data.data(), remaining);
     }
@@ -25,7 +25,7 @@ size_t ring_buffer::read(char* dest, size_t len) {
     return to_read;
 }
 
-std::pair<const char*, size_t> ring_buffer::get_read_ptr() const {
+std::pair<const char*, std::size_t> ring_buffer::get_read_ptr() const {
     if(size == 0 || data.empty()) {
         return {nullptr, 0};
     }
@@ -34,7 +34,7 @@ std::pair<const char*, size_t> ring_buffer::get_read_ptr() const {
     // would yield contiguous = 0, causing read_chunk() to return an empty
     // span and the caller to spin forever. Use strict `>` so the full case
     // falls through to the else branch (data.size() - head), which is correct.
-    size_t contiguous = 0;
+    std::size_t contiguous = 0;
     if(tail > head) {
         contiguous = tail - head;
     } else {
@@ -45,7 +45,7 @@ std::pair<const char*, size_t> ring_buffer::get_read_ptr() const {
     return {data.data() + head, contiguous};
 }
 
-void ring_buffer::advance_read(size_t len) {
+void ring_buffer::advance_read(std::size_t len) {
     if(len > size) {
         len = size;
     }
@@ -58,13 +58,13 @@ void ring_buffer::advance_read(size_t len) {
     size -= len;
 }
 
-std::pair<char*, size_t> ring_buffer::get_write_ptr() {
+std::pair<char*, std::size_t> ring_buffer::get_write_ptr() {
     if(data.empty()) {
         return {nullptr, 0};
     }
 
-    const size_t writable = writable_bytes();
-    size_t contiguous = 0;
+    const std::size_t writable = writable_bytes();
+    std::size_t contiguous = 0;
     if(writable == 0) {
         contiguous = 0;
     } else if(tail >= head) {
@@ -76,10 +76,14 @@ std::pair<char*, size_t> ring_buffer::get_write_ptr() {
     return {data.data() + tail, contiguous};
 }
 
-void ring_buffer::advance_write(size_t len) {
-    const size_t writable = writable_bytes();
+void ring_buffer::advance_write(std::size_t len) {
+    const std::size_t writable = writable_bytes();
     if(len > writable) {
         len = writable;
+    }
+
+    if(len == 0 || data.empty()) {
+        return;
     }
 
     tail = (tail + len) % data.size();

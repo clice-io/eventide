@@ -54,7 +54,7 @@ struct StreamingDeserCtx {
             std::int64_t parsed = 0;
             KOTA_EXPECTED_TRY(d.deserialize_int(parsed));
             if(!integral_value_in_range<T>(parsed)) {
-                return std::unexpected(error_type::number_out_of_range);
+                return std::unexpected(error_type::NumberOutOfRange);
             }
             v = static_cast<T>(parsed);
             return {};
@@ -69,7 +69,7 @@ struct StreamingDeserCtx {
             std::uint64_t parsed = 0;
             KOTA_EXPECTED_TRY(d.deserialize_uint(parsed));
             if(!integral_value_in_range<T>(parsed)) {
-                return std::unexpected(error_type::number_out_of_range);
+                return std::unexpected(error_type::NumberOutOfRange);
             }
             v = static_cast<T>(parsed);
             return {};
@@ -190,7 +190,7 @@ struct StreamingDeserCtx {
             auto read_element = [&](auto& element) -> bool {
                 auto has = d.next_element();
                 if(!has || !*has) {
-                    element_result = std::unexpected(E::type_mismatch);
+                    element_result = std::unexpected(E::TypeMismatch);
                     return false;
                 }
                 auto result = codec::deserialize(d, element);
@@ -211,7 +211,7 @@ struct StreamingDeserCtx {
             // Verify no trailing elements beyond the expected tuple size
             KOTA_EXPECTED_TRY_V(auto trailing, d.next_element());
             if(trailing) {
-                return std::unexpected(E::type_mismatch);
+                return std::unexpected(E::TypeMismatch);
             }
 
             return d.end_array();
@@ -370,7 +370,7 @@ struct StreamingDeserCtx {
 
 template <typename Config, typename Ctx, typename Attrs, typename V>
 auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
-    using U = std::remove_cvref_t<V>;
+    using U = V;
     using E = typename Ctx::error_type;
 
     if constexpr(meta::annotated_type<U>) {
@@ -452,7 +452,7 @@ auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
             std::int64_t parsed = 0;
             KOTA_EXPECTED_TRY(ctx.read_int(parsed));
             if(!integral_value_in_range<underlying_t>(parsed)) {
-                return std::unexpected(E::number_out_of_range);
+                return std::unexpected(E::NumberOutOfRange);
             }
             v = static_cast<U>(static_cast<underlying_t>(parsed));
             return {};
@@ -460,7 +460,7 @@ auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
             std::uint64_t parsed = 0;
             KOTA_EXPECTED_TRY(ctx.read_uint(parsed));
             if(!integral_value_in_range<underlying_t>(parsed)) {
-                return std::unexpected(E::number_out_of_range);
+                return std::unexpected(E::NumberOutOfRange);
             }
             v = static_cast<U>(static_cast<underlying_t>(parsed));
             return {};
@@ -486,7 +486,7 @@ auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
             v = U{};
             return {};
         }
-        return std::unexpected(E::type_mismatch);
+        return std::unexpected(E::TypeMismatch);
     } else if constexpr(is_specialization_of<std::optional, U>) {
         return ctx.read_optional(v);
     } else if constexpr(is_specialization_of<std::unique_ptr, U>) {

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <format>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -61,7 +62,7 @@ inline std::string meta_var_token(std::string_view meta_var) {
     return std::format("<{}>", meta_var);
 }
 
-inline std::string enum_meta_var_token(const std::vector<std::string>& names,
+inline std::string enum_meta_var_token(std::span<const std::string> names,
                                        const config::EnumMetaVarConfig& cfg) {
     if(names.empty()) {
         return "<value>";
@@ -133,7 +134,7 @@ inline std::string inferred_meta_var_token(const decl::MetaVarField& meta_var,
     return meta_var_token(meta_var.value);
 }
 
-inline std::string join_strings(const std::vector<std::string>& parts, std::string_view separator) {
+inline std::string join_strings(std::span<const std::string> parts, std::string_view separator) {
     if(parts.empty()) {
         return "";
     }
@@ -203,7 +204,7 @@ inline std::vector<std::string> named_aliases(const CfgTy& cfg, std::string_view
     return aliases;
 }
 
-inline std::string join_aliases(const std::vector<std::string>& aliases, bool help_mode) {
+inline std::string join_aliases(std::span<const std::string> aliases, bool help_mode) {
     return join_strings(aliases, help_mode ? ", " : "|");
 }
 

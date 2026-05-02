@@ -55,7 +55,7 @@ constexpr bool root_table_v = (meta::reflectable_class<T> && !is_pair_v<T> && !i
 
 template <typename T>
 auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
-    using U = std::remove_cvref_t<T>;
+    using U = T;
 
     if constexpr(is_specialization_of<std::optional, U>) {
         if(table.empty()) {
@@ -155,7 +155,7 @@ public:
             return std::unexpected(last_error);
         }
         if(!root_consumed) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         return {};
     }
@@ -186,7 +186,7 @@ public:
         auto best = codec::select_variant_index<toml_source_adapter, config_type, Ts...>(*node);
 
         if(!best) {
-            return mark_invalid(error_type::type_mismatch);
+            return mark_invalid(error_type::TypeMismatch);
         }
 
         return codec::deserialize_variant_at<error_type>(*this, value, *best);
@@ -196,7 +196,7 @@ public:
         return read_scalar(value, [](const ::toml::node& node) -> result_t<bool> {
             auto parsed = node.value<bool>();
             if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
+                return std::unexpected(error_kind::TypeMismatch);
             }
             return *parsed;
         });
@@ -209,13 +209,11 @@ public:
             [](const ::toml::node& node) -> result_t<std::int64_t> {
                 auto parsed = node.value<std::int64_t>();
                 if(!parsed.has_value()) {
-                    return std::unexpected(error_kind::type_mismatch);
+                    return std::unexpected(error_kind::TypeMismatch);
                 }
                 return *parsed;
             },
-            [](auto p) {
-                return codec::detail::narrow_int<T>(p, error_kind::number_out_of_range);
-            });
+            [](auto p) { return codec::detail::narrow_int<T>(p, error_kind::NumberOutOfRange); });
     }
 
     template <codec::uint_like T>
@@ -225,16 +223,16 @@ public:
             [](const ::toml::node& node) -> result_t<std::int64_t> {
                 auto parsed = node.value<std::int64_t>();
                 if(!parsed.has_value()) {
-                    return std::unexpected(error_kind::type_mismatch);
+                    return std::unexpected(error_kind::TypeMismatch);
                 }
                 return *parsed;
             },
             [](std::int64_t p) -> std::expected<T, error_type> {
                 if(p < 0) {
-                    return std::unexpected(error_kind::number_out_of_range);
+                    return std::unexpected(error_kind::NumberOutOfRange);
                 }
                 return codec::detail::narrow_uint<T>(static_cast<std::uint64_t>(p),
-                                                     error_kind::number_out_of_range);
+                                                     error_kind::NumberOutOfRange);
             });
     }
 
@@ -245,13 +243,11 @@ public:
             [](const ::toml::node& node) -> result_t<double> {
                 auto parsed = node.value<double>();
                 if(!parsed.has_value()) {
-                    return std::unexpected(error_kind::type_mismatch);
+                    return std::unexpected(error_kind::TypeMismatch);
                 }
                 return *parsed;
             },
-            [](auto p) {
-                return codec::detail::narrow_float<T>(p, error_kind::number_out_of_range);
-            });
+            [](auto p) { return codec::detail::narrow_float<T>(p, error_kind::NumberOutOfRange); });
     }
 
     status_t deserialize_char(char& value) {
@@ -260,12 +256,12 @@ public:
             [](const ::toml::node& node) -> result_t<std::string> {
                 auto parsed = node.value<std::string>();
                 if(!parsed.has_value()) {
-                    return std::unexpected(error_kind::type_mismatch);
+                    return std::unexpected(error_kind::TypeMismatch);
                 }
                 return std::move(*parsed);
             },
-            [](const std::string& p) {
-                return codec::detail::narrow_char(std::string_view(p), error_kind::type_mismatch);
+            [](std::string_view p) {
+                return codec::detail::narrow_char(std::string_view(p), error_kind::TypeMismatch);
             });
     }
 
@@ -273,7 +269,7 @@ public:
         return read_scalar(value, [](const ::toml::node& node) -> result_t<std::string> {
             auto parsed = node.value<std::string>();
             if(!parsed.has_value()) {
-                return std::unexpected(error_kind::type_mismatch);
+                return std::unexpected(error_kind::TypeMismatch);
             }
             return std::move(*parsed);
         });
@@ -290,7 +286,7 @@ public:
             std::uint64_t byte_val = 0;
             KOTA_EXPECTED_TRY(deserialize_uint(byte_val));
             if(byte_val > 255U) {
-                return mark_invalid(error_kind::number_out_of_range);
+                return mark_invalid(error_kind::NumberOutOfRange);
             }
             value.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(byte_val)));
         }
@@ -327,11 +323,11 @@ public:
             return std::unexpected(node.error());
         }
         if(*node == nullptr) {
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
         const auto* table = (*node)->as_table();
         if(table == nullptr) {
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
         auto it = table->find(field_name);
         if(it == table->cend()) {
@@ -339,7 +335,7 @@ public:
         }
         auto val = it->second.template value<std::string_view>();
         if(!val.has_value()) {
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
         return std::string(*val);
     }
@@ -356,7 +352,7 @@ public:
 
     result_t<std::optional<std::string_view>> next_field() {
         if(!is_valid || deser_stack.empty()) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         auto& frame = deser_stack.back();
 
@@ -381,7 +377,7 @@ public:
 
     status_t skip_field_value() {
         if(!is_valid || deser_stack.empty()) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         auto& frame = deser_stack.back();
         ++frame.iter;
@@ -393,7 +389,7 @@ public:
 
     status_t end_object() {
         if(!is_valid || deser_stack.empty()) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         deser_stack.pop_back();
         has_current_value = false;
@@ -409,7 +405,7 @@ public:
 
     result_t<bool> next_element() {
         if(!is_valid || array_stack.empty()) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         auto& frame = array_stack.back();
         if(frame.index >= frame.array->size()) {
@@ -425,7 +421,7 @@ public:
 
     status_t end_array() {
         if(!is_valid || array_stack.empty()) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         array_stack.pop_back();
         has_current_value = false;
@@ -453,7 +449,7 @@ private:
             return std::unexpected(node.error());
         }
         if(*node == nullptr) {
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
 
         auto parsed = std::forward<Reader>(reader)(**node);
@@ -474,7 +470,7 @@ private:
             return current_node;
         }
         if(root_consumed) {
-            return mark_invalid(error_kind::invalid_state);
+            return mark_invalid(error_kind::InvalidState);
         }
         if(consume) {
             root_consumed = true;
@@ -498,7 +494,7 @@ private:
             return std::unexpected(node.error());
         }
         if(*node == nullptr) {
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
 
         const auto* casted = [&]() -> const T* {
@@ -510,7 +506,7 @@ private:
         }();
 
         if(casted == nullptr) {
-            return mark_invalid(error_kind::type_mismatch);
+            return mark_invalid(error_kind::TypeMismatch);
         }
         return casted;
     }
@@ -530,9 +526,9 @@ private:
         };
     }
 
-    std::unexpected<error_type> mark_invalid(error_type error = error_type::invalid_state) {
+    std::unexpected<error_type> mark_invalid(error_type error = error_type::InvalidState) {
         is_valid = false;
-        if(last_error == error_type::invalid_state || error != error_type::invalid_state) {
+        if(last_error == error_type::InvalidState || error != error_type::InvalidState) {
             if(!error.location()) {
                 if(auto loc = source_from_node(last_accessed_node)) {
                     error.set_location(*loc);
@@ -558,7 +554,7 @@ private:
 
     bool is_valid = true;
     bool root_consumed = false;
-    error_type last_error = error_type::invalid_state;
+    error_type last_error = error_type::InvalidState;
     const ::toml::node* root_node = nullptr;
     bool has_current_value = false;
     const ::toml::node* current_node = nullptr;

@@ -67,11 +67,11 @@ TEST_CASE(end_on_empty_stack_returns_invalid_state) {
 
     auto arr_result = s.end_array();
     ASSERT_FALSE(arr_result.has_value());
-    EXPECT_EQ(arr_result.error(), content::error_kind::invalid_state);
+    EXPECT_EQ(arr_result.error(), content::error_kind::InvalidState);
 
     auto obj_result = s.end_object();
     ASSERT_FALSE(obj_result.has_value());
-    EXPECT_EQ(obj_result.error(), content::error_kind::invalid_state);
+    EXPECT_EQ(obj_result.error(), content::error_kind::InvalidState);
 }
 
 TEST_CASE(end_object_on_array_frame_returns_invalid_state) {
@@ -80,7 +80,7 @@ TEST_CASE(end_object_on_array_frame_returns_invalid_state) {
     ASSERT_TRUE(s.begin_array(std::nullopt).has_value());
     auto result = s.end_object();
     ASSERT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), content::error_kind::invalid_state);
+    EXPECT_EQ(result.error(), content::error_kind::InvalidState);
 }
 
 TEST_CASE(serialize_element_with_dom_subtree) {

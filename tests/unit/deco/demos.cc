@@ -1,4 +1,3 @@
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -35,7 +34,6 @@ TEST_CASE(MyClang) {
     cmd.usage(ss);
     EXPECT_TRUE(ss.str().contains("Clang [OPTIONS] inputs"));
     EXPECT_TRUE(ss.str().contains("-o1"));
-    cmd.usage(std::cout);
 
     std::vector<std::string> args = {"-o1", "--support-ext", "cc"};
     auto res = cmd.invoke(args);

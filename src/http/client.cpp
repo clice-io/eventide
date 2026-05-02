@@ -1,8 +1,8 @@
 #include "kota/http/detail/client.h"
 
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <print>
 #include <utility>
 
 #include "kota/http/detail/bound_client.h"
@@ -15,7 +15,7 @@ namespace {
 std::shared_ptr<detail::shared_resources> require_shared_resources() {
     auto resources = detail::make_shared_resources();
     if(!resources) {
-        std::fprintf(stderr, "fatal: failed to initialize curl shared resources\n");
+        std::println(stderr, "fatal: failed to initialize curl shared resources");
         std::abort();
     }
     return resources;

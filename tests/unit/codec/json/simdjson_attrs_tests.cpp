@@ -142,7 +142,7 @@ TEST_CASE(alias_conflict_fails_fast) {
     alias_conflict_payload parsed{};
     auto status = from_json(R"({"dup":1})", parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error(), json::error_kind::invalid_state);
+    EXPECT_EQ(status.error(), json::error_kind::InvalidState);
 }
 
 TEST_CASE(skip_field_does_not_require_deserializer) {
@@ -174,7 +174,7 @@ TEST_CASE(annotated_struct_deny_unknown_fields_applies) {
 
     auto status = from_json(R"({"userId":3,"loginCount":4,"extra":9})", parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_EQ(status.error(), json::error_kind::type_mismatch);
+    EXPECT_EQ(status.error(), json::error_kind::TypeMismatch);
 }
 
 };  // TEST_SUITE(serde_simdjson_attrs)
