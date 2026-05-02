@@ -56,9 +56,18 @@ constexpr std::string_view json_minified =
     R"({"fixed_object":{"int_array":[0,1,2,3,4,5,6],"float_array":[0.1,0.2,0.3,0.4,0.5,0.6],"double_array":[3288398.238,2.33e+24,28.9,0.928759872,0.22222848,0.1,0.2,0.3,0.4]},"fixed_name_object":{"name0":"James","name1":"Abraham","name2":"Susan","name3":"Frank","name4":"Alicia"},"another_object":{"string":"here is some text","another_string":"Hello World","escaped_text":"{\"some key\":\"some string value\"}","boolean":false,"nested_object":{"v3s":[[0.12345,0.23456,0.001345],[0.3894675,97.39827,297.92387],[18.18,87.289,2988.298]],"id":"298728949872"}},"string_array":["Cat","Dog","Elephant","Tiger"],"string":"Hello world","number":3.14,"boolean":true,"another_bool":false})";
 
 void BM_write(benchmark::State& state) {
-    auto obj = *from_json<obj_t>(json_minified);
-    auto sample = *to_json(obj);
-    auto len = sample.size();
+    auto parsed = from_json<obj_t>(json_minified);
+    if(!parsed) {
+        state.SkipWithError("BM_write setup: from_json failed");
+        return;
+    }
+    auto obj = *parsed;
+    auto sample = to_json(obj);
+    if(!sample) {
+        state.SkipWithError("BM_write setup: to_json failed");
+        return;
+    }
+    auto len = sample->size();
     Serializer<> serializer(len);
     for(auto _: state) {
         serializer.clear();
@@ -70,8 +79,18 @@ void BM_write(benchmark::State& state) {
 }
 
 void BM_write_alloc(benchmark::State& state) {
-    auto obj = *from_json<obj_t>(json_minified);
-    auto len = to_json(obj)->size();
+    auto parsed = from_json<obj_t>(json_minified);
+    if(!parsed) {
+        state.SkipWithError("BM_write_alloc setup: from_json failed");
+        return;
+    }
+    auto obj = *parsed;
+    auto sample = to_json(obj);
+    if(!sample) {
+        state.SkipWithError("BM_write_alloc setup: to_json failed");
+        return;
+    }
+    auto len = sample->size();
     for(auto _: state) {
         benchmark::DoNotOptimize(to_json(obj, len));
     }
@@ -84,7 +103,10 @@ void BM_read(benchmark::State& state) {
     auto len = json_minified.size();
     obj_t out{};
     for(auto _: state) {
-        from_json(static_cast<simdjson::padded_string_view>(padded), out);
+        if(auto r = from_json(static_cast<simdjson::padded_string_view>(padded), out); !r) {
+            state.SkipWithError("BM_read: from_json failed");
+            break;
+        }
         benchmark::ClobberMemory();
     }
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
@@ -95,7 +117,10 @@ void BM_read_copy(benchmark::State& state) {
     auto len = json_minified.size();
     obj_t out{};
     for(auto _: state) {
-        from_json(json_minified, out);
+        if(auto r = from_json(json_minified, out); !r) {
+            state.SkipWithError("BM_read_copy: from_json failed");
+            break;
+        }
         benchmark::ClobberMemory();
     }
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(len));
@@ -404,9 +429,18 @@ void simdjson_write_obj(simdjson::builder::string_builder& sb, const obj_t& obj)
 }
 
 void BM_write_handwritten(benchmark::State& state) {
-    auto obj = *from_json<obj_t>(json_minified);
-    auto sample = *to_json(obj);
-    auto len = sample.size();
+    auto parsed = from_json<obj_t>(json_minified);
+    if(!parsed) {
+        state.SkipWithError("BM_write_handwritten setup: from_json failed");
+        return;
+    }
+    auto obj = *parsed;
+    auto sample = to_json(obj);
+    if(!sample) {
+        state.SkipWithError("BM_write_handwritten setup: to_json failed");
+        return;
+    }
+    auto len = sample->size();
     simdjson::builder::string_builder sb(len);
     for(auto _: state) {
         sb.clear();
