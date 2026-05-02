@@ -89,8 +89,8 @@
 #elif defined(_MSC_VER)
 #define KOTA_ALWAYS_INLINE [[msvc::forceinline]] inline
 #else
-#define KOTA_ALWAYS_INLINE
+#define KOTA_ALWAYS_INLINE inline
 #endif
 #else
-#define KOTA_ALWAYS_INLINE
+#define KOTA_ALWAYS_INLINE inline
 #endif
