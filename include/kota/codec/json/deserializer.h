@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
+#include "kota/support/small_vector.h"
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
@@ -357,7 +358,7 @@ public:
         return result;
     }
 
-    status_t begin_object() {
+    KOTA_ALWAYS_INLINE status_t begin_object() {
         if(pending_object) {
             auto obj = std::move(*pending_object);
             pending_object.reset();
@@ -369,7 +370,7 @@ public:
         return begin_object(std::move(obj));
     }
 
-    result_t<std::optional<std::string_view>> next_field() {
+    KOTA_ALWAYS_INLINE result_t<std::optional<std::string_view>> next_field() {
         if(!is_valid || deser_stack.empty()) {
             return mark_invalid();
         }
@@ -392,10 +393,12 @@ public:
             return mark_invalid(field_err);
         }
 
-        auto key_err = field.unescaped_key(frame.pending_key);
+        std::string_view key_sv;
+        auto key_err = field.unescaped_key().get(key_sv);
         if(key_err != simdjson::SUCCESS) {
             return mark_invalid(key_err);
         }
+        frame.pending_key = key_sv;
 
         frame.pending_value = std::move(field).value();
         frame.has_pending_value = true;
@@ -403,7 +406,7 @@ public:
         return std::optional<std::string_view>(std::string_view(frame.pending_key));
     }
 
-    status_t skip_field_value() {
+    KOTA_ALWAYS_INLINE status_t skip_field_value() {
         if(!is_valid || deser_stack.empty()) {
             return mark_invalid();
         }
@@ -422,7 +425,7 @@ public:
         return {};
     }
 
-    status_t end_object() {
+    KOTA_ALWAYS_INLINE status_t end_object() {
         if(!is_valid || deser_stack.empty()) {
             return mark_invalid();
         }
@@ -435,7 +438,7 @@ public:
         return {};
     }
 
-    status_t begin_array() {
+    KOTA_ALWAYS_INLINE status_t begin_array() {
         if(pending_array) {
             auto arr = std::move(*pending_array);
             pending_array.reset();
@@ -447,7 +450,7 @@ public:
         return begin_array(std::move(arr));
     }
 
-    result_t<bool> next_element() {
+    KOTA_ALWAYS_INLINE result_t<bool> next_element() {
         if(!is_valid || array_stack.empty()) {
             return mark_invalid();
         }
@@ -474,7 +477,7 @@ public:
         return true;
     }
 
-    status_t end_array() {
+    KOTA_ALWAYS_INLINE status_t end_array() {
         if(!is_valid || array_stack.empty()) {
             return mark_invalid();
         }
@@ -600,7 +603,7 @@ private:
         return {};
     }
 
-    status_t begin_object(simdjson::ondemand::object obj) {
+    KOTA_ALWAYS_INLINE status_t begin_object(simdjson::ondemand::object obj) {
         current_value = nullptr;
         deser_frame frame;
         frame.object = std::move(obj);
@@ -621,7 +624,7 @@ private:
         return {};
     }
 
-    status_t begin_array(simdjson::ondemand::array arr) {
+    KOTA_ALWAYS_INLINE status_t begin_array(simdjson::ondemand::array arr) {
         current_value = nullptr;
         array_frame frame;
         frame.array = std::move(arr);
@@ -746,7 +749,7 @@ private:
         simdjson::ondemand::object_iterator iter{};
         simdjson::ondemand::object_iterator end_iter{};
         simdjson::ondemand::value pending_value{};
-        std::string pending_key;
+        std::string_view pending_key;
         bool has_pending_value = false;
     };
 
@@ -766,8 +769,8 @@ private:
     std::optional<simdjson::ondemand::object> pending_object;
     std::optional<simdjson::ondemand::array> pending_array;
 
-    std::vector<deser_frame> deser_stack;
-    std::vector<array_frame> array_stack;
+    kota::small_vector<deser_frame, 4> deser_stack;
+    kota::small_vector<array_frame, 4> array_stack;
 
     simdjson::ondemand::parser parser;
     simdjson::padded_string json_buffer;

@@ -198,7 +198,7 @@ struct field_name_table {
 };
 
 template <typename T, typename Config>
-auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
+KOTA_ALWAYS_INLINE auto schema_lookup_field(std::string_view key) -> std::optional<std::size_t> {
     using table = field_name_table<T, Config>;
     if constexpr(table::name_count == 0) {
         return std::nullopt;
@@ -246,7 +246,7 @@ template <typename Config>
 constexpr bool config_deny_unknown_v = requires { requires Config::deny_unknown_fields; };
 
 template <typename Config, typename E, typename D, typename T>
-auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
+KOTA_ALWAYS_INLINE auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
     using schema = meta::virtual_schema<T, Config>;
     constexpr bool deny_unknown = schema::deny_unknown || config_deny_unknown_v<Config>;
 
@@ -267,13 +267,10 @@ auto struct_deserialize_by_name(D& d, T& v) -> std::expected<void, E> {
 
             auto idx = schema_lookup_field<T, Config>(key_name);
             if(idx) {
-                // Copy key before dispatch: nested begin_object() may realloc the
-                // deserializer's frame stack, invalidating the string_view.
-                std::string owned_key(key_name);
                 auto field_status = dispatch_slot_deserialize<T, Config, E>(d, *idx, v);
-                if(!field_status) {
+                if(!field_status) [[unlikely]] {
                     auto err = std::move(field_status).error();
-                    err.prepend_field(owned_key);
+                    err.prepend_field(schema::fields[*idx].name);
                     return std::unexpected(std::move(err));
                 }
                 seen_fields |= (std::uint64_t(1) << *idx);

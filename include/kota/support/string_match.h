@@ -6,6 +6,8 @@
 #include <string_view>
 #include <utility>
 
+#include "kota/support/config.h"
+
 namespace kota::detail {
 
 template <std::size_t MaxN>
@@ -62,7 +64,7 @@ constexpr auto match_in_length_group(std::string_view key, std::index_sequence<I
 namespace kota {
 
 template <const auto& Names>
-constexpr auto string_match(std::string_view key) -> std::optional<std::size_t> {
+KOTA_ALWAYS_INLINE constexpr auto string_match(std::string_view key) -> std::optional<std::size_t> {
     constexpr std::size_t N = Names.size();
     if constexpr(N == 0) {
         return std::nullopt;
