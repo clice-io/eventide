@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -34,7 +35,7 @@ inline task<std::vector<fs_event::change>, error> next_or_timeout(fs_event& w,
                          std::move(*result));
 }
 
-inline bool has_effect(const std::vector<fs_event::change>& changes, fs_event::effect eff) {
+inline bool has_effect(std::span<const fs_event::change> changes, fs_event::effect eff) {
     return std::ranges::any_of(changes, [eff](const auto& c) { return c.type == eff; });
 }
 

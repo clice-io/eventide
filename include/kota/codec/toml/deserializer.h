@@ -55,7 +55,7 @@ constexpr bool root_table_v = (meta::reflectable_class<T> && !is_pair_v<T> && !i
 
 template <typename T>
 auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
-    using U = std::remove_cvref_t<T>;
+    using U = T;
 
     if constexpr(is_specialization_of<std::optional, U>) {
         if(table.empty()) {
@@ -260,7 +260,7 @@ public:
                 }
                 return std::move(*parsed);
             },
-            [](const std::string& p) {
+            [](std::string_view p) {
                 return codec::detail::narrow_char(std::string_view(p), error_kind::TypeMismatch);
             });
     }

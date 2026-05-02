@@ -8,7 +8,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -1343,7 +1342,11 @@ TEST_CASE(catter_v2) {
     cli.after<&CatterOpt::external_script>(eat_script_args)
         .after<&CatterOpt::internal_script>(eat_script_args)
         .after<&CatterOpt::help>([](auto& step) {
-            step.usage(std::cerr);
+            {
+                std::ostringstream ss;
+                step.usage(ss);
+                std::println(stderr, "{}", ss.str());
+            }
             return step.stop();
         });
 

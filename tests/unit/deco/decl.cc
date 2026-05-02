@@ -1,3 +1,4 @@
+#include <span>
 #include <string>
 #include <vector>
 
@@ -363,7 +364,7 @@ TEST_CASE(option_into_assigns_values_by_option_kind) {
 
         std::vector<std::string> values;
 
-        std::optional<std::string> into(const std::vector<std::string_view>& input) {
+        std::optional<std::string> into(std::span<const std::string_view> input) {
             values.assign(input.begin(), input.end());
             return std::nullopt;
         }

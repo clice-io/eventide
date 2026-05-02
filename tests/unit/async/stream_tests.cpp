@@ -373,7 +373,7 @@ TEST_CASE(read_chunk_then_read_some_fd) {
 
 TEST_CASE(connect_and_accept) {
 #ifdef _WIN32
-    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe";
+    const std::string name = R"(\\.\pipe\kotatsu-test-pipe)";
 #else
     std::string name = "kotatsu-test-pipe-XXXXXX";
     int fd = ::mkstemp(name.data());
@@ -405,7 +405,7 @@ TEST_CASE(connect_and_accept) {
 
 TEST_CASE(connect_failure, serial = true) {
 #ifdef _WIN32
-    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-missing";
+    const std::string name = R"(\\.\pipe\kotatsu-test-pipe-missing)";
 #else
     std::string name = "kotatsu-test-pipe-missing-XXXXXX";
     int fd = ::mkstemp(name.data());
@@ -424,7 +424,7 @@ TEST_CASE(connect_failure, serial = true) {
 
 TEST_CASE(stop, serial = true) {
 #ifdef _WIN32
-    const std::string name = "\\\\.\\pipe\\kotatsu-test-pipe-missing";
+    const std::string name = R"(\\.\pipe\kotatsu-test-pipe-missing)";
 #else
     std::string name = "kotatsu-test-pipe-missing-XXXXXX";
     int fd = ::mkstemp(name.data());

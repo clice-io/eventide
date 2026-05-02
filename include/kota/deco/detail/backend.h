@@ -100,7 +100,7 @@ private:
 
     template <typename OptTy>
     constexpr static void apply_current_config(OptTy& opt,
-                                               const std::vector<config_state>& config_stack) {
+                                               std::span<const config_state> config_stack) {
         for(const auto& cfg_state: config_stack) {
             const auto& cfg = cfg_state.cfg;
             if(cfg.required.is_overridden()) {
@@ -121,7 +121,7 @@ private:
     }
 
     template <typename CfgTy>
-    constexpr static CfgTy make_configured_cfg(const std::vector<config_state>& config_stack) {
+    constexpr static CfgTy make_configured_cfg(std::span<const config_state> config_stack) {
         static_assert(std::is_base_of_v<decl::CommonOptionFields, CfgTy>);
         CfgTy cfg{};
         apply_current_config(static_cast<decl::CommonOptionFields&>(cfg), config_stack);
@@ -399,7 +399,7 @@ class StrPool {
     constexpr void add_into(char* mem, std::string_view first, Args&&... args) {
         char* out = mem;
         auto append = [&](std::string_view part) {
-            std::copy(part.data(), part.data() + part.size(), out);
+            std::ranges::copy(part, out);
             out += part.size();
         };
         append(first);

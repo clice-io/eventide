@@ -63,7 +63,7 @@ auto deserialize_slot_value(D& d, V& value) -> std::expected<void, E> {
         }
     }
 
-    if constexpr(is_specialization_of<std::variant, std::remove_cvref_t<V>> &&
+    if constexpr(is_specialization_of<std::variant, V> &&
                  tuple_any_of_v<Attrs, meta::is_tagged_attr>) {
         using tag_attr = tuple_find_t<Attrs, meta::is_tagged_attr>;
         constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;

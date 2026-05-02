@@ -21,7 +21,7 @@ constexpr bool is_scalar_field_v =
     std::same_as<T, bool> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T>;
 
 template <typename T>
-struct schema_struct_trait;
+struct is_schema_struct_impl;
 
 template <typename T>
 constexpr bool is_schema_struct_field_v = [] {
@@ -29,30 +29,30 @@ constexpr bool is_schema_struct_field_v = [] {
     if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
         return true;
     } else if constexpr(meta::reflectable_class<U>) {
-        return schema_struct_trait<U>::value;
+        return is_schema_struct_impl<U>::value;
     } else {
         return false;
     }
 }();
 
 template <typename T>
-struct schema_struct_trait {
-    static consteval bool fields_supported() {
-        if constexpr(!meta::reflectable_class<T>) {
-            return false;
-        } else {
-            return []<std::size_t... I>(std::index_sequence<I...>) {
-                return (is_schema_struct_field_v<meta::field_type<T, I>> && ...);
-            }(std::make_index_sequence<meta::field_count<T>()>{});
-        }
+consteval bool schema_struct_fields_supported() {
+    if constexpr(!meta::reflectable_class<T>) {
+        return false;
+    } else {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (is_schema_struct_field_v<meta::field_type<T, I>> && ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
     }
-
-    constexpr static bool value = meta::reflectable_class<T> && std::is_trivial_v<T> &&
-                                  std::is_standard_layout_v<T> && fields_supported();
-};
+}
 
 template <typename T>
-constexpr bool is_schema_struct_v = schema_struct_trait<T>::value;
+struct is_schema_struct_impl :
+    std::bool_constant<meta::reflectable_class<T> && std::is_trivial_v<T> &&
+                       std::is_standard_layout_v<T> && schema_struct_fields_supported<T>()> {};
+
+template <typename T>
+constexpr bool is_schema_struct_v = is_schema_struct_impl<T>::value;
 
 }  // namespace schema_detail
 

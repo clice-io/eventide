@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,7 +21,7 @@ std::string lower_ascii(std::string_view text);
 
 std::string percent_encode(std::string_view text);
 
-std::string encode_pairs(const std::vector<query_param>& pairs);
+std::string encode_pairs(std::span<const query_param> pairs);
 
 std::string base64_encode(std::string_view text);
 

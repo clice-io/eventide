@@ -27,19 +27,19 @@ class small_vector;
 namespace detail {
 
 template <typename T>
-struct is_small_vector : std::false_type {};
+constexpr bool is_small_vector_v = false;
 
 template <typename T>
-struct is_small_vector<hybrid_vector<T>> : std::true_type {};
+constexpr bool is_small_vector_v<hybrid_vector<T>> = true;
 
 template <typename T, unsigned int InlineCapacity>
-struct is_small_vector<small_vector<T, InlineCapacity>> : std::true_type {};
+constexpr bool is_small_vector_v<small_vector<T, InlineCapacity>> = true;
 
 template <typename Range, typename T>
 concept small_vector_compatible_range =
     std::ranges::input_range<Range> &&
     std::constructible_from<T, std::ranges::range_reference_t<Range>> &&
-    !is_small_vector<std::remove_cvref_t<Range>>::value;
+    !is_small_vector_v<std::remove_cvref_t<Range>>;
 
 template <typename T>
 using small_vector_size_type =

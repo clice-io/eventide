@@ -82,6 +82,10 @@ void ring_buffer::advance_write(std::size_t len) {
         len = writable;
     }
 
+    if(len == 0 || data.empty()) {
+        return;
+    }
+
     tail = (tail + len) % data.size();
     size += len;
 }

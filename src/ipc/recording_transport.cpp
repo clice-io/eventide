@@ -7,17 +7,12 @@
 namespace kota::ipc {
 
 RecordingTransport::RecordingTransport(std::unique_ptr<Transport> transport, std::string path) :
-    inner(std::move(transport)), file(std::fopen(path.c_str(), "wb")),
+    inner(std::move(transport)), file(path, std::ios::binary),
     start(std::chrono::steady_clock::now()) {
     assert(inner && "RecordingTransport requires a non-null inner transport");
-    // If fopen fails, keep transport functional; write_record() no-ops on null file.
 }
 
-RecordingTransport::~RecordingTransport() {
-    if(file) {
-        std::fclose(file);
-    }
-}
+RecordingTransport::~RecordingTransport() = default;
 
 task<std::optional<std::string>> RecordingTransport::read_message() {
     auto msg = co_await inner->read_message();
@@ -36,15 +31,12 @@ Result<void> RecordingTransport::close_output() {
 }
 
 Result<void> RecordingTransport::close() {
-    if(file) {
-        std::fclose(file);
-        file = nullptr;
-    }
+    file.close();
     return inner->close();
 }
 
 void RecordingTransport::write_record(std::string_view payload) {
-    if(!file) {
+    if(!file.is_open()) {
         return;
     }
     auto elapsed = std::chrono::steady_clock::now() - start;
@@ -72,10 +64,14 @@ void RecordingTransport::write_record(std::string_view payload) {
         }
     }
     line.append("\"}\n");
-    auto written = std::fwrite(line.data(), 1, line.size(), file);
-    if(written != line.size() || std::fflush(file) != 0) {
-        std::fclose(file);
-        file = nullptr;
+    file.write(line.data(), static_cast<std::streamsize>(line.size()));
+    if(!file) {
+        file.close();
+        return;
+    }
+    file.flush();
+    if(!file) {
+        file.close();
     }
 }
 

@@ -5,6 +5,7 @@
 #include <functional>
 #include <iostream>
 #include <print>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -147,7 +148,7 @@ auto resolve_filter_patterns(std::string_view filter) -> FilterPatternSet {
     return patterns;
 }
 
-auto group_suites(const std::vector<kota::zest::TestSuite>& suites) -> SuiteMap {
+auto group_suites(std::span<const kota::zest::TestSuite> suites) -> SuiteMap {
     SuiteMap grouped_suites;
     for(const auto& suite: suites) {
         auto& target = grouped_suites[suite.name];

@@ -70,7 +70,7 @@ auto encode_boxed(B& b, const T& value)
 template <typename Config, typename B, typename T>
 auto encode_root(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type> {
-    using U = std::remove_cvref_t<T>;
+    using U = T;
 
     if constexpr(meta::annotated_type<U>) {
         return encode_root<Config>(b, meta::annotated_value(value));
@@ -96,8 +96,7 @@ auto encode_boxed(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type> {
     auto tb = b.start_table();
     KOTA_EXPECTED_TRY_V(auto sid, B::field_slot_id(0));
-    KOTA_EXPECTED_TRY(
-        (encode_value_at<Config, B, std::remove_cvref_t<T>, std::tuple<>>(b, tb, sid, value)));
+    KOTA_EXPECTED_TRY((encode_value_at<Config, B, T, std::tuple<>>(b, tb, sid, value)));
     return tb.finalize();
 }
 
@@ -132,7 +131,7 @@ template <typename Config, typename B, typename T>
 auto encode_tuple_like(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
 
     auto tb = b.start_table();
 
@@ -167,7 +166,7 @@ template <typename Config, typename B, typename T>
 auto encode_variant(B& b, const T& value)
     -> std::expected<typename B::table_ref, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     static_assert(is_specialization_of<std::variant, U>, "variant required");
 
     auto tb = b.start_table();
@@ -210,15 +209,15 @@ auto encode_variant(B& b, const T& value)
 template <typename Config, typename B, typename Raw, typename Attrs, typename V>
 auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid, const V& value)
     -> std::expected<void, typename B::error_type> {
-    using U = std::remove_cvref_t<V>;
+    using U = V;
 
     if constexpr(arena::streaming_serialize_traits<B, U>) {
-        using traits = kota::codec::serialize_traits<B, std::remove_cvref_t<U>>;
+        using traits = kota::codec::serialize_traits<B, U>;
         KOTA_EXPECTED_TRY_V(auto r, traits::serialize(b, value));
         tb.add_offset(sid, r);
         return {};
     } else if constexpr(arena::value_serialize_traits<B, U>) {
-        using traits = kota::codec::serialize_traits<B, std::remove_cvref_t<U>>;
+        using traits = kota::codec::serialize_traits<B, U>;
         using wire_t = typename traits::wire_type;
         wire_t wire = traits::serialize(b, value);
         return encode_value_at<Config, B, wire_t, std::tuple<>>(b, tb, sid, wire);
@@ -233,7 +232,7 @@ auto encode_value_at(B& b, typename B::TableBuilder& tb, typename B::slot_id sid
 template <typename Config, typename B, typename T>
 auto encode_sequence(B& b, const T& range)
     -> std::expected<typename B::vector_ref, typename B::error_type> {
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
 
@@ -362,7 +361,7 @@ auto encode_sequence(B& b, const T& range)
 template <typename Config, typename B, typename T>
 auto encode_map(B& b, const T& map)
     -> std::expected<typename B::vector_ref, typename B::error_type> {
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     using ref_t = std::remove_cvref_t<std::ranges::range_reference_t<U>>;
     using key_t = map_entry_key_t<ref_t>;
     using mapped_t = map_entry_mapped_t<ref_t>;
@@ -375,9 +374,7 @@ auto encode_map(B& b, const T& map)
     if constexpr(requires(const key_t& a, const key_t& b) {
                      { a < b } -> std::convertible_to<bool>;
                  }) {
-        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
-            return a.first < b.first;
-        });
+        std::ranges::sort(entries, [](const auto& a, const auto& b) { return a.first < b.first; });
     }
 
     std::vector<typename B::table_ref> offsets;

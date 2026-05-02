@@ -91,7 +91,7 @@ auto decode_unboxed(const B& d, typename B::TableView view, T& out)
 template <typename Config, typename B, typename T>
 auto decode_root(const B& d, T& out) -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     using clean_u_t = detail::clean_t<U>;
 
     auto view = d.root_view();
@@ -188,7 +188,7 @@ template <typename Config, typename B, typename T>
 auto decode_table(const B& d, typename B::TableView view, T& out)
     -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     static_assert(meta::reflectable_class<U>, "decode_table requires reflectable class");
 
     if(!view.valid()) {
@@ -225,7 +225,7 @@ auto decode_tuple_like(const B& d, typename B::TableView view, T& out)
         return std::unexpected(E::InvalidState);
     }
 
-    using U = std::remove_cvref_t<T>;
+    using U = T;
 
     std::expected<void, E> status{};
     bool ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -259,7 +259,7 @@ template <typename Config, typename B, typename T>
 auto decode_variant(const B& d, typename B::TableView view, T& out)
     -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     static_assert(is_specialization_of<std::variant, U>, "decode_variant requires variant");
 
     if(!view.valid()) {
@@ -326,7 +326,7 @@ auto decode_value_at(const B& d,
                      V& out,
                      bool required) -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<V>;
+    using U = V;
 
     if constexpr(meta::annotated_type<U>) {
         using inner = typename U::annotated_type;
@@ -367,10 +367,10 @@ auto decode_value_at(const B& d,
             });
         return *result;
     } else if constexpr(arena::streaming_deserialize_traits<B, U>) {
-        using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
+        using traits = kota::codec::deserialize_traits<B, U>;
         return traits::deserialize(d, view, sid, out);
     } else if constexpr(arena::value_deserialize_traits<B, U>) {
-        using traits = kota::codec::deserialize_traits<B, std::remove_cvref_t<U>>;
+        using traits = kota::codec::deserialize_traits<B, U>;
         using wire_t = typename traits::wire_type;
         if(!view.has(sid)) {
             if(required) {
@@ -549,7 +549,7 @@ auto decode_sequence(const B& d,
                      T& out,
                      bool required) -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     using element_t = std::ranges::range_value_t<U>;
     using element_clean_t = detail::clean_t<element_t>;
 
@@ -760,7 +760,7 @@ auto decode_map(const B& d,
                 T& out,
                 bool required) -> std::expected<void, typename B::error_type> {
     using E = typename B::error_type;
-    using U = std::remove_cvref_t<T>;
+    using U = T;
     using ref_t = std::remove_cvref_t<std::ranges::range_reference_t<U>>;
     using key_t = map_entry_key_t<ref_t>;
     using mapped_t = map_entry_mapped_t<ref_t>;

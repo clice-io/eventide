@@ -119,7 +119,7 @@ struct StreamingCtx {
     template <typename Config, typename V>
     result_type emit_tuple(const V& v) {
         using E = error_type;
-        constexpr std::size_t N = std::tuple_size_v<std::remove_cvref_t<V>>;
+        constexpr std::size_t N = std::tuple_size_v<V>;
         if constexpr(S::field_mode_v == field_mode::by_name) {
             KOTA_EXPECTED_TRY(s.begin_array(N));
             std::expected<void, E> element_result;
@@ -318,7 +318,7 @@ struct ArenaFieldCtx {
 
     template <typename Config, typename V>
     result_type emit_struct(const V& v) {
-        using clean = std::remove_cvref_t<V>;
+        using clean = V;
         if constexpr(B::template can_inline_struct_field<clean>) {
             tb.add_inline_struct(sid, static_cast<clean>(v));
             return {};
@@ -333,7 +333,7 @@ struct ArenaFieldCtx {
 
 template <typename Config, typename Ctx, typename Attrs, typename V>
 auto unified_serialize(Ctx& ctx, const V& v) -> typename Ctx::result_type {
-    using U = std::remove_cvref_t<V>;
+    using U = V;
     using E = typename Ctx::error_type;
 
     if constexpr(meta::annotated_type<U>) {

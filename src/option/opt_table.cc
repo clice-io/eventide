@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
-#include <cstdio>
 #include <expected>
 #include <set>
 #include <span>
@@ -15,7 +14,7 @@ using namespace kota::option;
 
 namespace {
 
-std::string_view ltrim_all_of(std::string_view str, const std::vector<char>& prefixes) {
+std::string_view ltrim_all_of(std::string_view str, std::span<const char> prefixes) {
     auto pos = str.find_first_not_of(prefixes.data(), 0, prefixes.size());
 
     if(pos != std::string_view::npos) {
@@ -144,7 +143,7 @@ const Option OptTable::option(OptSpecifier opt) const {
     if(id == 0) {
         return Option(nullptr, nullptr);
     }
-    assert((unsigned)(id - 1) < this->num_options() && "Invalid ID.");
+    assert(static_cast<unsigned>(id - 1) < this->num_options() && "Invalid ID.");
     return Option(&this->info(id), this);
 }
 

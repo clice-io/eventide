@@ -158,7 +158,7 @@ constexpr std::optional<E> map_string_to_enum(std::string_view value) {
 
 template <typename Key>
 std::string map_key_to_string(const Key& key) {
-    using key_t = std::remove_cvref_t<Key>;
+    using key_t = Key;
 
     if constexpr(std::same_as<key_t, char*>) {
         return key == nullptr ? std::string{} : std::string(key);
@@ -203,7 +203,7 @@ concept parseable_map_key =
 
 template <typename Key>
 std::optional<Key> parse_map_key(std::string_view key_text) {
-    using key_t = std::remove_cvref_t<Key>;
+    using key_t = Key;
 
     if constexpr(std::constructible_from<key_t, std::string_view>) {
         return key_t(key_text);

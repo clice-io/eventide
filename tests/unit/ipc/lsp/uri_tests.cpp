@@ -73,7 +73,7 @@ TEST_CASE(file_path_roundtrip) {
 }
 
 TEST_CASE(file_windows_roundtrip) {
-    auto uri = URI::from_file_path("C:\\work\\a b.txt");
+    auto uri = URI::from_file_path(R"(C:\work\a b.txt)");
     ASSERT_TRUE(uri.has_value());
 
     EXPECT_EQ(uri->str(), "file:///C:/work/a%20b.txt");
@@ -89,7 +89,7 @@ TEST_CASE(file_windows_roundtrip) {
 }
 
 TEST_CASE(file_unc_roundtrip) {
-    auto uri = URI::from_file_path("\\\\server\\share\\a b.txt");
+    auto uri = URI::from_file_path(R"(\\server\share\a b.txt)");
     ASSERT_TRUE(uri.has_value());
 
     EXPECT_EQ(uri->str(), "file://server/share/a%20b.txt");
@@ -100,7 +100,7 @@ TEST_CASE(file_unc_roundtrip) {
 }
 
 TEST_CASE(file_unc_ipv6) {
-    auto uri = URI::from_file_path("\\\\[::1]\\share\\a.txt");
+    auto uri = URI::from_file_path(R"(\\[::1]\share\a.txt)");
     ASSERT_TRUE(uri.has_value());
 
     EXPECT_EQ(uri->str(), "file://[::1]/share/a.txt");
@@ -116,8 +116,8 @@ TEST_CASE(reject_relative_path) {
 }
 
 TEST_CASE(reject_unc_shareless) {
-    EXPECT_FALSE(URI::from_file_path("\\\\server\\").has_value());
-    EXPECT_FALSE(URI::from_file_path("\\\\server\\\\dir").has_value());
+    EXPECT_FALSE(URI::from_file_path(R"(\\server\)").has_value());
+    EXPECT_FALSE(URI::from_file_path(R"(\\server\\dir)").has_value());
 }
 
 TEST_CASE(authority_handling) {

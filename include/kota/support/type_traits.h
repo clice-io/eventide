@@ -51,9 +51,9 @@ concept ge_comparable_with = requires(const L& lhs, const R& rhs) {
 };
 
 template <typename T>
-constexpr inline bool is_optional_v = is_specialization_of<std::optional, T>;
+constexpr inline bool is_optional_v = is_specialization_of<std::optional, std::remove_cvref_t<T>>;
 
 template <typename T>
-constexpr inline bool is_expected_v = is_specialization_of<std::expected, T>;
+constexpr inline bool is_expected_v = is_specialization_of<std::expected, std::remove_cvref_t<T>>;
 
 }  // namespace kota

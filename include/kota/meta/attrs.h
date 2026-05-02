@@ -141,14 +141,10 @@ using adjacently_tagged = tagged<Tag, Content>;
 }  // namespace attrs
 
 template <typename T>
-struct is_rename_attr {
-    constexpr static bool value = false;
-};
+struct is_rename_attr : std::bool_constant<false> {};
 
 template <fixed_string N>
-struct is_rename_attr<attrs::rename<N>> {
-    constexpr static bool value = true;
-};
+struct is_rename_attr<attrs::rename<N>> : std::bool_constant<true> {};
 
 template <typename T>
 constexpr bool is_rename_attr_v = is_rename_attr<T>::value;

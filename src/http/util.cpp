@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace kota::http::detail {
@@ -77,7 +78,7 @@ std::string percent_encode(std::string_view text) {
     return out;
 }
 
-std::string encode_pairs(const std::vector<query_param>& pairs) {
+std::string encode_pairs(std::span<const query_param> pairs) {
     std::string out;
     bool first = true;
     for(const auto& pair: pairs) {

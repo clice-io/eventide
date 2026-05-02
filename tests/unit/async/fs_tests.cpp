@@ -21,10 +21,10 @@ using test::write_fd;
 namespace {
 
 #ifdef _WIN32
-inline int open_fd(const std::string& path) {
+inline int open_fd(std::string_view path) {
     int fd = -1;
     if(_sopen_s(&fd,
-                path.c_str(),
+                path.data(),
                 _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY,
                 _SH_DENYNO,
                 _S_IREAD | _S_IWRITE) != 0) {
@@ -33,8 +33,8 @@ inline int open_fd(const std::string& path) {
     return fd;
 }
 #else
-inline int open_fd(const std::string& path) {
-    return ::open(path.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
+inline int open_fd(std::string_view path) {
+    return ::open(path.data(), O_CREAT | O_WRONLY | O_TRUNC, 0644);
 }
 #endif
 

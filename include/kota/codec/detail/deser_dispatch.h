@@ -370,7 +370,7 @@ struct StreamingDeserCtx {
 
 template <typename Config, typename Ctx, typename Attrs, typename V>
 auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type {
-    using U = std::remove_cvref_t<V>;
+    using U = V;
     using E = typename Ctx::error_type;
 
     if constexpr(meta::annotated_type<U>) {
