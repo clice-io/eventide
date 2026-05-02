@@ -84,10 +84,10 @@
 #endif
 
 #if defined(NDEBUG)
-#if defined(_MSC_VER)
-#define KOTA_ALWAYS_INLINE [[msvc::forceinline]]
-#elif defined(__GNUC__) || defined(__clang__)
-#define KOTA_ALWAYS_INLINE [[gnu::always_inline]]
+#if defined(__GNUC__) || defined(__clang__)
+#define KOTA_ALWAYS_INLINE [[gnu::always_inline]] inline
+#elif defined(_MSC_VER)
+#define KOTA_ALWAYS_INLINE [[msvc::forceinline]] inline
 #else
 #define KOTA_ALWAYS_INLINE
 #endif
