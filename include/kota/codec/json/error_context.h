@@ -7,7 +7,7 @@
 
 #include "kota/codec/json/error.h"
 
-namespace kota::codec::json::detail_v2 {
+namespace kota::codec::json::detail {
 
 /// Thread-local error context for carrying rich error information from the
 /// visitor-based deserialization path (which uses simdjson::error_code) back
@@ -52,4 +52,4 @@ inline error_context& thread_error_context() {
     return ctx;
 }
 
-}  // namespace kota::codec::json::detail_v2
+}  // namespace kota::codec::json::detail

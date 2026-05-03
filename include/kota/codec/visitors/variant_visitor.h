@@ -18,7 +18,7 @@ namespace kota::codec {
 template <typename Backend, typename T>
 auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type;
 
-namespace detail_v2 {
+namespace detail {
 
 /// Match a tag string against variant alternatives and deserialize
 template <typename Backend, typename... Ts, typename Names, typename Reader>
@@ -61,7 +61,7 @@ auto match_and_deserialize_alt(std::string_view tag_value,
     return err;
 }
 
-}  // namespace detail_v2
+}  // namespace detail
 
 /// Externally tagged: {"Circle": {"radius": 5.0}}
 template <typename Backend, typename TagAttr, typename... Ts>
@@ -80,7 +80,7 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
             if(found)
                 return Backend::type_mismatch;
             found = true;
-            err = detail_v2::match_and_deserialize_alt<Backend>(
+            err = detail::match_and_deserialize_alt<Backend>(
                 key,
                 tag_names,
                 out,
@@ -140,7 +140,7 @@ auto deserialize_internally_tagged(typename Backend::value_type& src, std::varia
             return scan_err;
 
         // Deserialize from a fresh parse.
-        return detail_v2::match_and_deserialize_alt<Backend>(
+        return detail::match_and_deserialize_alt<Backend>(
             tag_value_str,
             names,
             out,
@@ -160,7 +160,7 @@ auto deserialize_internally_tagged(typename Backend::value_type& src, std::varia
         if(err != Backend::success)
             return err;
 
-        return detail_v2::match_and_deserialize_alt<Backend>(
+        return detail::match_and_deserialize_alt<Backend>(
             tag_value,
             names,
             out,
@@ -220,7 +220,7 @@ auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::varia
                 if(has_content) {
                     if constexpr(has_reparse) {
                         // Reparse the captured raw JSON for deserialization
-                        err = detail_v2::match_and_deserialize_alt<Backend>(
+                        err = detail::match_and_deserialize_alt<Backend>(
                             tag_value,
                             tag_names,
                             out,
@@ -232,7 +232,7 @@ auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::varia
                                     });
                             });
                     } else if(deferred_content) {
-                        err = detail_v2::match_and_deserialize_alt<Backend>(
+                        err = detail::match_and_deserialize_alt<Backend>(
                             tag_value,
                             tag_names,
                             out,
@@ -248,7 +248,7 @@ auto deserialize_adjacently_tagged(typename Backend::value_type& src, std::varia
                 has_content = true;
 
                 if(has_tag) {
-                    err = detail_v2::match_and_deserialize_alt<Backend>(
+                    err = detail::match_and_deserialize_alt<Backend>(
                         tag_value,
                         tag_names,
                         out,
