@@ -12,7 +12,7 @@ namespace detail {
 std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) {
     GlobCharSet bv{};
 
-    for(uint32_t i = 0, e = static_cast<uint32_t>(s.size()); i < e; ++i) {
+    for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(s.size()); i < e; ++i) {
         switch(s[i]) {
             case '\\': {
                 auto backslash_pos = i;
@@ -25,7 +25,7 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                     };
                 }
                 if(s[i] != '/') {
-                    bv.set(static_cast<uint8_t>(s[i]), true);
+                    bv.set(static_cast<std::uint8_t>(s[i]), true);
                 }
                 break;
             }
@@ -59,9 +59,9 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                                   std::format("`{}` is larger than `{}`", c_begin, c_end)}
                     };
                 }
-                for(int c = static_cast<uint8_t>(c_begin); c <= static_cast<uint8_t>(c_end); ++c) {
+                for(int c = static_cast<std::uint8_t>(c_begin); c <= static_cast<std::uint8_t>(c_end); ++c) {
                     if(c != '/') {
-                        bv.set(static_cast<uint8_t>(c), true);
+                        bv.set(static_cast<std::uint8_t>(c), true);
                     }
                 }
                 break;
@@ -69,7 +69,7 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
 
             default: {
                 if(s[i] != '/') {
-                    bv.set(static_cast<uint8_t>(s[i]), true);
+                    bv.set(static_cast<std::uint8_t>(s[i]), true);
                 }
             }
         }
@@ -87,16 +87,16 @@ std::expected<small_vector<std::string, 1>, GlobError>
     }
 
     struct BraceExpansion {
-        uint32_t start;
-        uint32_t length;
+        std::uint32_t start;
+        std::uint32_t length;
         small_vector<std::string_view, 2> terms;
     };
 
     small_vector<BraceExpansion, 0> brace_expansions;
 
     BraceExpansion* current_be = nullptr;
-    uint32_t term_begin = 0;
-    for(uint32_t i = 0, e = static_cast<uint32_t>(s.size()); i != e; ++i) {
+    std::uint32_t term_begin = 0;
+    for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(s.size()); i != e; ++i) {
         if(s[i] == '[') {
             auto bracket_pos = i;
             ++i;
@@ -219,9 +219,9 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
                                                           size_t max_subpattern_num) {
     GlobPattern pat;
     size_t prefix_size = s.find_first_of("?*[{\\");
-    auto check_consecutive_slashes = [](std::string_view str) -> std::optional<uint32_t> {
+    auto check_consecutive_slashes = [](std::string_view str) -> std::optional<std::uint32_t> {
         bool prev_was_slash = false;
-        for(uint32_t i = 0, e = static_cast<uint32_t>(str.size()); i < e; ++i) {
+        for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(str.size()); i < e; ++i) {
             if(str[i] == '/') {
                 if(prev_was_slash) {
                     return i;
@@ -276,11 +276,11 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
     current_gs->start = 0;
     pat.pat.assign(s);
 
-    uint32_t e = static_cast<uint32_t>(s.size());
+    std::uint32_t e = static_cast<std::uint32_t>(s.size());
 
-    auto parse_bracket = [&](uint32_t i) -> std::expected<uint32_t, GlobError> {
+    auto parse_bracket = [&](std::uint32_t i) -> std::expected<std::uint32_t, GlobError> {
         auto bracket_pos = i - 1;
-        uint32_t j = i;
+        std::uint32_t j = i;
         if(j == e) [[unlikely]] {
             return std::unexpected{
                 GlobError{GlobError::UnmatchedBracket,
@@ -327,7 +327,7 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
         return j;
     };
 
-    for(uint32_t i = 0; i < e; ++i) {
+    for(std::uint32_t i = 0; i < e; ++i) {
         if(!current_gs) {
             current_gs = &glob_segments.emplace_back();
             current_gs->start = i;
@@ -542,7 +542,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                 }
 
                 case '[': {
-                    if(b < brackets.size() && brackets[b].bytes[uint8_t(*s)]) {
+                    if(b < brackets.size() && brackets[b].bytes[std::uint8_t(*s)]) {
                         if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
                             break;
                         }

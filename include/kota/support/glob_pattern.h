@@ -14,7 +14,7 @@
 namespace kota {
 
 struct GlobError {
-    enum Kind : uint8_t {
+    enum Kind : std::uint8_t {
         UnmatchedBracket,
         StrayBackslash,
         NestedBrace,
@@ -27,8 +27,8 @@ struct GlobError {
     };
 
     Kind kind;
-    uint32_t begin;
-    uint32_t end;
+    std::uint32_t begin;
+    std::uint32_t end;
     std::string message;
 };
 
