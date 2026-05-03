@@ -361,15 +361,23 @@ age = 25
     ASSERT_TRUE((*people_arr)[0].is_object());
     const auto* person0 = (*people_arr)[0].get_object();
     ASSERT_TRUE(person0 != nullptr);
-    EXPECT_EQ(person0->find("name")->as_string(), "alice");
-    EXPECT_EQ(person0->find("age")->as_int(), 30);
+    const auto* p0_name = person0->find("name");
+    ASSERT_TRUE(p0_name != nullptr);
+    EXPECT_EQ(p0_name->as_string(), "alice");
+    const auto* p0_age = person0->find("age");
+    ASSERT_TRUE(p0_age != nullptr);
+    EXPECT_EQ(p0_age->as_int(), 30);
 
     // Second person
     ASSERT_TRUE((*people_arr)[1].is_object());
     const auto* person1 = (*people_arr)[1].get_object();
     ASSERT_TRUE(person1 != nullptr);
-    EXPECT_EQ(person1->find("name")->as_string(), "bob");
-    EXPECT_EQ(person1->find("age")->as_int(), 25);
+    const auto* p1_name = person1->find("name");
+    ASSERT_TRUE(p1_name != nullptr);
+    EXPECT_EQ(p1_name->as_string(), "bob");
+    const auto* p1_age = person1->find("age");
+    ASSERT_TRUE(p1_age != nullptr);
+    EXPECT_EQ(p1_age->as_int(), 25);
 }
 
 };  // TEST_SUITE(serde_toml)

@@ -103,6 +103,11 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
 /// append-only — the first scan pass consumes buffer space for unescaped
 /// keys/values, and re-iterating the same document for deserialization would
 /// overflow that buffer.
+///
+/// Limitation: internally tagged variants are incompatible with
+/// deny_unknown_fields on the struct alternatives.  The tag field (e.g.
+/// "type") is present in the serialized object but is not part of the
+/// alternative struct's schema, so it would be rejected as unknown.
 template <typename Backend, typename TagAttr, typename... Ts>
 auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out) ->
     typename Backend::error_type {

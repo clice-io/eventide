@@ -500,12 +500,19 @@ auto deserialize_variant_at(std::size_t idx,
                                     [&] {
                                         using alt_t =
                                             std::variant_alternative_t<Is, std::variant<Ts...>>;
-                                        alt_t alt{};
-                                        auto e = deserialize<Backend>(src, alt);
-                                        if(e != Backend::success)
-                                            return e;
-                                        out = std::move(alt);
-                                        return Backend::success;
+                                        if constexpr(std::same_as<alt_t, std::monostate>) {
+                                            out.template emplace<Is>();
+                                            return Backend::success;
+                                        } else if constexpr(std::default_initializable<alt_t>) {
+                                            alt_t alt{};
+                                            auto e = deserialize<Backend>(src, alt);
+                                            if(e != Backend::success)
+                                                return e;
+                                            out = std::move(alt);
+                                            return Backend::success;
+                                        } else {
+                                            return Backend::type_mismatch;
+                                        }
                                     }(),
                                 true)
                           : false) ||

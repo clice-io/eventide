@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <concepts>
 #include <cstdint>
 #include <limits>
@@ -179,6 +180,15 @@ KOTA_ALWAYS_INLINE auto deserialize(typename Backend::value_type& src, T& out) -
         auto err = Backend::read_double(src, d);
         if(err != Backend::success)
             return err;
+        if constexpr(!std::same_as<U, double>) {
+            if(std::isfinite(d)) {
+                constexpr auto lo = static_cast<long double>((std::numeric_limits<U>::lowest)());
+                constexpr auto hi = static_cast<long double>((std::numeric_limits<U>::max)());
+                auto v = static_cast<long double>(d);
+                if(v < lo || v > hi) [[unlikely]]
+                    return Backend::number_out_of_range;
+            }
+        }
         out = static_cast<U>(d);
         return Backend::success;
     }
