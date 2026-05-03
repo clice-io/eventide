@@ -7,6 +7,7 @@
 
 #include "kota/support/config.h"
 #include "kota/support/ranges.h"
+#include "kota/codec/detail/config.h"
 
 namespace kota::codec {
 
@@ -24,9 +25,8 @@ struct seq_visitor {
         ElemT element{};
         auto err = deserialize<Backend>(val, element);
         if(err != Backend::success) [[unlikely]] {
-            if constexpr(requires { Backend::report_prepend_index(index); }) {
-                Backend::report_prepend_index(index);
-            }
+            using seq_config = config::config_of<Backend>;
+            config::error_prepend_index<seq_config>(index);
             return err;
         }
         kota::detail::append_sequence_element(out, std::move(element));

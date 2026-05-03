@@ -81,8 +81,7 @@ auto deserialize_map_positional(typename Backend::value_type& src, MapT& out) ->
 
 /// Core dispatch: deserialize<Backend>(source, T& out) -> Backend::error_type
 template <typename Backend, typename T>
-KOTA_ALWAYS_INLINE auto deserialize(typename Backend::value_type& src, T& out) ->
-    typename Backend::error_type {
+auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend::error_type {
     using U = std::remove_cvref_t<T>;
     using E = typename Backend::error_type;
 
@@ -119,9 +118,8 @@ KOTA_ALWAYS_INLINE auto deserialize(typename Backend::value_type& src, T& out) -
                 return err;
             auto mapped = spelling::map_string_to_enum<value_t, Policy>(text);
             if(!mapped) {
-                if constexpr(requires { Backend::report_unknown_enum(text); }) {
-                    Backend::report_unknown_enum(text);
-                }
+                using deser_config = config::config_of<Backend>;
+                config::error_set_unknown_enum<deser_config>(text);
                 return Backend::type_mismatch;
             }
             value = *mapped;

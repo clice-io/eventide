@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <format>
 #include <limits>
 #include <optional>
 #include <string>
@@ -16,8 +15,8 @@
 #include "kota/support/type_traits.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/deserialize.h"
+#include "kota/codec/detail/error_context.h"
 #include "kota/codec/json/error.h"
-#include "kota/codec/json/error_context.h"
 
 namespace kota::codec::json {
 
@@ -307,28 +306,6 @@ struct simdjson_backend {
         value_type src(doc);
         return fn(src);
     }
-
-    static void report_missing_field(std::string_view field_name) {
-        detail::thread_error_context().set(json::error::missing_field(field_name));
-    }
-
-    static void report_unknown_field(std::string_view field_name) {
-        detail::thread_error_context().set(json::error::unknown_field(field_name));
-    }
-
-    static void report_unknown_enum(std::string_view value) {
-        detail::thread_error_context().set(
-            json::error(error_kind::type_mismatch,
-                        std::format("unknown enum string value '{}'", value)));
-    }
-
-    static void report_prepend_field(std::string_view name) {
-        detail::thread_error_context().prepend_field(name);
-    }
-
-    static void report_prepend_index(std::size_t index) {
-        detail::thread_error_context().prepend_index(index);
-    }
 };
 
 /// Config-aware simdjson backend: inherits all functionality from simdjson_backend
@@ -473,16 +450,15 @@ inline std::optional<std::size_t> locate_path_in_json(simdjson::padded_string_vi
 /// simdjson error code. If the context has a pending error, use it. Otherwise
 /// fall back to constructing an error from the error code alone.
 inline error build_error(simdjson::error_code err, simdjson::padded_string_view json) {
-    auto& ctx = thread_error_context();
-    auto pending = ctx.take();
-    if(pending) {
-        // Try to add source location for errors with a path
-        auto byte_off = locate_path_in_json(json, *pending);
+    auto& ctx = codec::detail::thread_error_context();
+    if(ctx.has_error()) {
+        auto pending = ctx.take_as<error_kind>(make_error(err));
+        auto byte_off = locate_path_in_json(json, pending);
         if(byte_off) {
-            pending->set_location(
+            pending.set_location(
                 compute_location(std::string_view(json.data(), json.length()), *byte_off));
         }
-        return std::move(*pending);
+        return pending;
     }
     return error(make_error(err));
 }
@@ -491,7 +467,7 @@ inline error build_error(simdjson::error_code err, simdjson::padded_string_view 
 
 template <typename Config = config::default_config, typename T>
 auto from_json(simdjson::padded_string_view json, T& value) -> std::expected<void, error> {
-    detail::thread_error_context().clear();
+    codec::detail::thread_error_context().clear();
 
     simdjson::ondemand::parser parser;
     simdjson::ondemand::document doc;

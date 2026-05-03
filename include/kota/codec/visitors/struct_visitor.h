@@ -168,9 +168,7 @@ struct struct_visitor {
         if constexpr(table::name_count == 0) {
             // No fields to match
             if constexpr(schema::deny_unknown || detail::config_deny_unknown_v<Config>) {
-                if constexpr(requires { Backend::report_unknown_field(key); }) {
-                    Backend::report_unknown_field(key);
-                }
+                config::error_set_unknown_field<Config>(key);
                 return Backend::type_mismatch;
             }
             return Backend::success;
@@ -180,18 +178,14 @@ struct struct_visitor {
                 std::size_t slot_idx = table::slot_map[*idx];
                 auto err = dispatch_slot(slot_idx, val);
                 if(err != Backend::success) [[unlikely]] {
-                    if constexpr(requires { Backend::report_prepend_field(key); }) {
-                        Backend::report_prepend_field(schema::fields[slot_idx].name);
-                    }
+                    config::error_prepend_field<Config>(schema::fields[slot_idx].name);
                 }
                 seen_fields |= (std::uint64_t(1) << slot_idx);
                 return err;
             }
 
             if constexpr(schema::deny_unknown || detail::config_deny_unknown_v<Config>) {
-                if constexpr(requires { Backend::report_unknown_field(key); }) {
-                    Backend::report_unknown_field(key);
-                }
+                config::error_set_unknown_field<Config>(key);
                 return Backend::type_mismatch;
             }
             return Backend::success;
@@ -203,12 +197,10 @@ struct struct_visitor {
         if constexpr(required != 0) {
             if((seen_fields & required) != required) [[unlikely]] {
                 std::uint64_t missing = required & ~seen_fields;
-                if constexpr(requires { Backend::report_missing_field(std::string_view{}); }) {
-                    for(std::size_t i = 0; i < schema::count; ++i) {
-                        if(missing & (std::uint64_t(1) << i)) {
-                            Backend::report_missing_field(schema::fields[i].name);
-                            break;
-                        }
+                for(std::size_t i = 0; i < schema::count; ++i) {
+                    if(missing & (std::uint64_t(1) << i)) {
+                        config::error_set_missing_field<Config>(schema::fields[i].name);
+                        break;
                     }
                 }
                 return Backend::type_mismatch;
@@ -298,9 +290,8 @@ KOTA_ALWAYS_INLINE auto deserialize_field(typename Backend::value_type& val, Raw
             return err;
         auto mapped = spelling::map_string_to_enum<RawT, Policy>(text);
         if(!mapped) {
-            if constexpr(requires { Backend::report_unknown_enum(text); }) {
-                Backend::report_unknown_enum(text);
-            }
+            using deser_config = config::config_of<Backend>;
+            config::error_set_unknown_enum<deser_config>(text);
             return Backend::type_mismatch;
         }
         field_ref = *mapped;

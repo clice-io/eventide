@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <format>
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,46 +34,6 @@ class Value;
 namespace kota::codec::toml {
 
 namespace detail {
-
-struct error_context {
-    std::optional<error> pending;
-
-    void set(error err) {
-        pending = std::move(err);
-    }
-
-    void clear() {
-        pending.reset();
-    }
-
-    std::optional<error> take() {
-        auto result = std::move(pending);
-        pending.reset();
-        return result;
-    }
-
-    void prepend_field(std::string_view name) {
-        ensure_pending();
-        pending->prepend_field(name);
-    }
-
-    void prepend_index(std::size_t index) {
-        ensure_pending();
-        pending->prepend_index(index);
-    }
-
-private:
-    void ensure_pending() {
-        if(!pending) {
-            pending = error(error_kind::type_mismatch);
-        }
-    }
-};
-
-inline error_context& thread_error_context() {
-    thread_local error_context ctx;
-    return ctx;
-}
 
 /// Try to extract source location from a toml node.
 inline std::optional<codec::source_location> source_from_node(const ::toml::node* node) {
@@ -167,11 +126,7 @@ struct toml_backend {
 private:
     static void set_location_from_node(value_type& v) {
         if(auto loc = detail::source_from_node(v)) {
-            auto& ctx = detail::thread_error_context();
-            if(!ctx.pending) {
-                ctx.pending = error(error_kind::type_mismatch);
-            }
-            ctx.pending->set_location(*loc);
+            codec::detail::thread_error_context().set_location(*loc);
         }
     }
 
@@ -265,30 +220,6 @@ public:
         }
         return success;
     }
-
-    /// Error context helpers: store rich error info in the thread-local context.
-    /// The from_toml entry point checks this after a failed deserialization.
-
-    static void report_missing_field(std::string_view field_name) {
-        detail::thread_error_context().set(error::missing_field(field_name));
-    }
-
-    static void report_unknown_field(std::string_view field_name) {
-        detail::thread_error_context().set(error::unknown_field(field_name));
-    }
-
-    static void report_unknown_enum(std::string_view value) {
-        detail::thread_error_context().set(
-            error(error_kind::type_mismatch, std::format("unknown enum string value '{}'", value)));
-    }
-
-    static void report_prepend_field(std::string_view name) {
-        detail::thread_error_context().prepend_field(name);
-    }
-
-    static void report_prepend_index(std::size_t index) {
-        detail::thread_error_context().prepend_index(index);
-    }
 };
 
 template <typename Config>
@@ -347,15 +278,14 @@ auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
 template <typename Config = config::default_config, typename T>
 auto from_toml(const ::toml::table& table, T& value) -> std::expected<void, error> {
     using Backend = toml_backend_with_config<Config>;
-    detail::thread_error_context().clear();
+    codec::detail::thread_error_context().clear();
 
     typename Backend::value_type root = detail::select_root_node<T>(table);
     auto err = codec::deserialize<Backend>(root, value);
     if(err != error_kind::ok) {
-        auto& ctx = detail::thread_error_context();
-        auto pending = ctx.take();
-        if(pending) {
-            return std::unexpected(std::move(*pending));
+        auto& ctx = codec::detail::thread_error_context();
+        if(ctx.has_error()) {
+            return std::unexpected(ctx.take_as<error_kind>(err));
         }
         return std::unexpected(error(err));
     }
