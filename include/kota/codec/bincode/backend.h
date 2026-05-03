@@ -97,6 +97,15 @@ struct bincode_backend {
         return success;
     }
 
+    static error_type read_char(value_type& v, char& out) {
+        std::uint8_t byte = 0;
+        auto err = v->read_u8(byte);
+        if(err != success)
+            return err;
+        out = static_cast<char>(byte);
+        return success;
+    }
+
     static error_type read_string(value_type& v, std::string_view& out) {
         std::size_t length = 0;
         auto err = v->read_length(length);

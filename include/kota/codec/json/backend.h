@@ -93,7 +93,10 @@ struct simdjson_backend {
     }
 
     static meta::type_kind kind_of(value_type& src) {
-        switch(src.type()) {
+        simdjson::ondemand::json_type t;
+        if(src.type().get(t) != simdjson::SUCCESS)
+            return meta::type_kind::null;
+        switch(t) {
             case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
             case simdjson::ondemand::json_type::array: return meta::type_kind::array;
             case simdjson::ondemand::json_type::string: return meta::type_kind::string;
@@ -135,9 +138,10 @@ struct simdjson_backend {
                 return err;
         }
         {
-            auto reset_err = obj.reset();
-            if(reset_err.error() != simdjson::SUCCESS)
-                return reset_err.error();
+            bool reset_ok;
+            auto reset_err = obj.reset().get(reset_ok);
+            if(reset_err != simdjson::SUCCESS)
+                return reset_err;
         }
         return simdjson::SUCCESS;
     }

@@ -186,14 +186,23 @@ auto deserialize(typename Backend::value_type& src, T& out) -> typename Backend:
     }
     // 6. char
     else if constexpr(meta::char_like<U>) {
-        std::string_view sv;
-        auto err = Backend::read_string(src, sv);
-        if(err != Backend::success)
-            return err;
-        if(sv.size() != 1) [[unlikely]]
-            return Backend::type_mismatch;
-        out = sv.front();
-        return Backend::success;
+        if constexpr(requires(typename Backend::value_type& v, char& c) { Backend::read_char(v, c); }) {
+            char ch;
+            auto err = Backend::read_char(src, ch);
+            if(err != Backend::success)
+                return err;
+            out = static_cast<U>(ch);
+            return Backend::success;
+        } else {
+            std::string_view sv;
+            auto err = Backend::read_string(src, sv);
+            if(err != Backend::success)
+                return err;
+            if(sv.size() != 1) [[unlikely]]
+                return Backend::type_mismatch;
+            out = sv.front();
+            return Backend::success;
+        }
     }
     // 7. String
     else if constexpr(std::same_as<U, std::string> || std::derived_from<U, std::string>) {

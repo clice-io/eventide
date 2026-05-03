@@ -76,7 +76,10 @@ auto from_document_scalar(simdjson::ondemand::document& doc, T& out) -> simdjson
         static_cast<std::string&>(out).assign(sv.data(), sv.size());
         return simdjson::SUCCESS;
     } else if constexpr(meta::null_like<U>) {
-        bool is_null = doc.is_null();
+        bool is_null;
+        auto null_err = doc.is_null().get(is_null);
+        if(null_err != simdjson::SUCCESS)
+            return null_err;
         if(!is_null)
             return simdjson::INCORRECT_TYPE;
         out = U{};
@@ -105,7 +108,10 @@ auto from_document_scalar(simdjson::ondemand::document& doc, T& out) -> simdjson
     }
     // Wrapper types: optional/unique_ptr/shared_ptr may wrap scalar types
     else if constexpr(kota::is_specialization_of<std::optional, U>) {
-        bool is_null = doc.is_null();
+        bool is_null;
+        auto null_err = doc.is_null().get(is_null);
+        if(null_err != simdjson::SUCCESS)
+            return null_err;
         if(is_null) {
             out.reset();
             return simdjson::SUCCESS;
@@ -113,7 +119,10 @@ auto from_document_scalar(simdjson::ondemand::document& doc, T& out) -> simdjson
         out.emplace();
         return from_document_scalar<Config>(doc, *out);
     } else if constexpr(kota::is_specialization_of<std::unique_ptr, U>) {
-        bool is_null = doc.is_null();
+        bool is_null;
+        auto null_err = doc.is_null().get(is_null);
+        if(null_err != simdjson::SUCCESS)
+            return null_err;
         if(is_null) {
             out.reset();
             return simdjson::SUCCESS;
@@ -122,7 +131,10 @@ auto from_document_scalar(simdjson::ondemand::document& doc, T& out) -> simdjson
         out = std::make_unique<elem_t>();
         return from_document_scalar<Config>(doc, *out);
     } else if constexpr(kota::is_specialization_of<std::shared_ptr, U>) {
-        bool is_null = doc.is_null();
+        bool is_null;
+        auto null_err = doc.is_null().get(is_null);
+        if(null_err != simdjson::SUCCESS)
+            return null_err;
         if(is_null) {
             out.reset();
             return simdjson::SUCCESS;
