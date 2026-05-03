@@ -99,78 +99,37 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
 }
 
 /// Internally tagged: {"type": "Circle", "radius": 5.0}
+/// scan_field finds the tag and resets the object, so src remains consumable.
 template <typename Backend, typename TagAttr, typename... Ts>
 auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
     -> typename Backend::error_type {
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    // For backends that support capture_raw_json + with_reparsed (e.g. simdjson),
-    // we must capture the raw JSON first, then scan the tag from one parse and
-    // deserialize from a fresh parse. This avoids issues with forward-only parsers
-    // where scan_field consumes the object state.
-    constexpr bool has_reparse = requires(typename Backend::value_type& v) {
-        { Backend::capture_raw_json(v) } -> std::same_as<std::pair<std::string, typename Backend::error_type>>;
-        {
-            Backend::with_reparsed(
-                std::string_view{},
-                [](typename Backend::value_type&) -> typename Backend::error_type {
-                    return Backend::success;
-                })
-        } -> std::same_as<typename Backend::error_type>;
-    };
-
-    if constexpr(has_reparse) {
-        // Capture raw JSON before any parsing consumes the value.
-        auto [raw_json, cap_err] = Backend::capture_raw_json(src);
-        if(cap_err != Backend::success)
-            return cap_err;
-
-        // Scan the tag field from one parse.
-        std::string tag_value_str;
-        auto scan_err = Backend::with_reparsed(raw_json, [&](typename Backend::value_type& val) {
-            std::string_view sv;
-            auto err = Backend::scan_field(val, tag_field, sv);
-            if(err != Backend::success)
-                return err;
-            tag_value_str.assign(sv.data(), sv.size());
-            return Backend::success;
-        });
-        if(scan_err != Backend::success)
-            return scan_err;
-
-        // Deserialize from a fresh parse.
-        return detail::match_and_deserialize_alt<Backend>(
-            tag_value_str,
-            names,
-            out,
-            [&](auto& alt) -> typename Backend::error_type {
-                using alt_t = std::remove_cvref_t<decltype(alt)>;
-                static_assert(meta::reflectable_class<alt_t>,
-                              "internally_tagged requires struct alternatives");
-                return Backend::with_reparsed(
-                    raw_json,
-                    [&](typename Backend::value_type& val) -> typename Backend::error_type {
-                        return deserialize<Backend>(val, alt);
-                    });
-            });
-    } else {
+    // scan_field reads the tag value and resets the object iterator,
+    // so src is still fully consumable for subsequent deserialization.
+    // We must copy the string_view to a std::string because the view
+    // points into the parser's tape which may be invalidated by the
+    // subsequent visit_object iteration.
+    std::string tag_value_str;
+    {
         std::string_view tag_value;
         auto err = Backend::scan_field(src, tag_field, tag_value);
         if(err != Backend::success)
             return err;
-
-        return detail::match_and_deserialize_alt<Backend>(
-            tag_value,
-            names,
-            out,
-            [&](auto& alt) -> typename Backend::error_type {
-                using alt_t = std::remove_cvref_t<decltype(alt)>;
-                static_assert(meta::reflectable_class<alt_t>,
-                              "internally_tagged requires struct alternatives");
-                return deserialize<Backend>(src, alt);
-            });
+        tag_value_str.assign(tag_value.data(), tag_value.size());
     }
+
+    return detail::match_and_deserialize_alt<Backend>(
+        tag_value_str,
+        names,
+        out,
+        [&](auto& alt) -> typename Backend::error_type {
+            using alt_t = std::remove_cvref_t<decltype(alt)>;
+            static_assert(meta::reflectable_class<alt_t>,
+                          "internally_tagged requires struct alternatives");
+            return deserialize<Backend>(src, alt);
+        });
 }
 
 /// Adjacently tagged: {"type": "Circle", "data": {"radius": 5.0}}

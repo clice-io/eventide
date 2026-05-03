@@ -1,13 +1,11 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -462,7 +460,6 @@ auto select_variant_index(typename Backend::value_type& src) -> std::optional<st
             typename adapter::node_type{&src}, candidates, cand_count, scores);
 
         std::size_t best_score = 0;
-        std::size_t best_count = 0;
         std::optional<std::size_t> best_idx;
         {
             std::uint64_t mask = live;
@@ -471,15 +468,12 @@ auto select_variant_index(typename Backend::value_type& src) -> std::optional<st
                 if(scores[idx] > best_score) {
                     best_score = scores[idx];
                     best_idx = idx;
-                    best_count = 1;
-                } else if(scores[idx] == best_score) {
-                    ++best_count;
                 }
                 mask &= mask - 1;
             }
         }
 
-        if(best_idx && best_count == 1)
+        if(best_idx && best_score > 0)
             return best_idx;
     }
 
@@ -511,120 +505,16 @@ auto deserialize_variant_at(std::size_t idx,
     return err;
 }
 
-/// Concept: backend supports capturing raw JSON from a value and re-parsing.
-template <typename Backend>
-concept reparse_backend = requires(typename Backend::value_type& v) {
-    { Backend::capture_raw_json(v) } -> std::same_as<std::pair<std::string, typename Backend::error_type>>;
-    {
-        Backend::with_reparsed(
-            std::string_view{},
-            [](typename Backend::value_type&) -> typename Backend::error_type {
-                return Backend::success;
-            })
-    } -> std::same_as<typename Backend::error_type>;
-};
-
 /// deserialize_variant_untagged: select best alternative then deserialize.
-/// For reparse-capable backends (e.g. simdjson where forward-only
-/// iteration limits scoring accuracy), tries alternatives ranked by score,
-/// re-parsing for each attempt so that a failed deserialization can fall
-/// back to the next candidate.
+/// Scoring uses visit_object_keys / visit_array_keys which internally reset
+/// the iterator, so the source remains consumable for deserialization.
 template <typename Backend, typename Config, typename... Ts>
 auto deserialize_variant_untagged(typename Backend::value_type& src, std::variant<Ts...>& out)
     -> typename Backend::error_type {
-    if constexpr(!reparse_backend<Backend>) {
-        auto idx = select_variant_index<Backend, Config, Ts...>(src);
-        if(!idx)
-            return Backend::type_mismatch;
-        return deserialize_variant_at<Backend>(*idx, src, out);
-    } else {
-        constexpr std::size_t N = sizeof...(Ts);
-        auto source_kind = Backend::kind_of(src);
-
-        auto [live, live_count] = detail::build_live_mask<Ts...>(source_kind);
-        if(live_count == 0)
-            return Backend::type_mismatch;
-
-        // For a single candidate, try directly (no re-parse needed).
-        if(live_count == 1) {
-            auto idx = static_cast<std::size_t>(std::countr_zero(live));
-            return deserialize_variant_at<Backend>(idx, src, out);
-        }
-
-        // Capture raw JSON before scoring consumes the value.
-        auto [raw_json, cap_err] = Backend::capture_raw_json(src);
-        if(cap_err != Backend::success)
-            return cap_err;
-
-        // Score by re-parsing the raw JSON.
-        std::size_t scores[N] = {};
-        Backend::with_reparsed(raw_json, [&](typename Backend::value_type& val) {
-            auto sk = Backend::kind_of(val);
-            if(meta::is_object_kind(sk) || meta::is_sequence_kind(sk)) {
-                using adapter = backend_source_adapter<Backend>;
-                constexpr meta::type_info_fn info_fns[] = {&meta::type_info_of<Ts, Config>...};
-                detail::variant_candidate candidates[64];
-                std::size_t cand_count = 0;
-                std::uint64_t mask = live;
-                while(mask) {
-                    std::size_t idx = static_cast<std::size_t>(std::countr_zero(mask));
-                    candidates[cand_count++] = {idx, &info_fns[idx]()};
-                    mask &= mask - 1;
-                }
-                detail::multi_score<adapter>(
-                    typename adapter::node_type{&val}, candidates, cand_count, scores);
-            }
-            return Backend::success;
-        });
-
-        // Check if any scoring produced non-zero results.
-        bool has_scores = false;
-        for(std::size_t i = 0; i < N; ++i) {
-            if(scores[i] > 0) { has_scores = true; break; }
-        }
-
-        // For scalar sources where scoring didn't apply (no object/array to
-        // score fields against), fall back to kind-based selection which uses
-        // score_type_info for proper precision ranking.
-        if(!has_scores) {
-            auto best_idx = detail::select_by_kind<Config, Ts...>(live, source_kind);
-            if(best_idx) {
-                auto err = Backend::with_reparsed(
-                    raw_json,
-                    [&](typename Backend::value_type& val) -> typename Backend::error_type {
-                        return deserialize_variant_at<Backend>(*best_idx, val, out);
-                    });
-                if(err == Backend::success)
-                    return Backend::success;
-            }
-        }
-
-        // Build ranked list of alternatives by descending score.
-        std::array<std::size_t, N> ranked{};
-        std::size_t ranked_count = 0;
-        {
-            std::uint64_t mask = live;
-            while(mask) {
-                ranked[ranked_count++] = static_cast<std::size_t>(std::countr_zero(mask));
-                mask &= mask - 1;
-            }
-        }
-        std::sort(ranked.begin(), ranked.begin() + ranked_count,
-                  [&](std::size_t a, std::size_t b) { return scores[a] > scores[b]; });
-
-        // Try alternatives in score order, re-parsing for each attempt.
-        for(std::size_t r = 0; r < ranked_count; ++r) {
-            std::size_t idx = ranked[r];
-            auto err = Backend::with_reparsed(
-                raw_json,
-                [&](typename Backend::value_type& val) -> typename Backend::error_type {
-                    return deserialize_variant_at<Backend>(idx, val, out);
-                });
-            if(err == Backend::success)
-                return Backend::success;
-        }
+    auto idx = select_variant_index<Backend, Config, Ts...>(src);
+    if(!idx)
         return Backend::type_mismatch;
-    }
+    return deserialize_variant_at<Backend>(*idx, src, out);
 }
 
 }  // namespace kota::codec

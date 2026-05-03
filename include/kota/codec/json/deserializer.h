@@ -136,6 +136,8 @@ struct simdjson_backend {
     }
 
     static meta::type_kind kind_of(value_type& src) {
+        if(!src.val_ && !src.doc_)
+            return meta::type_kind::unknown;
         simdjson::ondemand::json_type t;
         auto err = src.is_document()
             ? src.doc_->type().get(t)
@@ -167,6 +169,19 @@ struct simdjson_backend {
 
     template <typename Visitor>
     static error_type visit_object_keys(value_type& src, Visitor&& vis) {
+        // Use count_fields to detect empty objects. Simdjson's ondemand
+        // API cannot re-start an empty object after get_object() (the
+        // iterator advances past '}' with no way to reset), so we bail
+        // early — there are no fields to score anyway.
+        std::size_t field_count = 0;
+        auto count_err = src.is_document()
+            ? src.doc_->count_fields().get(field_count)
+            : src.val_->count_fields().get(field_count);
+        if(count_err != simdjson::SUCCESS) [[unlikely]]
+            return count_err;
+        if(field_count == 0)
+            return simdjson::SUCCESS;
+
         simdjson::ondemand::object obj;
         auto err = src.is_document()
             ? src.doc_->get_object().get(obj)
@@ -199,24 +214,26 @@ struct simdjson_backend {
     }
 
     /// Array key visitor for variant scoring.
-    /// Uses count_elements() to get the total (which rewinds the value),
+    /// Uses count_elements() to get the total (which rewinds the source),
     /// then reports each element with unknown kind. Deep per-element type
     /// scoring is not available because simdjson ondemand is forward-only
-    /// and iterating elements would consume the value.
+    /// and iterating elements would consume the value. A null json_source
+    /// is passed for each element so that recursive kind_of returns unknown.
     template <typename Visitor>
     static error_type visit_array_keys(value_type& src, Visitor&& vis) {
-        if(src.is_document()) {
-            // Documents don't have count_elements; not expected for array scoring
-            return type_mismatch;
-        }
         std::size_t count = 0;
-        auto count_err = src.val_->count_elements().get(count);
+        auto count_err = src.is_document()
+            ? src.doc_->count_elements().get(count)
+            : src.val_->count_elements().get(count);
         if(count_err != simdjson::SUCCESS) [[unlikely]]
             return count_err;
-        // count_elements() rewinds the value, so src remains consumable.
+        // count_elements() rewinds the source, so src remains consumable.
         // Report the total count but unknown element kinds.
+        // Use a null json_source for elements since we cannot access
+        // individual element values without consuming the array.
+        value_type null_src;
         for(std::size_t i = 0; i < count; ++i) {
-            auto err = vis.on_element(i, count, meta::type_kind::unknown, src);
+            auto err = vis.on_element(i, count, meta::type_kind::unknown, null_src);
             if(err != simdjson::SUCCESS) [[unlikely]]
                 return err;
         }
@@ -226,25 +243,26 @@ struct simdjson_backend {
     static error_type scan_field(value_type& src,
                                  std::string_view field_name,
                                  std::string_view& out) {
-        if(src.is_document()) {
-            // Documents need find_field via get_object path
-            simdjson::ondemand::object obj;
-            auto err = src.doc_->get_object().get(obj);
-            if(err != simdjson::SUCCESS) return err;
-            simdjson::ondemand::value val;
-            err = obj.find_field(field_name).get(val);
-            if(err != simdjson::SUCCESS) return err;
-            return val.get_string().get(out);
-        }
-        // Use value::find_field which internally calls start_or_resume_object().
-        // After reading the tag, calling find_field again or iterating the object
-        // via value's [] operator will use start_or_resume_object() for correct
-        // re-entry into the object.
-        simdjson::ondemand::value val;
-        auto err = src.val_->find_field(field_name).get(val);
+        simdjson::ondemand::object obj;
+        auto err = src.is_document()
+            ? src.doc_->get_object().get(obj)
+            : src.val_->get_object().get(obj);
         if(err != simdjson::SUCCESS)
             return err;
-        return val.get_string().get(out);
+        simdjson::ondemand::value val;
+        err = obj.find_field(field_name).get(val);
+        if(err != simdjson::SUCCESS)
+            return err;
+        err = val.get_string().get(out);
+        if(err != simdjson::SUCCESS)
+            return err;
+        // Reset the object iterator so that subsequent visit_object /
+        // get_object calls on the same src re-iterate from the beginning.
+        bool reset_ok;
+        auto reset_err = obj.reset().get(reset_ok);
+        if(reset_err != simdjson::SUCCESS)
+            return reset_err;
+        return simdjson::SUCCESS;
     }
 
     /// Capture the raw JSON text of a value. Consumes the value.
@@ -264,35 +282,17 @@ struct simdjson_backend {
         return {std::string(raw), simdjson::SUCCESS};
     }
 
-    /// Re-parse captured raw JSON and invoke a callback with a fresh value.
-    /// The callback receives a value_type& that can be fully consumed.
+    /// Re-parse captured raw JSON as a document and invoke a callback.
     template <typename Fn>
     static auto with_reparsed(std::string_view raw_json, Fn&& fn) -> error_type {
-        // Wrap in array to convert scalar JSON into a value-extractable form
-        std::string wrapped;
-        wrapped.reserve(raw_json.size() + 2);
-        wrapped += '[';
-        wrapped.append(raw_json.data(), raw_json.size());
-        wrapped += ']';
-        simdjson::padded_string padded(wrapped);
+        simdjson::padded_string padded(raw_json);
         simdjson::ondemand::parser parser;
         simdjson::ondemand::document doc;
-        auto doc_err = parser.iterate(padded).get(doc);
-        if(doc_err != simdjson::SUCCESS)
-            return doc_err;
-        simdjson::ondemand::array arr;
-        doc_err = doc.get_array().get(arr);
-        if(doc_err != simdjson::SUCCESS)
-            return doc_err;
-        for(auto elem_result: arr) {
-            simdjson::ondemand::value val;
-            doc_err = std::move(elem_result).get(val);
-            if(doc_err != simdjson::SUCCESS)
-                return doc_err;
-            value_type src(val);
-            return fn(src);
-        }
-        return simdjson::INCORRECT_TYPE;
+        auto err = parser.iterate(padded).get(doc);
+        if(err != simdjson::SUCCESS)
+            return err;
+        value_type src(doc);
+        return fn(src);
     }
 
     /// Error context helpers: store rich error info in the thread-local context.
