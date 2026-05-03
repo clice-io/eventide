@@ -99,32 +99,46 @@ auto deserialize_externally_tagged(typename Backend::value_type& src, std::varia
 }
 
 /// Internally tagged: {"type": "Circle", "radius": 5.0}
-/// scan_field finds the tag and resets the object, so src remains consumable.
+/// Uses visit_object_keys to find the tag (which resets the iterator),
+/// then visit_object to deserialize the matched alternative.
 template <typename Backend, typename TagAttr, typename... Ts>
 auto deserialize_internally_tagged(typename Backend::value_type& src, std::variant<Ts...>& out)
     -> typename Backend::error_type {
+    using E = typename Backend::error_type;
+    using value_type = typename Backend::value_type;
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     constexpr std::string_view tag_field = TagAttr::field_names[0];
 
-    // scan_field reads the tag value and resets the object iterator,
-    // so src is still fully consumable for subsequent deserialization.
-    // We must copy the string_view to a std::string because the view
-    // points into the parser's tape which may be invalidated by the
-    // subsequent visit_object iteration.
+    struct tag_scanner {
+        std::string& tag_value;
+        bool found = false;
+
+        E on_field(std::string_view key, meta::type_kind, value_type& val) {
+            if(key == tag_field) {
+                std::string_view sv;
+                auto err = Backend::read_string(val, sv);
+                if(err != Backend::success)
+                    return err;
+                tag_value.assign(sv.data(), sv.size());
+                found = true;
+            }
+            return Backend::success;
+        }
+    };
+
     std::string tag_value_str;
-    {
-        std::string_view tag_value;
-        auto err = Backend::scan_field(src, tag_field, tag_value);
-        if(err != Backend::success)
-            return err;
-        tag_value_str.assign(tag_value.data(), tag_value.size());
-    }
+    tag_scanner scanner{tag_value_str};
+    auto err = Backend::visit_object_keys(src, scanner);
+    if(err != Backend::success)
+        return err;
+    if(!scanner.found)
+        return Backend::type_mismatch;
 
     return detail::match_and_deserialize_alt<Backend>(
         tag_value_str,
         names,
         out,
-        [&](auto& alt) -> typename Backend::error_type {
+        [&](auto& alt) -> E {
             using alt_t = std::remove_cvref_t<decltype(alt)>;
             static_assert(meta::reflectable_class<alt_t>,
                           "internally_tagged requires struct alternatives");

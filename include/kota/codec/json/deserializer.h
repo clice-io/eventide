@@ -240,31 +240,6 @@ struct simdjson_backend {
         return simdjson::SUCCESS;
     }
 
-    static error_type scan_field(value_type& src,
-                                 std::string_view field_name,
-                                 std::string_view& out) {
-        simdjson::ondemand::object obj;
-        auto err = src.is_document()
-            ? src.doc_->get_object().get(obj)
-            : src.val_->get_object().get(obj);
-        if(err != simdjson::SUCCESS)
-            return err;
-        simdjson::ondemand::value val;
-        err = obj.find_field(field_name).get(val);
-        if(err != simdjson::SUCCESS)
-            return err;
-        err = val.get_string().get(out);
-        if(err != simdjson::SUCCESS)
-            return err;
-        // Reset the object iterator so that subsequent visit_object /
-        // get_object calls on the same src re-iterate from the beginning.
-        bool reset_ok;
-        auto reset_err = obj.reset().get(reset_ok);
-        if(reset_err != simdjson::SUCCESS)
-            return reset_err;
-        return simdjson::SUCCESS;
-    }
-
     /// Capture the raw JSON text of a value. Consumes the value.
     /// Returns the raw JSON string and an error code.
     static auto capture_raw_json(value_type& src) -> std::pair<std::string, error_type> {

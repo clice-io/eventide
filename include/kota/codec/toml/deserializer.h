@@ -265,22 +265,6 @@ public:
         return success;
     }
 
-    static error_type scan_field(value_type& src, std::string_view field_name, std::string_view& out) {
-        if(!src)
-            return type_mismatch;
-        const auto* tbl = src->as_table();
-        if(!tbl)
-            return type_mismatch;
-        auto it = tbl->find(field_name);
-        if(it == tbl->cend())
-            return type_mismatch;
-        auto val = it->second.template value<std::string_view>();
-        if(!val.has_value())
-            return type_mismatch;
-        out = *val;
-        return success;
-    }
-
     /// Error context helpers: store rich error info in the thread-local context.
     /// The from_toml entry point checks this after a failed deserialization.
 

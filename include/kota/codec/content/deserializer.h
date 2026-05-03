@@ -159,21 +159,6 @@ struct content_backend {
         return success;
     }
 
-    static error_type scan_field(value_type& src, std::string_view field_name, std::string_view& out) {
-        if(!src)
-            return type_mismatch;
-        const Object* obj = src->get_object();
-        if(!obj)
-            return type_mismatch;
-        const Value* val = obj->find(field_name);
-        if(!val)
-            return type_mismatch;
-        auto s = val->get_string();
-        if(!s)
-            return type_mismatch;
-        out = *s;
-        return success;
-    }
 };
 
 template <typename Config>
