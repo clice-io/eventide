@@ -488,6 +488,350 @@ TEST_CASE(WildGlob) {
     EXPECT_FALSE(Pat26.match("something/folder/foo.js"));
 }
 
+TEST_CASE(ErrorPaths) {
+    // Unmatched '['
+    auto E1 = kota::GlobPattern::create("foo.[a-z");
+    EXPECT_FALSE(E1.has_value());
+
+    // '[' as last character
+    auto E2 = kota::GlobPattern::create("{a,[}");
+    EXPECT_FALSE(E2.has_value());
+
+    // Stray '\' at end of pattern (in SubGlobPattern)
+    auto E3 = kota::GlobPattern::create("foo\\");
+    EXPECT_FALSE(E3.has_value());
+
+    // Stray '\' at end inside brace
+    auto E4 = kota::GlobPattern::create("{foo\\}");
+    EXPECT_FALSE(E4.has_value());
+
+    // Stray '\' inside bracket inside brace
+    auto E5 = kota::GlobPattern::create("{[abc\\]}");
+    EXPECT_FALSE(E5.has_value());
+
+    // Empty brace expression {}
+    auto E6 = kota::GlobPattern::create("foo.{}");
+    EXPECT_FALSE(E6.has_value());
+
+    // Nested braces
+    auto E7 = kota::GlobPattern::create("{a,{b,c}}");
+    EXPECT_FALSE(E7.has_value());
+
+    // Incomplete brace expansion (unmatched '{')
+    auto E8 = kota::GlobPattern::create("{foo,bar");
+    EXPECT_FALSE(E8.has_value());
+
+    // *** (triple star)
+    auto E9 = kota::GlobPattern::create("***.js");
+    EXPECT_FALSE(E9.has_value());
+
+    // ** is valid (boundary)
+    auto E10 = kota::GlobPattern::create("**.js");
+    EXPECT_TRUE(E10.has_value());
+
+    // Multiple consecutive slashes in literal pattern
+    auto E11 = kota::GlobPattern::create("foo//bar");
+    EXPECT_FALSE(E11.has_value());
+
+    // Multiple consecutive slashes at start
+    auto E12 = kota::GlobPattern::create("//foo");
+    EXPECT_FALSE(E12.has_value());
+
+    // Multiple consecutive slashes in glob pattern (detected by SubGlobPattern)
+    auto E13 = kota::GlobPattern::create("**/foo//*.cc");
+    EXPECT_FALSE(E13.has_value());
+
+    // Unmatched '[' in SubGlobPattern
+    auto E14 = kota::GlobPattern::create("*[");
+    EXPECT_FALSE(E14.has_value());
+
+    // '\' at end inside bracket inside brace
+    auto E15 = kota::GlobPattern::create("{[\\]}");
+    EXPECT_FALSE(E15.has_value());
+}
+
+TEST_CASE(EmptyAndTrivial) {
+    // Empty pattern matches only empty string
+    PATDEF(Pat1, "")
+    EXPECT_TRUE(Pat1.match(""));
+    EXPECT_FALSE(Pat1.match("foo"));
+    EXPECT_FALSE(Pat1.match("/"));
+
+    // Single character pattern
+    PATDEF(Pat2, "a")
+    EXPECT_TRUE(Pat2.match("a"));
+    EXPECT_FALSE(Pat2.match("b"));
+    EXPECT_FALSE(Pat2.match("ab"));
+    EXPECT_FALSE(Pat2.match(""));
+
+    // Slash-only pattern
+    PATDEF(Pat3, "/")
+    EXPECT_TRUE(Pat3.match("/"));
+    EXPECT_FALSE(Pat3.match(""));
+    EXPECT_FALSE(Pat3.match("//"));
+
+    // Literal path with slashes (was rejected before bug fix)
+    PATDEF(Pat4, "foo/bar")
+    EXPECT_TRUE(Pat4.match("foo/bar"));
+    EXPECT_FALSE(Pat4.match("foo/baz"));
+    EXPECT_FALSE(Pat4.match("foo/bar/baz"));
+    EXPECT_FALSE(Pat4.match("foobar"));
+
+    // Literal multi-segment path
+    PATDEF(Pat5, "a/b/c/d")
+    EXPECT_TRUE(Pat5.match("a/b/c/d"));
+    EXPECT_FALSE(Pat5.match("a/b/c"));
+    EXPECT_FALSE(Pat5.match("a/b/c/d/e"));
+}
+
+TEST_CASE(IsTrivialMatchAll) {
+    auto P1 = kota::GlobPattern::create("**");
+    EXPECT_TRUE(P1.has_value());
+    EXPECT_TRUE(P1->isTrivialMatchAll());
+
+    auto P2 = kota::GlobPattern::create("*");
+    EXPECT_TRUE(P2.has_value());
+    EXPECT_TRUE(P2->isTrivialMatchAll());
+
+    auto P3 = kota::GlobPattern::create("**/*");
+    EXPECT_TRUE(P3.has_value());
+    EXPECT_FALSE(P3->isTrivialMatchAll());
+
+    auto P4 = kota::GlobPattern::create("foo/**");
+    EXPECT_TRUE(P4.has_value());
+    EXPECT_FALSE(P4->isTrivialMatchAll());
+
+    auto P5 = kota::GlobPattern::create("*.js");
+    EXPECT_TRUE(P5.has_value());
+    EXPECT_FALSE(P5->isTrivialMatchAll());
+
+    auto P6 = kota::GlobPattern::create("{a,b}");
+    EXPECT_TRUE(P6.has_value());
+    EXPECT_FALSE(P6->isTrivialMatchAll());
+}
+
+TEST_CASE(SingleStar) {
+    PATDEF(Pat1, "*")
+    EXPECT_TRUE(Pat1.match("foo"));
+    EXPECT_TRUE(Pat1.match("bar.txt"));
+    EXPECT_TRUE(Pat1.match("a"));
+    // In this implementation, standalone * is isTrivialMatchAll and matches across segments
+    EXPECT_TRUE(Pat1.match("foo/bar"));
+    EXPECT_TRUE(Pat1.match("/foo"));
+
+    // * in a segment (was rejected by old SubGlobPattern bug)
+    PATDEF(Pat2, "*/b")
+    EXPECT_TRUE(Pat2.match("a/b"));
+    EXPECT_TRUE(Pat2.match("foo/b"));
+    EXPECT_FALSE(Pat2.match("a/c"));
+    EXPECT_FALSE(Pat2.match("a/b/c"));
+
+    // ? in a segment
+    PATDEF(Pat3, "?/b")
+    EXPECT_TRUE(Pat3.match("a/b"));
+    EXPECT_TRUE(Pat3.match("x/b"));
+    EXPECT_FALSE(Pat3.match("ab/b"));
+    EXPECT_FALSE(Pat3.match("/b"));
+}
+
+TEST_CASE(SingleQuestion) {
+    PATDEF(Pat1, "?")
+    EXPECT_TRUE(Pat1.match("a"));
+    EXPECT_TRUE(Pat1.match("z"));
+    EXPECT_TRUE(Pat1.match("0"));
+    EXPECT_FALSE(Pat1.match(""));
+    EXPECT_FALSE(Pat1.match("ab"));
+    EXPECT_FALSE(Pat1.match("/"));
+
+    PATDEF(Pat2, "??")
+    EXPECT_TRUE(Pat2.match("ab"));
+    EXPECT_TRUE(Pat2.match("12"));
+    EXPECT_FALSE(Pat2.match("a"));
+    EXPECT_FALSE(Pat2.match("abc"));
+
+    PATDEF(Pat3, "?.?")
+    EXPECT_TRUE(Pat3.match("a.b"));
+    EXPECT_FALSE(Pat3.match("ab.c"));
+    EXPECT_FALSE(Pat3.match("a.bc"));
+}
+
+TEST_CASE(MatchEmptyString) {
+    PATDEF(Pat1, "**")
+    // ** matches any number of path segments including none
+    // For empty string: s == s_end immediately, remaining pattern is "**"
+    // find_first_not_of("*/") on "**" is npos, so returns true
+    EXPECT_TRUE(Pat1.match(""));
+
+    PATDEF(Pat2, "*")
+    // * at s_end: find_first_not_of("*/", 0) on "*" is npos => true
+    EXPECT_TRUE(Pat2.match(""));
+
+    PATDEF(Pat3, "foo")
+    EXPECT_FALSE(Pat3.match(""));
+
+    PATDEF(Pat4, "*.js")
+    EXPECT_FALSE(Pat4.match(""));
+}
+
+TEST_CASE(InvertedBracket) {
+    PATDEF(Pat1, "[!a]")
+    EXPECT_TRUE(Pat1.match("b"));
+    EXPECT_TRUE(Pat1.match("z"));
+    EXPECT_TRUE(Pat1.match("0"));
+    EXPECT_FALSE(Pat1.match("a"));
+    // Critical: inverted bracket must NOT match '/'
+    EXPECT_FALSE(Pat1.match("/"));
+
+    PATDEF(Pat2, "[!0-9]")
+    EXPECT_TRUE(Pat2.match("a"));
+    EXPECT_FALSE(Pat2.match("5"));
+    EXPECT_FALSE(Pat2.match("/"));
+
+    PATDEF(Pat3, "[^a-z]")
+    EXPECT_TRUE(Pat3.match("0"));
+    EXPECT_TRUE(Pat3.match("A"));
+    EXPECT_FALSE(Pat3.match("a"));
+    EXPECT_FALSE(Pat3.match("/"));
+}
+
+TEST_CASE(MultipleGlobstar) {
+    PATDEF(Pat1, "**/foo/**/bar")
+    EXPECT_TRUE(Pat1.match("foo/bar"));
+    EXPECT_TRUE(Pat1.match("a/foo/b/bar"));
+    EXPECT_TRUE(Pat1.match("a/b/foo/c/d/e/bar"));
+    EXPECT_TRUE(Pat1.match("/foo/bar"));
+    EXPECT_TRUE(Pat1.match("x/y/foo/z/bar"));
+    EXPECT_FALSE(Pat1.match("a/b/bar"));
+    EXPECT_FALSE(Pat1.match("foo/baz"));
+    EXPECT_FALSE(Pat1.match("foobar"));
+
+    PATDEF(Pat2, "**/a/**/b/**/c")
+    EXPECT_TRUE(Pat2.match("a/b/c"));
+    EXPECT_TRUE(Pat2.match("x/a/y/b/z/c"));
+    EXPECT_FALSE(Pat2.match("a/c"));
+    EXPECT_FALSE(Pat2.match("a/b"));
+}
+
+TEST_CASE(MaxSubpatternLimit) {
+    // {a,b} x {c,d} = 4 subpatterns, limit 2 => fail
+    auto P1 = kota::GlobPattern::create("{a,b}.{c,d}", 2);
+    EXPECT_FALSE(P1.has_value());
+
+    // Same with limit 4 => succeed
+    auto P2 = kota::GlobPattern::create("{a,b}.{c,d}", 4);
+    EXPECT_TRUE(P2.has_value());
+
+    // Single brace with 3 terms, limit 2 => fail
+    auto P3 = kota::GlobPattern::create("{a,b,c}", 2);
+    EXPECT_FALSE(P3.has_value());
+
+    // Limit 0 disables brace expansion, pattern kept as literal with braces
+    auto P4 = kota::GlobPattern::create("{a,b}", 0);
+    EXPECT_TRUE(P4.has_value());
+    EXPECT_TRUE(P4->match("{a,b}"));
+    EXPECT_FALSE(P4->match("a"));
+    EXPECT_FALSE(P4->match("b"));
+
+    // Limit 1 means only 1 subpattern allowed; single brace with 1 term is OK
+    auto P5 = kota::GlobPattern::create("{a}", 1);
+    EXPECT_TRUE(P5.has_value());
+    EXPECT_TRUE(P5->match("a"));
+}
+
+TEST_CASE(BracketAtStart) {
+    PATDEF(Pat1, "[a-z]oo")
+    EXPECT_TRUE(Pat1.match("foo"));
+    EXPECT_TRUE(Pat1.match("boo"));
+    EXPECT_FALSE(Pat1.match("Foo"));
+    EXPECT_FALSE(Pat1.match("1oo"));
+    EXPECT_FALSE(Pat1.match("aoo/bar"));
+
+    PATDEF(Pat2, "[0-9]*")
+    EXPECT_TRUE(Pat2.match("1foo"));
+    EXPECT_TRUE(Pat2.match("9"));
+    EXPECT_FALSE(Pat2.match("a1"));
+}
+
+TEST_CASE(BracketInBrace) {
+    PATDEF(Pat1, "{[a-z]oo,[0-9]ar}")
+    EXPECT_TRUE(Pat1.match("foo"));
+    EXPECT_TRUE(Pat1.match("boo"));
+    EXPECT_TRUE(Pat1.match("1ar"));
+    EXPECT_TRUE(Pat1.match("9ar"));
+    EXPECT_FALSE(Pat1.match("Foo"));
+    EXPECT_FALSE(Pat1.match("bar"));
+
+    // Bracket with special chars inside brace
+    PATDEF(Pat2, R"({foo.[\*\?],bar})")
+    EXPECT_TRUE(Pat2.match("foo.*"));
+    EXPECT_TRUE(Pat2.match("foo.?"));
+    EXPECT_TRUE(Pat2.match("bar"));
+    EXPECT_FALSE(Pat2.match("foo.x"));
+}
+
+TEST_CASE(QuestionWithGlobstar) {
+    PATDEF(Pat1, "**/?.js")
+    EXPECT_TRUE(Pat1.match("a.js"));
+    EXPECT_TRUE(Pat1.match("foo/b.js"));
+    EXPECT_TRUE(Pat1.match("a/b/c.js"));
+    // ** can absorb leading chars in the segment, so ab.js matches
+    // because ** absorbs 'a' and ?.js matches 'b.js'
+    EXPECT_TRUE(Pat1.match("ab.js"));
+    EXPECT_TRUE(Pat1.match("foo/ab.js"));
+    EXPECT_FALSE(Pat1.match(".js"));
+
+    PATDEF(Pat2, "**/?")
+    EXPECT_TRUE(Pat2.match("a"));
+    EXPECT_TRUE(Pat2.match("foo/a"));
+    EXPECT_TRUE(Pat2.match("a/b/c/d"));
+    // ** absorbs leading chars, so 'ab' matches (** absorbs 'a', ? matches 'b')
+    EXPECT_TRUE(Pat2.match("ab"));
+    EXPECT_TRUE(Pat2.match("foo/ab"));
+}
+
+TEST_CASE(GlobstarSlashPatterns) {
+    PATDEF(Pat1, "**/")
+    EXPECT_TRUE(Pat1.match("foo/bar"));
+    EXPECT_TRUE(Pat1.match("foo"));
+    EXPECT_TRUE(Pat1.match("/"));
+
+    // ** followed by literal after /
+    PATDEF(Pat2, "**/x")
+    EXPECT_TRUE(Pat2.match("x"));
+    EXPECT_TRUE(Pat2.match("/x"));
+    EXPECT_TRUE(Pat2.match("a/b/c/x"));
+    EXPECT_FALSE(Pat2.match("ax"));
+    EXPECT_FALSE(Pat2.match("a/bx"));
+}
+
+TEST_CASE(BackslashInInput) {
+    // ? should match a single backslash in the input
+    PATDEF(Pat1, "?")
+    EXPECT_TRUE(Pat1.match("\\"));
+
+    // * should match strings containing backslashes
+    PATDEF(Pat2, "*")
+    EXPECT_TRUE(Pat2.match("a\\b"));
+    EXPECT_TRUE(Pat2.match("\\"));
+
+    // Literal match with no special meaning of \ in input
+    PATDEF(Pat3, "**/*.txt")
+    EXPECT_TRUE(Pat3.match("path\\with\\backslash.txt"));
+}
+
+TEST_CASE(GlobstarWithIntermediateSegments) {
+    PATDEF(Pat1, "**/*/foo")
+    EXPECT_TRUE(Pat1.match("a/foo"));
+    EXPECT_TRUE(Pat1.match("x/y/a/foo"));
+    EXPECT_FALSE(Pat1.match("foo"));
+
+    PATDEF(Pat2, "**/*.js/**/test")
+    EXPECT_TRUE(Pat2.match("foo.js/test"));
+    EXPECT_TRUE(Pat2.match("foo.js/a/b/test"));
+    EXPECT_TRUE(Pat2.match("a/foo.js/test"));
+    EXPECT_FALSE(Pat2.match("foo/test"));
+}
+
 };  // TEST_SUITE(GlobPattern)
 
 }  // namespace
