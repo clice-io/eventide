@@ -33,7 +33,12 @@ SnapshotContext& context() {
     return ctx;
 }
 
-std::optional<std::string> read_snap_body(const fs::path& path) {
+struct SnapData {
+    std::string body;
+    std::string created_at;
+};
+
+std::optional<SnapData> read_snap(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     if(!file) {
         return std::nullopt;
@@ -43,29 +48,47 @@ std::optional<std::string> read_snap_body(const fs::path& path) {
 
     constexpr std::string_view separator = "---\n";
     if(!raw.starts_with(separator)) {
-        return raw;
+        return SnapData{.body = std::move(raw), .created_at = {}};
     }
     auto end = raw.find(separator, separator.size());
     if(end == std::string::npos) {
-        return raw;
+        return SnapData{.body = std::move(raw), .created_at = {}};
     }
+
+    auto frontmatter = std::string_view(raw).substr(separator.size(), end - separator.size());
+    std::string created_at;
+    constexpr std::string_view ca_prefix = "created_at: ";
+    auto pos = frontmatter.find(ca_prefix);
+    if(pos != std::string_view::npos) {
+        auto val_start = pos + ca_prefix.size();
+        auto val_end = frontmatter.find('\n', val_start);
+        created_at = std::string(frontmatter.substr(val_start, val_end - val_start));
+    }
+
     auto body_start = end + separator.size();
     auto body = raw.substr(body_start);
     if(body.ends_with('\n')) {
         body.pop_back();
     }
-    return body;
+    return SnapData{.body = std::move(body), .created_at = std::move(created_at)};
 }
 
 std::string format_snap(std::string_view source,
                         std::string_view input_file,
-                        std::string_view content) {
-    auto now = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
-    auto ymd = std::chrono::year_month_day{now};
+                        std::string_view content,
+                        std::string_view created_at = {}) {
+    std::string date_str;
+    if(created_at.empty()) {
+        auto now = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+        auto ymd = std::chrono::year_month_day{now};
+        date_str = std::format("{:%Y-%m-%d}", ymd);
+    } else {
+        date_str = created_at;
+    }
 
     std::string result = "---\n";
     result += std::format("source: {}\n", source);
-    result += std::format("created_at: {:%Y-%m-%d}\n", ymd);
+    result += std::format("created_at: {}\n", date_str);
     if(!input_file.empty()) {
         result += std::format("input_file: {}\n", input_file);
     }
@@ -76,7 +99,11 @@ std::string format_snap(std::string_view source,
 }
 
 bool write_snap(const fs::path& path, std::string_view content) {
-    fs::create_directories(path.parent_path());
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    if(ec) {
+        return false;
+    }
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if(!file) {
         return false;
@@ -93,12 +120,11 @@ bool check_impl(const fs::path& snap_path,
                 std::string_view value,
                 std::string_view input_file,
                 std::source_location loc) {
-    auto existing = read_snap_body(snap_path);
-
+    auto existing = read_snap(snap_path);
     auto source = fs::path(loc.file_name()).filename().string();
-    auto formatted = format_snap(source, input_file, value);
 
     if(!existing) {
+        auto formatted = format_snap(source, input_file, value);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -107,11 +133,14 @@ bool check_impl(const fs::path& snap_path,
         return false;
     }
 
-    if(*existing == value) {
+    if(existing->body == value) {
+        std::error_code ec;
+        fs::remove(fs::path(snap_path.string() + ".new"), ec);
         return false;
     }
 
-    if(update_snapshots_flag.load(std::memory_order_relaxed)) {
+    if(update_snapshots_flag.load(std::memory_order_acquire)) {
+        auto formatted = format_snap(source, input_file, value, existing->created_at);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -121,7 +150,10 @@ bool check_impl(const fs::path& snap_path,
     }
 
     auto new_path = fs::path(snap_path.string() + ".new");
-    write_snap(new_path, formatted);
+    auto formatted = format_snap(source, input_file, value);
+    if(!write_snap(new_path, formatted)) {
+        std::println("[snapshot] failed to write {}", new_path.string());
+    }
 
     std::println("[snapshot] mismatch: {}", snap_path.string());
     std::println("           new result: {}", new_path.string());
@@ -141,7 +173,7 @@ void reset_snapshot_context(std::string_view suite, std::string_view test, std::
 }
 
 void set_update_snapshots(bool enabled) {
-    update_snapshots_flag.store(enabled, std::memory_order_relaxed);
+    update_snapshots_flag.store(enabled, std::memory_order_release);
 }
 
 bool check_snapshot(std::string_view value, std::string_view name, std::source_location loc) {
@@ -168,7 +200,14 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
         return check_impl(snap_dir() / filename, value, "", loc);
     }
 
-    return check_impl(snap_dir() / std::format("{}__{}.snap", stem, name), value, "", loc);
+    if(name.find_first_of("/\\:*?\"<>|") != std::string_view::npos) {
+        std::println("[snapshot] error: snapshot name contains unsafe characters: `{}`", name);
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    auto filename = std::format("{}__{}__{}.snap", stem, ctx.suite_name, name);
+    return check_impl(snap_dir() / filename, value, "", loc);
 }
 
 bool check_snapshot_glob(std::string_view pattern,
@@ -223,10 +262,10 @@ bool check_snapshot_glob(std::string_view pattern,
     std::ranges::sort(matched);
 
     if(matched.empty()) {
-        std::println("[snapshot] warning: no files matched pattern `{}`", pattern);
+        std::println("[snapshot] error: no files matched pattern `{}`", pattern);
         std::println("           base dir: {}", base_dir.string());
         std::println("           at {}:{}", loc.file_name(), loc.line());
-        return false;
+        return true;
     }
 
     bool failed = false;

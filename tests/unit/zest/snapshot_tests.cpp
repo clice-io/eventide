@@ -64,15 +64,15 @@ TEST_CASE(glob_fixtures) {
     ASSERT_SNAPSHOT_GLOB("fixtures/**/*.txt", read_file);
 }
 
-TEST_CASE(mismatch_detection) {
+TEST_CASE(mismatch_detection, serial = true) {
     check_snapshot("original value", "mismatch_detect");
     auto result = check_snapshot("different value", "mismatch_detect");
     EXPECT_TRUE(result);
     fs::remove(fs::path(__FILE__).parent_path() / "snapshots" /
-               "snapshot_tests__mismatch_detect.snap.new");
+               "snapshot_tests__snapshot__mismatch_detect.snap.new");
 }
 
-TEST_CASE(update_mode) {
+TEST_CASE(update_mode, serial = true) {
     check_snapshot("version_a", "update_mode_v");
     set_update_snapshots(true);
     auto result = check_snapshot("version_b", "update_mode_v");
@@ -106,7 +106,26 @@ TEST_CASE(invalid_glob_error) {
 TEST_CASE(glob_no_matches) {
     auto result = check_snapshot_glob("nonexistent_dir/**/*.xyz",
                                       [](std::string_view) { return std::string{}; });
-    EXPECT_FALSE(result);
+    EXPECT_TRUE(result);
+}
+
+TEST_CASE(body_with_separator) {
+    std::string content = "before\n---\nafter";
+    ASSERT_SNAPSHOT(content, "body_with_separator");
+}
+
+TEST_CASE(unsafe_name_chars) {
+    auto r1 = check_snapshot("value", "bad/name");
+    EXPECT_TRUE(r1);
+    auto r2 = check_snapshot("value", "bad:name");
+    EXPECT_TRUE(r2);
+}
+
+TEST_CASE(glob_empty_context) {
+    reset_snapshot_context("", "", "");
+    auto result =
+        check_snapshot_glob("fixtures/**/*.txt", [](std::string_view) { return std::string{}; });
+    EXPECT_TRUE(result);
 }
 
 };  // TEST_SUITE(snapshot)
