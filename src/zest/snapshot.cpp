@@ -116,15 +116,22 @@ fs::path snap_dir() {
     return fs::path(context().source_file).parent_path() / "snapshots";
 }
 
+std::string normalize_newlines(std::string_view s) {
+    std::string result(s);
+    std::erase(result, '\r');
+    return result;
+}
+
 bool check_impl(const fs::path& snap_path,
                 std::string_view value,
                 std::string_view input_file,
                 std::source_location loc) {
     auto existing = read_snap(snap_path);
     auto source = fs::path(loc.file_name()).filename().string();
+    auto normalized = normalize_newlines(value);
 
     if(!existing) {
-        auto formatted = format_snap(source, input_file, value);
+        auto formatted = format_snap(source, input_file, normalized);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -133,14 +140,14 @@ bool check_impl(const fs::path& snap_path,
         return false;
     }
 
-    if(existing->body == value) {
+    if(existing->body == normalized) {
         std::error_code ec;
         fs::remove(fs::path(snap_path.string() + ".new"), ec);
         return false;
     }
 
     if(update_snapshots_flag.load(std::memory_order_acquire)) {
-        auto formatted = format_snap(source, input_file, value, existing->created_at);
+        auto formatted = format_snap(source, input_file, normalized, existing->created_at);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -150,7 +157,7 @@ bool check_impl(const fs::path& snap_path,
     }
 
     auto new_path = fs::path(snap_path.string() + ".new");
-    auto formatted = format_snap(source, input_file, value);
+    auto formatted = format_snap(source, input_file, normalized);
     bool wrote_new = write_snap(new_path, formatted);
 
     std::println("[snapshot] mismatch: {}", snap_path.string());
