@@ -50,7 +50,10 @@ TEST_CASE(json_vector) {
 }
 
 TEST_CASE(json_map) {
-    auto m = std::map<std::string, int>{{"alpha", 1}, {"beta", 2}};
+    auto m = std::map<std::string, int>{
+        {"alpha", 1},
+        {"beta",  2}
+    };
     ASSERT_SNAPSHOT_JSON(m, "json_map");
 }
 
