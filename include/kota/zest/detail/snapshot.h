@@ -16,7 +16,7 @@ bool check_snapshot(std::string_view value,
                     std::source_location loc = std::source_location::current());
 
 bool check_snapshot_glob(std::string_view pattern,
-                         std::function<std::string(std::string_view)> transform,
+                         const std::function<std::string(std::string_view)>& transform,
                          std::source_location loc = std::source_location::current());
 
 }  // namespace kota::zest

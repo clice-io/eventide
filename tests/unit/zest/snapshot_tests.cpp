@@ -1,14 +1,17 @@
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "kota/zest/snapshot_json.h"
 #include "kota/zest/zest.h"
-#include "kota/codec/json/json.h"
 
 namespace kota::zest {
 
 namespace {
+
+namespace fs = std::filesystem;
 
 std::string read_file(std::string_view path) {
     std::ifstream file(std::string(path), std::ios::binary);
@@ -59,6 +62,51 @@ TEST_CASE(json_map) {
 
 TEST_CASE(glob_fixtures) {
     ASSERT_SNAPSHOT_GLOB("fixtures/**/*.txt", read_file);
+}
+
+TEST_CASE(mismatch_detection) {
+    check_snapshot("original value", "mismatch_detect");
+    auto result = check_snapshot("different value", "mismatch_detect");
+    EXPECT_TRUE(result);
+    fs::remove(fs::path(__FILE__).parent_path() / "snapshots" /
+               "snapshot_tests__mismatch_detect.snap.new");
+}
+
+TEST_CASE(update_mode) {
+    check_snapshot("version_a", "update_mode_v");
+    set_update_snapshots(true);
+    auto result = check_snapshot("version_b", "update_mode_v");
+    set_update_snapshots(false);
+    EXPECT_FALSE(result);
+    auto result2 = check_snapshot("version_b", "update_mode_v");
+    EXPECT_FALSE(result2);
+    set_update_snapshots(true);
+    check_snapshot("version_a", "update_mode_v");
+    set_update_snapshots(false);
+}
+
+TEST_CASE(duplicate_unnamed_error) {
+    auto r1 = check_snapshot("first unnamed value");
+    EXPECT_FALSE(r1);
+    auto r2 = check_snapshot("second unnamed attempt");
+    EXPECT_TRUE(r2);
+}
+
+TEST_CASE(missing_context_error) {
+    reset_snapshot_context("", "", "");
+    auto result = check_snapshot("value", "no_context");
+    EXPECT_TRUE(result);
+}
+
+TEST_CASE(invalid_glob_error) {
+    auto result = check_snapshot_glob("[unclosed", [](std::string_view) { return std::string{}; });
+    EXPECT_TRUE(result);
+}
+
+TEST_CASE(glob_no_matches) {
+    auto result = check_snapshot_glob("nonexistent_dir/**/*.xyz",
+                                      [](std::string_view) { return std::string{}; });
+    EXPECT_FALSE(result);
 }
 
 };  // TEST_SUITE(snapshot)

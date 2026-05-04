@@ -47,7 +47,8 @@ auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std
 inline std::expected<std::string, error> prettify(std::string_view json) {
     simdjson::dom::parser parser;
     simdjson::dom::element doc;
-    if(auto err = parser.parse(json.data(), json.size()).get(doc)) {
+    auto padded = simdjson::padded_string(json);
+    if(auto err = parser.parse(padded).get(doc)) {
         return std::unexpected(error(make_error(err)));
     }
     return simdjson::prettify(doc);

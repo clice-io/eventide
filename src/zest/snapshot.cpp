@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -18,6 +17,8 @@ namespace kota::zest {
 
 namespace fs = std::filesystem;
 
+namespace {
+
 struct SnapshotContext {
     std::string suite_name;
     std::string test_name;
@@ -25,9 +26,7 @@ struct SnapshotContext {
     bool unnamed_used = false;
 };
 
-namespace {
-
-std::atomic<bool> g_update_snapshots{false};
+std::atomic<bool> update_snapshots_flag{false};
 
 SnapshotContext& context() {
     thread_local SnapshotContext ctx;
@@ -111,8 +110,11 @@ bool check_impl(const fs::path& snap_path,
         return false;
     }
 
-    if(g_update_snapshots.load(std::memory_order_relaxed)) {
-        write_snap(snap_path, formatted);
+    if(update_snapshots_flag.load(std::memory_order_relaxed)) {
+        if(!write_snap(snap_path, formatted)) {
+            std::println("[snapshot] failed to write {}", snap_path.string());
+            return true;
+        }
         std::println("[snapshot] updated {}", snap_path.string());
         return false;
     }
@@ -138,7 +140,7 @@ void reset_snapshot_context(std::string_view suite, std::string_view test, std::
 }
 
 void set_update_snapshots(bool enabled) {
-    g_update_snapshots.store(enabled, std::memory_order_relaxed);
+    update_snapshots_flag.store(enabled, std::memory_order_relaxed);
 }
 
 bool check_snapshot(std::string_view value, std::string_view name, std::source_location loc) {
@@ -169,7 +171,7 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
 }
 
 bool check_snapshot_glob(std::string_view pattern,
-                         std::function<std::string(std::string_view)> transform,
+                         const std::function<std::string(std::string_view)>& transform,
                          std::source_location loc) {
     auto& ctx = context();
 
@@ -196,8 +198,14 @@ bool check_snapshot_glob(std::string_view pattern,
         return true;
     }
 
+    auto snap_base = snap_dir();
+
     std::vector<fs::path> matched;
     for(auto& entry: iter) {
+        if(entry.is_directory() && entry.path() == snap_base) {
+            iter.disable_recursion_pending();
+            continue;
+        }
         if(!entry.is_regular_file()) {
             continue;
         }
@@ -221,7 +229,6 @@ bool check_snapshot_glob(std::string_view pattern,
     }
 
     bool failed = false;
-    auto snap_base = snap_dir();
     for(auto& rel: matched) {
         auto full_path = (base_dir / rel).string();
         auto value = transform(full_path);
