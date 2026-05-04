@@ -39,6 +39,7 @@ std::optional<std::string> read_snap_body(const fs::path& path) {
         return std::nullopt;
     }
     auto raw = std::string(std::istreambuf_iterator<char>(file), {});
+    std::erase(raw, '\r');
 
     constexpr std::string_view separator = "---\n";
     if(!raw.starts_with(separator)) {
