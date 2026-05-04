@@ -68,15 +68,14 @@ TEST_CASE(glob_fixtures) {
 }
 
 TEST_CASE(mismatch_detection, serial = true) {
-    check_snapshot("original value", "mismatch_detect");
+    EXPECT_FALSE(check_snapshot("original value", "mismatch_detect"));
     auto result = check_snapshot("different value", "mismatch_detect");
     EXPECT_TRUE(result);
-    fs::remove(fs::path(__FILE__).parent_path() / "snapshots" /
-               "snapshot_tests__snapshot__mismatch_detect.snap.new");
+    EXPECT_FALSE(check_snapshot("original value", "mismatch_detect"));
 }
 
 TEST_CASE(update_mode, serial = true) {
-    check_snapshot("version_a", "update_mode_v");
+    EXPECT_FALSE(check_snapshot("version_a", "update_mode_v"));
     set_update_snapshots(true);
     auto result = check_snapshot("version_b", "update_mode_v");
     set_update_snapshots(false);
@@ -84,7 +83,7 @@ TEST_CASE(update_mode, serial = true) {
     auto result2 = check_snapshot("version_b", "update_mode_v");
     EXPECT_FALSE(result2);
     set_update_snapshots(true);
-    check_snapshot("version_a", "update_mode_v");
+    EXPECT_FALSE(check_snapshot("version_a", "update_mode_v"));
     set_update_snapshots(false);
 }
 

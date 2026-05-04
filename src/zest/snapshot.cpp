@@ -151,12 +151,14 @@ bool check_impl(const fs::path& snap_path,
 
     auto new_path = fs::path(snap_path.string() + ".new");
     auto formatted = format_snap(source, input_file, value);
-    if(!write_snap(new_path, formatted)) {
-        std::println("[snapshot] failed to write {}", new_path.string());
-    }
+    bool wrote_new = write_snap(new_path, formatted);
 
     std::println("[snapshot] mismatch: {}", snap_path.string());
-    std::println("           new result: {}", new_path.string());
+    if(wrote_new) {
+        std::println("           new result: {}", new_path.string());
+    } else {
+        std::println("           failed to write new result file");
+    }
     std::println("           run with --update-snapshots to accept");
     std::println("           at {}:{}", loc.file_name(), loc.line());
     return true;
@@ -213,7 +215,7 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
         return true;
     }
 
-    auto filename = std::format("{}__{}__{}.snap", stem, ctx.suite_name, name);
+    auto filename = std::format("{}__{}__{}__{}.snap", stem, ctx.suite_name, ctx.test_name, name);
     return check_impl(snap_dir() / filename, value, "", loc);
 }
 
