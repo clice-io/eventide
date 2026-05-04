@@ -1,5 +1,6 @@
 #include "kota/zest/detail/snapshot.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -8,6 +9,9 @@
 #include <optional>
 #include <print>
 #include <string>
+#include <vector>
+
+#include "kota/support/glob_pattern.h"
 
 namespace kota::zest {
 
@@ -109,7 +113,8 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
     if(name.empty()) {
         if(ctx.unnamed_used) {
             std::println("[snapshot] error: duplicate ASSERT_SNAPSHOT in same TEST_CASE");
-            std::println("           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
+            std::println(
+                "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
             std::println("           at {}:{}", loc.file_name(), loc.line());
             return true;
         }
@@ -119,6 +124,71 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
     }
 
     return check_impl(snap_dir() / std::format("{}.snap", name), value, loc);
+}
+
+bool check_snapshot_glob(std::string_view pattern,
+                         std::function<std::string(std::string_view)> transform,
+                         std::source_location loc) {
+    auto& ctx = context();
+
+    if(ctx.source_file.empty()) {
+        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    auto glob = GlobPattern::create(pattern);
+    if(!glob) {
+        std::println("[snapshot] error: invalid glob pattern `{}`", pattern);
+        std::println("           {}", glob.error().message);
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    auto base_dir = fs::path(ctx.source_file).parent_path();
+    std::error_code ec;
+    auto iter = fs::recursive_directory_iterator(base_dir, ec);
+    if(ec) {
+        std::println("[snapshot] error: cannot iterate `{}`", base_dir.string());
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    std::vector<fs::path> matched;
+    for(auto& entry: iter) {
+        if(!entry.is_regular_file()) {
+            continue;
+        }
+        auto rel = fs::relative(entry.path(), base_dir, ec);
+        if(ec) {
+            continue;
+        }
+        auto rel_str = rel.generic_string();
+        if(glob->match(rel_str)) {
+            matched.push_back(std::move(rel));
+        }
+    }
+
+    std::ranges::sort(matched);
+
+    if(matched.empty()) {
+        std::println("[snapshot] warning: no files matched pattern `{}`", pattern);
+        std::println("           base dir: {}", base_dir.string());
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return false;
+    }
+
+    bool failed = false;
+    auto snap_base = snap_dir();
+    for(auto& rel: matched) {
+        auto full_path = (base_dir / rel).string();
+        auto value = transform(full_path);
+        auto snap_path = snap_base / (rel.generic_string() + ".snap");
+        if(check_impl(snap_path, value, loc)) {
+            failed = true;
+        }
+    }
+    return failed;
 }
 
 }  // namespace kota::zest

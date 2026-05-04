@@ -59,6 +59,7 @@ target_include_directories(kota_zest PUBLIC
 target_link_libraries(kota_zest PUBLIC
     cpptrace::cpptrace
     kota::deco
+    kota::support
 )
 
 kota_apply_project_options(kota_zest)

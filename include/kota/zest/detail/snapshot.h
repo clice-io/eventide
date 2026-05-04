@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <source_location>
+#include <string>
 #include <string_view>
 
 namespace kota::zest {
@@ -12,5 +14,9 @@ void set_update_snapshots(bool enabled);
 bool check_snapshot(std::string_view value,
                     std::string_view name = {},
                     std::source_location loc = std::source_location::current());
+
+bool check_snapshot_glob(std::string_view pattern,
+                         std::function<std::string(std::string_view)> transform,
+                         std::source_location loc = std::source_location::current());
 
 }  // namespace kota::zest

@@ -141,20 +141,27 @@
 
 #define ZEST_SNAPSHOT_IMPL(return_action, value, ...)                                              \
     do {                                                                                           \
-        auto _zest_snap_json = ::kota::codec::json::to_json(value);                               \
+        auto _zest_snap_json = ::kota::codec::json::to_json(value);                                \
         if(!_zest_snap_json) {                                                                     \
-            std::println("[snapshot] json serialization failed");                                   \
+            std::println("[snapshot] json serialization failed");                                  \
         }                                                                                          \
         ZEST_CHECK_IMPL(!_zest_snap_json.has_value(), return_action);                              \
         auto _zest_snap_failed =                                                                   \
             ::kota::zest::check_snapshot(*_zest_snap_json __VA_OPT__(, __VA_ARGS__));              \
-        ZEST_CHECK_IMPL(_zest_snap_failed, return_action);                                        \
+        ZEST_CHECK_IMPL(_zest_snap_failed, return_action);                                         \
     } while(0)
 
 // clang-format off
 #define EXPECT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)
 #define ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_IMPL(return, value __VA_OPT__(,) __VA_ARGS__)
 #define CO_ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_IMPL(co_return, value __VA_OPT__(,) __VA_ARGS__)
+
+#define ZEST_SNAPSHOT_GLOB_IMPL(return_action, pattern, transform)                                 \
+    ZEST_CHECK_IMPL(::kota::zest::check_snapshot_glob(pattern, transform), return_action)
+
+#define EXPECT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL((void)0, pattern, transform)
+#define ASSERT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(return, pattern, transform)
+#define CO_ASSERT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(co_return, pattern, transform)
 // clang-format on
 
 #ifdef __cpp_exceptions
