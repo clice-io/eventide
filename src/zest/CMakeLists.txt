@@ -52,6 +52,9 @@ target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
 )
 
+file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" _kota_zest_build_root)
+target_compile_definitions(kota_zest PRIVATE "KOTA_ZEST_BUILD_ROOT=\"${_kota_zest_build_root}\"")
+
 target_include_directories(kota_zest PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )

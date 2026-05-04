@@ -168,7 +168,14 @@ void reset_snapshot_context(std::string_view suite, std::string_view test, std::
     auto& ctx = context();
     ctx.suite_name = suite;
     ctx.test_name = test;
-    ctx.source_file = file;
+
+    fs::path p(file);
+#ifdef KOTA_ZEST_BUILD_ROOT
+    if(!file.empty() && p.is_relative()) {
+        p = (fs::path(KOTA_ZEST_BUILD_ROOT) / p).lexically_normal();
+    }
+#endif
+    ctx.source_file = p.string();
     ctx.unnamed_used = false;
 }
 
