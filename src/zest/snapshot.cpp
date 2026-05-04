@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <format>
@@ -59,8 +60,12 @@ std::optional<std::string> read_snap_body(const fs::path& path) {
 std::string format_snap(std::string_view source,
                         std::string_view input_file,
                         std::string_view content) {
+    auto now = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+    auto ymd = std::chrono::year_month_day{now};
+
     std::string result = "---\n";
     result += std::format("source: {}\n", source);
+    result += std::format("created_at: {:%Y-%m-%d}\n", ymd);
     if(!input_file.empty()) {
         result += std::format("input_file: {}\n", input_file);
     }
@@ -147,20 +152,22 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
         return true;
     }
 
+    auto stem = fs::path(ctx.source_file).stem().string();
+
     if(name.empty()) {
         if(ctx.unnamed_used) {
-            std::println("[snapshot] error: duplicate ASSERT_SNAPSHOT in same TEST_CASE");
+            std::println("[snapshot] error: duplicate unnamed snapshot in same TEST_CASE");
             std::println(
                 "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
             std::println("           at {}:{}", loc.file_name(), loc.line());
             return true;
         }
         ctx.unnamed_used = true;
-        auto filename = std::format("{}__{}.snap", ctx.suite_name, ctx.test_name);
+        auto filename = std::format("{}__{}__{}.snap", stem, ctx.suite_name, ctx.test_name);
         return check_impl(snap_dir() / filename, value, "", loc);
     }
 
-    return check_impl(snap_dir() / std::format("{}.snap", name), value, "", loc);
+    return check_impl(snap_dir() / std::format("{}__{}.snap", stem, name), value, "", loc);
 }
 
 bool check_snapshot_glob(std::string_view pattern,
