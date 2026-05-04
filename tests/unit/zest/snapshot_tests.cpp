@@ -15,6 +15,9 @@ namespace fs = std::filesystem;
 
 std::string read_file(std::string_view path) {
     std::ifstream file(std::string(path), std::ios::binary);
+    if(!file) {
+        return {};
+    }
     return std::string(std::istreambuf_iterator<char>(file), {});
 }
 

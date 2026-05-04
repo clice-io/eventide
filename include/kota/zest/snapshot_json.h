@@ -1,5 +1,7 @@
 #pragma once
 
+#include <print>
+
 #include "kota/zest/macro.h"
 #include "kota/codec/json/json.h"
 

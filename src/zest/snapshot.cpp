@@ -249,8 +249,9 @@ bool check_snapshot_glob(std::string_view pattern,
         if(!entry.is_regular_file()) {
             continue;
         }
-        auto rel = fs::relative(entry.path(), base_dir, ec);
-        if(ec) {
+        std::error_code rel_ec;
+        auto rel = fs::relative(entry.path(), base_dir, rel_ec);
+        if(rel_ec) {
             continue;
         }
         auto rel_str = rel.generic_string();
