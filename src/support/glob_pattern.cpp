@@ -59,7 +59,9 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                                   std::format("`{}` is larger than `{}`", c_begin, c_end)}
                     };
                 }
-                for(int c = static_cast<std::uint8_t>(c_begin); c <= static_cast<std::uint8_t>(c_end); ++c) {
+                for(int c = static_cast<std::uint8_t>(c_begin);
+                    c <= static_cast<std::uint8_t>(c_end);
+                    ++c) {
                     if(c != '/') {
                         bv.set(static_cast<std::uint8_t>(c), true);
                     }
