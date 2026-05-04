@@ -71,9 +71,7 @@ std::string format_snap(std::string_view source,
     }
     result += "---\n";
     result += content;
-    if(!content.empty() && !content.ends_with('\n')) {
-        result += '\n';
-    }
+    result += '\n';
     return result;
 }
 

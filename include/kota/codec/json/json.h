@@ -44,6 +44,15 @@ auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std
     return to_json<Config>(value, initial_capacity);
 }
 
+inline std::expected<std::string, error> prettify(std::string_view json) {
+    simdjson::dom::parser parser;
+    simdjson::dom::element doc;
+    if(auto err = parser.parse(json.data(), json.size()).get(doc)) {
+        return std::unexpected(error(make_error(err)));
+    }
+    return simdjson::prettify(doc);
+}
+
 }  // namespace kota::codec::json
 
 namespace kota::codec {

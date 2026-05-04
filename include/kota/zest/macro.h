@@ -154,7 +154,12 @@
             std::println("[snapshot] json serialization failed");                                  \
         }                                                                                          \
         ZEST_CHECK_IMPL(!_zest_snap_json.has_value(), return_action);                              \
-        ZEST_SNAPSHOT_STR_IMPL(return_action, *_zest_snap_json __VA_OPT__(, __VA_ARGS__));         \
+        auto _zest_snap_pretty = ::kota::codec::json::prettify(*_zest_snap_json);                  \
+        if(!_zest_snap_pretty) {                                                                   \
+            std::println("[snapshot] json prettify failed");                                       \
+        }                                                                                          \
+        ZEST_CHECK_IMPL(!_zest_snap_pretty.has_value(), return_action);                            \
+        ZEST_SNAPSHOT_STR_IMPL(return_action, *_zest_snap_pretty __VA_OPT__(, __VA_ARGS__));       \
     } while(0)
 
 #define EXPECT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)
