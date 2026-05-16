@@ -9,8 +9,8 @@
 #include <utility>
 
 #include "kota/codec/toml/deserializer.h"
-#include "kota/codec/toml/error.h"
-#include "kota/codec/toml/serializer.h"
+#include "kota/codec/toml/encode.h"
+#include "kota/codec/toml/type.h"
 
 namespace kota::codec::toml {
 
@@ -65,18 +65,35 @@ auto to_string(const T& value) -> std::expected<std::string, error> {
 
 namespace kota::codec {
 
-template <typename T>
-concept toml_dynamic_dom_type = std::same_as<std::remove_cvref_t<T>, ::toml::table> ||
-                                std::same_as<std::remove_cvref_t<T>, ::toml::array>;
+template <typename Config>
+struct serialize_visit<toml::table_value_writer, ::toml::table, Config> {
+    static bool visit(toml::table_value_writer& vis, const ::toml::table& value) {
+        vis.parent_table.insert_or_assign(vis.key, value);
+        return true;
+    }
+};
 
-template <typename Config, toml_dynamic_dom_type T>
-struct serialize_traits<toml::Serializer<Config>, T> {
-    using value_type = void;
-    using error_type = typename toml::Serializer<Config>::error_type;
+template <typename Config>
+struct serialize_visit<toml::table_value_writer, ::toml::array, Config> {
+    static bool visit(toml::table_value_writer& vis, const ::toml::array& value) {
+        vis.parent_table.insert_or_assign(vis.key, value);
+        return true;
+    }
+};
 
-    static auto serialize(toml::Serializer<Config>& serializer, const T& value)
-        -> std::expected<value_type, error_type> {
-        return serializer.serialize_dom(value);
+template <typename Config>
+struct serialize_visit<toml::array_value_writer, ::toml::table, Config> {
+    static bool visit(toml::array_value_writer& vis, const ::toml::table& value) {
+        vis.arr.push_back(value);
+        return true;
+    }
+};
+
+template <typename Config>
+struct serialize_visit<toml::array_value_writer, ::toml::array, Config> {
+    static bool visit(toml::array_value_writer& vis, const ::toml::array& value) {
+        vis.arr.push_back(value);
+        return true;
     }
 };
 

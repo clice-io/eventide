@@ -12,24 +12,16 @@
 #include "kota/codec/detail/arena_decode.h"
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/config.h"
-#include "kota/codec/flatbuffers/serializer.h"
-#include "kota/codec/flatbuffers/struct_layout.h"
+#include "kota/codec/fbs/type.h"
 
-#if __has_include(<flatbuffers/flatbuffers.h>)
-#include "flatbuffers/flatbuffers.h"
-#else
-#error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable KOTA_CODEC_ENABLE_FLATBUFFERS or add flatbuffers include paths."
-#endif
-
-namespace kota::codec::flatbuffers {
+namespace kota::codec::fbs {
 
 namespace detail {
 
 template <typename T>
 class scalar_vector_view {
 public:
-    using underlying = ::flatbuffers::Vector<T>;
+    using underlying = fb_vector<T>;
 
     scalar_vector_view() = default;
 
@@ -40,7 +32,7 @@ public:
     }
 
     auto operator[](std::size_t index) const -> T {
-        return vector->Get(static_cast<::flatbuffers::uoffset_t>(index));
+        return vector->Get(static_cast<uoffset_t>(index));
     }
 
 private:
@@ -49,7 +41,7 @@ private:
 
 class string_vector_view {
 public:
-    using underlying = ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::String>>;
+    using underlying = fb_vector<string_offset_t>;
 
     string_vector_view() = default;
 
@@ -60,7 +52,7 @@ public:
     }
 
     auto operator[](std::size_t index) const -> std::string_view {
-        const auto* text = vector->GetAsString(static_cast<::flatbuffers::uoffset_t>(index));
+        const auto* text = vector->GetAsString(static_cast<uoffset_t>(index));
         if(text == nullptr) {
             return {};
         }
@@ -74,7 +66,7 @@ private:
 template <typename T>
 class inline_struct_vector_view {
 public:
-    using underlying = ::flatbuffers::Vector<const T*>;
+    using underlying = fb_vector<const T*>;
 
     inline_struct_vector_view() = default;
 
@@ -85,7 +77,7 @@ public:
     }
 
     auto operator[](std::size_t index) const -> const T& {
-        return *vector->Get(static_cast<::flatbuffers::uoffset_t>(index));
+        return *vector->Get(static_cast<uoffset_t>(index));
     }
 
 private:
@@ -95,7 +87,7 @@ private:
 template <typename TableView>
 class table_vector_view {
 public:
-    using underlying = ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>;
+    using underlying = fb_vector<table_offset_t>;
 
     table_vector_view() = default;
 
@@ -106,8 +98,7 @@ public:
     }
 
     auto operator[](std::size_t index) const -> TableView {
-        const auto* nested =
-            vector->GetAs<::flatbuffers::Table>(static_cast<::flatbuffers::uoffset_t>(index));
+        const auto* nested = vector->GetAs<fb_table>(static_cast<uoffset_t>(index));
         return TableView(nested);
     }
 
@@ -122,36 +113,36 @@ class Deserializer {
 public:
     using config_type = Config;
     using error_type = object_error_code;
-    using slot_id = ::flatbuffers::voffset_t;
+    using slot_id = voffset_t;
 
     template <typename T>
     using result_t = std::expected<T, error_type>;
 
     // Mirror of the serializer-side predicates; both resolve identically.
     template <typename T>
-    constexpr static bool can_inline_struct_field = flatbuffers::can_inline_struct_v<T>;
+    constexpr static bool can_inline_struct_field = fbs::can_inline_struct_v<T>;
 
     template <typename T>
-    constexpr static bool can_inline_struct_element = flatbuffers::can_inline_struct_v<T>;
+    constexpr static bool can_inline_struct_element = fbs::can_inline_struct_v<T>;
 
     // Slot-id helpers (mirror of the serializer side).
     static auto field_slot_id(std::size_t index) -> result_t<slot_id> {
-        return ::kota::codec::flatbuffers::detail::field_voffset(index);
+        return ::kota::codec::fbs::detail::field_voffset(index);
     }
 
     static auto variant_tag_slot_id() -> slot_id {
-        return ::kota::codec::flatbuffers::detail::first_field;
+        return ::kota::codec::fbs::detail::first_field;
     }
 
     static auto variant_payload_slot_id(std::size_t index) -> result_t<slot_id> {
-        return ::kota::codec::flatbuffers::detail::variant_payload_voffset(index);
+        return ::kota::codec::fbs::detail::variant_payload_voffset(index);
     }
 
     class TableView {
     public:
         TableView() = default;
 
-        explicit TableView(const ::flatbuffers::Table* t) : table(t) {}
+        explicit TableView(const fb_table* t) : table(t) {}
 
         auto valid() const -> bool {
             return table != nullptr;
@@ -169,8 +160,8 @@ public:
             if(vtable == nullptr) {
                 return false;
             }
-            const auto vtable_size = ::flatbuffers::ReadScalar<::flatbuffers::voffset_t>(vtable);
-            return vtable_size > static_cast<::flatbuffers::voffset_t>(4);
+            const auto vtable_size = ::flatbuffers::ReadScalar<voffset_t>(vtable);
+            return vtable_size > static_cast<voffset_t>(4);
         }
 
         template <typename T>
@@ -178,12 +169,12 @@ public:
             return table->GetField<T>(sid, T{});
         }
 
-        auto raw() const -> const ::flatbuffers::Table* {
+        auto raw() const -> const fb_table* {
             return table;
         }
 
     private:
-        const ::flatbuffers::Table* table = nullptr;
+        const fb_table* table = nullptr;
     };
 
     explicit Deserializer(std::span<const std::uint8_t> bytes) {
@@ -221,7 +212,7 @@ public:
         if(!view.valid()) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto* text = view.raw()->template GetPointer<const ::flatbuffers::String*>(sid);
+        const auto* text = view.raw()->template GetPointer<const fb_string*>(sid);
         if(text == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -232,8 +223,7 @@ public:
         if(!view.valid()) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto* vector =
-            view.raw()->template GetPointer<const ::flatbuffers::Vector<std::uint8_t>*>(sid);
+        const auto* vector = view.raw()->template GetPointer<const fb_vector<std::uint8_t>*>(sid);
         if(vector == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -247,7 +237,7 @@ public:
         if(!view.valid()) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto* vector = view.raw()->template GetPointer<const ::flatbuffers::Vector<T>*>(sid);
+        const auto* vector = view.raw()->template GetPointer<const fb_vector<T>*>(sid);
         if(vector == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -260,10 +250,7 @@ public:
             return std::unexpected(object_error_code::invalid_state);
         }
         const auto* vector =
-            view.raw()
-                ->template GetPointer<
-                    const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::String>>*>(
-                    sid);
+            view.raw()->template GetPointer<const fb_vector<string_offset_t>*>(sid);
         if(vector == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -288,8 +275,7 @@ public:
         if(!view.valid()) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto* vector =
-            view.raw()->template GetPointer<const ::flatbuffers::Vector<const T*>*>(sid);
+        const auto* vector = view.raw()->template GetPointer<const fb_vector<const T*>*>(sid);
         if(vector == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -300,7 +286,7 @@ public:
         if(!view.valid()) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto* nested = view.raw()->template GetPointer<const ::flatbuffers::Table*>(sid);
+        const auto* nested = view.raw()->template GetPointer<const fb_table*>(sid);
         if(nested == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -312,10 +298,7 @@ public:
         if(!view.valid()) {
             return std::unexpected(object_error_code::invalid_state);
         }
-        const auto* vector =
-            view.raw()
-                ->template GetPointer<
-                    const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(sid);
+        const auto* vector = view.raw()->template GetPointer<const fb_vector<table_offset_t>*>(sid);
         if(vector == nullptr) {
             return std::unexpected(object_error_code::invalid_state);
         }
@@ -336,20 +319,19 @@ private:
             set_invalid(object_error_code::invalid_state);
             return;
         }
-        if(!::flatbuffers::BufferHasIdentifier(
-               bytes.data(),
-               ::kota::codec::flatbuffers::detail::buffer_identifier)) {
+        if(!::flatbuffers::BufferHasIdentifier(bytes.data(),
+                                               ::kota::codec::fbs::detail::buffer_identifier)) {
             set_invalid(object_error_code::invalid_state);
             return;
         }
 
-        auto* table = ::flatbuffers::GetRoot<::flatbuffers::Table>(bytes.data());
+        auto* table = ::flatbuffers::GetRoot<fb_table>(bytes.data());
         if(table == nullptr) {
             set_invalid(object_error_code::invalid_state);
             return;
         }
 
-        ::flatbuffers::Verifier verifier(bytes.data(), bytes.size());
+        verifier_t verifier(bytes.data(), bytes.size());
         if(!table->VerifyTableStart(verifier) || !verifier.EndTable()) {
             set_invalid(object_error_code::invalid_state);
             return;
@@ -366,7 +348,7 @@ private:
 
     bool is_valid = true;
     error_type last_error = object_error_code::none;
-    const ::flatbuffers::Table* root = nullptr;
+    const fb_table* root = nullptr;
 };
 
 template <typename Config = config::default_config, typename T>
@@ -423,4 +405,4 @@ auto from_flatbuffer(const std::vector<std::uint8_t>& bytes)
     return from_flatbuffer<T, Config>(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
 }
 
-}  // namespace kota::codec::flatbuffers
+}  // namespace kota::codec::fbs

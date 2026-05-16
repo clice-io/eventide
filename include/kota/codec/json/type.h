@@ -7,12 +7,27 @@
 
 #if __has_include(<simdjson.h>)
 #include "simdjson.h"
-#define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 1
 #else
-#define KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON 0
+#error "simdjson.h is required for the JSON codec backend"
 #endif
 
 namespace kota::codec::json {
+
+using string_builder = simdjson::builder::string_builder;
+
+using ondemand_parser = simdjson::ondemand::parser;
+using ondemand_document = simdjson::ondemand::document;
+using ondemand_value = simdjson::ondemand::value;
+using ondemand_object = simdjson::ondemand::object;
+using ondemand_array = simdjson::ondemand::array;
+using json_type = simdjson::ondemand::json_type;
+using number_type = simdjson::ondemand::number_type;
+
+using padded_string = simdjson::padded_string;
+using padded_string_view = simdjson::padded_string_view;
+
+using error_code = simdjson::error_code;
+constexpr inline auto success = simdjson::SUCCESS;
 
 enum class error_kind : std::uint16_t {
     ok = 0,
@@ -51,7 +66,6 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-#if KOTA_CODEC_JSON_ERROR_HAS_SIMDJSON
 constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     switch(error) {
         case simdjson::SUCCESS: return error_kind::ok;
@@ -66,8 +80,6 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
         default: return error_kind::unknown;
     }
 }
-
-#endif
 
 using error = kota::codec::serde_error<error_kind>;
 

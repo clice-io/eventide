@@ -2,7 +2,7 @@
 #include <string>
 
 #include "kota/zest/zest.h"
-#include "kota/codec/content/content.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
 namespace kota::codec {
@@ -37,37 +37,37 @@ std::string make_large_object_json(int count) {
 TEST_SUITE(serde_content_dom) {
 
 TEST_CASE(construct_scalars) {
-    content::Value null_value{};
+    dyn::Value null_value{};
     EXPECT_TRUE(null_value.is_null());
 
-    content::Value bool_value(true);
+    dyn::Value bool_value(true);
     EXPECT_TRUE(bool_value.is_bool());
     EXPECT_EQ(bool_value.as_bool(), true);
 
-    content::Value int_value(std::int64_t(-7));
+    dyn::Value int_value(std::int64_t(-7));
     EXPECT_TRUE(int_value.is_int());
     EXPECT_EQ(int_value.as_int(), -7);
 
-    content::Value uint_value(std::uint64_t(42));
+    dyn::Value uint_value(std::uint64_t(42));
     EXPECT_TRUE(uint_value.is_int());
     EXPECT_EQ(uint_value.as_uint(), std::uint64_t(42));
 
-    content::Value double_value(3.5);
+    dyn::Value double_value(3.5);
     EXPECT_TRUE(double_value.is_number());
     EXPECT_EQ(double_value.as_double(), 3.5);
 
-    content::Value string_value("hello");
+    dyn::Value string_value("hello");
     EXPECT_TRUE(string_value.is_string());
     EXPECT_EQ(string_value.as_string(), "hello");
 }
 
 TEST_CASE(int_uint_cross_sign_access) {
-    content::Value big_uint(std::uint64_t{9223372036854775808ULL});
+    dyn::Value big_uint(std::uint64_t{9223372036854775808ULL});
     EXPECT_FALSE(big_uint.get_int().has_value());
     ASSERT_TRUE(big_uint.get_uint().has_value());
     EXPECT_EQ(*big_uint.get_uint(), std::uint64_t{9223372036854775808ULL});
 
-    content::Value neg_int(std::int64_t{-1});
+    dyn::Value neg_int(std::int64_t{-1});
     EXPECT_FALSE(neg_int.get_uint().has_value());
     ASSERT_TRUE(neg_int.get_int().has_value());
     EXPECT_EQ(*neg_int.get_int(), std::int64_t{-1});
@@ -124,26 +124,26 @@ TEST_CASE(object_lookup_builds_lazy_index) {
 }
 
 TEST_CASE(value_copy_is_deep) {
-    content::Object obj;
-    obj.insert("n", content::Value(std::int64_t(1)));
+    dyn::Object obj;
+    obj.insert("n", dyn::Value(std::int64_t(1)));
 
-    content::Value original(std::move(obj));
-    content::Value copy = original;
+    dyn::Value original(std::move(obj));
+    dyn::Value copy = original;
 
-    original.as_object().assign("n", content::Value(std::int64_t(2)));
+    original.as_object().assign("n", dyn::Value(std::int64_t(2)));
 
     EXPECT_EQ(original.as_object().at("n").as_int(), 2);
     EXPECT_EQ(copy.as_object().at("n").as_int(), 1);
 }
 
 TEST_CASE(object_equality_is_order_insensitive) {
-    content::Object a;
-    a.insert("x", content::Value(std::int64_t(1)));
-    a.insert("y", content::Value(std::int64_t(2)));
+    dyn::Object a;
+    a.insert("x", dyn::Value(std::int64_t(1)));
+    a.insert("y", dyn::Value(std::int64_t(2)));
 
-    content::Object b;
-    b.insert("y", content::Value(std::int64_t(2)));
-    b.insert("x", content::Value(std::int64_t(1)));
+    dyn::Object b;
+    b.insert("y", dyn::Value(std::int64_t(2)));
+    b.insert("x", dyn::Value(std::int64_t(1)));
 
     EXPECT_TRUE(a == b);
 }
@@ -157,7 +157,7 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     EXPECT_EQ(extra_object.at("name").as_string(), "alice");
     EXPECT_EQ(extra_object.at("n").as_int(), 1);
 
-    extra_object.assign("n", content::Value(std::int64_t(2)));
+    extra_object.assign("n", dyn::Value(std::int64_t(2)));
 
     auto encoded = json::to_string(*parsed);
     ASSERT_TRUE(encoded.has_value());
@@ -179,7 +179,7 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
     auto parsed = json::parse<json::Value>(text);
     ASSERT_TRUE(parsed.has_value());
 
-    content::Cursor cursor = parsed->cursor();
+    dyn::Cursor cursor = parsed->cursor();
     for(int i = 0; i < depth; ++i) {
         ASSERT_TRUE(cursor.is_array());
         ASSERT_EQ(cursor.as_array().size(), 1);
@@ -194,10 +194,10 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
 }
 
 TEST_CASE(cursor_on_scalar_reports_type_mismatch) {
-    content::Value int_val(std::int64_t(42));
-    content::Value str_val("hello");
-    content::Value bool_val(true);
-    content::Value null_val(nullptr);
+    dyn::Value int_val(std::int64_t(42));
+    dyn::Value str_val("hello");
+    dyn::Value bool_val(true);
+    dyn::Value null_val(nullptr);
 
     auto r1 = int_val["key"];
     EXPECT_FALSE(r1.valid());
@@ -217,7 +217,7 @@ TEST_CASE(cursor_on_scalar_reports_type_mismatch) {
 }
 
 TEST_CASE(default_cursor_chaining_builds_path) {
-    content::Cursor c;
+    dyn::Cursor c;
     EXPECT_FALSE(c.valid());
     EXPECT_FALSE(c.has_error());
 
@@ -239,16 +239,16 @@ TEST_CASE(default_cursor_chaining_builds_path) {
 }
 
 TEST_CASE(cursor_explicit_bool_conversion) {
-    content::Value val(std::int64_t(1));
-    content::Cursor valid_c(val);
-    content::Cursor invalid_c;
+    dyn::Value val(std::int64_t(1));
+    dyn::Cursor valid_c(val);
+    dyn::Cursor invalid_c;
 
     EXPECT_TRUE(static_cast<bool>(valid_c));
     EXPECT_FALSE(static_cast<bool>(invalid_c));
 }
 
 TEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
-    content::Cursor c;
+    dyn::Cursor c;
     EXPECT_FALSE(c.get_bool().has_value());
     EXPECT_FALSE(c.get_int().has_value());
     EXPECT_FALSE(c.get_uint().has_value());
@@ -259,48 +259,48 @@ TEST_CASE(cursor_get_accessors_on_invalid_return_nullopt) {
 }
 
 TEST_CASE(empty_object_find_and_cursor_access) {
-    content::Object obj;
+    dyn::Object obj;
     EXPECT_TRUE(obj.empty());
     EXPECT_EQ(obj.size(), 0);
     EXPECT_EQ(obj.find("anything"), nullptr);
     EXPECT_FALSE(obj.contains("anything"));
 
-    content::Value val(std::move(obj));
+    dyn::Value val(std::move(obj));
     auto c = val["key"];
     EXPECT_FALSE(c.valid());
     EXPECT_EQ(c.error(), R"(missing key "key")");
 }
 
 TEST_CASE(empty_array_cursor_out_of_range) {
-    content::Array arr;
+    dyn::Array arr;
     EXPECT_TRUE(arr.empty());
 
-    content::Value val(std::move(arr));
+    dyn::Value val(std::move(arr));
     auto c = val[0];
     EXPECT_FALSE(c.valid());
     EXPECT_EQ(c.error(), "index 0 out of range (size 0)");
 }
 
 TEST_CASE(deep_nested_copy_is_independent) {
-    content::Array inner_arr;
-    inner_arr.push_back(content::Value(std::int64_t(1)));
-    inner_arr.push_back(content::Value(std::int64_t(2)));
+    dyn::Array inner_arr;
+    inner_arr.push_back(dyn::Value(std::int64_t(1)));
+    inner_arr.push_back(dyn::Value(std::int64_t(2)));
 
-    content::Object inner_obj;
-    inner_obj.insert("nums", content::Value(std::move(inner_arr)));
+    dyn::Object inner_obj;
+    inner_obj.insert("nums", dyn::Value(std::move(inner_arr)));
 
-    content::Array outer_arr;
-    outer_arr.push_back(content::Value(std::move(inner_obj)));
+    dyn::Array outer_arr;
+    outer_arr.push_back(dyn::Value(std::move(inner_obj)));
 
-    content::Object root_obj;
-    root_obj.insert("data", content::Value(std::move(outer_arr)));
+    dyn::Object root_obj;
+    root_obj.insert("data", dyn::Value(std::move(outer_arr)));
 
-    content::Value original(std::move(root_obj));
-    content::Value copy = original;
+    dyn::Value original(std::move(root_obj));
+    dyn::Value copy = original;
 
     // Mutate original deeply
     auto& orig_data = original.as_object().at("data").as_array()[0].as_object();
-    orig_data.assign("nums", content::Value("replaced"));
+    orig_data.assign("nums", dyn::Value("replaced"));
 
     // Copy should be unaffected
     auto& copy_data = copy.as_object().at("data").as_array()[0].as_object();
@@ -314,10 +314,10 @@ TEST_CASE(deep_nested_copy_is_independent) {
 }
 
 TEST_CASE(array_range_for_iteration) {
-    content::Array arr;
-    arr.push_back(content::Value(std::int64_t(10)));
-    arr.push_back(content::Value(std::int64_t(20)));
-    arr.push_back(content::Value(std::int64_t(30)));
+    dyn::Array arr;
+    arr.push_back(dyn::Value(std::int64_t(10)));
+    arr.push_back(dyn::Value(std::int64_t(20)));
+    arr.push_back(dyn::Value(std::int64_t(30)));
 
     std::int64_t sum = 0;
     for(auto& val: arr) {
@@ -327,10 +327,10 @@ TEST_CASE(array_range_for_iteration) {
 }
 
 TEST_CASE(array_const_range_for_iteration) {
-    content::Array arr;
-    arr.push_back(content::Value("a"));
-    arr.push_back(content::Value("b"));
-    arr.push_back(content::Value("c"));
+    dyn::Array arr;
+    arr.push_back(dyn::Value("a"));
+    arr.push_back(dyn::Value("b"));
+    arr.push_back(dyn::Value("c"));
 
     const auto& const_arr = arr;
     std::string result;
@@ -341,10 +341,10 @@ TEST_CASE(array_const_range_for_iteration) {
 }
 
 TEST_CASE(object_range_for_iteration) {
-    content::Object obj;
-    obj.insert("x", content::Value(std::int64_t(1)));
-    obj.insert("y", content::Value(std::int64_t(2)));
-    obj.insert("z", content::Value(std::int64_t(3)));
+    dyn::Object obj;
+    obj.insert("x", dyn::Value(std::int64_t(1)));
+    obj.insert("y", dyn::Value(std::int64_t(2)));
+    obj.insert("z", dyn::Value(std::int64_t(3)));
 
     std::int64_t sum = 0;
     std::string keys;
@@ -357,9 +357,9 @@ TEST_CASE(object_range_for_iteration) {
 }
 
 TEST_CASE(object_const_range_for_iteration) {
-    content::Object obj;
-    obj.insert("a", content::Value("hello"));
-    obj.insert("b", content::Value("world"));
+    dyn::Object obj;
+    obj.insert("a", dyn::Value("hello"));
+    obj.insert("b", dyn::Value("world"));
 
     const auto& const_obj = obj;
     std::string result;
@@ -373,13 +373,13 @@ TEST_CASE(object_const_range_for_iteration) {
 }
 
 TEST_CASE(array_mutation_during_iteration) {
-    content::Array arr;
-    arr.push_back(content::Value(std::int64_t(1)));
-    arr.push_back(content::Value(std::int64_t(2)));
-    arr.push_back(content::Value(std::int64_t(3)));
+    dyn::Array arr;
+    arr.push_back(dyn::Value(std::int64_t(1)));
+    arr.push_back(dyn::Value(std::int64_t(2)));
+    arr.push_back(dyn::Value(std::int64_t(3)));
 
     for(auto& val: arr) {
-        val = content::Value(val.as_int() * 10);
+        val = dyn::Value(val.as_int() * 10);
     }
 
     EXPECT_EQ(arr[0].as_int(), 10);
@@ -388,12 +388,12 @@ TEST_CASE(array_mutation_during_iteration) {
 }
 
 TEST_CASE(object_mutation_during_iteration) {
-    content::Object obj;
-    obj.insert("a", content::Value(std::int64_t(1)));
-    obj.insert("b", content::Value(std::int64_t(2)));
+    dyn::Object obj;
+    obj.insert("a", dyn::Value(std::int64_t(1)));
+    obj.insert("b", dyn::Value(std::int64_t(2)));
 
     for(auto& [key, value]: obj) {
-        value = content::Value(value.as_int() + 100);
+        value = dyn::Value(value.as_int() + 100);
     }
 
     EXPECT_EQ(obj.at("a").as_int(), 101);
@@ -407,7 +407,7 @@ TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
     };
 
     dom_payload payload{};
-    content::Deserializer deserializer(make_dom());
+    dyn::Deserializer deserializer(make_dom());
     ASSERT_TRUE(deserializer.valid());
 
     auto status = codec::deserialize(deserializer, payload);

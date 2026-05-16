@@ -118,9 +118,9 @@ if has_config("codec") and has_config("codec_simdjson") then
 		add_headerfiles(
 			"include/(kota/codec/json.h)",
 			"include/(kota/codec/json/**.h)",
-			"include/(kota/codec/content.h)",
-			"include/(kota/codec/content/**.h)",
-			"include/(kota/codec/content/**.inl)"
+			"include/(kota/codec/dyn.h)",
+			"include/(kota/codec/dyn/**.h)",
+			"include/(kota/codec/dyn/**.inl)"
 		)
 		add_rules("cl-flags")
 		add_deps("meta")
@@ -132,7 +132,7 @@ if has_config("codec") and has_config("codec_flatbuffers") then
 	target("codec_flatbuffers", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(kota/codec/flatbuffers.h)", "include/(kota/codec/flatbuffers/**.h)")
+		add_headerfiles("include/(kota/codec/fbs.h)", "include/(kota/codec/fbs/**.h)")
 		add_rules("cl-flags")
 		add_deps("meta")
 		add_packages("flatbuffers", { public = true })
@@ -167,14 +167,14 @@ if has_config("codec") then
 			add_headerfiles(
 				"include/(kota/codec/json.h)",
 				"include/(kota/codec/json/**.h)",
-				"include/(kota/codec/content.h)",
-				"include/(kota/codec/content/**.h)",
-				"include/(kota/codec/content/**.inl)"
+				"include/(kota/codec/dyn.h)",
+				"include/(kota/codec/dyn/**.h)",
+				"include/(kota/codec/dyn/**.inl)"
 			)
 			add_deps("codec_json")
 		end
 		if has_config("codec_flatbuffers") then
-			add_headerfiles("include/(kota/codec/flatbuffers.h)", "include/(kota/codec/flatbuffers/**.h)")
+			add_headerfiles("include/(kota/codec/fbs.h)", "include/(kota/codec/fbs/**.h)")
 			add_deps("codec_flatbuffers")
 		end
 		if has_config("codec_toml") then
@@ -375,10 +375,10 @@ if has_config("test") and has_config("ztest") then
 			add_files("tests/unit/codec/json/**.cpp")
 		end
 		if has_config("codec") then
-			add_files("tests/unit/codec/content/**.cpp")
+			add_files("tests/unit/codec/dyn/**.cpp")
 		end
 		if has_config("codec") and has_config("codec_flatbuffers") then
-			add_files("tests/unit/codec/flatbuffers/**.cpp")
+			add_files("tests/unit/codec/fbs/**.cpp")
 		end
 		if has_config("codec") and has_config("codec_toml") then
 			add_files("tests/unit/codec/toml/**.cpp")

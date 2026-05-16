@@ -1,0 +1,166 @@
+#pragma once
+
+#include <cstddef>
+#include <expected>
+#include <vector>
+
+#include "kota/codec/bincode/type.h"
+#include "kota/codec/visit/config.h"
+#include "kota/codec/visit/encode.h"
+
+namespace kota::codec::bincode {
+
+struct writer {
+    std::vector<std::byte>& buf;
+    using error_type = rich_error;
+    constexpr static bool human_readable = false;
+
+    template <typename T>
+        requires std::integral<T>
+    void write_le(T value) {
+        using unsigned_t = std::make_unsigned_t<T>;
+        unsigned_t raw = static_cast<unsigned_t>(value);
+        for(std::size_t i = 0; i < sizeof(unsigned_t); ++i) {
+            auto byte = static_cast<std::uint8_t>((raw >> (i * 8)) & 0xFFU);
+            buf.push_back(static_cast<std::byte>(byte));
+        }
+    }
+
+    void write_u8(std::uint8_t value) {
+        buf.push_back(static_cast<std::byte>(value));
+    }
+
+    bool visit_bool(bool v) {
+        write_u8(v ? 1 : 0);
+        return true;
+    }
+
+    template <typename T>
+    bool visit_int(T v) {
+        write_le(static_cast<std::int64_t>(v));
+        return true;
+    }
+
+    template <typename T>
+    bool visit_uint(T v) {
+        write_le(static_cast<std::uint64_t>(v));
+        return true;
+    }
+
+    template <typename T>
+    bool visit_float(T v) {
+        double d = static_cast<double>(v);
+        auto bits = std::bit_cast<std::uint64_t>(d);
+        write_le(bits);
+        return true;
+    }
+
+    template <typename T>
+    bool visit_char(T v) {
+        write_u8(static_cast<std::uint8_t>(v));
+        return true;
+    }
+
+    template <typename T>
+    bool visit_str(const T& v) {
+        std::string_view sv(v);
+        write_le(static_cast<std::uint64_t>(sv.size()));
+        buf.insert(buf.end(),
+                   reinterpret_cast<const std::byte*>(sv.data()),
+                   reinterpret_cast<const std::byte*>(sv.data() + sv.size()));
+        return true;
+    }
+
+    template <typename T>
+    bool visit_bytes(const T& v) {
+        auto data = reinterpret_cast<const std::byte*>(std::data(v));
+        auto len = std::size(v);
+        write_le(static_cast<std::uint64_t>(len));
+        buf.insert(buf.end(), data, data + len);
+        return true;
+    }
+
+    bool visit_null() {
+        write_u8(0x00);
+        return true;
+    }
+
+    template <typename T, typename Body>
+    bool visit_some(const T&, Body&& body) {
+        write_u8(0x01);
+        return body(*this);
+    }
+
+    template <typename T, typename Body>
+    bool visit_struct(const T&, Body&& body) {
+        return body(*this);
+    }
+
+    template <typename F>
+    [[gnu::always_inline]] bool visit_field(std::size_t /*index*/,
+                                            std::string_view /*name*/,
+                                            F&& field_writer) {
+        return field_writer(*this);
+    }
+
+    template <typename Container, typename Body>
+    bool visit_seq(const Container& c, Body&& body) {
+        write_le(static_cast<std::uint64_t>(std::ranges::size(c)));
+        return body(*this);
+    }
+
+    template <typename F>
+    bool visit_element(F&& element_writer) {
+        return element_writer(*this);
+    }
+
+    template <typename T, typename Body>
+    bool visit_tuple(const T&, Body&& body) {
+        return body(*this);
+    }
+
+    template <typename Container, typename Body>
+    bool visit_map(const Container& c, Body&& body) {
+        write_le(static_cast<std::uint64_t>(std::ranges::size(c)));
+        return body(*this);
+    }
+
+    template <typename KF, typename VF>
+    bool visit_entry(KF&& key_fn, VF&& value_fn) {
+        KOTA_CODEC_TRY(key_fn(*this));
+        return value_fn(*this);
+    }
+
+    template <typename Body>
+    bool visit_variant(std::size_t index, Body&& body) {
+        write_le(static_cast<std::uint32_t>(index));
+        return body(*this);
+    }
+};
+
+template <typename Config = default_config<>, typename T>
+auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::error> {
+    rich_error err;
+    scoped_context<rich_error> guard(err);
+    std::vector<std::byte> buf;
+    writer vis{buf};
+    if(!encode_value<default_config<Config>>(vis, value)) {
+        return std::unexpected(bincode::error(bincode::error_kind::invalid_state, err.message));
+    }
+    return buf;
+}
+
+}  // namespace kota::codec::bincode
+
+namespace kota::codec {
+
+// std::monostate is null_like, but in bincode variant payloads it should write nothing
+// (the old Serializer skipped monostate payloads entirely).
+template <typename Config>
+struct serialize_visit<bincode::writer, std::monostate, Config> {
+    static bool visit(bincode::writer& /*vis*/, const std::monostate& /*value*/) {
+        return true;
+    }
+};
+
+}  // namespace kota::codec

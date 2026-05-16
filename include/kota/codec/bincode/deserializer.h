@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/bincode/error.h"
+#include "kota/codec/bincode/type.h"
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"

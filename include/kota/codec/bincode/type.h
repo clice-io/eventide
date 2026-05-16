@@ -1,9 +1,15 @@
 #pragma once
 
+#include <bit>
+#include <cstddef>
 #include <cstdint>
+#include <ranges>
 #include <string_view>
+#include <type_traits>
+#include <vector>
 
 #include "kota/codec/detail/error.h"
+#include "kota/codec/visit/context.h"
 
 namespace kota::codec::bincode {
 

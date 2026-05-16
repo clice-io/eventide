@@ -13,20 +13,20 @@
 #include <vector>
 
 #include "kota/support/expected_try.h"
-#include "kota/codec/content/document.h"
-#include "kota/codec/content/error.h"
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/codec.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/narrow.h"
+#include "kota/codec/dyn/document.h"
+#include "kota/codec/dyn/error.h"
 
-namespace kota::codec::content {
+namespace kota::codec::dyn {
 
 template <typename Config = config::default_config>
 class Deserializer {
 public:
     using config_type = Config;
-    using error_type = content::error;
+    using error_type = dyn::error;
 
     constexpr static auto backend_kind_v = backend_kind::streaming;
     constexpr static auto field_mode_v = field_mode::by_name;
@@ -36,21 +36,21 @@ public:
 
     using status_t = result_t<void>;
 
-    explicit Deserializer(const content::Value& value) :
+    explicit Deserializer(const dyn::Value& value) :
         owned_root_value(value), root_value(owned_root_value->cursor()) {
         if(!root_value.valid()) {
             (void)mark_invalid();
         }
     }
 
-    explicit Deserializer(content::Value&& value) :
+    explicit Deserializer(dyn::Value&& value) :
         owned_root_value(std::move(value)), root_value(owned_root_value->cursor()) {
         if(!root_value.valid()) {
             (void)mark_invalid();
         }
     }
 
-    explicit Deserializer(content::Cursor value) : root_value(value) {
+    explicit Deserializer(dyn::Cursor value) : root_value(value) {
         if(!root_value.valid()) {
             (void)mark_invalid();
         }
@@ -106,7 +106,7 @@ public:
             return std::unexpected(ref.error());
         }
 
-        const content::Value* node = ref->unwrap();
+        const dyn::Value* node = ref->unwrap();
         auto best =
             codec::select_variant_index<codec::content_source_adapter, config_type, Ts...>(node);
 
@@ -118,7 +118,7 @@ public:
     }
 
     status_t deserialize_bool(bool& value) {
-        return read_scalar(value, [](content::Cursor ref) -> result_t<bool> {
+        return read_scalar(value, [](dyn::Cursor ref) -> result_t<bool> {
             auto parsed = ref.get_bool();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -130,7 +130,7 @@ public:
     template <codec::int_like T>
     status_t deserialize_int(T& value) {
         std::int64_t parsed = 0;
-        auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<std::int64_t> {
+        auto status = read_scalar(parsed, [](dyn::Cursor ref) -> result_t<std::int64_t> {
             auto parsed = ref.get_int();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -153,7 +153,7 @@ public:
     template <codec::uint_like T>
     status_t deserialize_uint(T& value) {
         std::uint64_t parsed = 0;
-        auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<std::uint64_t> {
+        auto status = read_scalar(parsed, [](dyn::Cursor ref) -> result_t<std::uint64_t> {
             auto parsed = ref.get_uint();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -176,7 +176,7 @@ public:
     template <codec::floating_like T>
     status_t deserialize_float(T& value) {
         double parsed = 0.0;
-        auto status = read_scalar(parsed, [](content::Cursor ref) -> result_t<double> {
+        auto status = read_scalar(parsed, [](dyn::Cursor ref) -> result_t<double> {
             auto parsed = ref.get_double();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -198,7 +198,7 @@ public:
 
     status_t deserialize_char(char& value) {
         std::string_view text;
-        auto status = read_scalar(text, [](content::Cursor ref) -> result_t<std::string_view> {
+        auto status = read_scalar(text, [](dyn::Cursor ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -220,7 +220,7 @@ public:
 
     status_t deserialize_str(std::string& value) {
         std::string_view text;
-        auto status = read_scalar(text, [](content::Cursor ref) -> result_t<std::string_view> {
+        auto status = read_scalar(text, [](dyn::Cursor ref) -> result_t<std::string_view> {
             auto parsed = ref.get_string();
             if(!parsed) {
                 return std::unexpected(error_type::type_mismatch);
@@ -280,13 +280,13 @@ public:
         if(!ref) {
             return std::unexpected(ref.error());
         }
-        const content::Object* obj = ref->get_object();
+        const dyn::Object* obj = ref->get_object();
         if(obj == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
-        for(const auto& entry: *obj) {
-            if(entry.key == field_name) {
-                auto s = entry.value.get_string();
+        for(const auto& [k, v]: *obj) {
+            if(k == field_name) {
+                auto s = v.get_string();
                 if(!s) {
                     return std::unexpected(error_type::type_mismatch);
                 }
@@ -298,7 +298,7 @@ public:
 
     status_t begin_object() {
         KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
-        const content::Object* obj = ref.get_object();
+        const dyn::Object* obj = ref.get_object();
         if(obj == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
@@ -314,11 +314,11 @@ public:
         if(frame.it == frame.object->end()) {
             return std::optional<std::string_view>(std::nullopt);
         }
-        const auto& entry = *frame.it;
+        const auto& [key, value] = *frame.it;
         ++frame.it;
-        current_value = content::Cursor(entry.value);
+        current_value = dyn::Cursor(value);
         has_current_value = true;
-        return std::optional<std::string_view>(std::string_view(entry.key));
+        return std::optional<std::string_view>(std::string_view(key));
     }
 
     status_t skip_field_value() {
@@ -341,7 +341,7 @@ public:
 
     status_t begin_array() {
         KOTA_EXPECTED_TRY_V(auto ref, consume_value_ref());
-        const content::Array* arr = ref.get_array();
+        const dyn::Array* arr = ref.get_array();
         if(arr == nullptr) {
             return mark_invalid(error_type::type_mismatch);
         }
@@ -358,7 +358,7 @@ public:
             has_current_value = false;
             return false;
         }
-        current_value = content::Cursor((*frame.array)[frame.index]);
+        current_value = dyn::Cursor((*frame.array)[frame.index]);
         has_current_value = true;
         ++frame.index;
         return true;
@@ -377,9 +377,9 @@ private:
     template <typename, typename>
     friend struct codec::deserialize_traits;
 
-    result_t<content::Value> consume_value() {
+    result_t<dyn::Value> consume_value() {
         KOTA_EXPECTED_TRY_V(auto source, consume_value_ref());
-        const content::Value* ptr = source.unwrap();
+        const dyn::Value* ptr = source.unwrap();
         if(ptr == nullptr) {
             return mark_invalid();
         }
@@ -409,7 +409,7 @@ private:
         return {};
     }
 
-    result_t<content::Cursor> access_value_ref(bool consume) {
+    result_t<dyn::Cursor> access_value_ref(bool consume) {
         if(!is_valid) {
             return std::unexpected(last_error);
         }
@@ -425,11 +425,11 @@ private:
         return root_value;
     }
 
-    result_t<content::Cursor> peek_value_ref() {
+    result_t<dyn::Cursor> peek_value_ref() {
         return access_value_ref(false);
     }
 
-    result_t<content::Cursor> consume_value_ref() {
+    result_t<dyn::Cursor> consume_value_ref() {
         return access_value_ref(true);
     }
 
@@ -443,38 +443,38 @@ private:
 
 private:
     struct deser_frame {
-        const content::Object* object = nullptr;
-        content::Object::const_iterator it{};
+        const dyn::Object* object = nullptr;
+        dyn::Object::const_iterator it{};
     };
 
     struct array_frame {
-        const content::Array* array = nullptr;
+        const dyn::Array* array = nullptr;
         std::size_t index = 0;
     };
 
     bool is_valid = true;
     bool root_consumed = false;
     error_type last_error = error_type::invalid_state;
-    std::optional<content::Value> owned_root_value{};
-    content::Cursor root_value{};
+    std::optional<dyn::Value> owned_root_value{};
+    dyn::Cursor root_value{};
     bool has_current_value = false;
-    content::Cursor current_value{};
+    dyn::Cursor current_value{};
     std::vector<deser_frame> deser_stack;
     std::vector<array_frame> array_stack;
 };
 
 static_assert(codec::deserializer_like<Deserializer<>>);
 
-}  // namespace kota::codec::content
+}  // namespace kota::codec::dyn
 
 namespace kota::codec {
 
 // Content deserializer: efficient DOM-to-DOM copy via private consume_value()
 template <typename Config>
-struct deserialize_traits<content::Deserializer<Config>, content::Value> {
-    using error_type = typename content::Deserializer<Config>::error_type;
+struct deserialize_traits<dyn::Deserializer<Config>, dyn::Value> {
+    using error_type = typename dyn::Deserializer<Config>::error_type;
 
-    static auto deserialize(content::Deserializer<Config>& d, content::Value& value)
+    static auto deserialize(dyn::Deserializer<Config>& d, dyn::Value& value)
         -> std::expected<void, error_type> {
         auto dom = d.consume_value();
         if(!dom) {
@@ -486,18 +486,18 @@ struct deserialize_traits<content::Deserializer<Config>, content::Value> {
 };
 
 template <typename Config>
-struct deserialize_traits<content::Deserializer<Config>, content::Array> {
-    using error_type = typename content::Deserializer<Config>::error_type;
+struct deserialize_traits<dyn::Deserializer<Config>, dyn::Array> {
+    using error_type = typename dyn::Deserializer<Config>::error_type;
 
-    static auto deserialize(content::Deserializer<Config>& d, content::Array& value)
+    static auto deserialize(dyn::Deserializer<Config>& d, dyn::Array& value)
         -> std::expected<void, error_type> {
         auto dom = d.consume_value();
         if(!dom) {
             return std::unexpected(dom.error());
         }
-        content::Array* arr = dom->get_array();
+        dyn::Array* arr = dom->get_array();
         if(arr == nullptr) {
-            return std::unexpected(content::error::type_mismatch);
+            return std::unexpected(dyn::error::type_mismatch);
         }
         value = std::move(*arr);
         return {};
@@ -505,86 +505,86 @@ struct deserialize_traits<content::Deserializer<Config>, content::Array> {
 };
 
 template <typename Config>
-struct deserialize_traits<content::Deserializer<Config>, content::Object> {
-    using error_type = typename content::Deserializer<Config>::error_type;
+struct deserialize_traits<dyn::Deserializer<Config>, dyn::Object> {
+    using error_type = typename dyn::Deserializer<Config>::error_type;
 
-    static auto deserialize(content::Deserializer<Config>& d, content::Object& value)
+    static auto deserialize(dyn::Deserializer<Config>& d, dyn::Object& value)
         -> std::expected<void, error_type> {
         auto dom = d.consume_value();
         if(!dom) {
             return std::unexpected(dom.error());
         }
-        content::Object* obj = dom->get_object();
+        dyn::Object* obj = dom->get_object();
         if(obj == nullptr) {
-            return std::unexpected(content::error::type_mismatch);
+            return std::unexpected(dyn::error::type_mismatch);
         }
         value = std::move(*obj);
         return {};
     }
 };
 
-// Generic: any streaming deserializer with peek_kind() can produce content::Value
+// Generic: any streaming deserializer with peek_kind() can produce dyn::Value
 template <typename D>
     requires requires(D& d) { d.peek_kind(); }
-struct deserialize_traits<D, content::Value> {
+struct deserialize_traits<D, dyn::Value> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& d, content::Value& value) -> std::expected<void, error_type> {
+    static auto deserialize(D& d, dyn::Value& value) -> std::expected<void, error_type> {
         KOTA_EXPECTED_TRY_V(auto kind, d.peek_kind());
 
         if(kind == meta::type_kind::null) {
             KOTA_EXPECTED_TRY_V(auto none, d.deserialize_none());
             (void)none;
-            value = content::Value(nullptr);
+            value = dyn::Value(nullptr);
         } else if(kind == meta::type_kind::boolean) {
             bool b = false;
             KOTA_EXPECTED_TRY(d.deserialize_bool(b));
-            value = content::Value(b);
+            value = dyn::Value(b);
         } else if(meta::is_integer_kind(kind)) {
             if(meta::is_unsigned_integer_kind(kind)) {
                 std::uint64_t u = 0;
                 KOTA_EXPECTED_TRY(d.deserialize_uint(u));
-                value = content::Value(u);
+                value = dyn::Value(u);
             } else {
                 std::int64_t i = 0;
                 KOTA_EXPECTED_TRY(d.deserialize_int(i));
-                value = content::Value(i);
+                value = dyn::Value(i);
             }
         } else if(meta::is_floating_kind(kind)) {
             double f = 0.0;
             KOTA_EXPECTED_TRY(d.deserialize_float(f));
-            value = content::Value(f);
+            value = dyn::Value(f);
         } else if(kind == meta::type_kind::string || kind == meta::type_kind::character) {
             std::string s;
             KOTA_EXPECTED_TRY(d.deserialize_str(s));
-            value = content::Value(std::move(s));
+            value = dyn::Value(std::move(s));
         } else if(meta::is_sequence_kind(kind)) {
-            content::Array arr;
+            dyn::Array arr;
             KOTA_EXPECTED_TRY(d.begin_array());
             while(true) {
                 KOTA_EXPECTED_TRY_V(auto has, d.next_element());
                 if(!has)
                     break;
-                content::Value elem;
+                dyn::Value elem;
                 KOTA_EXPECTED_TRY(codec::deserialize(d, elem));
                 arr.push_back(std::move(elem));
             }
             KOTA_EXPECTED_TRY(d.end_array());
-            value = content::Value(std::move(arr));
+            value = dyn::Value(std::move(arr));
         } else if(meta::is_object_kind(kind)) {
-            content::Object obj;
+            dyn::Object obj;
             KOTA_EXPECTED_TRY(d.begin_object());
             while(true) {
                 KOTA_EXPECTED_TRY_V(auto key, d.next_field());
                 if(!key.has_value())
                     break;
                 std::string key_copy(*key);
-                content::Value field_value;
+                dyn::Value field_value;
                 KOTA_EXPECTED_TRY(codec::deserialize(d, field_value));
                 obj.insert(std::move(key_copy), std::move(field_value));
             }
             KOTA_EXPECTED_TRY(d.end_object());
-            value = content::Value(std::move(obj));
+            value = dyn::Value(std::move(obj));
         } else {
             return std::unexpected(error_type::type_mismatch);
         }
@@ -594,12 +594,12 @@ struct deserialize_traits<D, content::Value> {
 
 template <typename D>
     requires requires(D& d) { d.peek_kind(); }
-struct deserialize_traits<D, content::Array> {
+struct deserialize_traits<D, dyn::Array> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& d, content::Array& value) -> std::expected<void, error_type> {
-        content::Value v;
-        KOTA_EXPECTED_TRY((deserialize_traits<D, content::Value>::deserialize(d, v)));
+    static auto deserialize(D& d, dyn::Array& value) -> std::expected<void, error_type> {
+        dyn::Value v;
+        KOTA_EXPECTED_TRY((deserialize_traits<D, dyn::Value>::deserialize(d, v)));
         auto* arr = v.get_array();
         if(arr == nullptr) {
             return std::unexpected(error_type::type_mismatch);
@@ -611,12 +611,12 @@ struct deserialize_traits<D, content::Array> {
 
 template <typename D>
     requires requires(D& d) { d.peek_kind(); }
-struct deserialize_traits<D, content::Object> {
+struct deserialize_traits<D, dyn::Object> {
     using error_type = typename D::error_type;
 
-    static auto deserialize(D& d, content::Object& value) -> std::expected<void, error_type> {
-        content::Value v;
-        KOTA_EXPECTED_TRY((deserialize_traits<D, content::Value>::deserialize(d, v)));
+    static auto deserialize(D& d, dyn::Object& value) -> std::expected<void, error_type> {
+        dyn::Value v;
+        KOTA_EXPECTED_TRY((deserialize_traits<D, dyn::Value>::deserialize(d, v)));
         auto* obj = v.get_object();
         if(obj == nullptr) {
             return std::unexpected(error_type::type_mismatch);

@@ -24,12 +24,44 @@
 #include "kota/codec/detail/backend.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/config.h"
-#include "kota/codec/detail/ser_dispatch.h"
 #include "kota/codec/detail/spelling.h"
 #include "kota/codec/detail/struct_deserialize.h"
 #include "kota/codec/detail/variant_dispatch.h"
 
 namespace kota::codec::detail {
+
+template <typename BaseConfig,
+          typename Attrs,
+          bool HasRenameAll = tuple_has_spec_v<Attrs, meta::attrs::rename_all>,
+          bool HasDenyUnknown = tuple_has_v<Attrs, meta::attrs::deny_unknown_fields>>
+struct annotated_struct_config {
+    using type = BaseConfig;
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, true, false> {
+    struct type : BaseConfig {
+        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, false, true> {
+    struct type : BaseConfig {
+        constexpr static bool deny_unknown_fields = true;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+struct annotated_struct_config<BaseConfig, Attrs, true, true> {
+    struct type : BaseConfig {
+        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
+        constexpr static bool deny_unknown_fields = true;
+    };
+};
+
+template <typename BaseConfig, typename Attrs>
+using annotated_struct_config_t = typename annotated_struct_config<BaseConfig, Attrs>::type;
 
 template <typename Config, typename Ctx, typename Attrs, typename V>
 auto unified_deserialize(Ctx& ctx, V& v) -> typename Ctx::result_type;

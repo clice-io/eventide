@@ -18,7 +18,7 @@
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/narrow.h"
 #include "kota/codec/detail/variant_dispatch.h"
-#include "kota/codec/json/error.h"
+#include "kota/codec/json/type.h"
 
 namespace kota::codec::json {
 

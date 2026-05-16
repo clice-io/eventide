@@ -20,10 +20,9 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 #include "kota/meta/struct.h"
-#include "kota/codec/content/document.h"
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/config.h"
-#include "kota/codec/detail/struct_serialize.h"
+#include "kota/codec/dyn/document.h"
 
 namespace kota::codec::detail {
 
@@ -70,93 +69,6 @@ constexpr auto match_and_deserialize_alt(std::string_view tag_value,
         return std::unexpected(E::custom(std::format("unknown variant tag '{}'", tag_value)));
     }
     return status;
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_externally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-
-    KOTA_EXPECTED_TRY(s.begin_object(1));
-
-    auto name = names[value.index()];
-
-    std::expected<void, E> inner_status{};
-    std::visit(
-        [&](const auto& item) {
-            auto r = s.serialize_field(name, [&] { return codec::serialize(s, item); });
-            if(!r) {
-                inner_status = std::unexpected(r.error());
-            }
-        },
-        value);
-    if(!inner_status) {
-        return std::unexpected(inner_status.error());
-    }
-
-    return s.end_object();
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_adjacently_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-
-    KOTA_EXPECTED_TRY(s.begin_object(2));
-
-    // Tag field
-    auto tag_name = names[value.index()];
-    KOTA_EXPECTED_TRY(
-        s.serialize_field(TagAttr::field_names[0], [&] { return codec::serialize(s, tag_name); }));
-
-    // Content field
-    std::expected<void, E> inner_status{};
-    std::visit(
-        [&](const auto& item) {
-            auto r = s.serialize_field(TagAttr::field_names[1],
-                                       [&] { return codec::serialize(s, item); });
-            if(!r) {
-                inner_status = std::unexpected(r.error());
-            }
-        },
-        value);
-    if(!inner_status) {
-        return std::unexpected(inner_status.error());
-    }
-
-    return s.end_object();
-}
-
-template <typename E, typename S, typename... Ts, typename TagAttr>
-constexpr auto serialize_internally_tagged(S& s, const std::variant<Ts...>& value, TagAttr)
-    -> std::expected<typename S::value_type, E> {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
-    constexpr std::string_view tag_field = TagAttr::field_names[0];
-
-    return std::visit(
-        [&](const auto& item) -> std::expected<typename S::value_type, E> {
-            using alt_t = std::remove_cvref_t<decltype(item)>;
-            static_assert(meta::reflectable_class<alt_t>,
-                          "internally_tagged requires struct alternatives");
-
-            using config_t = config::config_of<S>;
-            using schema = meta::virtual_schema<alt_t, config_t>;
-            using slots = typename schema::slots;
-            constexpr std::size_t N = type_list_size_v<slots>;
-
-            KOTA_EXPECTED_TRY(s.begin_object(N + 1));
-
-            // Tag field first
-            auto tag_name = names[value.index()];
-            KOTA_EXPECTED_TRY(
-                s.serialize_field(tag_field, [&] { return codec::serialize(s, tag_name); }));
-
-            // Struct fields via schema
-            serialize_by_name_visitor<E, S> visitor{s};
-            KOTA_EXPECTED_TRY((for_each_field<config_t, true>(item, visitor)));
-            return s.end_object();
-        },
-        value);
 }
 
 template <typename E, typename D, typename... Ts, typename TagAttr>
@@ -410,20 +322,20 @@ constexpr bool accepts_kind(meta::type_kind source) noexcept {
 }
 
 struct content_source_adapter {
-    using node_type = const content::Value*;
+    using node_type = const dyn::Value*;
 
     static meta::type_kind kind_of(node_type node) {
         if(!node)
             return meta::type_kind::null;
         switch(node->kind()) {
-            case content::ValueKind::null_value: return meta::type_kind::null;
-            case content::ValueKind::boolean: return meta::type_kind::boolean;
-            case content::ValueKind::signed_int: return meta::type_kind::int64;
-            case content::ValueKind::unsigned_int: return meta::type_kind::uint64;
-            case content::ValueKind::floating: return meta::type_kind::float64;
-            case content::ValueKind::string: return meta::type_kind::string;
-            case content::ValueKind::array: return meta::type_kind::array;
-            case content::ValueKind::object: return meta::type_kind::structure;
+            case dyn::ValueKind::null_value: return meta::type_kind::null;
+            case dyn::ValueKind::boolean: return meta::type_kind::boolean;
+            case dyn::ValueKind::signed_int: return meta::type_kind::int64;
+            case dyn::ValueKind::unsigned_int: return meta::type_kind::uint64;
+            case dyn::ValueKind::floating: return meta::type_kind::float64;
+            case dyn::ValueKind::string: return meta::type_kind::string;
+            case dyn::ValueKind::array: return meta::type_kind::array;
+            case dyn::ValueKind::object: return meta::type_kind::structure;
             default: return meta::type_kind::unknown;
         }
     }
@@ -433,8 +345,8 @@ struct content_source_adapter {
         if(!node)
             return;
         if(const auto* obj = node->get_object()) {
-            for(const auto& entry: *obj) {
-                fn(std::string_view(entry.key), &entry.value);
+            for(const auto& [k, v]: *obj) {
+                fn(std::string_view(k), &v);
             }
         }
     }

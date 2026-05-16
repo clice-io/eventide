@@ -61,7 +61,7 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
     )
 
     set(TEST_CODEC_CONTENT_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_CODEC_CONTENT_SOURCES INCLUDE REGEX "^tests/unit/codec/content/.*\\.cpp$")
+    list(FILTER TEST_CODEC_CONTENT_SOURCES INCLUDE REGEX "^tests/unit/codec/dyn/.*\\.cpp$")
     list(TRANSFORM TEST_CODEC_CONTENT_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_CODEC_CONTENT_SOURCES}
@@ -72,13 +72,13 @@ endif()
 
 if(KOTA_CODEC_ENABLE_FLATBUFFERS)
     set(TEST_CODEC_FLATBUFFERS_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_CODEC_FLATBUFFERS_SOURCES INCLUDE REGEX "^tests/unit/codec/flatbuffers/.*\\.cpp$")
+    list(FILTER TEST_CODEC_FLATBUFFERS_SOURCES INCLUDE REGEX "^tests/unit/codec/fbs/.*\\.cpp$")
     list(TRANSFORM TEST_CODEC_FLATBUFFERS_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_CODEC_FLATBUFFERS_SOURCES}
     )
 else()
-    message(STATUS "KOTA_CODEC_ENABLE_FLATBUFFERS=OFF: skipping tests/unit/codec/flatbuffers/*")
+    message(STATUS "KOTA_CODEC_ENABLE_FLATBUFFERS=OFF: skipping tests/unit/codec/fbs/*")
 endif()
 
 if(KOTA_CODEC_ENABLE_TOML)

@@ -5,7 +5,17 @@
 
 #include "kota/codec/detail/error.h"
 
+#if __has_include(<toml++/toml.hpp>)
+#include "toml++/toml.hpp"
+#else
+#error "toml++/toml.hpp not found."
+#endif
+
 namespace kota::codec::toml {
+
+using toml_table = ::toml::table;
+using toml_array = ::toml::array;
+using toml_node = ::toml::node;
 
 enum class error_kind : std::uint16_t {
     ok = 0,

@@ -13,18 +13,14 @@ namespace kota::codec {
 
 // Bincode serialization: write int64 directly (bincode only uses integer IDs)
 template <typename Config>
-struct serialize_traits<bincode::Serializer<Config>, kota::ipc::protocol::RequestID> {
-    using value_type = typename bincode::Serializer<Config>::value_type;
-    using error_type = typename bincode::Serializer<Config>::error_type;
-
-    static auto serialize(bincode::Serializer<Config>& serializer,
-                          const kota::ipc::protocol::RequestID& id)
-        -> std::expected<value_type, error_type> {
+struct serialize_visit<bincode::writer, kota::ipc::protocol::RequestID, Config> {
+    static bool visit(bincode::writer& vis, const kota::ipc::protocol::RequestID& id) {
         auto* int_id = std::get_if<std::int64_t>(&id);
         if(!int_id) {
-            return std::unexpected(error_type::type_mismatch);
+            return scoped_context<rich_error>::fail(
+                rich_error("bincode requires integer request ID"));
         }
-        return codec::serialize(serializer, *int_id);
+        return encode_value<Config>(vis, *int_id);
     }
 };
 

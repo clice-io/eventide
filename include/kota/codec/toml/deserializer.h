@@ -19,14 +19,8 @@
 #include "kota/codec/detail/common.h"
 #include "kota/codec/detail/config.h"
 #include "kota/codec/detail/narrow.h"
-#include "kota/codec/toml/error.h"
-#include "kota/codec/toml/serializer.h"
-
-#if __has_include(<toml++/toml.hpp>)
-#include "toml++/toml.hpp"
-#else
-#error "toml++/toml.hpp not found. Enable KOTA_CODEC_ENABLE_TOML or add tomlplusplus include paths."
-#endif
+#include "kota/codec/toml/encode.h"
+#include "kota/codec/toml/type.h"
 
 namespace kota::codec::toml {
 

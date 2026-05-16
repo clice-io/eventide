@@ -18,17 +18,10 @@
 
 #include "kota/meta/schema.h"
 #include "kota/codec/detail/codec.h"
-#include "kota/codec/flatbuffers/deserializer.h"
-#include "kota/codec/flatbuffers/struct_layout.h"
+#include "kota/codec/fbs/deserializer.h"
+#include "kota/codec/fbs/type.h"
 
-#if __has_include(<flatbuffers/flatbuffers.h>)
-#include "flatbuffers/flatbuffers.h"
-#else
-#error                                                                                             \
-    "flatbuffers/flatbuffers.h not found. Enable KOTA_CODEC_ENABLE_FLATBUFFERS or add flatbuffers include paths."
-#endif
-
-namespace kota::codec::flatbuffers {
+namespace kota::codec::fbs {
 
 template <typename T>
 class table_view;
@@ -198,22 +191,22 @@ template <typename Element,
           bool IsString = is_string_like_v<CleanElement>,
           bool IsInlineStruct = can_inline_struct_v<CleanElement>>
 struct array_vector_ptr_impl {
-    using type = const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*;
+    using type = const fb_vector<table_offset_t>*;
 };
 
 template <typename Element, typename CleanElement, bool IsString, bool IsInlineStruct>
 struct array_vector_ptr_impl<Element, CleanElement, true, IsString, IsInlineStruct> {
-    using type = const ::flatbuffers::Vector<scalar_storage_t<CleanElement>>*;
+    using type = const fb_vector<scalar_storage_t<CleanElement>>*;
 };
 
 template <typename Element, typename CleanElement, bool IsInlineStruct>
 struct array_vector_ptr_impl<Element, CleanElement, false, true, IsInlineStruct> {
-    using type = const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::String>>*;
+    using type = const fb_vector<string_offset_t>*;
 };
 
 template <typename Element, typename CleanElement>
 struct array_vector_ptr_impl<Element, CleanElement, false, false, true> {
-    using type = const ::flatbuffers::Vector<const CleanElement*>*;
+    using type = const fb_vector<const CleanElement*>*;
 };
 
 template <typename Element>
@@ -401,7 +394,7 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
             return static_cast<T>(view.template get_scalar<double>(field));
         }
     } else if constexpr(is_string_like_v<T>) {
-        const auto* text = table->template GetPointer<const ::flatbuffers::String*>(field);
+        const auto* text = table->template GetPointer<const fb_string*>(field);
         if(text == nullptr) {
             return {};
         }
@@ -413,14 +406,13 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         }
         return *value;
     } else if constexpr(is_specialization_of<std::variant, T>) {
-        const auto* nested = table->template GetPointer<const ::flatbuffers::Table*>(field);
+        const auto* nested = table->template GetPointer<const fb_table*>(field);
         return return_t(table_view_type(nested));
     } else if constexpr(is_pair_v<T> || is_tuple_v<T>) {
-        const auto* nested = table->template GetPointer<const ::flatbuffers::Table*>(field);
+        const auto* nested = table->template GetPointer<const fb_table*>(field);
         return return_t(table_view_type(nested));
     } else if constexpr(is_map_range_v<T>) {
-        const auto* vec = table->template GetPointer<
-            const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(field);
+        const auto* vec = table->template GetPointer<const fb_vector<table_offset_t>*>(field);
         return return_t(vec);
     } else if constexpr(is_range_like_v<T>) {
         using element_type = clean_t<std::ranges::range_value_t<T>>;
@@ -429,7 +421,7 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         return return_t(value);
     } else {
         // reflectable struct -> table_view
-        const auto* nested = table->template GetPointer<const ::flatbuffers::Table*>(field);
+        const auto* nested = table->template GetPointer<const fb_table*>(field);
         return return_t(table_view_type(nested));
     }
 }
@@ -473,35 +465,32 @@ public:
         }
 
         if constexpr(std::same_as<element_type, std::byte>) {
-            return std::byte{vector->Get(static_cast<::flatbuffers::uoffset_t>(index))};
+            return std::byte{vector->Get(static_cast<uoffset_t>(index))};
         } else if constexpr(std::is_enum_v<element_type>) {
             using storage_t = proxy_detail::scalar_storage_t<element_type>;
             return static_cast<element_type>(
-                static_cast<storage_t>(vector->Get(static_cast<::flatbuffers::uoffset_t>(index))));
+                static_cast<storage_t>(vector->Get(static_cast<uoffset_t>(index))));
         } else if constexpr(codec::char_like<element_type>) {
-            return static_cast<char>(vector->Get(static_cast<::flatbuffers::uoffset_t>(index)));
+            return static_cast<char>(vector->Get(static_cast<uoffset_t>(index)));
         } else if constexpr(codec::bool_like<element_type> || codec::int_like<element_type> ||
                             codec::uint_like<element_type>) {
-            return static_cast<element_type>(
-                vector->Get(static_cast<::flatbuffers::uoffset_t>(index)));
+            return static_cast<element_type>(vector->Get(static_cast<uoffset_t>(index)));
         } else if constexpr(codec::floating_like<element_type>) {
-            return static_cast<element_type>(
-                vector->Get(static_cast<::flatbuffers::uoffset_t>(index)));
+            return static_cast<element_type>(vector->Get(static_cast<uoffset_t>(index)));
         } else if constexpr(proxy_detail::is_string_like_v<element_type>) {
-            const auto* text = vector->GetAsString(static_cast<::flatbuffers::uoffset_t>(index));
+            const auto* text = vector->GetAsString(static_cast<uoffset_t>(index));
             if(text == nullptr) {
                 return {};
             }
             return std::string_view(text->data(), text->size());
         } else if constexpr(can_inline_struct_v<element_type>) {
-            const auto* value = vector->Get(static_cast<::flatbuffers::uoffset_t>(index));
+            const auto* value = vector->Get(static_cast<uoffset_t>(index));
             if(value == nullptr) {
                 return {};
             }
             return *value;
         } else {
-            const auto* nested = vector->template GetAs<::flatbuffers::Table>(
-                static_cast<::flatbuffers::uoffset_t>(index));
+            const auto* nested = vector->template GetAs<fb_table>(static_cast<uoffset_t>(index));
             return value_type(proxy_detail::table_view_type(nested));
         }
     }
@@ -554,7 +543,7 @@ public:
         return proxy_detail::read_field<clean_alt_t>(view, proxy_detail::variant_payload_slot(I));
     }
 
-    constexpr auto raw() const noexcept -> const ::flatbuffers::Table* {
+    constexpr auto raw() const noexcept -> const fb_table* {
         return view.raw();
     }
 
@@ -594,7 +583,7 @@ public:
         return proxy_detail::read_field<clean_element_t>(view, proxy_detail::field_slot(I));
     }
 
-    constexpr auto raw() const noexcept -> const ::flatbuffers::Table* {
+    constexpr auto raw() const noexcept -> const fb_table* {
         return view.raw();
     }
 
@@ -605,7 +594,7 @@ private:
 template <typename K, typename V>
 class map_view {
 public:
-    using vector_type = const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*;
+    using vector_type = const fb_vector<table_offset_t>*;
 
     constexpr map_view() = default;
 
@@ -631,8 +620,7 @@ public:
         if(!valid() || index >= size()) {
             return {};
         }
-        const auto* entry = vector->template GetAs<::flatbuffers::Table>(
-            static_cast<::flatbuffers::uoffset_t>(index));
+        const auto* entry = vector->template GetAs<fb_table>(static_cast<uoffset_t>(index));
         return tuple_view<K, V>(proxy_detail::table_view_type(entry));
     }
 
@@ -689,8 +677,7 @@ private:
         std::size_t hi = size();
         while(lo < hi) {
             auto mid = lo + (hi - lo) / 2;
-            const auto* entry = vector->template GetAs<::flatbuffers::Table>(
-                static_cast<::flatbuffers::uoffset_t>(mid));
+            const auto* entry = vector->template GetAs<fb_table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_view_type(entry),
                                                                proxy_detail::field_slot(0));
             if(entry_key < key) {
@@ -704,8 +691,7 @@ private:
             return {};
         }
 
-        const auto* entry =
-            vector->template GetAs<::flatbuffers::Table>(static_cast<::flatbuffers::uoffset_t>(lo));
+        const auto* entry = vector->template GetAs<fb_table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_view_type(entry);
         auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
         if(entry_key == key) {
@@ -731,7 +717,7 @@ public:
         if(bytes.empty()) {
             return {};
         }
-        return table_view(view_type(::flatbuffers::GetRoot<::flatbuffers::Table>(bytes.data())));
+        return table_view(view_type(::flatbuffers::GetRoot<fb_table>(bytes.data())));
     }
 
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
@@ -739,7 +725,7 @@ public:
             return {};
         }
         const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
-        return table_view(view_type(::flatbuffers::GetRoot<::flatbuffers::Table>(data)));
+        return table_view(view_type(::flatbuffers::GetRoot<fb_table>(data)));
     }
 
     constexpr auto valid() const noexcept -> bool {
@@ -750,7 +736,7 @@ public:
         return valid();
     }
 
-    constexpr auto raw() const noexcept -> const ::flatbuffers::Table* {
+    constexpr auto raw() const noexcept -> const fb_table* {
         return view.raw();
     }
 
@@ -796,4 +782,4 @@ private:
     view_type view;
 };
 
-}  // namespace kota::codec::flatbuffers
+}  // namespace kota::codec::fbs

@@ -66,39 +66,6 @@ concept serde_error_like = requires {
     { E::invalid_state } -> std::convertible_to<E>;
 };
 
-template <typename S, typename T = typename S::value_type, typename E = typename S::error_type>
-concept serializer_like =
-    serde_error_like<E> && requires(S& s,
-                                    bool b,
-                                    char c,
-                                    std::int64_t i,
-                                    std::uint64_t u,
-                                    double f,
-                                    std::string_view text,
-                                    std::span<const std::byte> bytes,
-                                    std::optional<std::size_t> len,
-                                    std::size_t count,
-                                    const std::variant<int, std::string>& variant_value) {
-        { s.serialize_bool(b) } -> result_as<T, E>;
-        { s.serialize_int(i) } -> result_as<T, E>;
-        { s.serialize_uint(u) } -> result_as<T, E>;
-        { s.serialize_float(f) } -> result_as<T, E>;
-        { s.serialize_char(c) } -> result_as<T, E>;
-        { s.serialize_str(text) } -> result_as<T, E>;
-        { s.serialize_bytes(bytes) } -> result_as<T, E>;
-
-        { s.serialize_null() } -> result_as<T, E>;
-        { s.serialize_some(i) } -> result_as<T, E>;
-        { s.serialize_variant(variant_value) } -> result_as<T, E>;
-
-        { s.begin_array(len) } -> result_as<void, E>;
-        { s.end_array() } -> result_as<T, E>;
-
-        { s.begin_object(count) } -> result_as<void, E>;
-        { s.field(text) } -> result_as<void, E>;
-        { s.end_object() } -> result_as<T, E>;
-    };
-
 template <typename D, typename E = typename D::error_type>
 concept deserializer_like =
     serde_error_like<E> && requires(D& d,
@@ -133,17 +100,8 @@ concept deserializer_like =
         { d.end_array() } -> result_as<void, E>;
     };
 
-template <typename S, typename T>
-struct serialize_traits;
-
 template <typename D, typename T>
 struct deserialize_traits;
-
-template <serializer_like S,
-          typename V,
-          typename T = typename S::value_type,
-          typename E = typename S::error_type>
-constexpr auto serialize(S& s, const V& v) -> std::expected<T, E>;
 
 template <deserializer_like D, typename V, typename E = typename D::error_type>
 constexpr auto deserialize(D& d, V& v) -> std::expected<void, E>;
@@ -161,31 +119,6 @@ concept arena_error_like = requires {
     { E::too_many_fields } -> std::convertible_to<E>;
 };
 
-template <typename S,
-          typename E = typename S::error_type,
-          typename StringRef = typename S::string_ref,
-          typename VectorRef = typename S::vector_ref,
-          typename TableRef = typename S::table_ref,
-          typename SlotId = typename S::slot_id,
-          typename TableBuilder = typename S::TableBuilder>
-concept arena_serializer_like = arena_error_like<E> && requires(S& s,
-                                                                std::string_view text,
-                                                                std::span<const std::byte> bytes,
-                                                                std::size_t idx,
-                                                                TableRef root) {
-    { S::field_slot_id(idx) } -> std::convertible_to<std::expected<SlotId, E>>;
-    { S::variant_tag_slot_id() } -> std::convertible_to<SlotId>;
-    { S::variant_payload_slot_id(idx) } -> codec::result_as<SlotId, E>;
-
-    { s.alloc_string(text) } -> codec::result_as<StringRef, E>;
-    { s.alloc_bytes(bytes) } -> codec::result_as<VectorRef, E>;
-
-    { s.start_table() } -> std::same_as<TableBuilder>;
-
-    { s.finish(root) } -> codec::result_as<void, E>;
-    { s.bytes() } -> std::same_as<std::vector<std::uint8_t>>;
-};
-
 template <typename D,
           typename E = typename D::error_type,
           typename TableView = typename D::TableView,
@@ -199,25 +132,9 @@ concept arena_deserializer_like = arena_error_like<E> && requires(D& d, std::siz
 
 namespace detail {
 
-template <typename S, typename T>
-concept has_serialize_wire_impl =
-    requires { typename kota::codec::serialize_traits<S, T>::wire_type; };
-
 template <typename D, typename T>
 concept has_deserialize_wire_impl =
     requires { typename kota::codec::deserialize_traits<D, T>::wire_type; };
-
-template <typename S, typename T>
-concept value_serialize_traits_impl = has_serialize_wire_impl<S, T> && requires(S& s, const T& v) {
-    {
-        kota::codec::serialize_traits<S, T>::serialize(s, v)
-    } -> std::convertible_to<typename kota::codec::serialize_traits<S, T>::wire_type>;
-};
-
-template <typename S, typename T>
-concept streaming_serialize_traits_impl =
-    has_serialize_wire_impl<S, T> && !value_serialize_traits_impl<S, T> &&
-    requires(S& s, const T& v) { kota::codec::serialize_traits<S, T>::serialize(s, v); };
 
 template <typename D, typename T>
 concept value_deserialize_traits_impl =
@@ -239,18 +156,8 @@ concept streaming_deserialize_traits_impl =
 
 }  // namespace detail
 
-template <typename S, typename T>
-concept has_serialize_traits = detail::has_serialize_wire_impl<S, std::remove_cvref_t<T>>;
-
 template <typename D, typename T>
 concept has_deserialize_traits = detail::has_deserialize_wire_impl<D, std::remove_cvref_t<T>>;
-
-template <typename S, typename T>
-concept value_serialize_traits = detail::value_serialize_traits_impl<S, std::remove_cvref_t<T>>;
-
-template <typename S, typename T>
-concept streaming_serialize_traits =
-    detail::streaming_serialize_traits_impl<S, std::remove_cvref_t<T>>;
 
 template <typename D, typename T>
 concept value_deserialize_traits = detail::value_deserialize_traits_impl<D, std::remove_cvref_t<T>>;

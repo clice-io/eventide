@@ -20,9 +20,9 @@
 #include <vector>
 
 #include "kota/support/config.h"
-#include "kota/codec/content/error.h"
+#include "kota/codec/dyn/error.h"
 
-namespace kota::codec::content {
+namespace kota::codec::dyn {
 
 class Value;
 class Array;
@@ -106,8 +106,9 @@ private:
 
 class Object {
 public:
-    struct entry;
-
+    using entry = std::pair<std::string, Value>;
+    using key_type = std::string;
+    using mapped_type = Value;
     using container_t = std::vector<entry>;
     using iterator = typename container_t::iterator;
     using const_iterator = typename container_t::const_iterator;
@@ -359,13 +360,6 @@ public:
 
 private:
     storage_t storage;
-};
-
-struct Object::entry {
-    std::string key;
-    Value value;
-
-    bool operator==(const entry& other) const = default;
 };
 
 inline Value::Value(std::initializer_list<Object::entry> entries) : storage(Object(entries)) {}
@@ -699,7 +693,7 @@ inline void Object::ensure_index() const {
     index.emplace();
     index->reserve(entries.size());
     for(std::size_t i = 0; i < entries.size(); ++i) {
-        (*index)[std::string_view(entries[i].key)] = i;
+        (*index)[std::string_view(entries[i].first)] = i;
     }
 }
 
@@ -711,12 +705,12 @@ const inline Value* Object::find(std::string_view key) const {
     ensure_index();
     if(index.has_value()) {
         auto it = index->find(key);
-        return it != index->end() ? &entries[it->second].value : nullptr;
+        return it != index->end() ? &entries[it->second].second : nullptr;
     }
     // Linear scan for small objects (index not built).
     for(auto it = entries.rbegin(); it != entries.rend(); ++it) {
-        if(it->key == key) {
-            return &it->value;
+        if(it->first == key) {
+            return &it->second;
         }
     }
     return nullptr;
@@ -729,7 +723,7 @@ inline Value* Object::find(std::string_view key) {
 const inline Value& Object::at(std::string_view key) const {
     const Value* v = find(key);
     if(v == nullptr) {
-        KOTA_THROW(std::out_of_range("kota::codec::content::Object::at: missing key"));
+        KOTA_THROW(std::out_of_range("kota::codec::dyn::Object::at: missing key"));
     }
     return *v;
 }
@@ -737,13 +731,13 @@ const inline Value& Object::at(std::string_view key) const {
 inline Value& Object::at(std::string_view key) {
     Value* v = find(key);
     if(v == nullptr) {
-        KOTA_THROW(std::out_of_range("kota::codec::content::Object::at: missing key"));
+        KOTA_THROW(std::out_of_range("kota::codec::dyn::Object::at: missing key"));
     }
     return *v;
 }
 
 inline void Object::insert(std::string key, Value value) {
-    entries.push_back(entry{std::move(key), std::move(value)});
+    entries.emplace_back(std::move(key), std::move(value));
     invalidate_index();
 }
 
@@ -752,13 +746,13 @@ inline void Object::assign(std::string_view key, Value value) {
         *existing = std::move(value);
         return;
     }
-    entries.push_back(entry{std::string(key), std::move(value)});
+    entries.emplace_back(std::string(key), std::move(value));
     invalidate_index();
 }
 
 inline std::size_t Object::remove(std::string_view key) {
     auto before = entries.size();
-    std::erase_if(entries, [&](const entry& e) { return e.key == key; });
+    std::erase_if(entries, [&](const entry& e) { return e.first == key; });
     auto removed = before - entries.size();
     if(removed != 0) {
         invalidate_index();
@@ -768,7 +762,7 @@ inline std::size_t Object::remove(std::string_view key) {
 
 inline Value& Object::back_value() {
     assert(!entries.empty());
-    return entries.back().value;
+    return entries.back().second;
 }
 
 inline auto Object::begin() noexcept -> iterator {
@@ -792,4 +786,4 @@ inline bool Object::operator==(const Object& other) const {
            std::ranges::is_permutation(entries, other.entries);
 }
 
-}  // namespace kota::codec::content
+}  // namespace kota::codec::dyn

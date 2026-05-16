@@ -13,7 +13,7 @@
 #include "fixtures/schema/common.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
-#include "kota/codec/flatbuffers/flatbuffers.h"
+#include "kota/codec/fbs/fbs.h"
 #include "flatbuffers/flatbuffers.h"
 
 namespace kota::codec {
@@ -22,12 +22,12 @@ using namespace meta;
 
 namespace {
 
-using flatbuffers::array_view;
-using flatbuffers::map_view;
-using flatbuffers::table_view;
-using flatbuffers::to_flatbuffer;
-using flatbuffers::tuple_view;
-using flatbuffers::variant_view;
+using fbs::array_view;
+using fbs::map_view;
+using fbs::table_view;
+using fbs::to_flatbuffer;
+using fbs::tuple_view;
+using fbs::variant_view;
 
 enum class color : std::int32_t { red = 0, green = 1, blue = 2 };
 
@@ -934,7 +934,7 @@ TEST_CASE(roundtrip_nested_struct) {
     ASSERT_TRUE(encoded.has_value());
 
     person output{};
-    auto status = flatbuffers::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -945,7 +945,7 @@ TEST_CASE(roundtrip_root_vector_and_variant) {
     ASSERT_TRUE(encoded_vec.has_value());
 
     std::vector<std::int32_t> output_vec{};
-    auto vec_status = flatbuffers::from_flatbuffer(*encoded_vec, output_vec);
+    auto vec_status = fbs::from_flatbuffer(*encoded_vec, output_vec);
     ASSERT_TRUE(vec_status.has_value());
     EXPECT_EQ(output_vec, input_vec);
 
@@ -956,7 +956,7 @@ TEST_CASE(roundtrip_root_vector_and_variant) {
     ASSERT_TRUE(encoded_var.has_value());
 
     sample_variant output_var = std::int32_t{0};
-    auto var_status = flatbuffers::from_flatbuffer(*encoded_var, output_var);
+    auto var_status = fbs::from_flatbuffer(*encoded_var, output_var);
     ASSERT_TRUE(var_status.has_value());
     EXPECT_EQ(output_var, input_var);
 }

@@ -12,6 +12,8 @@
 #include <vector>
 
 #include "kota/codec/detail/codec.h"
+#include "kota/codec/visit/config.h"
+#include "kota/codec/visit/encode.h"
 
 namespace kota::ipc::protocol {
 
@@ -112,16 +114,12 @@ struct formatter<kota::ipc::protocol::RequestID> {
 
 namespace kota::codec {
 
-template <serializer_like S>
-struct serialize_traits<S, kota::ipc::protocol::Value> {
-    using value_type = typename S::value_type;
-    using error_type = typename S::error_type;
-
-    static auto serialize(S& serializer, const kota::ipc::protocol::Value& value)
-        -> std::expected<value_type, error_type> {
-        const auto& variant = static_cast<const kota::ipc::protocol::Variant&>(value);
-        return std::visit([&](const auto& item) { return codec::serialize(serializer, item); },
-                          variant);
+template <typename Vis, typename Config>
+struct serialize_visit<Vis, kota::ipc::protocol::Value, Config> {
+    static bool visit(Vis& vis, const kota::ipc::protocol::Value& value) {
+        const auto& var = static_cast<const kota::ipc::protocol::Variant&>(value);
+        return std::visit([&](const auto& item) -> bool { return encode_value<Config>(vis, item); },
+                          var);
     }
 };
 
@@ -142,21 +140,20 @@ struct deserialize_traits<D, kota::ipc::protocol::Value> {
     }
 };
 
-template <serializer_like S>
-struct serialize_traits<S, kota::ipc::protocol::Error> {
-    using value_type = typename S::value_type;
-    using error_type = typename S::error_type;
-
-    static auto serialize(S& s, const kota::ipc::protocol::Error& error)
-        -> std::expected<value_type, error_type> {
-        KOTA_EXPECTED_TRY(s.begin_object(3));
-        KOTA_EXPECTED_TRY(s.field("code"));
-        KOTA_EXPECTED_TRY(codec::serialize(s, error.code));
-        KOTA_EXPECTED_TRY(s.field("message"));
-        KOTA_EXPECTED_TRY(codec::serialize(s, error.message));
-        KOTA_EXPECTED_TRY(s.field("data"));
-        KOTA_EXPECTED_TRY(codec::serialize(s, error.data));
-        return s.end_object();
+template <typename Vis, typename Config>
+struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
+    static bool visit(Vis& vis, const kota::ipc::protocol::Error& error) {
+        return vis.visit_struct(error, [&](auto& sv) -> bool {
+            KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), "code", [&](auto& fv) -> bool {
+                return encode_value<Config>(fv, error.code);
+            }));
+            KOTA_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
+                return encode_value<Config>(fv, error.message);
+            }));
+            return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
+                return encode_value<Config>(fv, error.data);
+            });
+        });
     }
 };
 

@@ -2,21 +2,21 @@
 
 #include "../standard_case_suite.h"
 #include "kota/zest/zest.h"
-#include "kota/codec/flatbuffers/flatbuffers.h"
+#include "kota/codec/fbs/fbs.h"
 
 namespace kota::codec {
 
 namespace {
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, flatbuffers::object_error_code> {
-    auto encoded = flatbuffers::to_flatbuffer(input);
+auto rt = []<typename T>(const T& input) -> std::expected<T, fbs::object_error_code> {
+    auto encoded = fbs::to_flatbuffer(input);
     if(!encoded) {
         return std::unexpected(encoded.error());
     }
     if(encoded->empty()) {
-        return std::unexpected(flatbuffers::object_error_code::invalid_state);
+        return std::unexpected(fbs::object_error_code::invalid_state);
     }
-    return flatbuffers::from_flatbuffer<T>(*encoded);
+    return fbs::from_flatbuffer<T>(*encoded);
 };
 
 TEST_SUITE(serde_flatbuffers_standard) {

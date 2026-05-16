@@ -14,10 +14,9 @@
 #include "kota/support/expected_try.h"
 #include "kota/support/naming.h"
 #include "kota/meta/type_info.h"
-#include "kota/codec/content/document.h"
-#include "kota/codec/content/serializer.h"
+#include "kota/codec/dyn/document.h"
+#include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/json.h"
-#include "kota/codec/json/serializer.h"
 
 namespace kota::codec::json {
 
@@ -25,7 +24,7 @@ namespace detail {
 
 class SchemaEmitter {
     using tk = meta::type_kind;
-    using result_t = std::expected<content::Value, error>;
+    using result_t = std::expected<dyn::Value, error>;
 
 public:
     result_t emit(const meta::type_info& root) {
@@ -36,20 +35,20 @@ public:
             def_names.emplace(root_ti, std::move(name));
         }
 
-        content::Object schema;
+        dyn::Object schema;
         schema.insert("$schema", "https://json-schema.org/draft/2020-12/schema");
 
         KOTA_EXPECTED_TRY(merge_schema_fields(schema, &root));
 
         if(!defs.empty()) {
-            content::Object defs_obj;
+            dyn::Object defs_obj;
             for(auto& [name, value]: defs) {
                 defs_obj.insert(std::move(name), std::move(value));
             }
             schema.insert("$defs", std::move(defs_obj));
         }
 
-        return content::Value(std::move(schema));
+        return dyn::Value(std::move(schema));
     }
 
 private:
@@ -85,8 +84,8 @@ private:
     result_t make_nullable(const meta::type_info* ti) {
         auto* inner = unwrap(ti);
         KOTA_EXPECTED_TRY_V(auto schema, make_schema(inner));
-        return content::Value{
-            {"oneOf", content::Array{std::move(schema), content::Value{{"type", "null"}}}},
+        return dyn::Value{
+            {"oneOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
         };
     }
 
@@ -97,22 +96,22 @@ private:
 
         switch(ti->kind) {
             case tk::null:
-                return content::Value{
+                return dyn::Value{
                     {"type", "null"}
                 };
             case tk::boolean:
-                return content::Value{
+                return dyn::Value{
                     {"type", "boolean"}
                 };
             case tk::character:
             case tk::string:
             case tk::bytes:
-                return content::Value{
+                return dyn::Value{
                     {"type", "string"}
                 };
             case tk::float32:
             case tk::float64:
-                return content::Value{
+                return dyn::Value{
                     {"type", "number"}
                 };
             case tk::int8:
@@ -138,7 +137,7 @@ private:
             case tk::tuple: return make_tuple(ti);
             case tk::structure: return make_struct_ref(ti);
             case tk::variant: return make_variant(ti);
-            case tk::any: return content::Value(content::Object{});
+            case tk::any: return dyn::Value(dyn::Object{});
             default:
                 return std::unexpected(error::custom(
                     error_kind::invalid_state,
@@ -147,22 +146,21 @@ private:
         }
     }
 
-    std::expected<void, error> merge_schema_fields(content::Object& target,
-                                                   const meta::type_info* ti) {
+    std::expected<void, error> merge_schema_fields(dyn::Object& target, const meta::type_info* ti) {
         ti = unwrap(ti);
         if(ti->kind == tk::structure) {
             return add_struct_body(target, static_cast<const meta::struct_type_info*>(ti));
         }
         KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
         if(auto* obj = schema.get_object()) {
-            for(auto& entry: *obj) {
-                target.insert(std::string(entry.key), std::move(entry.value));
+            for(auto& [k, v]: *obj) {
+                target.insert(std::string(k), std::move(v));
             }
         }
         return {};
     }
 
-    std::expected<void, error> add_struct_body(content::Object& target,
+    std::expected<void, error> add_struct_body(dyn::Object& target,
                                                const meta::struct_type_info* si) {
         target.insert("type", "object");
         KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
@@ -175,7 +173,7 @@ private:
     }
 
     static result_t make_integer(std::int64_t min_val, std::int64_t max_val) {
-        return content::Value{
+        return dyn::Value{
             {"type",    "integer"},
             {"minimum", min_val  },
             {"maximum", max_val  },
@@ -183,7 +181,7 @@ private:
     }
 
     static result_t make_unsigned(std::uint64_t max_val) {
-        return content::Value{
+        return dyn::Value{
             {"type",    "integer"       },
             {"minimum", std::uint64_t{0}},
             {"maximum", max_val         },
@@ -192,11 +190,11 @@ private:
 
     static result_t make_enum(const meta::type_info* ti) {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
-        content::Array values;
+        dyn::Array values;
         for(const auto& name: ei->member_names) {
-            values.push_back(content::Value(name));
+            values.push_back(dyn::Value(name));
         }
-        return content::Value{
+        return dyn::Value{
             {"enum", std::move(values)}
         };
     }
@@ -204,20 +202,20 @@ private:
     result_t make_array(const meta::type_info* ti) {
         auto* ai = static_cast<const meta::array_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto items, make_schema(&ai->element()));
-        content::Object obj{
+        dyn::Object obj{
             {"type",  "array"         },
             {"items", std::move(items)},
         };
         if(ti->kind == tk::set) {
             obj.insert("uniqueItems", true);
         }
-        return content::Value(std::move(obj));
+        return dyn::Value(std::move(obj));
     }
 
     result_t make_map(const meta::type_info* ti) {
         auto* mi = static_cast<const meta::map_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto val_schema, make_schema(&mi->value()));
-        return content::Value{
+        return dyn::Value{
             {"type",                 "object"             },
             {"additionalProperties", std::move(val_schema)},
         };
@@ -225,13 +223,13 @@ private:
 
     result_t make_tuple(const meta::type_info* ti) {
         auto* tup = static_cast<const meta::tuple_type_info*>(ti);
-        content::Array items;
+        dyn::Array items;
         for(std::size_t i = 0; i < tup->elements.size(); ++i) {
             KOTA_EXPECTED_TRY_V(auto elem, make_schema(&tup->elements[i]()));
             items.push_back(std::move(elem));
         }
         auto size = static_cast<std::uint64_t>(tup->elements.size());
-        return content::Value{
+        return dyn::Value{
             {"type",        "array"         },
             {"prefixItems", std::move(items)},
             {"items",       false           },
@@ -242,13 +240,13 @@ private:
 
     result_t make_struct_ref(const meta::type_info* ti) {
         if(ti == root_ti) {
-            return content::Value{
+            return dyn::Value{
                 {"$ref", "#"}
             };
         }
         KOTA_EXPECTED_TRY_V(auto name, def_name(ti));
         KOTA_EXPECTED_TRY(ensure_struct_def(ti));
-        return content::Value{
+        return dyn::Value{
             {"$ref", std::format("#/$defs/{}", name)}
         };
     }
@@ -259,28 +257,28 @@ private:
         }
         auto* si = static_cast<const meta::struct_type_info*>(ti);
         KOTA_EXPECTED_TRY_V(auto name, def_name(ti));
-        content::Object body;
+        dyn::Object body;
         KOTA_EXPECTED_TRY(add_struct_body(body, si));
         defs.emplace_back(std::string(name), std::move(body));
         return {};
     }
 
     result_t make_properties(const meta::struct_type_info* si) {
-        content::Object props;
+        dyn::Object props;
         for(const auto& f: si->fields) {
             KOTA_EXPECTED_TRY_V(auto schema, make_schema(&f.type()));
             props.insert(std::string(f.name), std::move(schema));
         }
-        return content::Value(std::move(props));
+        return dyn::Value(std::move(props));
     }
 
-    static void add_required(content::Object& target, const meta::struct_type_info* si) {
-        content::Array required;
+    static void add_required(dyn::Object& target, const meta::struct_type_info* si) {
+        dyn::Array required;
         for(const auto& f: si->fields) {
             const meta::type_info& ft = f.type();
             bool is_optional = f.has_default || ft.kind == tk::optional || ft.kind == tk::pointer;
             if(!is_optional) {
-                required.push_back(content::Value(f.name));
+                required.push_back(dyn::Value(f.name));
             }
         }
         if(!required.empty()) {
@@ -288,10 +286,10 @@ private:
         }
     }
 
-    static content::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {
+    static dyn::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {
         return {
             {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
-            {"required",   content::Array{content::Value(tag_field)}        },
+            {"required",   dyn::Array{dyn::Value(tag_field)}                },
         };
     }
 
@@ -304,31 +302,31 @@ private:
             KOTA_EXPECTED_TRY_V(auto props, make_properties(si));
             auto* props_obj = props.get_object();
             props_obj->insert(std::string(tag_field),
-                              content::Value{
+                              dyn::Value{
                                   {"const", alt_name}
             });
-            content::Object obj;
+            dyn::Object obj;
             obj.insert("type", "object");
             obj.insert("properties", std::move(props));
-            content::Array required;
+            dyn::Array required;
             for(const auto& f: si->fields) {
                 const meta::type_info& ft = f.type();
                 bool is_opt = f.has_default || ft.kind == tk::optional || ft.kind == tk::pointer;
                 if(!is_opt) {
-                    required.push_back(content::Value(f.name));
+                    required.push_back(dyn::Value(f.name));
                 }
             }
-            required.push_back(content::Value(tag_field));
+            required.push_back(dyn::Value(tag_field));
             obj.insert("required", std::move(required));
             if(si->deny_unknown) {
                 obj.insert("additionalProperties", false);
             }
-            return content::Value(std::move(obj));
+            return dyn::Value(std::move(obj));
         }
         KOTA_EXPECTED_TRY_V(auto schema, make_schema(ti));
-        return content::Value{
+        return dyn::Value{
             {"allOf",
-             content::Array{
+             dyn::Array{
                  std::move(schema),
                  make_tag_const(tag_field, alt_name),
              }},
@@ -337,7 +335,7 @@ private:
 
     result_t make_variant(const meta::type_info* ti) {
         auto* vi = static_cast<const meta::variant_type_info*>(ti);
-        content::Array one_of;
+        dyn::Array one_of;
 
         for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
             switch(vi->tagging) {
@@ -351,10 +349,10 @@ private:
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     one_of.push_back({
-                        {"type",                 "object"                                },
-                        {"properties",           {{alt_name, std::move(schema)}}         },
-                        {"required",             content::Array{content::Value(alt_name)}},
-                        {"additionalProperties", false                                   },
+                        {"type",                 "object"                        },
+                        {"properties",           {{alt_name, std::move(schema)}} },
+                        {"required",             dyn::Array{dyn::Value(alt_name)}},
+                        {"additionalProperties", false                           },
                     });
                     break;
                 }
@@ -374,14 +372,14 @@ private:
                     one_of.push_back({
                         {"type",                 "object"},
                         {"properties",
-                         content::Object{
+                         dyn::Object{
                              {std::string(vi->tag_field), {{"const", alt_name}}},
                              {std::string(vi->content_field), std::move(schema)},
                          }                               },
                         {"required",
-                         content::Array{
-                             content::Value(vi->tag_field),
-                             content::Value(vi->content_field),
+                         dyn::Array{
+                             dyn::Value(vi->tag_field),
+                             dyn::Value(vi->content_field),
                          }                               },
                         {"additionalProperties", false   },
                     });
@@ -390,12 +388,12 @@ private:
             }
         }
 
-        return content::Value{
+        return dyn::Value{
             {"oneOf", std::move(one_of)}
         };
     }
 
-    std::vector<std::pair<std::string, content::Value>> defs;
+    std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const meta::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
     std::unordered_set<const meta::type_info*> emitted;
@@ -404,12 +402,12 @@ private:
 
 }  // namespace detail
 
-inline std::expected<content::Value, error> schema(const meta::type_info& root) {
+inline std::expected<dyn::Value, error> schema(const meta::type_info& root) {
     return detail::SchemaEmitter{}.emit(root);
 }
 
 template <typename T>
-std::expected<content::Value, error> schema() {
+std::expected<dyn::Value, error> schema() {
     return schema(meta::type_info_of<T>());
 }
 
