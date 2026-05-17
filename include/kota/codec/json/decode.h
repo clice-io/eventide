@@ -52,7 +52,6 @@ inline char32_t decode_first_codepoint(std::string_view sv) {
 
 }  // namespace detail
 
-/// Tagged pointer that unifies simdjson::ondemand::document and value behind a single handle.
 struct json_source {
     explicit json_source(simdjson::ondemand::value& v) :
         ptr(reinterpret_cast<std::uintptr_t>(&v)) {}
@@ -203,8 +202,6 @@ struct reader {
         return false;
     }
 
-    // --- scalar visitors ---
-
     bool visit_bool(bool& out) {
         auto r = src.apply([&](auto& s) { return s.get_bool(); });
         if(r.error())
@@ -299,8 +296,6 @@ struct reader {
         return true;
     }
 
-    // --- null / peek ---
-
     bool peek_null() {
         auto r = src.apply([&](auto& s) { return s.is_null(); });
         return !r.error() && r.value_unsafe();
@@ -352,8 +347,6 @@ struct reader {
     bool visit_skip() {
         return true;
     }
-
-    // --- compound visitors ---
 
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
@@ -452,8 +445,6 @@ struct reader {
     }
 };
 
-// Out-of-line definition for struct_reader
-
 template <typename Callback>
 bool struct_reader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
     simdjson::ondemand::value field_val;
@@ -464,8 +455,6 @@ bool struct_reader::visit_field(std::size_t /*index*/, std::string_view name, Ca
     reader sub{field_val, buf_base, buf_size};
     return cb(sub);
 }
-
-// Convenience functions
 
 template <typename Config = default_config<>, typename T>
 auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error> {

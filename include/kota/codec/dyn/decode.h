@@ -16,7 +16,6 @@
 
 namespace kota::codec::dyn {
 
-// Forward declarations
 struct value_reader;
 struct str_reader;
 struct object_struct_reader;
@@ -54,7 +53,6 @@ struct str_reader {
     }
 };
 
-/// A struct reader that provides find_field / visit_field for tagged variant support.
 struct object_struct_reader {
     const Object* obj;
     using error_type = rich_error;
@@ -290,8 +288,6 @@ private:
     }
 };
 
-// Out-of-line definitions for object_struct_reader (value_reader must be complete)
-
 template <typename Callback>
 bool object_struct_reader::find_field(std::string_view name, Callback&& cb) {
     const Value* v = obj->find(name);
@@ -313,8 +309,6 @@ bool object_struct_reader::visit_field(std::size_t /*index*/,
     value_reader sub{v};
     return cb(sub);
 }
-
-// Convenience functions
 
 template <typename Config = default_config<>, typename T>
 auto from_content(const Value& value, T& out) -> std::expected<void, error> {
@@ -341,8 +335,6 @@ auto from_content(const Value& value) -> std::expected<T, error> {
 }  // namespace kota::codec::dyn
 
 namespace kota::codec {
-
-// DOM-to-DOM optimized specializations: bypass recursive decoding and directly copy.
 
 template <typename Config>
 struct deserialize_visit<dyn::value_reader, dyn::Value, Config> {
@@ -387,8 +379,6 @@ struct deserialize_visit<dyn::value_reader, dyn::Object, Config> {
         return true;
     }
 };
-
-// Generic specializations: any visitor with peek_kind() can produce dyn::Value/Array/Object.
 
 template <typename Vis, typename Config>
 struct deserialize_visit<

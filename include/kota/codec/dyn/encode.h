@@ -101,9 +101,7 @@ struct struct_writer {
     using error_type = rich_error;
 
     template <typename F>
-    inline bool visit_field(std::size_t /*index*/,
-                            std::string_view name,
-                            F&& writer);
+    inline bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
 };
 
 struct seq_writer {
@@ -142,8 +140,6 @@ struct map_writer {
     template <typename KF, typename VF>
     inline bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
-
-// Out-of-line definitions (all writer types are now complete)
 
 template <typename T, typename Body>
 bool value_writer::visit_struct(const T&, Body&& body) {
@@ -236,8 +232,6 @@ struct serialize_visit<Vis, dyn::Value, Config> {
     }
 };
 
-// Optimized specializations for dyn::value_writer: bypass recursive encoding
-// and directly assign the dyn value.
 template <typename Config>
 struct serialize_visit<dyn::value_writer, dyn::Value, Config> {
     static bool visit(dyn::value_writer& vis, const dyn::Value& value) {

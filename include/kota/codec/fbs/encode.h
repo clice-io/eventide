@@ -66,7 +66,6 @@ struct alloc_field_visitor {
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
-    // Scalar no-ops
     bool visit_bool(bool) {
         return true;
     }
@@ -95,7 +94,6 @@ struct alloc_field_visitor {
         return true;
     }
 
-    // Strings — allocate in the buffer
     template <typename T>
     bool visit_str(const T& v) {
         std::string_view sv(v);
@@ -104,7 +102,6 @@ struct alloc_field_visitor {
         return true;
     }
 
-    // Bytes — allocate as uint8 vector
     template <typename T>
     bool visit_bytes(const T& v) {
         auto data = reinterpret_cast<const std::uint8_t*>(std::data(v));
@@ -114,23 +111,18 @@ struct alloc_field_visitor {
         return true;
     }
 
-    // Struct (table) — recursively create sub-table
     template <typename T, typename Body>
     inline bool visit_struct(const T&, Body&& body);
 
-    // Sequence
     template <typename Container, typename Body>
     inline bool visit_seq(const Container& c, Body&& body);
 
-    // Tuple — encoded as a table with positional fields
     template <typename T, typename Body>
     inline bool visit_tuple(const T&, Body&& body);
 
-    // Map
     template <typename Container, typename Body>
     inline bool visit_map(const Container& m, Body&& body);
 
-    // Variant (native)
     template <typename Body>
     inline bool visit_variant(std::size_t index, Body&& body);
 };
@@ -143,7 +135,6 @@ struct alloc_table_visitor {
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
-    // For struct fields (called by encode_struct_fields)
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
@@ -156,7 +147,6 @@ struct alloc_table_visitor {
         return true;
     }
 
-    // For tuple elements (called by tuple encode)
     template <typename F>
     bool visit_element(F&& writer) {
         alloc_field_visitor fv{fbb};
@@ -208,11 +198,9 @@ struct write_field_visitor {
     }
 
     bool visit_null() {
-        // Absent field — do not write anything to the vtable slot.
         return true;
     }
 
-    // String / bytes / table / seq / map / tuple / variant — use stored offset
     template <typename T>
     bool visit_str(const T&) {
         fbb.AddOffset(sid, offset_t<void>(stored_offset));
@@ -268,7 +256,6 @@ struct write_table_visitor {
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
-    // For struct fields
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
@@ -278,7 +265,6 @@ struct write_table_visitor {
         return writer(wv);
     }
 
-    // For tuple elements
     template <typename F>
     bool visit_element(F&& writer) {
         const slot_id_t sid =
@@ -463,23 +449,18 @@ struct table_elem_visitor {
         return true;
     }
 
-    // Struct — create a sub-table
     template <typename T, typename Body>
     inline bool visit_struct(const T&, Body&& body);
 
-    // Tuple — create a sub-table with positional fields
     template <typename T, typename Body>
     inline bool visit_tuple(const T&, Body&& body);
 
-    // Variant — create variant table
     template <typename Body>
     inline bool visit_variant(std::size_t index, Body&& body);
 
-    // Nested sequence — box inner sequence in a single-field table
     template <typename Container, typename Body>
     inline bool visit_seq(const Container& c, Body&& body);
 
-    // Map — box map in a single-field table
     template <typename Container, typename Body>
     inline bool visit_map(const Container& m, Body&& body);
 };
@@ -622,7 +603,6 @@ struct root_visitor {
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
-    // Scalar root types — box in a single-field table
     bool visit_bool(bool v) {
         return box_root_scalar<std::uint8_t>(static_cast<std::uint8_t>(v));
     }
@@ -669,29 +649,23 @@ struct root_visitor {
     }
 
     bool visit_null() {
-        // Empty table
         auto start = fbb.StartTable();
         root_off = table_offset_t(fbb.EndTable(start));
         return true;
     }
 
-    // Struct root — use two_pass directly
     template <typename T, typename Body>
     inline bool visit_struct(const T&, Body&& body);
 
-    // Seq root — box in single-field table
     template <typename Container, typename Body>
     inline bool visit_seq(const Container& c, Body&& body);
 
-    // Tuple root — use two_pass directly
     template <typename T, typename Body>
     inline bool visit_tuple(const T&, Body&& body);
 
-    // Map root — box
     template <typename Container, typename Body>
     inline bool visit_map(const Container& m, Body&& body);
 
-    // Variant root — create variant table directly
     template <typename Body>
     inline bool visit_variant(std::size_t index, Body&& body);
 
@@ -707,19 +681,16 @@ private:
 
 template <typename Body>
 auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
-    // Pass 1: allocate children
     alloc_table_visitor av{fbb, {}, 0};
     if(!body(av))
         return table_offset_t{0};
 
-    // Pass 2: write scalars + offsets
     auto start = fbb.StartTable();
     write_table_visitor wv{fbb, av.offsets, 0};
     body(wv);
     return table_offset_t(fbb.EndTable(start));
 }
 
-// Determine the clean element type of a range for collector selection.
 template <typename Seq>
 using element_clean_t = std::remove_cvref_t<std::ranges::range_value_t<Seq>>;
 
@@ -728,7 +699,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
     using element_t = element_clean_t<Container>;
 
     if constexpr(std::same_as<element_t, std::byte>) {
-        // Byte specialization — fast path for contiguous byte ranges
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container>) {
             auto data = reinterpret_cast<const std::uint8_t*>(std::ranges::data(c));
@@ -744,7 +714,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             return true;
         }
     } else if constexpr(meta::bool_like<element_t>) {
-        // Bool is encoded as uint8_t in FlatBuffers
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container> &&
                      sizeof(element_t) == sizeof(std::uint8_t)) {
@@ -762,7 +731,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         }
     } else if constexpr(meta::int_like<element_t> || meta::uint_like<element_t> ||
                         meta::floating_like<element_t> || meta::char_like<element_t>) {
-        // Scalar fast path for contiguous ranges
         using wire_t = std::conditional_t<meta::char_like<element_t>, std::int8_t, element_t>;
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container> && std::same_as<element_t, wire_t>) {
@@ -846,7 +814,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         out_offset = coll.result_offset;
         return true;
     } else {
-        // Tables: structs, tuples, variants, nested containers
         table_collector coll{fbb, {}, 0};
         KOTA_CODEC_TRY(body(coll));
         KOTA_CODEC_TRY(coll.finish());
@@ -885,12 +852,10 @@ bool alloc_field_visitor::visit_map(const Container&, Body&& body) {
     map_entry_collector coll{fbb, {}};
     KOTA_CODEC_TRY(body(coll));
 
-    // Sort entries by key string
     std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
         return a.first < b.first;
     });
 
-    // Extract sorted table offsets and create vector
     std::vector<table_offset_t> sorted_offsets;
     sorted_offsets.reserve(coll.entries.size());
     for(auto& entry: coll.entries) {
@@ -903,15 +868,12 @@ bool alloc_field_visitor::visit_map(const Container&, Body&& body) {
 
 template <typename Body>
 bool alloc_field_visitor::visit_variant(std::size_t index, Body&& body) {
-    // Step 1: allocate payload children
     alloc_field_visitor payload_alloc{fbb, 0};
     KOTA_CODEC_TRY(body(payload_alloc));
 
-    // Step 2: compute payload slot from variant index
     const slot_id_t payload_slot =
         detail::first_field + detail::field_step * static_cast<slot_id_t>(index + 1);
 
-    // Step 3: build the variant table (tag + payload)
     auto start = fbb.StartTable();
     fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
     write_field_visitor payload_write{fbb, payload_slot, payload_alloc.stored_offset};
@@ -936,7 +898,6 @@ bool table_elem_visitor::visit_tuple(const T&, Body&& body) {
 
 template <typename Body>
 bool table_elem_visitor::visit_variant(std::size_t index, Body&& body) {
-    // Same pattern as alloc_field_visitor::visit_variant, but push to table_offsets
     alloc_field_visitor payload_alloc{fbb, 0};
     KOTA_CODEC_TRY(body(payload_alloc));
 
@@ -953,8 +914,6 @@ bool table_elem_visitor::visit_variant(std::size_t index, Body&& body) {
 
 template <typename Container, typename Body>
 bool table_elem_visitor::visit_seq(const Container& c, Body&& body) {
-    // Nested sequence — box the inner sequence in a single-field table.
-    // Allocate the inner vector first, then wrap in a table.
     uoffset_t inner_offset = 0;
     KOTA_CODEC_TRY(seq_encode_impl(fbb, c, std::forward<Body>(body), inner_offset));
 
@@ -966,7 +925,6 @@ bool table_elem_visitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename Container, typename Body>
 bool table_elem_visitor::visit_map(const Container&, Body&& body) {
-    // Box map entries in a single-field table.
     map_entry_collector coll{fbb, {}};
     KOTA_CODEC_TRY(body(coll));
 
@@ -989,11 +947,9 @@ bool table_elem_visitor::visit_map(const Container&, Body&& body) {
 
 template <typename KF, typename VF>
 bool map_entry_collector::visit_entry(KF&& key_fn, VF&& value_fn) {
-    // Capture key as string for sorting
     key_capture_visitor capture;
     KOTA_CODEC_TRY(key_fn(capture));
 
-    // Create 2-field table: key at slot 0, value at slot 1
     auto table_off = two_pass(fbb, [&](auto& sv) -> bool {
         KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 0>{},
                                       std::string_view{"key"},
@@ -1055,7 +1011,6 @@ bool root_visitor::visit_map(const Container&, Body&& body) {
 
 template <typename Body>
 bool root_visitor::visit_variant(std::size_t index, Body&& body) {
-    // Same pattern as alloc_field_visitor::visit_variant
     alloc_field_visitor payload_alloc{fbb, 0};
     KOTA_CODEC_TRY(body(payload_alloc));
 

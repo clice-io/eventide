@@ -15,14 +15,11 @@
 
 namespace kota::codec::json {
 
-// DOM type aliases (shared with content backend)
 using ValueKind = dyn::ValueKind;
 using Cursor = dyn::Cursor;
 using Value = dyn::Value;
 using Array = dyn::Array;
 using Object = dyn::Object;
-
-// Top-level convenience API (uses streaming simdjson backend by default)
 
 template <typename Config = void, typename T>
 auto parse(std::string_view json, T& value) -> std::expected<void, rich_error> {

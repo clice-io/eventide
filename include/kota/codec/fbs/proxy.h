@@ -41,12 +41,8 @@ class map_view;
 
 namespace proxy_detail {
 
-// Slot-id type — mirrors the voffset_t used by the FlatBuffers layout.
 using slot_id = voffset_t;
 
-// Lightweight TableView — wraps a raw fb_table pointer with helpers for
-// reading scalar fields and checking field presence. Equivalent to the
-// old Deserializer<>::TableView but standalone.
 class table_view_type {
 public:
     table_view_type() = default;
@@ -96,8 +92,6 @@ constexpr bool is_string_like_v = codec::str_like<T>;
 template <typename T>
 constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
 
-// Matches all tuple-like types (std::pair, std::tuple, std::array, etc.)
-// This mirrors meta::tuple_like and must agree with kind_of() dispatch priority.
 template <typename T>
 constexpr bool is_tuple_like_v = codec::tuple_like<T>;
 
@@ -106,7 +100,6 @@ constexpr bool is_scalar_v =
     codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T> ||
     codec::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
 
-// Smart pointer stripping: remove unique_ptr / shared_ptr wrappers (applied after clean_t)
 template <typename T>
 struct remove_smart_ptr {
     using type = T;
@@ -125,13 +118,7 @@ struct remove_smart_ptr<std::shared_ptr<T>> {
 template <typename T>
 using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
 
-// Wire-type substitution: if the user's serialize_visit declares a `wire_type`,
-// the proxy sees that instead of T itself. This ensures that
-// `root[&Struct::field]` and `map_view<K, V>` return views shaped by the
-// wire representation, keeping the lazy read path consistent with encode/decode.
-//
-// We use a tag type for the Vis parameter to avoid instantiation issues
-// (void would cause "forming reference to void" errors in the specialization body).
+// Tag type for Vis parameter avoids "forming reference to void" errors in specialization body.
 struct wire_type_probe {};
 
 template <typename T, typename = void>
@@ -149,7 +136,6 @@ struct apply_wire_type<
 template <typename T>
 using apply_wire_type_t = typename apply_wire_type<T>::type;
 
-// Full cleaning: annotation -> optional -> smart_ptr -> wire_type
 template <typename T>
 using deep_clean_t = apply_wire_type_t<remove_smart_ptr_t<clean_t<T>>>;
 
@@ -192,12 +178,7 @@ consteval std::size_t field_slot_count() {
     return meta::virtual_schema<Object>::fields.size();
 }
 
-// Map a pointer-to-member to its slot loop-index in virtual_schema::slots —
-// which is the same index the codec uses to derive voffsets. Skipped fields
-// are absent from the slot list, so accessing a skipped member returns the
-// slot count (a "not-found" sentinel).
-//
-// Computes offsets via a union-wrapped storage rather than a live Object,
+// Computes field slot index via union-wrapped storage rather than a live Object,
 // so it works for aggregates whose members have explicit default constructors.
 template <typename Object, typename Member>
 auto field_index(Member Object::* member) -> std::size_t {
@@ -215,11 +196,7 @@ auto field_index(Member Object::* member) -> std::size_t {
     return fields.size();
 }
 
-// Slot-id helpers — delegate to the Deserializer's static helpers so the
-// proxy and arena decode layer stay in sync. Errors are ignored here (the
-// proxy uses unchecked reads and returns empty values on miss).
-// Sentinel slot that FlatBuffers' GetOptionalFieldOffset treats as "absent"
-// (any voffset >= vtable_size → returns 0).
+// Any voffset >= vtable_size makes GetOptionalFieldOffset return 0 (absent).
 constexpr inline slot_id invalid_slot = std::numeric_limits<slot_id>::max();
 
 inline auto field_slot(std::size_t index) -> slot_id {
@@ -270,7 +247,6 @@ struct array_vector_ptr : array_vector_ptr_impl<Element> {};
 template <typename Element>
 using array_vector_ptr_t = typename array_vector_ptr<Element>::type;
 
-// Helper to detect map-like ranges (has key_type + mapped_type)
 template <typename T>
 constexpr bool is_map_range_v = [] {
     if constexpr(is_range_like_v<T>) {
@@ -280,15 +256,12 @@ constexpr bool is_map_range_v = [] {
     }
 }();
 
-// Forward declaration of the return type resolver for a given type T read from a flatbuffer field.
-// Used by variant_view, tuple_view, and table_view to avoid duplicating dispatch logic.
 template <typename T, typename = void>
 struct field_return_type;
 
 template <typename T>
 using field_return_type_t = typename field_return_type<T>::type;
 
-// Extract variant alternatives as a variant_view
 template <typename T>
 struct variant_view_for;
 
@@ -300,7 +273,6 @@ struct variant_view_for<std::variant<Ts...>> {
 template <typename T>
 using variant_view_for_t = typename variant_view_for<T>::type;
 
-// Extract tuple elements as a tuple_view
 template <typename T>
 struct tuple_view_for;
 
@@ -328,7 +300,6 @@ public:
 template <typename T>
 using tuple_view_for_t = typename tuple_view_for<T>::type;
 
-// Extract map key/value for map_view
 template <typename T>
 struct map_view_for;
 
@@ -344,12 +315,10 @@ struct map_view_for<T> {
 template <typename T>
 using map_view_for_t = typename map_view_for<T>::type;
 
-// field_return_type: determines the proxy return type for a given clean type T.
 // Uses partial specialization to avoid eagerly instantiating type aliases for non-matching
 // branches.
 template <typename T, typename>
 struct field_return_type {
-    // Default: reflectable struct -> table_view
     using type = table_view<T>;
 };
 
@@ -396,14 +365,12 @@ template <typename Member,
           bool IsRange = is_range_like_v<CleanMember> && !is_tuple_like_v<CleanMember>>
 struct member_return_impl;
 
-// Map-like ranges get map_view
 template <typename Member, typename CleanMember>
     requires is_map_range_v<CleanMember>
 struct member_return_impl<Member, CleanMember, true> {
     using type = map_view_for_t<CleanMember>;
 };
 
-// Non-map ranges get array_view
 template <typename Member, typename CleanMember>
     requires (!is_map_range_v<CleanMember>)
 struct member_return_impl<Member, CleanMember, true> {
@@ -433,11 +400,7 @@ public:
 template <typename Element>
 using array_element_return_t = typename array_element_return<Element>::type;
 
-// Shared helper: read a typed value from a TableView at a given slot id.
-// Returns the appropriate proxy type (scalar by value, string_view, table_view, etc.).
-// Uses the underlying flatbuffers pointer (via view.raw()) for the actual read —
-// the proxy deliberately uses unchecked semantics (returns {} on miss) rather than
-// the Deserializer's expected-returning accessors.
+// Unchecked read: returns {} on miss rather than reporting errors.
 template <typename T>
 auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
     using return_t = field_return_type_t<T>;
@@ -486,7 +449,6 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         const auto* value = table->template GetPointer<vector_ptr_t>(field);
         return return_t(value);
     } else {
-        // reflectable struct -> table_view
         const auto* nested = table->template GetPointer<const fb_table*>(field);
         return return_t(table_view_type(nested));
     }

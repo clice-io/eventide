@@ -46,8 +46,6 @@ struct reader {
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
-    // --- low-level helpers ---------------------------------------------------
-
     bool check_remaining(std::size_t n) {
         if(n > data.size() - pos) {
             return scoped_context<rich_error>::fail(
@@ -78,8 +76,6 @@ struct reader {
             return static_cast<T>(raw);
         }
     }
-
-    // --- scalar visitors -----------------------------------------------------
 
     bool visit_bool(bool& out) {
         KOTA_CODEC_TRY(check_remaining(1));
@@ -164,8 +160,6 @@ struct reader {
         return true;
     }
 
-    // --- optional / null -----------------------------------------------------
-
     template <typename T, typename Body>
     bool visit_option(T& out, Body&& body) {
         KOTA_CODEC_TRY(check_remaining(1));
@@ -199,8 +193,6 @@ struct reader {
         return true;
     }
 
-    // --- struct --------------------------------------------------------------
-
     template <typename T, typename Body>
     bool visit_struct(T&, Body&& body) {
         return body(*this);
@@ -210,8 +202,6 @@ struct reader {
     bool visit_field(Idx, std::string_view, F&& r) {
         return r(*this);
     }
-
-    // --- sequence ------------------------------------------------------------
 
     template <typename T, typename Body>
     bool visit_seq(T&, Body&& body) {
@@ -226,14 +216,10 @@ struct reader {
         return w(*this);
     }
 
-    // --- tuple ---------------------------------------------------------------
-
     template <typename T, typename Body>
     bool visit_tuple(T&, Body&& body) {
         return body(*this);
     }
-
-    // --- map -----------------------------------------------------------------
 
     template <typename T, typename Body>
     bool visit_map(T&, Body&& body) {
@@ -249,8 +235,6 @@ struct reader {
         return value_reader(*this);
     }
 
-    // --- variant -------------------------------------------------------------
-
     template <typename Body>
     bool visit_variant(Body&& body) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint32_t)));
@@ -258,8 +242,6 @@ struct reader {
         return body(static_cast<std::size_t>(index), *this);
     }
 };
-
-// --- seq_access / map_access inline definitions ------------------------------
 
 inline bool seq_access::has_element() {
     return idx < count;
@@ -283,8 +265,6 @@ bool map_access::visit_entry(KF&& key_reader, VF&& value_reader) {
     ++idx;
     return true;
 }
-
-// --- from_bytes convenience functions ----------------------------------------
 
 template <typename Config = default_config<>, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, bincode::error> {

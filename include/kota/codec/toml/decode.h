@@ -84,7 +84,6 @@ auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
 
 }  // namespace detail
 
-// Forward declarations
 struct value_reader;
 struct toml_str_reader;
 
@@ -98,7 +97,6 @@ struct toml_str_reader {
         return true;
     }
 
-    /// Parse TOML string key as a signed integer (for maps keyed by int types).
     template <typename T>
         requires std::is_signed_v<T>
     bool visit_int(T& out) {
@@ -110,7 +108,6 @@ struct toml_str_reader {
         return true;
     }
 
-    /// Parse TOML string key as an unsigned integer (for maps keyed by unsigned int types).
     template <typename T>
         requires std::is_unsigned_v<T>
     bool visit_uint(T& out) {
@@ -123,7 +120,6 @@ struct toml_str_reader {
     }
 };
 
-/// A struct reader that provides find_field / visit_field for tagged variant support.
 struct table_struct_reader {
     const ::toml::table* tbl;
     using error_type = rich_error;
@@ -282,8 +278,6 @@ struct value_reader {
         if(!tbl) {
             return fail_type("table");
         }
-        // Detect callback arity: two-arg (key, reader) for data-driven field iteration,
-        // one-arg (struct_reader) for internal/adjacent tagged variant decoding.
         if constexpr(std::is_invocable_v<Callback, std::string_view, value_reader&>) {
             for(const auto& [k, v]: *tbl) {
                 value_reader sub{&v};
@@ -382,8 +376,6 @@ private:
     }
 };
 
-// Out-of-line definitions for table_struct_reader (value_reader must be complete)
-
 template <typename Callback>
 bool table_struct_reader::find_field(std::string_view name, Callback&& cb) {
     auto it = tbl->find(name);
@@ -451,7 +443,6 @@ auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_er
     return {};
 }
 
-/// Decode from an already-parsed TOML table into out.
 template <typename Config = default_config<>, typename T>
 auto from_toml_table(const ::toml::table& table, T& out) -> std::expected<void, rich_error> {
     using V = std::remove_const_t<T>;

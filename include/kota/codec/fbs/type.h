@@ -20,26 +20,21 @@
 
 namespace kota::codec::fbs {
 
-// Builder
 using builder_t = ::flatbuffers::FlatBufferBuilder;
 
-// Slot/offset primitives
 using voffset_t = ::flatbuffers::voffset_t;
 using uoffset_t = ::flatbuffers::uoffset_t;
 
-// Typed offsets
 template <typename T>
 using offset_t = ::flatbuffers::Offset<T>;
 using table_offset_t = offset_t<::flatbuffers::Table>;
 using string_offset_t = offset_t<::flatbuffers::String>;
 
-// FlatBuffer wire types
 using fb_table = ::flatbuffers::Table;
 using fb_string = ::flatbuffers::String;
 template <typename T>
 using fb_vector = ::flatbuffers::Vector<T>;
 
-// Verification
 using verifier_t = ::flatbuffers::Verifier;
 
 enum class object_error_code : std::uint8_t {

@@ -24,7 +24,6 @@ namespace kota::codec::fbs {
 
 namespace decode_detail {
 
-// Wire type probe for custom serialize_visit::wire_type detection.
 struct decode_wire_probe {};
 
 template <typename T, typename = void>
@@ -68,10 +67,7 @@ using fbs::voffset_t;
 using fbs::uoffset_t;
 using fbs::verifier_t;
 
-// Forward declarations.
 struct field_reader;
-
-// scalar_reader — holds a scalar (or inline struct) value from a vector.
 
 template <typename T>
 struct scalar_reader {
@@ -126,8 +122,6 @@ struct scalar_reader {
     }
 };
 
-// string_reader — holds a string_view from a vector string element.
-
 struct string_reader {
     std::string_view value;
 
@@ -157,9 +151,6 @@ struct string_reader {
     }
 };
 
-// table_field_reader — iterates fields of a table.
-// Used for both struct decode (visit_field) and tuple decode (visit_element).
-
 struct table_field_reader {
     const fb_table* table;
     std::size_t idx = 0;
@@ -177,9 +168,6 @@ struct table_field_reader {
         return true;
     }
 };
-
-// vec_reader — iterates elements of a FlatBuffers vector.
-// Handles scalar, string, inline struct, table, and wrapped element types.
 
 template <typename E>
 struct vec_reader {
@@ -206,8 +194,6 @@ struct vec_reader {
     bool visit_element(F&& reader);
 };
 
-// map_reader — iterates key-value entry tables from a vector.
-
 struct map_reader {
     const fb_vector<flatbuffers::Offset<fb_table>>* vec;
     uoffset_t idx = 0;
@@ -220,11 +206,8 @@ struct map_reader {
     bool visit_entry(KF&& key_fn, VF&& val_fn);
 };
 
-// field_reader — reads a single value from a FlatBuffers table at a slot.
-// This is the core reader: (table*, slot) covers all decode contexts.
-// slot > 0: read from this field slot.
-// slot == 0: the table itself IS the value (e.g., table element from vector).
-
+// (table*, slot) reader: slot > 0 reads from that field slot,
+// slot == 0 means the table itself IS the value (e.g. vector element).
 struct field_reader {
     const fb_table* table;
     voffset_t slot;
@@ -356,31 +339,20 @@ private:
     }
 };
 
-// ---------------------------------------------------------------------------
-// table_field_reader deferred method definitions (need complete field_reader)
-// ---------------------------------------------------------------------------
-
 template <typename Idx, typename F>
 bool table_field_reader::visit_field(Idx, std::string_view, F&& reader) {
-    const voffset_t vid =
-        detail::first_field + detail::field_step * static_cast<voffset_t>(Idx{});
+    const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(Idx{});
     field_reader fr{table, vid};
     return reader(fr);
 }
 
 template <typename F>
 bool table_field_reader::visit_element(F&& reader) {
-    const voffset_t vid =
-        detail::first_field + detail::field_step * static_cast<voffset_t>(idx);
+    const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(idx);
     field_reader fr{table, vid};
     ++idx;
     return reader(fr);
 }
-
-// root_reader — entry point for decoding from a FlatBuffer root table.
-// For table-like types (struct/tuple), root IS the table.
-// For other types (scalar/string/seq/map), root is a wrapper table
-// with the value at first_field.
 
 template <typename T, typename Config>
 struct root_reader {
@@ -482,8 +454,6 @@ struct root_reader {
         return body(index, pv);
     }
 };
-
-// Deferred method definitions
 
 template <typename T, typename Body>
 bool field_reader::visit_struct(T& out, Body&& body) {
@@ -607,8 +577,6 @@ bool map_reader::visit_entry(KF&& key_fn, VF&& val_fn) {
 }
 
 }  // namespace decode_detail
-
-// from_flatbuffer — public API
 
 template <typename Config = default_config<>, typename T>
 auto from_flatbuffer(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {

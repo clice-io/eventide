@@ -97,9 +97,7 @@ struct writer {
     }
 
     template <typename F>
-    bool visit_field(std::size_t /*index*/,
-                                            std::string_view /*name*/,
-                                            F&& field_writer) {
+    bool visit_field(std::size_t /*index*/, std::string_view /*name*/, F&& field_writer) {
         return field_writer(*this);
     }
 

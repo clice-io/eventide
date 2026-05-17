@@ -267,7 +267,6 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
                 return scoped_context<typename Vis::error_type>::fail(
                     rich_error::unknown_field(key));
             }
-            // Skip the unknown field
             return reader.visit_skip();
         }
         return result;
@@ -400,14 +399,14 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             }
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 bool r = true;
-                ((Is == idx ? void(r = match_field<
-                                           Config,
-                                           std::variant_alternative_t<Is, std::variant<Ts...>>>(
-                                           key,
-                                           fv,
-                                           std::get<Is>(var),
-                                           &field_mask))
-                            : void()),
+                ((Is == idx
+                      ? void(r = match_field<Config,
+                                             std::variant_alternative_t<Is, std::variant<Ts...>>>(
+                                 key,
+                                 fv,
+                                 std::get<Is>(var),
+                                 &field_mask))
+                      : void()),
                  ...);
                 return r;
             }(std::index_sequence_for<Ts...>{});
@@ -417,9 +416,9 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             result = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 bool ok = true;
                 ((Is == idx ? void(ok = check_required_fields<
-                                            Config,
-                                            std::variant_alternative_t<Is, std::variant<Ts...>>,
-                                            Vis>(field_mask))
+                                       Config,
+                                       std::variant_alternative_t<Is, std::variant<Ts...>>,
+                                       Vis>(field_mask))
                             : void()),
                  ...);
                 return ok;
