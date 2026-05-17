@@ -16,11 +16,7 @@
 
 namespace kota::codec::toml {
 
-namespace detail {
-
-constexpr inline std::string_view boxed_root_key = "__value";
-
-}  // namespace detail
+// boxed_root_key is defined in type.h (detail namespace)
 
 // Forward declarations
 struct table_value_writer;
@@ -355,7 +351,7 @@ auto to_toml(const T& value) -> std::expected<::toml::table, toml::error> {
         }
 
         if(!ok) {
-            return std::unexpected(toml::error(toml::error_kind::unsupported_type, err.message));
+            return std::unexpected(rich_error(err.message));
         }
         return root;
     }

@@ -10,7 +10,7 @@
 #include "kota/ipc/codec/json.h"
 #include "kota/support/config.h"
 #include "kota/async/async.h"
-#include "kota/codec/json/deserializer.h"
+#include "kota/codec/json/json.h"
 
 namespace kota::ipc {
 

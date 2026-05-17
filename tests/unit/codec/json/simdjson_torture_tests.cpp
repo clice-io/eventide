@@ -6,15 +6,15 @@ namespace kota::codec {
 
 namespace {
 
-using json::from_json;
+using json::parse;
 using json::to_json;
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, json::error> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     auto encoded = to_json(input);
     if(!encoded) {
-        return std::unexpected(encoded.error());
+        return std::unexpected(rich_error(encoded.error().to_string()));
     }
-    return from_json<T>(*encoded);
+    return parse<T>(*encoded);
 };
 
 TEST_SUITE(serde_simdjson_standard) {

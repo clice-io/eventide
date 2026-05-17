@@ -17,9 +17,10 @@
 #include <vector>
 
 #include "kota/meta/schema.h"
-#include "kota/codec/detail/codec.h"
-#include "kota/codec/fbs/deserializer.h"
 #include "kota/codec/fbs/type.h"
+#include "kota/codec/visit/backend.h"
+#include "kota/codec/visit/common.h"
+#include "kota/codec/visit/encode.h"
 
 namespace kota::codec::fbs {
 
@@ -40,11 +41,50 @@ class map_view;
 
 namespace proxy_detail {
 
-// Backend alias — the proxy layer operates through the Deserializer's
-// TableView / slot-id abstraction rather than raw flatbuffers pointers.
-using backend = Deserializer<>;
-using table_view_type = backend::TableView;
-using slot_id = backend::slot_id;
+// Slot-id type — mirrors the voffset_t used by the FlatBuffers layout.
+using slot_id = voffset_t;
+
+// Lightweight TableView — wraps a raw fb_table pointer with helpers for
+// reading scalar fields and checking field presence. Equivalent to the
+// old Deserializer<>::TableView but standalone.
+class table_view_type {
+public:
+    table_view_type() = default;
+
+    explicit table_view_type(const fb_table* t) : table(t) {}
+
+    auto valid() const -> bool {
+        return table != nullptr;
+    }
+
+    auto has(slot_id sid) const -> bool {
+        return table != nullptr && table->GetOptionalFieldOffset(sid) != 0;
+    }
+
+    auto any_field_present() const -> bool {
+        if(table == nullptr) {
+            return false;
+        }
+        const auto* vtable = table->GetVTable();
+        if(vtable == nullptr) {
+            return false;
+        }
+        const auto vtable_size = ::flatbuffers::ReadScalar<voffset_t>(vtable);
+        return vtable_size > static_cast<voffset_t>(4);
+    }
+
+    template <typename T>
+    auto get_scalar(slot_id sid) const -> T {
+        return table->GetField<T>(sid, T{});
+    }
+
+    auto raw() const -> const fb_table* {
+        return table;
+    }
+
+private:
+    const fb_table* table = nullptr;
+};
 
 using codec::detail::remove_annotation_t;
 using codec::detail::remove_optional_t;
@@ -55,6 +95,11 @@ constexpr bool is_string_like_v = codec::str_like<T>;
 
 template <typename T>
 constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
+
+// Matches all tuple-like types (std::pair, std::tuple, std::array, etc.)
+// This mirrors meta::tuple_like and must agree with kind_of() dispatch priority.
+template <typename T>
+constexpr bool is_tuple_like_v = codec::tuple_like<T>;
 
 template <typename T>
 constexpr bool is_scalar_v =
@@ -80,32 +125,42 @@ struct remove_smart_ptr<std::shared_ptr<T>> {
 template <typename T>
 using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
 
-// deserialize_traits substitution: if the user specialized
-// `codec::deserialize_traits<T>`, the proxy sees the declared `wire_type`
-// rather than T itself. Ensures `root[&Struct::field]` and
-// `map_view<K, V>` return views shaped by the wire type, keeping the lazy
-// read path consistent with the arena decode path.
-template <typename T>
-struct apply_deserialize_traits {
+// Wire-type substitution: if the user's serialize_visit declares a `wire_type`,
+// the proxy sees that instead of T itself. This ensures that
+// `root[&Struct::field]` and `map_view<K, V>` return views shaped by the
+// wire representation, keeping the lazy read path consistent with encode/decode.
+//
+// We use a tag type for the Vis parameter to avoid instantiation issues
+// (void would cause "forming reference to void" errors in the specialization body).
+struct wire_type_probe {};
+
+template <typename T, typename = void>
+struct apply_wire_type {
     using type = T;
 };
 
 template <typename T>
-    requires arena::has_deserialize_traits<backend, T>
-struct apply_deserialize_traits<T> {
-    using type = typename kota::codec::deserialize_traits<backend, T>::wire_type;
+struct apply_wire_type<
+    T,
+    std::void_t<typename serialize_visit<wire_type_probe, T, default_config<>>::wire_type>> {
+    using type = typename serialize_visit<wire_type_probe, T, default_config<>>::wire_type;
 };
 
 template <typename T>
-using apply_deserialize_traits_t = typename apply_deserialize_traits<T>::type;
+using apply_wire_type_t = typename apply_wire_type<T>::type;
 
-// Full cleaning: annotation -> optional -> smart_ptr -> deserialize_traits
+// Full cleaning: annotation -> optional -> smart_ptr -> wire_type
 template <typename T>
-using deep_clean_t = apply_deserialize_traits_t<remove_smart_ptr_t<clean_t<T>>>;
+using deep_clean_t = apply_wire_type_t<remove_smart_ptr_t<clean_t<T>>>;
 
 template <typename T>
 struct scalar_storage {
     using type = std::remove_cvref_t<T>;
+};
+
+template <>
+struct scalar_storage<bool> {
+    using type = std::uint8_t;
 };
 
 template <>
@@ -168,16 +223,16 @@ auto field_index(Member Object::* member) -> std::size_t {
 constexpr inline slot_id invalid_slot = std::numeric_limits<slot_id>::max();
 
 inline auto field_slot(std::size_t index) -> slot_id {
-    auto r = backend::field_slot_id(index);
+    auto r = detail::field_voffset(index);
     return r.has_value() ? *r : invalid_slot;
 }
 
 inline auto variant_tag_slot() -> slot_id {
-    return backend::variant_tag_slot_id();
+    return detail::first_field;
 }
 
 inline auto variant_payload_slot(std::size_t index) -> slot_id {
-    auto r = backend::variant_payload_slot_id(index);
+    auto r = detail::variant_payload_voffset(index);
     return r.has_value() ? *r : invalid_slot;
 }
 
@@ -189,7 +244,7 @@ template <typename Element,
                               codec::floating_like<CleanElement> ||
                               codec::char_like<CleanElement> || std::is_enum_v<CleanElement>,
           bool IsString = is_string_like_v<CleanElement>,
-          bool IsInlineStruct = can_inline_struct_v<CleanElement>>
+          bool IsInlineStruct = can_inline_struct_v<CleanElement> && !is_tuple_like_v<CleanElement>>
 struct array_vector_ptr_impl {
     using type = const fb_vector<table_offset_t>*;
 };
@@ -259,6 +314,17 @@ struct tuple_view_for<std::pair<K, V>> {
     using type = tuple_view<K, V>;
 };
 
+template <typename T, std::size_t N>
+struct tuple_view_for<std::array<T, N>> {
+private:
+    template <std::size_t... Is>
+    static auto helper(std::index_sequence<Is...>)
+        -> tuple_view<std::enable_if_t<(Is, true), T>...>;
+
+public:
+    using type = decltype(helper(std::make_index_sequence<N>{}));
+};
+
 template <typename T>
 using tuple_view_for_t = typename tuple_view_for<T>::type;
 
@@ -293,9 +359,9 @@ struct field_return_type<T, std::enable_if_t<is_string_like_v<T>>> {
 };
 
 template <typename T>
-struct field_return_type<
-    T,
-    std::enable_if_t<!is_string_like_v<T> && (is_scalar_v<T> || can_inline_struct_v<T>)>> {
+struct field_return_type<T,
+                         std::enable_if_t<!is_string_like_v<T> && !is_tuple_like_v<T> &&
+                                          (is_scalar_v<T> || can_inline_struct_v<T>)>> {
     using type = T;
 };
 
@@ -307,7 +373,7 @@ struct field_return_type<T, std::enable_if_t<is_specialization_of<std::variant, 
 template <typename T>
 struct field_return_type<
     T,
-    std::enable_if_t<!is_specialization_of<std::variant, T> && (is_pair_v<T> || is_tuple_v<T>)>> {
+    std::enable_if_t<!is_specialization_of<std::variant, T> && is_tuple_like_v<T>>> {
     using type = tuple_view_for_t<T>;
 };
 
@@ -320,14 +386,14 @@ template <typename T>
 struct field_return_type<
     T,
     std::enable_if_t<!is_string_like_v<T> && !is_scalar_v<T> && !can_inline_struct_v<T> &&
-                     !is_specialization_of<std::variant, T> && !is_pair_v<T> && !is_tuple_v<T> &&
+                     !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
                      !is_map_range_v<T> && is_range_like_v<T>>> {
     using type = array_view<clean_t<std::ranges::range_value_t<T>>>;
 };
 
 template <typename Member,
           typename CleanMember = deep_clean_t<Member>,
-          bool IsRange = is_range_like_v<CleanMember>>
+          bool IsRange = is_range_like_v<CleanMember> && !is_tuple_like_v<CleanMember>>
 struct member_return_impl;
 
 // Map-like ranges get map_view
@@ -399,18 +465,18 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
             return {};
         }
         return std::string_view(text->data(), text->size());
+    } else if constexpr(is_specialization_of<std::variant, T>) {
+        const auto* nested = table->template GetPointer<const fb_table*>(field);
+        return return_t(table_view_type(nested));
+    } else if constexpr(is_tuple_like_v<T>) {
+        const auto* nested = table->template GetPointer<const fb_table*>(field);
+        return return_t(table_view_type(nested));
     } else if constexpr(can_inline_struct_v<T>) {
         const auto* value = table->template GetStruct<const T*>(field);
         if(value == nullptr) {
             return {};
         }
         return *value;
-    } else if constexpr(is_specialization_of<std::variant, T>) {
-        const auto* nested = table->template GetPointer<const fb_table*>(field);
-        return return_t(table_view_type(nested));
-    } else if constexpr(is_pair_v<T> || is_tuple_v<T>) {
-        const auto* nested = table->template GetPointer<const fb_table*>(field);
-        return return_t(table_view_type(nested));
     } else if constexpr(is_map_range_v<T>) {
         const auto* vec = table->template GetPointer<const fb_vector<table_offset_t>*>(field);
         return return_t(vec);
@@ -483,6 +549,10 @@ public:
                 return {};
             }
             return std::string_view(text->data(), text->size());
+        } else if constexpr(proxy_detail::is_tuple_like_v<element_type>) {
+            // tuple-like types (std::array, etc.) are encoded as tables, not inline structs.
+            const auto* nested = vector->template GetAs<fb_table>(static_cast<uoffset_t>(index));
+            return value_type(proxy_detail::table_view_type(nested));
         } else if constexpr(can_inline_struct_v<element_type>) {
             const auto* value = vector->Get(static_cast<uoffset_t>(index));
             if(value == nullptr) {

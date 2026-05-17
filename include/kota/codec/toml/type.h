@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "kota/codec/detail/error.h"
+#include "kota/codec/visit/context.h"
 
 #if __has_include(<toml++/toml.hpp>)
 #include "toml++/toml.hpp"
@@ -42,6 +42,12 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
     }
 }
 
-using error = kota::codec::serde_error<error_kind>;
+using error = rich_error;
+
+namespace detail {
+
+constexpr inline std::string_view boxed_root_key = "__value";
+
+}  // namespace detail
 
 }  // namespace kota::codec::toml

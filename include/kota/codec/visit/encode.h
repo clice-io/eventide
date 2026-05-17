@@ -20,43 +20,6 @@
 
 namespace kota::codec {
 
-namespace detail {
-
-template <typename BaseConfig,
-          typename Attrs,
-          bool HasRenameAll = tuple_has_spec_v<Attrs, meta::attrs::rename_all>,
-          bool HasDenyUnknown = tuple_has_v<Attrs, meta::attrs::deny_unknown_fields>>
-struct annotated_config_impl {
-    using type = BaseConfig;
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_config_impl<BaseConfig, Attrs, true, false> {
-    struct type : BaseConfig {
-        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_config_impl<BaseConfig, Attrs, false, true> {
-    struct type : BaseConfig {
-        constexpr static bool deny_unknown_fields = true;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_config_impl<BaseConfig, Attrs, true, true> {
-    struct type : BaseConfig {
-        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
-        constexpr static bool deny_unknown_fields = true;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-using annotated_config = typename annotated_config_impl<BaseConfig, Attrs>::type;
-
-}  // namespace detail
-
 /// User extension point for custom serialization. Specialize to override default dispatch.
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct serialize_visit {};

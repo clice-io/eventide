@@ -31,19 +31,8 @@ task<void, http::error> request_openai(event_loop& loop) {
                       .send()
                       .or_fail();
 
-    auto parsed = codec::json::Value::parse(result.text()).value();
-    auto reply = parsed.as_ref()
-                     .get_object()
-                     .value()["output"]
-                     .get_array()
-                     .value()[0]
-                     .get_object()
-                     .value()["content"]
-                     .get_array()
-                     .value()[0]
-                     .get_object()
-                     .value()["text"]
-                     .as_string();
+    auto parsed = codec::json::parse<codec::json::Value>(result.text()).value();
+    auto reply = parsed["output"][0]["content"][0]["text"].as_string();
 
     std::println("status: {}", result.status);
     std::println("{}", reply);

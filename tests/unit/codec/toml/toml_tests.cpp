@@ -16,6 +16,7 @@ namespace kota::codec {
 namespace {
 
 using toml::from_toml;
+using toml::from_toml_table;
 using toml::parse;
 using toml::to_string;
 using toml::to_toml;
@@ -45,7 +46,7 @@ TEST_CASE(struct_roundtrip_with_dom) {
     ASSERT_TRUE(dom->contains("active"));
 
     person output{};
-    auto status = from_toml(*dom, output);
+    auto status = from_toml_table(*dom, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -88,7 +89,7 @@ TEST_CASE(dynamic_dom_field_roundtrip) {
     ASSERT_TRUE(dom.has_value());
 
     payload_with_extra output{};
-    auto status = from_toml(*dom, output);
+    auto status = from_toml_table(*dom, output);
     ASSERT_TRUE(status.has_value());
 
     EXPECT_EQ(output.id, 1);
@@ -114,7 +115,7 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     ASSERT_TRUE(encoded_values->contains("__value"));
 
     std::vector<int> decoded_values{};
-    auto decode_values_status = from_toml(*encoded_values, decoded_values);
+    auto decode_values_status = from_toml_table(*encoded_values, decoded_values);
     ASSERT_TRUE(decode_values_status.has_value());
     EXPECT_EQ(decoded_values, values);
 
@@ -124,7 +125,7 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     EXPECT_TRUE(encoded_none->empty());
 
     std::optional<int> decoded_none = 42;
-    auto decode_none_status = from_toml(*encoded_none, decoded_none);
+    auto decode_none_status = from_toml_table(*encoded_none, decoded_none);
     ASSERT_TRUE(decode_none_status.has_value());
     EXPECT_FALSE(decoded_none.has_value());
 }
@@ -141,63 +142,63 @@ TEST_CASE(tuple_length_errors) {
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
     }
 
     // Too few elements for tuple<int,int>
     {
         auto tbl = boxed(::toml::array{1});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
     }
 
     // Too many elements for pair<int,int>
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::pair<int, int> p{};
-        EXPECT_FALSE(from_toml(tbl, p).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, p).has_value());
     }
 
     // Too few elements for pair
     {
         auto tbl = boxed(::toml::array{1});
         std::pair<int, int> p{};
-        EXPECT_FALSE(from_toml(tbl, p).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, p).has_value());
     }
 
     // Empty array into non-empty tuple
     {
         auto tbl = boxed(::toml::array{});
         std::tuple<int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
     }
 
     // Non-empty array into empty tuple
     {
         auto tbl = boxed(::toml::array{1});
         std::tuple<> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
     }
 
     // Too many elements for array<int,2>
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::array<int, 2> a{};
-        EXPECT_FALSE(from_toml(tbl, a).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, a).has_value());
     }
 
     // Too few elements for array<int,2>
     {
         auto tbl = boxed(::toml::array{1});
         std::array<int, 2> a{};
-        EXPECT_FALSE(from_toml(tbl, a).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, a).has_value());
     }
 
     // Exact match still works
     {
         auto tbl = boxed(::toml::array{1, 2});
         std::tuple<int, int> t{};
-        ASSERT_TRUE(from_toml(tbl, t).has_value());
+        ASSERT_TRUE(from_toml_table(tbl, t).has_value());
         EXPECT_EQ(std::get<0>(t), 1);
         EXPECT_EQ(std::get<1>(t), 2);
     }
@@ -206,7 +207,7 @@ TEST_CASE(tuple_length_errors) {
     {
         auto tbl = boxed(::toml::array{1, "x"});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml(tbl, t).has_value());
+        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
     }
 }
 

@@ -8,13 +8,13 @@ namespace kota::codec {
 
 namespace {
 
-auto rt = []<typename T>(const T& input) -> std::expected<T, fbs::object_error_code> {
+auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     auto encoded = fbs::to_flatbuffer(input);
     if(!encoded) {
-        return std::unexpected(encoded.error());
+        return std::unexpected(rich_error(std::string(fbs::error_message(encoded.error()))));
     }
     if(encoded->empty()) {
-        return std::unexpected(fbs::object_error_code::invalid_state);
+        return std::unexpected(rich_error("empty flatbuffer"));
     }
     return fbs::from_flatbuffer<T>(*encoded);
 };

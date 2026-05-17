@@ -146,15 +146,7 @@ TEST_CASE(with_adapter_roundtrip_empty_optional) {
 }  // namespace kota::codec
 
 // ============================================================================
-// Type-level traits tests: codec::serialize_traits<T> / deserialize_traits<T>
-// ----------------------------------------------------------------------------
-// Verifies that a type-level traits specialization propagates through the
-// arena codec dispatch AND the flatbuffers proxy layer, without requiring
-// per-field `annotation<T, with<...>>`. Covers:
-//   - direct field use
-//   - map value position
-//   - sequence element position
-//   - lazy proxy access via table_view / map_view
+// Type-level traits tests: serialize_visit / deserialize_visit
 // ============================================================================
 
 namespace kota_test_type_traits {
@@ -199,28 +191,27 @@ private:
 
 }  // namespace kota_test_type_traits
 
-// Type-level traits specializations for arena deserialization and
-// visitor-based serialization.
 namespace kota::codec {
 
-template <typename D>
-    requires arena::arena_deserializer_like<D>
-struct deserialize_traits<D, kota_test_type_traits::Tag> {
-    using wire_type = std::uint32_t;
-
-    static auto deserialize(const D&, std::uint32_t wire) -> kota_test_type_traits::Tag {
-        return kota_test_type_traits::Tag{wire};
+template <typename Vis, typename Config>
+struct deserialize_visit<Vis, kota_test_type_traits::Tag, Config> {
+    static bool visit(Vis& vis, kota_test_type_traits::Tag& tag) {
+        std::uint32_t v = 0;
+        if(!vis.visit_uint(v))
+            return false;
+        tag = kota_test_type_traits::Tag{v};
+        return true;
     }
 };
 
-template <typename D>
-    requires arena::arena_deserializer_like<D>
-struct deserialize_traits<D, kota_test_type_traits::ByteBag> {
-    using wire_type = std::vector<std::byte>;
-
-    static auto deserialize(const D&, std::vector<std::byte> wire)
-        -> kota_test_type_traits::ByteBag {
-        return kota_test_type_traits::ByteBag{std::move(wire)};
+template <typename Vis, typename Config>
+struct deserialize_visit<Vis, kota_test_type_traits::ByteBag, Config> {
+    static bool visit(Vis& vis, kota_test_type_traits::ByteBag& bag) {
+        std::vector<std::byte> bytes;
+        if(!vis.visit_bytes(bytes))
+            return false;
+        bag = kota_test_type_traits::ByteBag{std::move(bytes)};
+        return true;
     }
 };
 
@@ -333,9 +324,7 @@ TEST_CASE(type_traits_proxy_lazy_scalar_access) {
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
 
-    // Proxy sees the wire type (uint32_t) — the user calls deserialize
-    // themselves when they need the adapted type. Equivalent to:
-    //   deserialize_traits<Tag>::deserialize(root[&TypeTraitsRoot::root_tag])
+    // Proxy sees the wire type (uint32_t)
     const std::uint32_t wire_tag = root[&TypeTraitsRoot::root_tag];
     EXPECT_EQ(wire_tag, 777U);
 

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "kota/codec/detail/error.h"
+#include "kota/codec/visit/context.h"
 
 #if __has_include(<simdjson.h>)
 #include "simdjson.h"
@@ -81,6 +81,6 @@ constexpr auto make_error(simdjson::error_code error) noexcept -> error_kind {
     }
 }
 
-using error = kota::codec::serde_error<error_kind>;
+using error = rich_error;
 
 }  // namespace kota::codec::json

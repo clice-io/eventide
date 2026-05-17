@@ -8,45 +8,26 @@
 #include <type_traits>
 #include <utility>
 
-#include "kota/codec/toml/deserializer.h"
+#include "kota/codec/toml/decode.h"
 #include "kota/codec/toml/encode.h"
 #include "kota/codec/toml/type.h"
 
 namespace kota::codec::toml {
 
-inline auto parse_table(std::string_view text) -> std::expected<::toml::table, error> {
-#if TOML_EXCEPTIONS
-    try {
-        return ::toml::parse(text);
-    } catch(const ::toml::parse_error&) {
-        return std::unexpected(error_kind::parse_error);
-    }
-#else
-    auto parsed = ::toml::parse(text);
-    if(!parsed) {
-        return std::unexpected(error_kind::parse_error);
-    }
-    return std::move(parsed).table();
-#endif
-}
-
 template <typename T>
-auto parse(std::string_view text, T& value) -> std::expected<void, error> {
-    auto table = parse_table(text);
-    if(!table) {
-        return std::unexpected(table.error());
-    }
-    return from_toml(*table, value);
+auto parse(std::string_view text, T& value) -> std::expected<void, rich_error> {
+    return from_toml(text, value);
 }
 
 template <typename T>
     requires std::default_initializable<T>
-auto parse(std::string_view text) -> std::expected<T, error> {
-    auto table = parse_table(text);
-    if(!table) {
-        return std::unexpected(table.error());
+auto parse(std::string_view text) -> std::expected<T, rich_error> {
+    T value{};
+    auto result = from_toml(text, value);
+    if(!result) {
+        return std::unexpected(std::move(result).error());
     }
-    return from_toml<T>(*table);
+    return value;
 }
 
 template <typename T>
@@ -98,32 +79,34 @@ struct serialize_visit<toml::array_value_writer, ::toml::array, Config> {
 };
 
 template <typename Config>
-struct deserialize_traits<toml::Deserializer<Config>, ::toml::table> {
-    using error_type = toml::Deserializer<Config>::error_type;
-
-    static auto deserialize(toml::Deserializer<Config>& deserializer, ::toml::table& value)
-        -> std::expected<void, error_type> {
-        auto table = deserializer.capture_table();
-        if(!table) {
-            return std::unexpected(table.error());
+struct deserialize_visit<toml::value_reader, ::toml::table, Config> {
+    static bool visit(toml::value_reader& vis, ::toml::table& value) {
+        if(!vis.node) {
+            return scoped_context<rich_error>::fail(rich_error::invalid_type("table", "null"));
         }
-        value = std::move(*table);
-        return {};
+        const auto* tbl = vis.node->as_table();
+        if(!tbl) {
+            return scoped_context<rich_error>::fail(
+                rich_error::invalid_type("table", toml::detail::toml_node_type_name(vis.node)));
+        }
+        value = *tbl;
+        return true;
     }
 };
 
 template <typename Config>
-struct deserialize_traits<toml::Deserializer<Config>, ::toml::array> {
-    using error_type = toml::Deserializer<Config>::error_type;
-
-    static auto deserialize(toml::Deserializer<Config>& deserializer, ::toml::array& value)
-        -> std::expected<void, error_type> {
-        auto array = deserializer.capture_array();
-        if(!array) {
-            return std::unexpected(array.error());
+struct deserialize_visit<toml::value_reader, ::toml::array, Config> {
+    static bool visit(toml::value_reader& vis, ::toml::array& value) {
+        if(!vis.node) {
+            return scoped_context<rich_error>::fail(rich_error::invalid_type("array", "null"));
         }
-        value = std::move(*array);
-        return {};
+        const auto* arr = vis.node->as_array();
+        if(!arr) {
+            return scoped_context<rich_error>::fail(
+                rich_error::invalid_type("array", toml::detail::toml_node_type_name(vis.node)));
+        }
+        value = *arr;
+        return true;
     }
 };
 

@@ -285,12 +285,12 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
     string_builder builder(initial_capacity.value_or(string_builder::DEFAULT_INITIAL_CAPACITY));
     value_writer vis{builder};
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(json::error::custom(json::error_kind::write_failed, err.message));
+        return std::unexpected(rich_error(err.message));
     }
     std::string_view sv;
     auto ec = builder.view().get(sv);
     if(ec != success) {
-        return std::unexpected(json::error(json::error_kind::write_failed));
+        return std::unexpected(rich_error("write failed"));
     }
     return std::string(sv);
 }

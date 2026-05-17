@@ -8,7 +8,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "kota/codec/detail/error.h"
 #include "kota/codec/visit/context.h"
 
 namespace kota::codec::bincode {
@@ -39,6 +38,6 @@ constexpr std::string_view error_message(error_kind error) {
     return "invalid_state";
 }
 
-using error = kota::codec::serde_error<error_kind>;
+using error = rich_error;
 
 }  // namespace kota::codec::bincode

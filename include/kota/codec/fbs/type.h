@@ -9,8 +9,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "kota/codec/detail/codec.h"
-#include "kota/codec/detail/common.h"
+#include "kota/codec/visit/backend.h"
+#include "kota/codec/visit/common.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"

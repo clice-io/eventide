@@ -11,8 +11,8 @@
 #include <variant>
 #include <vector>
 
-#include "kota/codec/detail/codec.h"
 #include "kota/codec/visit/config.h"
+#include "kota/codec/visit/decode.h"
 #include "kota/codec/visit/encode.h"
 
 namespace kota::ipc::protocol {
@@ -123,23 +123,6 @@ struct serialize_visit<Vis, kota::ipc::protocol::Value, Config> {
     }
 };
 
-template <deserializer_like D>
-struct deserialize_traits<D, kota::ipc::protocol::Value> {
-    using error_type = typename D::error_type;
-
-    static auto deserialize(D& deserializer, kota::ipc::protocol::Value& value)
-        -> std::expected<void, error_type> {
-        kota::ipc::protocol::Variant variant{};
-        auto status = codec::deserialize(deserializer, variant);
-        if(!status) {
-            return std::unexpected(status.error());
-        }
-        std::visit([&](auto&& item) { value = std::forward<decltype(item)>(item); },
-                   std::move(variant));
-        return {};
-    }
-};
-
 template <typename Vis, typename Config>
 struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     static bool visit(Vis& vis, const kota::ipc::protocol::Error& error) {
@@ -157,28 +140,32 @@ struct serialize_visit<Vis, kota::ipc::protocol::Error, Config> {
     }
 };
 
-template <deserializer_like D>
-struct deserialize_traits<D, kota::ipc::protocol::Error> {
-    using error_type = typename D::error_type;
+template <typename Vis, typename Config>
+struct deserialize_visit<Vis, kota::ipc::protocol::Value, Config> {
+    static bool visit(Vis& vis, kota::ipc::protocol::Value& value) {
+        kota::ipc::protocol::Variant variant{};
+        if(!decode_value<Config>(vis, variant))
+            return false;
+        std::visit([&](auto&& item) { value = std::forward<decltype(item)>(item); },
+                   std::move(variant));
+        return true;
+    }
+};
 
-    static auto deserialize(D& d, kota::ipc::protocol::Error& error)
-        -> std::expected<void, error_type> {
-        KOTA_EXPECTED_TRY(d.begin_object());
-        while(true) {
-            KOTA_EXPECTED_TRY_V(auto key, d.next_field());
-            if(!key.has_value())
-                break;
-            if(*key == "code") {
-                KOTA_EXPECTED_TRY(codec::deserialize(d, error.code));
-            } else if(*key == "message") {
-                KOTA_EXPECTED_TRY(codec::deserialize(d, error.message));
-            } else if(*key == "data") {
-                KOTA_EXPECTED_TRY(codec::deserialize(d, error.data));
+template <typename Vis, typename Config>
+struct deserialize_visit<Vis, kota::ipc::protocol::Error, Config> {
+    static bool visit(Vis& vis, kota::ipc::protocol::Error& error) {
+        return vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+            if(key == "code") {
+                return decode_value<Config>(fv, error.code);
+            } else if(key == "message") {
+                return decode_value<Config>(fv, error.message);
+            } else if(key == "data") {
+                return decode_value<Config>(fv, error.data);
             } else {
-                KOTA_EXPECTED_TRY(d.skip_field_value());
+                return fv.visit_skip();
             }
-        }
-        return d.end_object();
+        });
     }
 };
 

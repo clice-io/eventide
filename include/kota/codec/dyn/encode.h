@@ -218,7 +218,7 @@ auto to_content(const T& value) -> std::expected<dyn::Value, dyn::error> {
     dyn::Value result;
     value_writer vis{result};
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(dyn::error::custom(dyn::error_kind::invalid_state, err.message));
+        return std::unexpected(rich_error(err.message));
     }
     return result;
 }

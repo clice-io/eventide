@@ -158,8 +158,7 @@ if has_config("codec") then
 		add_headerfiles(
 			"include/(kota/codec/bincode.h)",
 			"include/(kota/codec/bincode/**.h)",
-			"include/(kota/codec/*.h)",
-			"include/(kota/codec/detail/**.h)"
+			"include/(kota/codec/*.h)"
 		)
 		add_rules("cl-flags")
 		add_deps("support", "meta")

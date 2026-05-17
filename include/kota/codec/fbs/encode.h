@@ -28,9 +28,9 @@ using fbs::table_offset_t;
 using slot_id_t = voffset_t;
 
 struct alloc_field_visitor;
-struct alloc_struct_visitor;
+struct alloc_table_visitor;
 struct write_field_visitor;
-struct write_struct_visitor;
+struct write_table_visitor;
 
 template <typename T>
 struct scalar_elem_visitor;
@@ -57,7 +57,7 @@ struct key_capture_visitor;
 struct root_visitor;
 
 template <typename Body>
-inline auto two_pass_table(builder_t& fbb, Body&& body) -> table_offset_t;
+inline auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t;
 
 struct alloc_field_visitor {
     builder_t& fbb;
@@ -135,13 +135,15 @@ struct alloc_field_visitor {
     inline bool visit_variant(std::size_t index, Body&& body);
 };
 
-struct alloc_struct_visitor {
+struct alloc_table_visitor {
     builder_t& fbb;
     std::vector<uoffset_t> offsets;
+    std::size_t next_idx = 0;
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
+    // For struct fields (called by encode_struct_fields)
     template <typename F>
     [[gnu::always_inline]] bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
@@ -151,6 +153,19 @@ struct alloc_struct_visitor {
         alloc_field_visitor fv{fbb};
         KOTA_CODEC_TRY(writer(fv));
         offsets[I] = fv.stored_offset;
+        return true;
+    }
+
+    // For tuple elements (called by tuple encode)
+    template <typename F>
+    bool visit_element(F&& writer) {
+        alloc_field_visitor fv{fbb};
+        KOTA_CODEC_TRY(writer(fv));
+        if(offsets.size() <= next_idx) {
+            offsets.resize(next_idx + 1, 0);
+        }
+        offsets[next_idx] = fv.stored_offset;
+        ++next_idx;
         return true;
     }
 };
@@ -245,13 +260,15 @@ struct write_field_visitor {
     }
 };
 
-struct write_struct_visitor {
+struct write_table_visitor {
     builder_t& fbb;
     const std::vector<uoffset_t>& offsets;
+    std::size_t next_idx = 0;
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
+    // For struct fields
     template <typename F>
     [[gnu::always_inline]] bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
@@ -260,44 +277,18 @@ struct write_struct_visitor {
         write_field_visitor wv{fbb, sid, off};
         return writer(wv);
     }
-};
 
-struct alloc_tuple_visitor {
-    builder_t& fbb;
-    std::vector<uoffset_t> offsets;
-    std::size_t index = 0;
-
-    template <typename F>
-    bool visit_element(F&& writer) {
-        alloc_field_visitor fv{fbb};
-        KOTA_CODEC_TRY(writer(fv));
-        if(offsets.size() <= index) {
-            offsets.resize(index + 1, 0);
-        }
-        offsets[index] = fv.stored_offset;
-        ++index;
-        return true;
-    }
-};
-
-struct write_tuple_visitor {
-    builder_t& fbb;
-    const std::vector<uoffset_t>& offsets;
-    std::size_t index = 0;
-
+    // For tuple elements
     template <typename F>
     bool visit_element(F&& writer) {
         const slot_id_t sid =
-            detail::first_field + detail::field_step * static_cast<slot_id_t>(index);
-        const auto off = (index < offsets.size()) ? offsets[index] : uoffset_t{0};
+            detail::first_field + detail::field_step * static_cast<slot_id_t>(next_idx);
+        const auto off = (next_idx < offsets.size()) ? offsets[next_idx] : uoffset_t{0};
         write_field_visitor wv{fbb, sid, off};
-        ++index;
+        ++next_idx;
         return writer(wv);
     }
 };
-
-template <typename Body>
-inline auto two_pass_tuple(builder_t& fbb, Body&& body) -> table_offset_t;
 
 template <typename T>
 struct scalar_elem_visitor {
@@ -684,7 +675,7 @@ struct root_visitor {
         return true;
     }
 
-    // Struct root — use two_pass_table directly
+    // Struct root — use two_pass directly
     template <typename T, typename Body>
     inline bool visit_struct(const T&, Body&& body);
 
@@ -692,7 +683,7 @@ struct root_visitor {
     template <typename Container, typename Body>
     inline bool visit_seq(const Container& c, Body&& body);
 
-    // Tuple root — box
+    // Tuple root — use two_pass directly
     template <typename T, typename Body>
     inline bool visit_tuple(const T&, Body&& body);
 
@@ -715,27 +706,15 @@ private:
 };
 
 template <typename Body>
-auto two_pass_table(builder_t& fbb, Body&& body) -> table_offset_t {
+auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
     // Pass 1: allocate children
-    alloc_struct_visitor av{fbb, {}};
+    alloc_table_visitor av{fbb, {}, 0};
     if(!body(av))
         return table_offset_t{0};
 
     // Pass 2: write scalars + offsets
     auto start = fbb.StartTable();
-    write_struct_visitor wv{fbb, av.offsets};
-    body(wv);
-    return table_offset_t(fbb.EndTable(start));
-}
-
-template <typename Body>
-auto two_pass_tuple(builder_t& fbb, Body&& body) -> table_offset_t {
-    alloc_tuple_visitor av{fbb, {}, 0};
-    if(!body(av))
-        return table_offset_t{0};
-
-    auto start = fbb.StartTable();
-    write_tuple_visitor wv{fbb, av.offsets, 0};
+    write_table_visitor wv{fbb, av.offsets, 0};
     body(wv);
     return table_offset_t(fbb.EndTable(start));
 }
@@ -812,7 +791,7 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         KOTA_CODEC_TRY(coll.finish());
         out_offset = coll.result_offset;
         return true;
-    } else if constexpr(can_inline_struct_v<element_t>) {
+    } else if constexpr(can_inline_struct_v<element_t> && !codec::tuple_like<element_t>) {
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container>) {
             auto data = std::ranges::data(c);
@@ -846,7 +825,7 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
-        } else if constexpr(can_inline_struct_v<wire_t>) {
+        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
             inline_struct_collector<wire_t> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
@@ -883,7 +862,7 @@ bool alloc_field_visitor::visit_struct(const T&, Body&& body) {
         // No allocation needed.
         return true;
     } else {
-        auto off = two_pass_table(fbb, std::forward<Body>(body));
+        auto off = two_pass(fbb, std::forward<Body>(body));
         stored_offset = off.o;
         return true;
     }
@@ -895,14 +874,10 @@ bool alloc_field_visitor::visit_seq(const Container& c, Body&& body) {
 }
 
 template <typename T, typename Body>
-bool alloc_field_visitor::visit_tuple(const T& value, Body&& body) {
-    if constexpr(std::ranges::input_range<T>) {
-        return seq_encode_impl(fbb, value, std::forward<Body>(body), stored_offset);
-    } else {
-        auto off = two_pass_tuple(fbb, std::forward<Body>(body));
-        stored_offset = off.o;
-        return true;
-    }
+bool alloc_field_visitor::visit_tuple(const T&, Body&& body) {
+    auto off = two_pass(fbb, std::forward<Body>(body));
+    stored_offset = off.o;
+    return true;
 }
 
 template <typename Container, typename Body>
@@ -947,20 +922,16 @@ bool alloc_field_visitor::visit_variant(std::size_t index, Body&& body) {
 
 template <typename T, typename Body>
 bool table_elem_visitor::visit_struct(const T&, Body&& body) {
-    auto off = two_pass_table(fbb, std::forward<Body>(body));
+    auto off = two_pass(fbb, std::forward<Body>(body));
     table_offsets.push_back(off);
     return true;
 }
 
 template <typename T, typename Body>
-bool table_elem_visitor::visit_tuple(const T& value, Body&& body) {
-    if constexpr(std::ranges::input_range<T>) {
-        return visit_seq(value, std::forward<Body>(body));
-    } else {
-        auto off = two_pass_tuple(fbb, std::forward<Body>(body));
-        table_offsets.push_back(off);
-        return true;
-    }
+bool table_elem_visitor::visit_tuple(const T&, Body&& body) {
+    auto off = two_pass(fbb, std::forward<Body>(body));
+    table_offsets.push_back(off);
+    return true;
 }
 
 template <typename Body>
@@ -1023,7 +994,7 @@ bool map_entry_collector::visit_entry(KF&& key_fn, VF&& value_fn) {
     KOTA_CODEC_TRY(key_fn(capture));
 
     // Create 2-field table: key at slot 0, value at slot 1
-    auto table_off = two_pass_table(fbb, [&](auto& sv) -> bool {
+    auto table_off = two_pass(fbb, [&](auto& sv) -> bool {
         KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 0>{},
                                       std::string_view{"key"},
                                       [&](auto& kv) -> bool { return key_fn(kv); }));
@@ -1039,7 +1010,7 @@ bool map_entry_collector::visit_entry(KF&& key_fn, VF&& value_fn) {
 
 template <typename T, typename Body>
 bool root_visitor::visit_struct(const T&, Body&& body) {
-    root_off = two_pass_table(fbb, std::forward<Body>(body));
+    root_off = two_pass(fbb, std::forward<Body>(body));
     return true;
 }
 
@@ -1055,13 +1026,9 @@ bool root_visitor::visit_seq(const Container& c, Body&& body) {
 }
 
 template <typename T, typename Body>
-bool root_visitor::visit_tuple(const T& value, Body&& body) {
-    if constexpr(std::ranges::input_range<T>) {
-        return visit_seq(value, std::forward<Body>(body));
-    } else {
-        root_off = two_pass_tuple(fbb, std::forward<Body>(body));
-        return true;
-    }
+bool root_visitor::visit_tuple(const T&, Body&& body) {
+    root_off = two_pass(fbb, std::forward<Body>(body));
+    return true;
 }
 
 template <typename Container, typename Body>

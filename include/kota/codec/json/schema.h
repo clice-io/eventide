@@ -73,8 +73,7 @@ private:
         }
         auto name = kota::naming::normalize_identifier(ti->type_name);
         if(!used_names.insert(name).second) {
-            return std::unexpected(error::custom(
-                error_kind::invalid_state,
+            return std::unexpected(rich_error(
                 std::format("duplicate $defs name '{}' from type '{}'", name, ti->type_name)));
         }
         auto [pos, _] = def_names.emplace(ti, std::move(name));
@@ -139,10 +138,9 @@ private:
             case tk::variant: return make_variant(ti);
             case tk::any: return dyn::Value(dyn::Object{});
             default:
-                return std::unexpected(error::custom(
-                    error_kind::invalid_state,
-                    std::format("unsupported type kind '{}' for JSON Schema generation",
-                                ti->type_name)));
+                return std::unexpected(
+                    rich_error(std::format("unsupported type kind '{}' for JSON Schema generation",
+                                           ti->type_name)));
         }
     }
 

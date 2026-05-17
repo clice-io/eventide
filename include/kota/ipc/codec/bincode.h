@@ -7,7 +7,7 @@
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
 #include "kota/codec/bincode/bincode.h"
-#include "kota/codec/detail/raw_value.h"
+#include "kota/codec/visit/raw_value.h"
 
 namespace kota::codec {
 
@@ -24,20 +24,16 @@ struct serialize_visit<bincode::writer, kota::ipc::protocol::RequestID, Config> 
     }
 };
 
-// Bincode deserialization: read int64 directly
+// Bincode deserialization: read int64 directly (visitor-based)
 template <typename Config>
-struct deserialize_traits<bincode::Deserializer<Config>, kota::ipc::protocol::RequestID> {
-    using error_type = typename bincode::Deserializer<Config>::error_type;
-
-    static auto deserialize(bincode::Deserializer<Config>& deserializer,
-                            kota::ipc::protocol::RequestID& id) -> std::expected<void, error_type> {
+struct deserialize_visit<bincode::reader, kota::ipc::protocol::RequestID, Config> {
+    static bool visit(bincode::reader& vis, kota::ipc::protocol::RequestID& id) {
         std::int64_t v = 0;
-        auto status = codec::deserialize(deserializer, v);
-        if(!status) {
-            return std::unexpected(status.error());
+        if(!decode_value<Config>(vis, v)) {
+            return false;
         }
         id.emplace<std::int64_t>(v);
-        return {};
+        return true;
     }
 };
 

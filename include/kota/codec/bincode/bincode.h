@@ -1,9 +1,9 @@
 #pragma once
 
-#include "kota/codec/bincode/deserializer.h"
+#include "kota/codec/bincode/decode.h"
 #include "kota/codec/bincode/encode.h"
 #include "kota/codec/bincode/type.h"
-#include "kota/codec/detail/raw_value.h"
+#include "kota/codec/visit/raw_value.h"
 
 namespace kota::codec {
 
@@ -18,18 +18,14 @@ struct serialize_visit<bincode::writer, RawValue, Config> {
 };
 
 template <typename Config>
-struct deserialize_traits<bincode::Deserializer<Config>, RawValue> {
-    using error_type = typename bincode::Deserializer<Config>::error_type;
-
-    static auto deserialize(bincode::Deserializer<Config>& deserializer, RawValue& value)
-        -> std::expected<void, error_type> {
+struct deserialize_visit<bincode::reader, RawValue, Config> {
+    static bool visit(bincode::reader& vis, RawValue& value) {
         std::vector<std::byte> bytes;
-        auto status = deserializer.deserialize_bytes(bytes);
-        if(!status) {
-            return std::unexpected(status.error());
+        if(!vis.visit_bytes(bytes)) {
+            return false;
         }
         value.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        return {};
+        return true;
     }
 };
 
