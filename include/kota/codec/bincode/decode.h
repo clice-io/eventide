@@ -49,7 +49,7 @@ struct reader {
     // --- low-level helpers ---------------------------------------------------
 
     bool check_remaining(std::size_t n) {
-        if(pos + n > data.size()) {
+        if(n > data.size() - pos) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string(error_message(error_kind::unexpected_eof))));
         }
@@ -129,6 +129,10 @@ struct reader {
     bool visit_str(T& out) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto length = read_le<std::uint64_t>();
+        if(length > static_cast<std::uint64_t>(data.size())) {
+            return scoped_context<rich_error>::fail(
+                rich_error(std::string(error_message(error_kind::unexpected_eof))));
+        }
         auto len = static_cast<std::size_t>(length);
         KOTA_CODEC_TRY(check_remaining(len));
         const auto* begin = reinterpret_cast<const char*>(data.data() + pos);
@@ -148,6 +152,10 @@ struct reader {
     bool visit_bytes(T& out) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto length = read_le<std::uint64_t>();
+        if(length > static_cast<std::uint64_t>(data.size())) {
+            return scoped_context<rich_error>::fail(
+                rich_error(std::string(error_message(error_kind::unexpected_eof))));
+        }
         auto len = static_cast<std::size_t>(length);
         KOTA_CODEC_TRY(check_remaining(len));
         auto* begin = data.data() + pos;

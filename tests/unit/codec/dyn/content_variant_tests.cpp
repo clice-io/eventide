@@ -127,7 +127,7 @@ TEST_CASE(array_vs_object) {
     EXPECT_EQ(std::get<std::map<std::string, int>>(out).at("a"), 1);
 }
 
-TEST_CASE(struct_vs_map_scoring, skip = true) {
+TEST_CASE(struct_vs_map_scoring) {
     using V = std::variant<Point, std::map<std::string, double>>;
 
     dyn::Object obj_point;
@@ -147,7 +147,7 @@ TEST_CASE(struct_vs_map_scoring, skip = true) {
     EXPECT_EQ(std::get<std::map<std::string, double>>(out).at("foo"), 3.0);
 }
 
-TEST_CASE(no_match_fails, skip = true) {
+TEST_CASE(no_match_fails) {
     using V = std::variant<int, std::string>;
 
     V out{};
@@ -174,7 +174,7 @@ TEST_CASE(internally_tagged) {
     EXPECT_EQ(std::get<Circle>(out.shape).radius, 5.0);
 }
 
-TEST_CASE(empty_object_scoring, skip = true) {
+TEST_CASE(empty_object_scoring) {
     using V = std::variant<Point, std::map<std::string, int>>;
 
     dyn::Object empty;

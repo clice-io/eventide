@@ -843,8 +843,6 @@ TEST_CASE(optional_tagged_absent) {
 
 TEST_SUITE(serde_variant_deep_dispatch) {
 
-TEST_SUITE_ATTRS(skip = true);
-
 TEST_CASE(struct_with_variant_field_disambiguation) {
     // Two structs whose variant-typed fields accept different source kinds.
     // Deep scoring should recurse into the variant field's alternatives.
@@ -943,17 +941,17 @@ TEST_CASE(variant_of_containers) {
     EXPECT_EQ(std::get<std::map<std::string, int>>(out).at("a"), 1);
 }
 
-TEST_CASE(struct_vs_map_object_scoring, skip = true) {
-    // Both struct and map accept object source; deep scoring differentiates.
+TEST_CASE(struct_vs_map_object_scoring) {
+    // First-match-wins: Point is tried first; if required fields are present it wins.
     using V = std::variant<Point, std::map<std::string, double>>;
 
     V out{};
-    // Point fields "x","y" match → struct scores higher than map
+    // Point fields "x","y" present → try_read succeeds → Point selected
     ASSERT_TRUE(from_json(R"({"x":1.0,"y":2.0})", out).has_value());
     EXPECT_EQ(out.index(), 0U);
     EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
 
-    // Unknown fields → no struct field match, map still accepts
+    // Point requires x,y which are missing → try_read fails → falls through to map
     ASSERT_TRUE(from_json(R"({"foo":3.0})", out).has_value());
     EXPECT_EQ(out.index(), 1U);
     EXPECT_EQ(std::get<std::map<std::string, double>>(out).at("foo"), 3.0);
@@ -1002,25 +1000,40 @@ TEST_CASE(shared_ptr_wrapping_variant) {
 }
 
 TEST_CASE(int_width_ordering) {
-    // Wider integer wins when source is wider.
+    // First-match-wins: the narrowest type that can hold the value is selected.
     using V = std::variant<std::int8_t, std::int16_t, std::int32_t, std::int64_t>;
 
     V out{};
+    // 42 fits in int8_t → first alternative wins
     ASSERT_TRUE(from_json("42", out).has_value());
-    // simdjson reports int64 for all integers → int64_t is exact match
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(out), 42);
+
+    // 200 overflows int8_t → falls through to int16_t
+    ASSERT_TRUE(from_json("200", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int16_t>(out), 200);
+
+    // 40000 overflows int16_t → falls through to int32_t
+    ASSERT_TRUE(from_json("40000", out).has_value());
+    EXPECT_EQ(out.index(), 2U);
+    EXPECT_EQ(std::get<std::int32_t>(out), 40000);
+
+    // 3000000000 overflows int32_t → falls through to int64_t
+    ASSERT_TRUE(from_json("3000000000", out).has_value());
     EXPECT_EQ(out.index(), 3U);
-    EXPECT_EQ(std::get<std::int64_t>(out), 42);
+    EXPECT_EQ(std::get<std::int64_t>(out), 3000000000);
 }
 
 TEST_CASE(mixed_numeric_precision) {
-    // float32 vs float64 with floating source
+    // First-match-wins: float is tried before double.
     using V = std::variant<float, double>;
 
     V out{};
+    // 1.5 is representable in float → first alternative wins
     ASSERT_TRUE(from_json("1.5", out).has_value());
-    // simdjson reports float64 → double is exact match
-    EXPECT_EQ(out.index(), 1U);
-    EXPECT_EQ(std::get<double>(out), 1.5);
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<float>(out), 1.5f);
 }
 
 TEST_CASE(variant_roundtrip_complex) {
@@ -1049,16 +1062,16 @@ TEST_CASE(variant_roundtrip_complex) {
 }
 
 TEST_CASE(two_structs_different_field_count) {
-    // Struct with more matching fields scores higher.
+    // First-match-wins: Color is tried first.
     using V = std::variant<Color, Point>;
 
     V out{};
-    // {"r":1,"g":2,"b":3} — all 3 fields match Color, no fields match Point
+    // Color requires r,g,b — all present → try_read succeeds
     ASSERT_TRUE(from_json(R"({"r":1,"g":2,"b":3})", out).has_value());
     EXPECT_EQ(out.index(), 0U);
     EXPECT_EQ(std::get<Color>(out), (Color{1, 2, 3}));
 
-    // {"x":1.0,"y":2.0} — both fields match Point, no fields match Color
+    // Color requires r,g,b which are missing → try_read fails → falls through to Point
     ASSERT_TRUE(from_json(R"({"x":1.0,"y":2.0})", out).has_value());
     EXPECT_EQ(out.index(), 1U);
     EXPECT_EQ(std::get<Point>(out), (Point{1.0, 2.0}));
@@ -1119,8 +1132,7 @@ TEST_CASE(variant_wrapper_no_inflation) {
 }
 
 TEST_CASE(field_subset_superset_matching) {
-    // Struct with more matching fields should score higher.
-    // {a, b} matches StructAB (2 fields) better than StructA (1 field).
+    // First-match-wins: place more-specific struct first to prefer it.
     struct StructA {
         int a;
     };
@@ -1130,18 +1142,18 @@ TEST_CASE(field_subset_superset_matching) {
         int b;
     };
 
-    using V = std::variant<StructA, StructAB>;
+    // StructAB first: {a,b} matches StructAB (all required fields present)
+    using V = std::variant<StructAB, StructA>;
 
     V out{};
     ASSERT_TRUE(from_json(R"({"a":1,"b":2})", out).has_value());
-    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(out.index(), 0U);
     EXPECT_EQ(std::get<StructAB>(out).a, 1);
     EXPECT_EQ(std::get<StructAB>(out).b, 2);
 
-    // {a} alone — both accept, but StructA matches exactly
+    // {a} alone — StructAB requires field "b" → try_read fails → falls through to StructA
     ASSERT_TRUE(from_json(R"({"a":1})", out).has_value());
-    // StructA has 1 field match, StructAB also has 1 field match → tie, first wins
-    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(out.index(), 1U);
     EXPECT_EQ(std::get<StructA>(out).a, 1);
 }
 

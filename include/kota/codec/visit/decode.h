@@ -73,7 +73,10 @@ bool construct_and_visit(Vis& vis, std::variant<Ts...>& out, std::size_t index) 
                                       true)
                                    : false) ||
                       ...);
-        (void)found;
+        if(!found) {
+            return scoped_context<typename Vis::error_type>::fail(
+                rich_error("invalid variant index " + std::to_string(index)));
+        }
         return ok;
     }(std::index_sequence_for<Ts...>{});
 }
@@ -129,10 +132,10 @@ std::size_t find_tag_index(std::string_view name, const std::array<std::string_v
     return N;
 }
 
-/// Decode a field's value applying behavior transforms, without visit_field wrapping.
-/// Used by match_field (data-driven path) where the field reader is already provided.
+/// Core behavior-attribute dispatch for a single struct field.
+/// Shared by decode_field_value (data-driven) and decode_one_field (schema-driven).
 template <typename Config, std::size_t I, typename Vis, typename T>
-bool decode_field_value(Vis& vis, T& out) {
+bool decode_field_inner(Vis& vis, T& out) {
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     using slot_t = type_list_element_t<I, slots>;
@@ -143,10 +146,70 @@ bool decode_field_value(Vis& vis, T& out) {
     auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
     auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
 
+    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
+        if constexpr(requires {
+                         adapter::from_wire(std::declval<typename adapter::wire_type>());
+                     }) {
+            using wire_t = typename adapter::wire_type;
+            wire_t wire{};
+            KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
+            field_ref = adapter::from_wire(std::move(wire));
+            return true;
+        } else if constexpr(requires(decltype(vis)& v) { adapter::deserialize(v, field_ref); }) {
+            return adapter::deserialize(vis, field_ref);
+        } else {
+            return decode_value<Config>(vis, field_ref);
+        }
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
+        target converted{};
+        KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
+        field_ref = raw_t(std::move(converted));
+        return true;
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
+        using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
+        static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
+        std::string name_str;
+        KOTA_CODEC_TRY(vis.visit_str(name_str));
+        auto renamed = policy{}(false, name_str);
+        auto val = meta::enum_value<raw_t>(renamed);
+        if(val) {
+            field_ref = *val;
+            return true;
+        }
+        return scoped_context<typename Vis::error_type>::fail(
+            rich_error(std::string("unknown enum value '") + name_str + "'"));
+    } else if constexpr(tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+        static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
+                      "tagged attribute requires a variant type");
+        if constexpr(!is_human_readable<Config, Vis>()) {
+            return decode_value<Config>(vis, field_ref);
+        } else {
+            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
+            return decode_variant<Config, tag_attr>(vis, field_ref);
+        }
+    } else {
+        return decode_value<Config>(vis, field_ref);
+    }
+}
+
+/// Decode a field's value applying behavior transforms, without visit_field wrapping.
+/// Used by match_field (data-driven path) where the field reader is already provided.
+template <typename Config, std::size_t I, typename Vis, typename T>
+bool decode_field_value(Vis& vis, T& out) {
+    using schema = meta::virtual_schema<T, Config>;
+    using slots = typename schema::slots;
+    using slot_t = type_list_element_t<I, slots>;
+    using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
+    using attrs_t = typename slot_t::attrs;
+
     std::string_view wire_name = schema::fields[I].name;
 
-    // skip_if: if predicate says skip on deserialize, consume but discard the wire value
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+        constexpr std::size_t offset = schema::fields[I].offset;
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
             if constexpr(requires { vis.visit_skip(); }) {
@@ -156,57 +219,7 @@ bool decode_field_value(Vis& vis, T& out) {
         }
     }
 
-    bool ok;
-    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        if constexpr(requires {
-                         adapter::from_wire(std::declval<typename adapter::wire_type>());
-                     }) {
-            using wire_t = typename adapter::wire_type;
-            wire_t wire{};
-            ok = decode_value<Config>(vis, wire);
-            if(ok) {
-                field_ref = adapter::from_wire(std::move(wire));
-            }
-        } else if constexpr(requires(decltype(vis)& v) { adapter::deserialize(v, field_ref); }) {
-            ok = adapter::deserialize(vis, field_ref);
-        } else {
-            ok = decode_value<Config>(vis, field_ref);
-        }
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-        target converted{};
-        ok = decode_value<Config>(vis, converted);
-        if(ok) {
-            field_ref = raw_t(std::move(converted));
-        }
-    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
-        std::string name_str;
-        ok = vis.visit_str(name_str);
-        if(ok) {
-            auto renamed = policy{}(false, name_str);
-            auto val = meta::enum_value<raw_t>(renamed);
-            if(val) {
-                field_ref = *val;
-            } else {
-                ok = scoped_context<typename Vis::error_type>::fail(
-                    rich_error(std::string("unknown enum value '") + name_str + "'"));
-            }
-        }
-    } else if constexpr(tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
-        static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
-                      "tagged attribute requires a variant type");
-        if constexpr(!is_human_readable<Config, Vis>()) {
-            ok = decode_value<Config>(vis, field_ref);
-        } else {
-            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
-            ok = decode_variant<Config, tag_attr>(vis, field_ref);
-        }
-    } else {
-        ok = decode_value<Config>(vis, field_ref);
-    }
+    bool ok = decode_field_inner<Config, I>(vis, out);
 
     if constexpr(Config::detailed_error) {
         if(!ok) {
@@ -224,6 +237,7 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;
+    static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
 
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
         bool matched = false;
@@ -269,6 +283,7 @@ bool check_required_fields(std::uint64_t field_mask) {
     using schema = meta::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;
+    static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
 
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
         return (([&] {
@@ -638,18 +653,15 @@ bool decode_one_field(Vis& vis, T& out) {
     using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
     using attrs_t = typename slot_t::attrs;
 
-    constexpr std::size_t offset = schema::fields[I].offset;
-    auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
-    auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
-
     constexpr auto idx = std::integral_constant<std::size_t, I>{};
     std::string_view wire_name = schema::fields[I].name;
 
-    // skip_if: if predicate says skip on deserialize, consume bytes but discard value
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
+        constexpr std::size_t offset = schema::fields[I].offset;
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
-            // For position-based (binary) formats, consume the bytes using a discard target
             raw_t discard{};
             return vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
                 return decode_value<Config>(fv, discard);
@@ -657,57 +669,9 @@ bool decode_one_field(Vis& vis, T& out) {
         }
     }
 
-    auto decode_inner = [&](auto& fv) -> bool {
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            if constexpr(requires {
-                             adapter::from_wire(std::declval<typename adapter::wire_type>());
-                         }) {
-                using wire_t = typename adapter::wire_type;
-                wire_t wire{};
-                KOTA_CODEC_TRY(decode_value<Config>(fv, wire));
-                field_ref = adapter::from_wire(std::move(wire));
-                return true;
-            } else if constexpr(requires(decltype(fv)& v) { adapter::deserialize(v, field_ref); }) {
-                return adapter::deserialize(fv, field_ref);
-            } else {
-                return decode_value<Config>(fv, field_ref);
-            }
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            target converted{};
-            KOTA_CODEC_TRY(decode_value<Config>(fv, converted));
-            field_ref = raw_t(std::move(converted));
-            return true;
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-            using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
-            std::string name_str;
-            KOTA_CODEC_TRY(fv.visit_str(name_str));
-            auto renamed = policy{}(false, name_str);
-            auto val = meta::enum_value<raw_t>(renamed);
-            if(val) {
-                field_ref = *val;
-                return true;
-            }
-            using fv_t = std::remove_cvref_t<decltype(fv)>;
-            return scoped_context<typename fv_t::error_type>::fail(
-                rich_error(std::string("unknown enum value '") + name_str + "'"));
-        } else if constexpr(tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
-            static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
-                          "tagged attribute requires a variant type");
-            if constexpr(!is_human_readable<Config, std::remove_cvref_t<decltype(fv)>>()) {
-                return decode_value<Config>(fv, field_ref);
-            } else {
-                using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
-                return decode_variant<Config, tag_attr>(fv, field_ref);
-            }
-        } else {
-            return decode_value<Config>(fv, field_ref);
-        }
-    };
-
-    bool ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool { return decode_inner(fv); });
+    bool ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+        return decode_field_inner<Config, I>(fv, out);
+    });
 
     if constexpr(Config::detailed_error) {
         if(!ok) {
