@@ -48,7 +48,7 @@ struct reader {
     constexpr static bool human_readable = false;
 
     bool check_remaining(std::size_t n) {
-        if(n > data.size() - pos) {
+        if(pos > data.size() || n > data.size() - pos) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string(error_message(error_kind::UnexpectedEof))));
         }

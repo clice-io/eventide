@@ -633,10 +633,10 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
             }(std::index_sequence_for<Ts...>{});
         }
     } else {
-        return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-            return ((out.template emplace<Is>(), decode_value<Config>(vis, std::get<Is>(out))) ||
-                    ...);
-        }(std::index_sequence_for<Ts...>{});
+        static_assert(
+            has_try_read<Vis>,
+            "untagged variant decode requires a visitor with try_read or peek_kind support");
+        return false;
     }
 }
 

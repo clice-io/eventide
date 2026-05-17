@@ -687,7 +687,10 @@ auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
 
     auto start = fbb.StartTable();
     write_table_visitor wv{fbb, av.offsets, 0};
-    body(wv);
+    if(!body(wv)) {
+        fbb.EndTable(start);
+        return table_offset_t{0};
+    }
     return table_offset_t(fbb.EndTable(start));
 }
 
