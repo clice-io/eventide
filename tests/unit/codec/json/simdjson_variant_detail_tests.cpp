@@ -244,7 +244,7 @@ TEST_CASE(variant_roundtrip_all_scalars) {
         auto status = from_json(*encoded, out);
         if(!status.has_value())
             return false;
-        return out.index() == input.index();
+        return out == input;
     };
 
     EXPECT_TRUE(check(std::monostate{}));
@@ -1041,7 +1041,7 @@ TEST_CASE(variant_roundtrip_complex) {
     using V = std::
         variant<std::monostate, bool, std::int64_t, double, std::string, std::vector<int>, Point>;
 
-    auto roundtrip = [](V input) -> bool {
+    auto roundtrip = [](V input, std::size_t expected_index) -> bool {
         auto encoded = to_json(input);
         if(!encoded)
             return false;
@@ -1049,16 +1049,16 @@ TEST_CASE(variant_roundtrip_complex) {
         auto status = from_json(*encoded, out);
         if(!status)
             return false;
-        return out.index() == input.index();
+        return out.index() == expected_index;
     };
 
-    EXPECT_TRUE(roundtrip(std::monostate{}));
-    EXPECT_TRUE(roundtrip(true));
-    EXPECT_TRUE(roundtrip(std::int64_t{42}));
-    EXPECT_TRUE(roundtrip(3.14));
-    EXPECT_TRUE(roundtrip(std::string("test")));
-    EXPECT_TRUE(roundtrip(std::vector<int>{1, 2, 3}));
-    EXPECT_TRUE(roundtrip(Point{1.0, 2.0}));
+    EXPECT_TRUE(roundtrip(std::monostate{}, 0));
+    EXPECT_TRUE(roundtrip(true, 1));
+    EXPECT_TRUE(roundtrip(std::int64_t{42}, 2));
+    EXPECT_TRUE(roundtrip(3.14, 3));
+    EXPECT_TRUE(roundtrip(std::string("test"), 4));
+    EXPECT_TRUE(roundtrip(std::vector<int>{1, 2, 3}, 5));
+    EXPECT_TRUE(roundtrip(Point{1.0, 2.0}, 6));
 }
 
 TEST_CASE(two_structs_different_field_count) {

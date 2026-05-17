@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <string_view>
 
+#include "kota/codec/dyn/decode.h"
+#include "kota/codec/dyn/document.h"
+#include "kota/codec/dyn/encode.h"
 #include "kota/codec/visit/context.h"
 
 #if __has_include(<simdjson.h>)
@@ -13,20 +16,30 @@
 
 namespace kota::codec::json {
 
-using string_builder = simdjson::builder::string_builder;
+using ValueKind = dyn::ValueKind;
+using Cursor = dyn::Cursor;
+using Value = dyn::Value;
+using Array = dyn::Array;
+using Object = dyn::Object;
 
-using ondemand_parser = simdjson::ondemand::parser;
-using ondemand_document = simdjson::ondemand::document;
-using ondemand_value = simdjson::ondemand::value;
-using ondemand_object = simdjson::ondemand::object;
-using ondemand_array = simdjson::ondemand::array;
-using json_type = simdjson::ondemand::json_type;
-using number_type = simdjson::ondemand::number_type;
+using StringBuilder = simdjson::builder::string_builder;
+
+namespace ondemand {
+
+using Parser = simdjson::ondemand::parser;
+using Document = simdjson::ondemand::document;
+using Value = simdjson::ondemand::value;
+using Object = simdjson::ondemand::object;
+using Array = simdjson::ondemand::array;
+using Type = simdjson::ondemand::json_type;
+using NumberType = simdjson::ondemand::number_type;
+
+}  // namespace ondemand
 
 using padded_string = simdjson::padded_string;
 using padded_string_view = simdjson::padded_string_view;
 
-using error_code = simdjson::error_code;
+using ErrorCode = simdjson::error_code;
 constexpr inline auto success = simdjson::SUCCESS;
 
 enum class error_kind : std::uint16_t {

@@ -691,6 +691,41 @@ auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
     return table_offset_t(fbb.EndTable(start));
 }
 
+template <typename Body>
+inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
+    map_entry_collector coll{fbb, {}};
+    KOTA_CODEC_TRY(body(coll));
+
+    std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+
+    std::vector<table_offset_t> sorted_offsets;
+    sorted_offsets.reserve(coll.entries.size());
+    for(auto& entry: coll.entries) {
+        sorted_offsets.push_back(entry.second);
+    }
+    out_offset = fbb.CreateVector(sorted_offsets.data(), sorted_offsets.size()).o;
+    return true;
+}
+
+template <typename Body>
+inline bool
+    encode_variant_table(builder_t& fbb, std::size_t index, Body&& body, uoffset_t& out_offset) {
+    alloc_field_visitor payload_alloc{fbb, 0};
+    KOTA_CODEC_TRY(body(payload_alloc));
+
+    const slot_id_t payload_slot =
+        detail::first_field + detail::field_step * static_cast<slot_id_t>(index + 1);
+
+    auto start = fbb.StartTable();
+    fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
+    write_field_visitor payload_write{fbb, payload_slot, payload_alloc.stored_offset};
+    body(payload_write);
+    out_offset = fbb.EndTable(start);
+    return true;
+}
+
 template <typename Seq>
 using element_clean_t = std::remove_cvref_t<std::ranges::range_value_t<Seq>>;
 
@@ -849,37 +884,12 @@ bool alloc_field_visitor::visit_tuple(const T&, Body&& body) {
 
 template <typename Container, typename Body>
 bool alloc_field_visitor::visit_map(const Container&, Body&& body) {
-    map_entry_collector coll{fbb, {}};
-    KOTA_CODEC_TRY(body(coll));
-
-    std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
-        return a.first < b.first;
-    });
-
-    std::vector<table_offset_t> sorted_offsets;
-    sorted_offsets.reserve(coll.entries.size());
-    for(auto& entry: coll.entries) {
-        sorted_offsets.push_back(entry.second);
-    }
-    auto off = fbb.CreateVector(sorted_offsets.data(), sorted_offsets.size());
-    stored_offset = off.o;
-    return true;
+    return encode_sorted_map(fbb, std::forward<Body>(body), stored_offset);
 }
 
 template <typename Body>
 bool alloc_field_visitor::visit_variant(std::size_t index, Body&& body) {
-    alloc_field_visitor payload_alloc{fbb, 0};
-    KOTA_CODEC_TRY(body(payload_alloc));
-
-    const slot_id_t payload_slot =
-        detail::first_field + detail::field_step * static_cast<slot_id_t>(index + 1);
-
-    auto start = fbb.StartTable();
-    fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
-    write_field_visitor payload_write{fbb, payload_slot, payload_alloc.stored_offset};
-    body(payload_write);
-    stored_offset = fbb.EndTable(start);
-    return true;
+    return encode_variant_table(fbb, index, std::forward<Body>(body), stored_offset);
 }
 
 template <typename T, typename Body>
@@ -898,17 +908,9 @@ bool table_elem_visitor::visit_tuple(const T&, Body&& body) {
 
 template <typename Body>
 bool table_elem_visitor::visit_variant(std::size_t index, Body&& body) {
-    alloc_field_visitor payload_alloc{fbb, 0};
-    KOTA_CODEC_TRY(body(payload_alloc));
-
-    const slot_id_t payload_slot =
-        detail::first_field + detail::field_step * static_cast<slot_id_t>(index + 1);
-
-    auto start = fbb.StartTable();
-    fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
-    write_field_visitor payload_write{fbb, payload_slot, payload_alloc.stored_offset};
-    body(payload_write);
-    table_offsets.push_back(table_offset_t(fbb.EndTable(start)));
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(encode_variant_table(fbb, index, std::forward<Body>(body), off));
+    table_offsets.push_back(table_offset_t(off));
     return true;
 }
 
@@ -925,22 +927,11 @@ bool table_elem_visitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename Container, typename Body>
 bool table_elem_visitor::visit_map(const Container&, Body&& body) {
-    map_entry_collector coll{fbb, {}};
-    KOTA_CODEC_TRY(body(coll));
-
-    std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
-        return a.first < b.first;
-    });
-
-    std::vector<table_offset_t> sorted_offsets;
-    sorted_offsets.reserve(coll.entries.size());
-    for(auto& entry: coll.entries) {
-        sorted_offsets.push_back(entry.second);
-    }
-    auto vec_off = fbb.CreateVector(sorted_offsets.data(), sorted_offsets.size());
+    uoffset_t vec_off = 0;
+    KOTA_CODEC_TRY(encode_sorted_map(fbb, std::forward<Body>(body), vec_off));
 
     auto start = fbb.StartTable();
-    fbb.AddOffset(detail::first_field, vec_off);
+    fbb.AddOffset(detail::first_field, offset_t<void>(vec_off));
     table_offsets.push_back(table_offset_t(fbb.EndTable(start)));
     return true;
 }
@@ -989,39 +980,20 @@ bool root_visitor::visit_tuple(const T&, Body&& body) {
 
 template <typename Container, typename Body>
 bool root_visitor::visit_map(const Container&, Body&& body) {
-    map_entry_collector coll{fbb, {}};
-    KOTA_CODEC_TRY(body(coll));
-
-    std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
-        return a.first < b.first;
-    });
-
-    std::vector<table_offset_t> sorted_offsets;
-    sorted_offsets.reserve(coll.entries.size());
-    for(auto& entry: coll.entries) {
-        sorted_offsets.push_back(entry.second);
-    }
-    auto vec_off = fbb.CreateVector(sorted_offsets.data(), sorted_offsets.size());
+    uoffset_t vec_off = 0;
+    KOTA_CODEC_TRY(encode_sorted_map(fbb, std::forward<Body>(body), vec_off));
 
     auto start = fbb.StartTable();
-    fbb.AddOffset(detail::first_field, vec_off);
+    fbb.AddOffset(detail::first_field, offset_t<void>(vec_off));
     root_off = table_offset_t(fbb.EndTable(start));
     return true;
 }
 
 template <typename Body>
 bool root_visitor::visit_variant(std::size_t index, Body&& body) {
-    alloc_field_visitor payload_alloc{fbb, 0};
-    KOTA_CODEC_TRY(body(payload_alloc));
-
-    const slot_id_t payload_slot =
-        detail::first_field + detail::field_step * static_cast<slot_id_t>(index + 1);
-
-    auto start = fbb.StartTable();
-    fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
-    write_field_visitor payload_write{fbb, payload_slot, payload_alloc.stored_offset};
-    body(payload_write);
-    root_off = table_offset_t(fbb.EndTable(start));
+    uoffset_t off = 0;
+    KOTA_CODEC_TRY(encode_variant_table(fbb, index, std::forward<Body>(body), off));
+    root_off = table_offset_t(off);
     return true;
 }
 

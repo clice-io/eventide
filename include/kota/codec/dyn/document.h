@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "kota/support/config.h"
-#include "kota/codec/dyn/error.h"
 
 namespace kota::codec::dyn {
 

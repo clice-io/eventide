@@ -272,7 +272,7 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
     scoped_context<rich_error> guard(err);
     reader r{data};
     if(!decode_value<default_config<Config>>(r, out)) {
-        return std::unexpected(rich_error(err.message));
+        return std::unexpected(std::move(err));
     }
     if(r.pos != data.size()) {
         return std::unexpected(rich_error(std::string(error_message(error_kind::TrailingBytes))));

@@ -52,23 +52,21 @@ inline char32_t decode_first_codepoint(std::string_view sv) {
 
 }  // namespace detail
 
-struct json_source {
-    explicit json_source(simdjson::ondemand::value& v) :
-        ptr(reinterpret_cast<std::uintptr_t>(&v)) {}
+struct Source {
+    explicit Source(ondemand::Value& v) : ptr(reinterpret_cast<std::uintptr_t>(&v)) {}
 
-    explicit json_source(simdjson::ondemand::document& d) :
-        ptr(reinterpret_cast<std::uintptr_t>(&d) | tag) {}
+    explicit Source(ondemand::Document& d) : ptr(reinterpret_cast<std::uintptr_t>(&d) | tag) {}
 
     bool is_document() const {
         return (ptr & tag) != 0;
     }
 
-    simdjson::ondemand::document& doc() const {
-        return *reinterpret_cast<simdjson::ondemand::document*>(ptr & ~tag);
+    ondemand::Document& doc() const {
+        return *reinterpret_cast<ondemand::Document*>(ptr & ~tag);
     }
 
-    simdjson::ondemand::value& value() const {
-        return *reinterpret_cast<simdjson::ondemand::value*>(ptr);
+    ondemand::Value& value() const {
+        return *reinterpret_cast<ondemand::Value*>(ptr);
     }
 
     template <typename F>
@@ -83,9 +81,9 @@ private:
     constexpr static std::uintptr_t tag = 1;
 };
 
-struct reader;
+struct Reader;
 
-struct json_str_reader {
+struct StrReader {
     std::string_view str;
     using error_type = rich_error;
 
@@ -123,8 +121,8 @@ struct json_str_reader {
     }
 };
 
-struct struct_reader {
-    simdjson::ondemand::object obj;
+struct StructReader {
+    ondemand::Object obj;
     const char* buf_base = nullptr;
     std::size_t buf_size = 0;
     using error_type = rich_error;
@@ -138,22 +136,22 @@ struct struct_reader {
     }
 };
 
-struct reader {
-    json_source src;
+struct Reader {
+    Source src;
     const char* buf_base = nullptr;
     std::size_t buf_size = 0;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
 
-    explicit reader(simdjson::ondemand::value& v) : src(v) {}
+    explicit Reader(ondemand::Value& v) : src(v) {}
 
-    explicit reader(simdjson::ondemand::document& d) : src(d) {}
+    explicit Reader(ondemand::Document& d) : src(d) {}
 
-    reader(simdjson::ondemand::document& d, const char* base, std::size_t size) :
+    Reader(ondemand::Document& d, const char* base, std::size_t size) :
         src(d), buf_base(base), buf_size(size) {}
 
-    reader(simdjson::ondemand::value& v, const char* base, std::size_t size) :
+    Reader(ondemand::Value& v, const char* base, std::size_t size) :
         src(v), buf_base(base), buf_size(size) {}
 
     template <typename F>
@@ -296,34 +294,37 @@ struct reader {
     }
 
     meta::type_kind peek_kind() {
+        using namespace ondemand;
+        using meta::type_kind;
+
         return src.apply([&](auto& s) -> meta::type_kind {
-            auto null_r = s.is_null();
-            if(!null_r.error() && null_r.value_unsafe())
-                return meta::type_kind::null;
+            auto r = s.is_null();
+            if(!r.error() && r.value_unsafe())
+                return type_kind::null;
 
             auto t = s.type();
             if(t.error())
                 return meta::type_kind::unknown;
+
             switch(t.value_unsafe()) {
-                case simdjson::ondemand::json_type::null: return meta::type_kind::null;
-                case simdjson::ondemand::json_type::boolean: return meta::type_kind::boolean;
-                case simdjson::ondemand::json_type::number: {
+                case Type::null: return type_kind::null;
+                case Type::boolean: return type_kind::boolean;
+                case Type::number: {
                     auto nt = s.get_number_type();
                     if(nt.error())
-                        return meta::type_kind::float64;
+                        return type_kind::unknown;
                     switch(nt.value_unsafe()) {
-                        case simdjson::ondemand::number_type::floating_point_number:
-                            return meta::type_kind::float64;
-                        case simdjson::ondemand::number_type::unsigned_integer:
-                            return meta::type_kind::uint64;
-                        case simdjson::ondemand::number_type::signed_integer:
-                        default: return meta::type_kind::int64;
+                        case NumberType::signed_integer: return type_kind::int64;
+                        case NumberType::unsigned_integer: return type_kind::uint64;
+                        case NumberType::floating_point_number: return type_kind::float64;
+                        case NumberType::big_integer: return type_kind::unknown;
                     }
+                    return type_kind::unknown;
                 }
-                case simdjson::ondemand::json_type::string: return meta::type_kind::string;
-                case simdjson::ondemand::json_type::array: return meta::type_kind::array;
-                case simdjson::ondemand::json_type::object: return meta::type_kind::structure;
-                default: return meta::type_kind::unknown;
+                case Type::string: return type_kind::string;
+                case Type::array: return type_kind::array;
+                case Type::object: return type_kind::structure;
+                default: return type_kind::unknown;
             }
         });
     }
@@ -339,7 +340,7 @@ struct reader {
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto& obj = r.value_unsafe();
 
-        if constexpr(std::is_invocable_v<Callback, std::string_view, reader&>) {
+        if constexpr(std::is_invocable_v<Callback, std::string_view, Reader&>) {
             bool ok = true;
             for(auto field_result: obj) {
                 if(field_result.error()) {
@@ -355,7 +356,7 @@ struct reader {
                     break;
                 }
                 auto fv = std::move(field).value();
-                reader sub{fv, buf_base, buf_size};
+                Reader sub{fv, buf_base, buf_size};
                 if(!cb(key.value_unsafe(), sub)) {
                     ok = false;
                     break;
@@ -364,7 +365,7 @@ struct reader {
             obj.reset();
             return ok;
         } else {
-            struct_reader sr{std::move(obj), buf_base, buf_size};
+            StructReader sr{std::move(obj), buf_base, buf_size};
             return cb(sr);
         }
     }
@@ -382,7 +383,7 @@ struct reader {
                 break;
             }
             auto val = std::move(elem).value_unsafe();
-            reader sub{val, buf_base, buf_size};
+            Reader sub{val, buf_base, buf_size};
             if(!cb(sub)) {
                 ok = false;
                 break;
@@ -412,8 +413,8 @@ struct reader {
                 break;
             }
             auto fv = std::move(field).value();
-            json_str_reader kr{key.value_unsafe()};
-            reader vr{fv, buf_base, buf_size};
+            StrReader kr{key.value_unsafe()};
+            Reader vr{fv, buf_base, buf_size};
             if(!cb(kr, vr)) {
                 ok = false;
                 break;
@@ -430,21 +431,21 @@ struct reader {
 };
 
 template <typename Callback>
-bool struct_reader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
-    simdjson::ondemand::value field_val;
+bool StructReader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
+    ondemand::Value field_val;
     auto ec = obj.find_field_unordered(name).get(field_val);
     if(ec != success) {
         return scoped_context<rich_error>::fail(rich_error::missing_field(name));
     }
-    reader sub{field_val, buf_base, buf_size};
+    Reader sub{field_val, buf_base, buf_size};
     return cb(sub);
 }
 
 template <typename Config = default_config<>, typename T>
 auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error> {
-    simdjson::padded_string padded(json);
-    simdjson::ondemand::parser parser;
-    simdjson::ondemand::document doc;
+    padded_string padded(json);
+    ondemand::Parser parser;
+    ondemand::Document doc;
 
     auto ec = parser.iterate(padded).get(doc);
     if(ec != success) {
@@ -454,7 +455,7 @@ auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error>
     rich_error guard_error;
     scoped_context<rich_error> guard(guard_error);
 
-    reader r{doc, padded.data(), padded.size()};
+    Reader r{doc, padded.data(), padded.size()};
     if(!decode_value<default_config<Config>>(r, out)) {
         return std::unexpected(std::move(guard_error));
     }

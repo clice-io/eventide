@@ -16,14 +16,14 @@
 
 namespace kota::codec::json {
 
-struct value_writer;
-struct struct_writer;
-struct seq_writer;
-struct key_writer;
-struct map_writer;
+struct ValueWriter;
+struct StructWriter;
+struct SeqWriter;
+struct KeyWriter;
+struct MapWriter;
 
-struct value_writer {
-    string_builder& builder;
+struct ValueWriter {
+    StringBuilder& builder;
     using error_type = rich_error;
     constexpr static bool human_readable = true;
 
@@ -124,8 +124,8 @@ struct value_writer {
     inline bool visit_tuple(const T&, Body&& body);
 };
 
-struct struct_writer {
-    string_builder& builder;
+struct StructWriter {
+    StringBuilder& builder;
     using error_type = rich_error;
     bool first = true;
 
@@ -133,16 +133,16 @@ struct struct_writer {
     inline bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
 };
 
-struct seq_writer {
-    string_builder& builder;
+struct SeqWriter {
+    StringBuilder& builder;
     bool first = true;
 
     template <typename F>
     inline bool visit_element(F&& writer);
 };
 
-struct key_writer {
-    string_builder& builder;
+struct KeyWriter {
+    StringBuilder& builder;
     using error_type = rich_error;
 
     template <typename T>
@@ -166,8 +166,8 @@ struct key_writer {
     }
 };
 
-struct map_writer {
-    string_builder& builder;
+struct MapWriter {
+    StringBuilder& builder;
     bool first = true;
 
     template <typename KF, typename VF>
@@ -175,70 +175,70 @@ struct map_writer {
 };
 
 template <typename T, typename Body>
-bool value_writer::visit_struct(const T&, Body&& body) {
+bool ValueWriter::visit_struct(const T&, Body&& body) {
     builder.start_object();
-    struct_writer sw{builder};
+    StructWriter sw{builder};
     KOTA_CODEC_TRY(body(sw));
     builder.end_object();
     return true;
 }
 
 template <typename Container, typename Body>
-bool value_writer::visit_seq(const Container&, Body&& body) {
+bool ValueWriter::visit_seq(const Container&, Body&& body) {
     builder.start_array();
-    seq_writer sw{builder};
+    SeqWriter sw{builder};
     KOTA_CODEC_TRY(body(sw));
     builder.end_array();
     return true;
 }
 
 template <typename Container, typename Body>
-bool value_writer::visit_map(const Container&, Body&& body) {
+bool ValueWriter::visit_map(const Container&, Body&& body) {
     builder.start_object();
-    map_writer mw{builder};
+    MapWriter mw{builder};
     KOTA_CODEC_TRY(body(mw));
     builder.end_object();
     return true;
 }
 
 template <typename T, typename Body>
-bool value_writer::visit_tuple(const T&, Body&& body) {
+bool ValueWriter::visit_tuple(const T&, Body&& body) {
     builder.start_array();
-    seq_writer sw{builder};
+    SeqWriter sw{builder};
     KOTA_CODEC_TRY(body(sw));
     builder.end_array();
     return true;
 }
 
 template <typename F>
-bool struct_writer::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+bool StructWriter::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
     if(!first)
         builder.append_comma();
     first = false;
     builder.escape_and_append_with_quotes(name);
     builder.append_colon();
-    value_writer vw{builder};
+    ValueWriter vw{builder};
     return writer(vw);
 }
 
 template <typename F>
-bool seq_writer::visit_element(F&& writer) {
+bool SeqWriter::visit_element(F&& writer) {
     if(!first)
         builder.append_comma();
     first = false;
-    value_writer vw{builder};
+    ValueWriter vw{builder};
     return writer(vw);
 }
 
 template <typename KF, typename VF>
-bool map_writer::visit_entry(KF&& key_fn, VF&& value_fn) {
+bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     if(!first)
         builder.append_comma();
     first = false;
-    key_writer kw{builder};
+    KeyWriter kw{builder};
     KOTA_CODEC_TRY(key_fn(kw));
     builder.append_colon();
-    value_writer vw{builder};
+    ValueWriter vw{builder};
     return value_fn(vw);
 }
 
@@ -247,10 +247,10 @@ auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::
     -> std::expected<std::string, json::error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
-    string_builder builder(initial_capacity.value_or(string_builder::DEFAULT_INITIAL_CAPACITY));
-    value_writer vis{builder};
+    StringBuilder builder(initial_capacity.value_or(StringBuilder::DEFAULT_INITIAL_CAPACITY));
+    ValueWriter vis{builder};
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(rich_error(err.message));
+        return std::unexpected(std::move(err));
     }
     std::string_view sv;
     auto ec = builder.view().get(sv);

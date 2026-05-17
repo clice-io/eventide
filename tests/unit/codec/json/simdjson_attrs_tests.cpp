@@ -142,9 +142,6 @@ TEST_CASE(alias_conflict_fails_fast) {
     alias_conflict_payload parsed{};
     auto status = from_json(R"({"dup":1})", parsed);
     EXPECT_FALSE(status.has_value());
-    EXPECT_TRUE(status.error().message.find("ambiguous") != std::string::npos ||
-                status.error().message.find("conflict") != std::string::npos ||
-                !status.has_value());
 }
 
 TEST_CASE(skip_field_does_not_require_deserializer) {

@@ -6,21 +6,12 @@
 #include <string>
 #include <string_view>
 
-#include "kota/codec/dyn/decode.h"
-#include "kota/codec/dyn/document.h"
-#include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/decode.h"
 #include "kota/codec/json/encode.h"
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/common.h"
 
 namespace kota::codec::json {
-
-using ValueKind = dyn::ValueKind;
-using Cursor = dyn::Cursor;
-using Value = dyn::Value;
-using Array = dyn::Array;
-using Object = dyn::Object;
 
 template <typename Config = void, typename T>
 auto parse(std::string_view json, T& value) -> std::expected<void, rich_error> {
@@ -54,8 +45,8 @@ inline std::expected<std::string, error> prettify(std::string_view json) {
 namespace kota::codec {
 
 template <typename Config>
-struct serialize_visit<json::value_writer, RawValue, Config> {
-    static bool visit(json::value_writer& vis, const RawValue& value) {
+struct serialize_visit<json::ValueWriter, RawValue, Config> {
+    static bool visit(json::ValueWriter& vis, const RawValue& value) {
         if(value.empty()) {
             return vis.visit_null();
         }
@@ -65,8 +56,8 @@ struct serialize_visit<json::value_writer, RawValue, Config> {
 };
 
 template <typename Config>
-struct deserialize_visit<json::reader, RawValue, Config> {
-    static bool visit(json::reader& vis, RawValue& value) {
+struct deserialize_visit<json::Reader, RawValue, Config> {
+    static bool visit(json::Reader& vis, RawValue& value) {
         simdjson::ondemand::json_type t;
         if(vis.apply([&](auto& s) { return s.type().get(t); }) != simdjson::SUCCESS)
             return scoped_context<rich_error>::fail(rich_error("failed to read JSON value type"));

@@ -13,10 +13,6 @@
 
 namespace kota::codec::toml {
 
-using toml_table = ::toml::table;
-using toml_array = ::toml::array;
-using toml_node = ::toml::node;
-
 enum class error_kind : std::uint16_t {
     Ok = 0,
     InvalidState,
@@ -41,6 +37,10 @@ constexpr auto error_message(error_kind error) noexcept -> std::string_view {
         default: return "unknown toml error";
     }
 }
+
+using Table = ::toml::table;
+using Array = ::toml::array;
+using Node = ::toml::node;
 
 using error = rich_error;
 

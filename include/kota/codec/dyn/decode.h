@@ -10,7 +10,6 @@
 #include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/dyn/document.h"
-#include "kota/codec/dyn/error.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
@@ -34,10 +33,18 @@ struct str_reader {
     template <typename T>
         requires std::is_signed_v<T>
     bool visit_int(T& out) {
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), out);
+        std::int64_t tmp;
+        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), tmp);
         if(ec != std::errc{} || ptr != str.data() + str.size()) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string("cannot parse '") + std::string(str) + "' as integer"));
+        }
+        if constexpr(sizeof(T) < sizeof(std::int64_t)) {
+            if(!kota::narrow_int(tmp, out)) {
+                return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
+            }
+        } else {
+            out = tmp;
         }
         return true;
     }
@@ -45,10 +52,19 @@ struct str_reader {
     template <typename T>
         requires std::is_unsigned_v<T>
     bool visit_uint(T& out) {
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), out);
+        std::uint64_t tmp;
+        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), tmp);
         if(ec != std::errc{} || ptr != str.data() + str.size()) {
             return scoped_context<rich_error>::fail(rich_error(
                 std::string("cannot parse '") + std::string(str) + "' as unsigned integer"));
+        }
+        if constexpr(sizeof(T) < sizeof(std::uint64_t)) {
+            if(!kota::narrow_int(tmp, out)) {
+                return scoped_context<rich_error>::fail(
+                    rich_error("unsigned integer value out of range"));
+            }
+        } else {
+            out = tmp;
         }
         return true;
     }
@@ -307,28 +323,23 @@ template <typename Callback>
 bool object_struct_reader::visit_field(std::size_t /*index*/,
                                        std::string_view name,
                                        Callback&& cb) {
-    const Value* v = obj->find(name);
-    if(!v) {
-        return scoped_context<rich_error>::fail(rich_error::missing_field(name));
-    }
-    value_reader sub{v};
-    return cb(sub);
+    return find_field(name, std::forward<Callback>(cb));
 }
 
 template <typename Config = default_config<>, typename T>
-auto from_content(const Value& value, T& out) -> std::expected<void, error> {
+auto from_content(const Value& value, T& out) -> std::expected<void, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
     value_reader vis{&value};
     if(!decode_value<default_config<Config>>(vis, out)) {
-        return std::unexpected(rich_error(err.message));
+        return std::unexpected(std::move(err));
     }
     return {};
 }
 
 template <typename T, typename Config = default_config<>>
     requires std::default_initializable<T>
-auto from_content(const Value& value) -> std::expected<T, error> {
+auto from_content(const Value& value) -> std::expected<T, rich_error> {
     T out{};
     auto result = from_content<Config>(value, out);
     if(!result) {

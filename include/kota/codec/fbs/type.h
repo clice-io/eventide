@@ -24,15 +24,15 @@ using builder_t = ::flatbuffers::FlatBufferBuilder;
 using voffset_t = ::flatbuffers::voffset_t;
 using uoffset_t = ::flatbuffers::uoffset_t;
 
+using Table = ::flatbuffers::Table;
+using String = ::flatbuffers::String;
+template <typename T>
+using Vector = ::flatbuffers::Vector<T>;
+
 template <typename T>
 using offset_t = ::flatbuffers::Offset<T>;
-using table_offset_t = offset_t<::flatbuffers::Table>;
-using string_offset_t = offset_t<::flatbuffers::String>;
-
-using fb_table = ::flatbuffers::Table;
-using fb_string = ::flatbuffers::String;
-template <typename T>
-using fb_vector = ::flatbuffers::Vector<T>;
+using table_offset_t = offset_t<Table>;
+using string_offset_t = offset_t<String>;
 
 using verifier_t = ::flatbuffers::Verifier;
 

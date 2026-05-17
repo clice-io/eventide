@@ -46,48 +46,30 @@ auto to_string(const T& value) -> std::expected<std::string, error> {
 
 namespace kota::codec {
 
-template <typename Config>
-struct serialize_visit<toml::table_value_writer, ::toml::table, Config> {
-    static bool visit(toml::table_value_writer& vis, const ::toml::table& value) {
-        vis.parent_table.insert_or_assign(vis.key, value);
-        return true;
+template <typename Sink, typename Config>
+struct serialize_visit<toml::ValueWriter<Sink>, toml::Table, Config> {
+    static bool visit(toml::ValueWriter<Sink>& vis, const toml::Table& value) {
+        return vis.sink.emit(value);
+    }
+};
+
+template <typename Sink, typename Config>
+struct serialize_visit<toml::ValueWriter<Sink>, toml::Array, Config> {
+    static bool visit(toml::ValueWriter<Sink>& vis, const toml::Array& value) {
+        return vis.sink.emit(value);
     }
 };
 
 template <typename Config>
-struct serialize_visit<toml::table_value_writer, ::toml::array, Config> {
-    static bool visit(toml::table_value_writer& vis, const ::toml::array& value) {
-        vis.parent_table.insert_or_assign(vis.key, value);
-        return true;
-    }
-};
-
-template <typename Config>
-struct serialize_visit<toml::array_value_writer, ::toml::table, Config> {
-    static bool visit(toml::array_value_writer& vis, const ::toml::table& value) {
-        vis.arr.push_back(value);
-        return true;
-    }
-};
-
-template <typename Config>
-struct serialize_visit<toml::array_value_writer, ::toml::array, Config> {
-    static bool visit(toml::array_value_writer& vis, const ::toml::array& value) {
-        vis.arr.push_back(value);
-        return true;
-    }
-};
-
-template <typename Config>
-struct deserialize_visit<toml::value_reader, ::toml::table, Config> {
-    static bool visit(toml::value_reader& vis, ::toml::table& value) {
+struct deserialize_visit<toml::ValueReader, toml::Table, Config> {
+    static bool visit(toml::ValueReader& vis, toml::Table& value) {
         if(!vis.node) {
             return scoped_context<rich_error>::fail(rich_error::invalid_type("table", "null"));
         }
         const auto* tbl = vis.node->as_table();
         if(!tbl) {
             return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("table", toml::detail::toml_node_type_name(vis.node)));
+                rich_error::invalid_type("table", toml::detail::node_type_name(vis.node)));
         }
         value = *tbl;
         return true;
@@ -95,15 +77,15 @@ struct deserialize_visit<toml::value_reader, ::toml::table, Config> {
 };
 
 template <typename Config>
-struct deserialize_visit<toml::value_reader, ::toml::array, Config> {
-    static bool visit(toml::value_reader& vis, ::toml::array& value) {
+struct deserialize_visit<toml::ValueReader, toml::Array, Config> {
+    static bool visit(toml::ValueReader& vis, toml::Array& value) {
         if(!vis.node) {
             return scoped_context<rich_error>::fail(rich_error::invalid_type("array", "null"));
         }
         const auto* arr = vis.node->as_array();
         if(!arr) {
             return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("array", toml::detail::toml_node_type_name(vis.node)));
+                rich_error::invalid_type("array", toml::detail::node_type_name(vis.node)));
         }
         value = *arr;
         return true;

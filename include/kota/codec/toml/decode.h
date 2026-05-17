@@ -19,7 +19,7 @@ namespace kota::codec::toml {
 
 namespace detail {
 
-inline std::string_view toml_node_type_name(const ::toml::node* node) {
+inline std::string_view node_type_name(const Node* node) {
     if(!node)
         return "null";
     if(node->is_boolean())
@@ -53,41 +53,41 @@ constexpr bool root_table_v = [] {
         using inner_t = typename U::annotated_type;
         return (meta::reflectable_class<inner_t> && !is_specialization_of<std::pair, inner_t> &&
                 !is_specialization_of<std::tuple, inner_t> && !std::ranges::input_range<inner_t>) ||
-               is_map_like<inner_t>() || std::same_as<inner_t, ::toml::table>;
+               is_map_like<inner_t>() || std::same_as<inner_t, Table>;
     } else {
         return (meta::reflectable_class<U> && !is_specialization_of<std::pair, U> &&
                 !is_specialization_of<std::tuple, U> && !std::ranges::input_range<U>) ||
-               is_map_like<U>() || std::same_as<U, ::toml::table>;
+               is_map_like<U>() || std::same_as<U, Table>;
     }
 }();
 
 template <typename T>
-auto select_root_node(const ::toml::table& table) -> const ::toml::node* {
+auto select_root_node(const Table& tbl) -> const Node* {
     using U = std::remove_cvref_t<T>;
 
     if constexpr(is_optional_v<U>) {
-        if(table.empty()) {
+        if(tbl.empty()) {
             return nullptr;
         }
         using value_t = typename U::value_type;
         if constexpr(root_table_v<value_t>) {
-            return std::addressof(static_cast<const ::toml::node&>(table));
+            return std::addressof(static_cast<const Node&>(tbl));
         } else {
-            return table.get(boxed_root_key);
+            return tbl.get(boxed_root_key);
         }
     } else if constexpr(root_table_v<U>) {
-        return std::addressof(static_cast<const ::toml::node&>(table));
+        return std::addressof(static_cast<const Node&>(tbl));
     } else {
-        return table.get(boxed_root_key);
+        return tbl.get(boxed_root_key);
     }
 }
 
 }  // namespace detail
 
-struct value_reader;
-struct toml_str_reader;
+struct ValueReader;
+struct StrReader;
 
-struct toml_str_reader {
+struct StrReader {
     std::string_view str;
     using error_type = rich_error;
 
@@ -100,10 +100,18 @@ struct toml_str_reader {
     template <typename T>
         requires std::is_signed_v<T>
     bool visit_int(T& out) {
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), out);
+        std::int64_t tmp;
+        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), tmp);
         if(ec != std::errc{} || ptr != str.data() + str.size()) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string("cannot parse '") + std::string(str) + "' as integer"));
+        }
+        if constexpr(sizeof(T) < sizeof(std::int64_t)) {
+            if(!kota::narrow_int(tmp, out)) {
+                return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
+            }
+        } else {
+            out = tmp;
         }
         return true;
     }
@@ -111,17 +119,26 @@ struct toml_str_reader {
     template <typename T>
         requires std::is_unsigned_v<T>
     bool visit_uint(T& out) {
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), out);
+        std::uint64_t tmp;
+        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), tmp);
         if(ec != std::errc{} || ptr != str.data() + str.size()) {
             return scoped_context<rich_error>::fail(rich_error(
                 std::string("cannot parse '") + std::string(str) + "' as unsigned integer"));
+        }
+        if constexpr(sizeof(T) < sizeof(std::uint64_t)) {
+            if(!kota::narrow_int(tmp, out)) {
+                return scoped_context<rich_error>::fail(
+                    rich_error("unsigned integer value out of range"));
+            }
+        } else {
+            out = tmp;
         }
         return true;
     }
 };
 
-struct table_struct_reader {
-    const ::toml::table* tbl;
+struct TableStructReader {
+    const Table* tbl;
     using error_type = rich_error;
 
     template <typename Callback>
@@ -131,8 +148,8 @@ struct table_struct_reader {
     bool visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb);
 };
 
-struct value_reader {
-    const ::toml::node* node;
+struct ValueReader {
+    const Node* node;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
@@ -141,7 +158,7 @@ struct value_reader {
     bool try_read(F&& fn) {
         error_type discard_err;
         scoped_context<error_type> guard(discard_err);
-        value_reader fork{node};
+        ValueReader fork{node};
         return fn(fork);
     }
 
@@ -280,14 +297,14 @@ struct value_reader {
         if(!tbl) {
             return fail_type("table");
         }
-        if constexpr(std::is_invocable_v<Callback, std::string_view, value_reader&>) {
+        if constexpr(std::is_invocable_v<Callback, std::string_view, ValueReader&>) {
             for(const auto& [k, v]: *tbl) {
-                value_reader sub{&v};
+                ValueReader sub{&v};
                 KOTA_CODEC_TRY(cb(std::string_view(k), sub));
             }
             return true;
         } else {
-            table_struct_reader sr{tbl};
+            TableStructReader sr{tbl};
             return cb(sr);
         }
     }
@@ -302,7 +319,7 @@ struct value_reader {
             return fail_type("array");
         }
         for(std::size_t i = 0; i < arr->size(); ++i) {
-            value_reader sub{arr->get(i)};
+            ValueReader sub{arr->get(i)};
             KOTA_CODEC_TRY(cb(sub));
         }
         return true;
@@ -318,8 +335,8 @@ struct value_reader {
             return fail_type("table");
         }
         for(const auto& [k, v]: *tbl) {
-            toml_str_reader kr{std::string_view(k)};
-            value_reader vr{&v};
+            StrReader kr{std::string_view(k)};
+            ValueReader vr{&v};
             KOTA_CODEC_TRY(cb(kr, vr));
         }
         return true;
@@ -335,7 +352,7 @@ struct value_reader {
             return fail_type("array");
         }
         for(std::size_t i = 0; i < arr->size(); ++i) {
-            value_reader sub{arr->get(i)};
+            ValueReader sub{arr->get(i)};
             KOTA_CODEC_TRY(cb(sub));
         }
         return true;
@@ -347,7 +364,7 @@ struct value_reader {
 
 private:
     bool fail_type(std::string_view expected) {
-        auto got = detail::toml_node_type_name(node);
+        auto got = detail::node_type_name(node);
         auto err = rich_error::invalid_type(expected, got);
         if(node) {
             auto src = node->source();
@@ -379,26 +396,21 @@ private:
 };
 
 template <typename Callback>
-bool table_struct_reader::find_field(std::string_view name, Callback&& cb) {
+bool TableStructReader::find_field(std::string_view name, Callback&& cb) {
     auto it = tbl->find(name);
     if(it == tbl->cend()) {
         return scoped_context<rich_error>::fail(rich_error::missing_field(name));
     }
-    value_reader sub{&it->second};
+    ValueReader sub{&it->second};
     return cb(sub);
 }
 
 template <typename Callback>
-bool table_struct_reader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
-    auto it = tbl->find(name);
-    if(it == tbl->cend()) {
-        return scoped_context<rich_error>::fail(rich_error::missing_field(name));
-    }
-    value_reader sub{&it->second};
-    return cb(sub);
+bool TableStructReader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
+    return find_field(name, std::forward<Callback>(cb));
 }
 
-inline auto parse_table(std::string_view text) -> std::expected<::toml::table, rich_error> {
+inline auto parse_table(std::string_view text) -> std::expected<Table, rich_error> {
 #if TOML_EXCEPTIONS
     try {
         return ::toml::parse(text);
@@ -438,7 +450,7 @@ auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_er
     rich_error err;
     scoped_context<rich_error> guard(err);
 
-    value_reader reader{root};
+    ValueReader reader{root};
     if(!decode_value<Cfg>(reader, out)) {
         return std::unexpected(std::move(err));
     }
@@ -446,15 +458,15 @@ auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_er
 }
 
 template <typename Config = default_config<>, typename T>
-auto from_toml_table(const ::toml::table& table, T& out) -> std::expected<void, rich_error> {
+auto from_toml_table(const Table& tbl, T& out) -> std::expected<void, rich_error> {
     using V = std::remove_const_t<T>;
-    const auto* root = detail::select_root_node<V>(table);
+    const auto* root = detail::select_root_node<V>(tbl);
 
     using Cfg = default_config<Config>;
     rich_error err;
     scoped_context<rich_error> guard(err);
 
-    value_reader reader{root};
+    ValueReader reader{root};
     if(!decode_value<Cfg>(reader, out)) {
         return std::unexpected(std::move(err));
     }

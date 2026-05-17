@@ -26,13 +26,13 @@ enum class error_kind : std::uint8_t {
 constexpr std::string_view error_message(error_kind error) {
     switch(error) {
         case error_kind::Ok: return "ok";
-        case error_kind::InvalidState: return "invalid_state";
-        case error_kind::UnexpectedEof: return "unexpected_eof";
+        case error_kind::InvalidState: return "invalid state";
+        case error_kind::UnexpectedEof: return "unexpected eof";
         case error_kind::TypeMismatch: return "type mismatch";
-        case error_kind::NumberOutOfRange: return "number_out_of_range";
-        case error_kind::TrailingBytes: return "trailing_bytes";
-        case error_kind::InvalidVariantIndex: return "invalid_variant_index";
-        case error_kind::UnsupportedOperation: return "unsupported_operation";
+        case error_kind::NumberOutOfRange: return "number out of range";
+        case error_kind::TrailingBytes: return "trailing bytes";
+        case error_kind::InvalidVariantIndex: return "invalid variant index";
+        case error_kind::UnsupportedOperation: return "unsupported operation";
     }
 
     return "invalid_state";

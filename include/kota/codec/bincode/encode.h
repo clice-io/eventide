@@ -143,7 +143,7 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::
     std::vector<std::byte> buf;
     writer vis{buf};
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(rich_error(err.message));
+        return std::unexpected(std::move(err));
     }
     return buf;
 }

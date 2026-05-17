@@ -3,4 +3,3 @@
 #include "kota/codec/dyn/decode.h"
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/dyn/encode.h"
-#include "kota/codec/dyn/error.h"

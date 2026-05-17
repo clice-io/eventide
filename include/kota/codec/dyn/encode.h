@@ -9,7 +9,6 @@
 #include <string_view>
 
 #include "kota/codec/dyn/document.h"
-#include "kota/codec/dyn/error.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
@@ -209,13 +208,13 @@ bool map_writer::visit_entry(KF&& key_fn, VF&& value_fn) {
 }
 
 template <typename Config = default_config<>, typename T>
-auto to_content(const T& value) -> std::expected<dyn::Value, dyn::error> {
+auto to_content(const T& value) -> std::expected<dyn::Value, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
     dyn::Value result;
     value_writer vis{result};
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(rich_error(err.message));
+        return std::unexpected(std::move(err));
     }
     return result;
 }

@@ -334,7 +334,7 @@ TEST_CASE(diag_pair_scalar_tuple) {
 
     // Step 1: Read the root table
     const auto* data = encoded->data();
-    const auto* root = ::flatbuffers::GetRoot<fbs::fb_table>(data);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     ASSERT_TRUE(root != nullptr);
 
     // Step 2: Check that root has 2 pointer fields (pair elements)
@@ -345,7 +345,7 @@ TEST_CASE(diag_pair_scalar_tuple) {
     EXPECT_TRUE(has_field1);
 
     // Step 3: Follow pointer for first element
-    const auto* child0 = root->GetPointer<const fbs::fb_table*>(fbs::detail::first_field);
+    const auto* child0 = root->GetPointer<const fbs::Table*>(fbs::detail::first_field);
     ASSERT_TRUE(child0 != nullptr);
 
     // Check first element's bool field (index 0)
@@ -358,8 +358,8 @@ TEST_CASE(diag_pair_scalar_tuple) {
     EXPECT_EQ(i32_val, -123456);
 
     // Check first element's string field (index 12)
-    const auto* str_ptr = child0->GetPointer<const fbs::fb_string*>(fbs::detail::first_field +
-                                                                    fbs::detail::field_step * 12);
+    const auto* str_ptr = child0->GetPointer<const fbs::String*>(fbs::detail::first_field +
+                                                                 fbs::detail::field_step * 12);
     ASSERT_TRUE(str_ptr != nullptr);
     EXPECT_EQ(std::string_view(str_ptr->data(), str_ptr->size()), "scalar-a");
 
@@ -387,7 +387,7 @@ TEST_CASE(diag_variant_vector_int) {
 
     // Step 1: Read root table (variant table)
     const auto* data = encoded->data();
-    const auto* root = ::flatbuffers::GetRoot<fbs::fb_table>(data);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     ASSERT_TRUE(root != nullptr);
 
     // Step 2: Read variant tag at first_field
@@ -402,7 +402,7 @@ TEST_CASE(diag_variant_vector_int) {
     EXPECT_TRUE(has_payload);
 
     // Step 5: Try reading as vector<int32_t> directly
-    const auto* vec = root->GetPointer<const fbs::fb_vector<std::int32_t>*>(payload_slot);
+    const auto* vec = root->GetPointer<const fbs::Vector<std::int32_t>*>(payload_slot);
     if(vec != nullptr) {
         EXPECT_EQ(vec->size(), 3U);
         if(vec->size() >= 3) {
@@ -412,10 +412,10 @@ TEST_CASE(diag_variant_vector_int) {
         }
     } else {
         // Maybe it's wrapped in a table?
-        const auto* wrapper = root->GetPointer<const fbs::fb_table*>(payload_slot);
+        const auto* wrapper = root->GetPointer<const fbs::Table*>(payload_slot);
         if(wrapper != nullptr) {
             const auto* inner_vec =
-                wrapper->GetPointer<const fbs::fb_vector<std::int32_t>*>(fbs::detail::first_field);
+                wrapper->GetPointer<const fbs::Vector<std::int32_t>*>(fbs::detail::first_field);
             ASSERT_TRUE(inner_vec != nullptr);
             EXPECT_EQ(inner_vec->size(), 3U);
         }
@@ -441,7 +441,7 @@ TEST_CASE(diag_variant_monostate) {
     ASSERT_TRUE(encoded.has_value());
 
     const auto* data = encoded->data();
-    const auto* root = ::flatbuffers::GetRoot<fbs::fb_table>(data);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     ASSERT_TRUE(root != nullptr);
 
     auto tag = root->GetField<std::uint32_t>(fbs::detail::first_field, 0);
@@ -463,7 +463,7 @@ TEST_CASE(diag_variant_basic) {
     ASSERT_TRUE(encoded.has_value());
 
     const auto* data = encoded->data();
-    const auto* root = ::flatbuffers::GetRoot<fbs::fb_table>(data);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     ASSERT_TRUE(root != nullptr);
 
     auto tag = root->GetField<std::uint32_t>(fbs::detail::first_field, 0);
@@ -488,7 +488,7 @@ TEST_CASE(diag_tagged_ext_variant_int) {
     ASSERT_TRUE(encoded.has_value());
 
     const auto* data = encoded->data();
-    const auto* root = ::flatbuffers::GetRoot<fbs::fb_table>(data);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     ASSERT_TRUE(root != nullptr);
 
     // For non-human-readable, tagged variants use the same wire format as untagged
@@ -568,15 +568,15 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    const auto* root = ::flatbuffers::GetRoot<fbs::fb_table>(encoded->data());
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
     ASSERT_TRUE(root != nullptr);
 
     // Root is a tuple table with 3 pointer fields
     // Field 0 (Basic): table pointer at slot 4
     // Field 1 (array<int,3>): table pointer at slot 6
     // Field 2 (pair<uint32_t,float>): table pointer at slot 8
-    const auto* child1 = root->GetPointer<const fbs::fb_table*>(fbs::detail::first_field +
-                                                                fbs::detail::field_step * 1);
+    const auto* child1 =
+        root->GetPointer<const fbs::Table*>(fbs::detail::first_field + fbs::detail::field_step * 1);
     ASSERT_TRUE(child1 != nullptr);
 
     // child1 should be a sub-table with 3 int fields at slots 4, 6, 8
@@ -604,7 +604,7 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     EXPECT_EQ(std::get<2>(output).second, 6.25F);
 
     // Manual decode of element 1 via field_reader directly
-    fbs::decode_detail::field_reader vr{
+    fbs::decode_detail::FieldReader vr{
         root,
         static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step)};
     // This should follow the pointer at slot 6 to get the sub-table

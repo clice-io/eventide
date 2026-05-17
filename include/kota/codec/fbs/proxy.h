@@ -46,7 +46,7 @@ class table_view_type {
 public:
     table_view_type() = default;
 
-    explicit table_view_type(const fb_table* t) : table(t) {}
+    explicit table_view_type(const Table* t) : table(t) {}
 
     auto valid() const -> bool {
         return table != nullptr;
@@ -73,12 +73,12 @@ public:
         return table->GetField<T>(sid, T{});
     }
 
-    auto raw() const -> const fb_table* {
+    auto raw() const -> const Table* {
         return table;
     }
 
 private:
-    const fb_table* table = nullptr;
+    const Table* table = nullptr;
 };
 
 using codec::detail::remove_annotation_t;
@@ -222,22 +222,22 @@ template <typename Element,
           bool IsString = is_string_like_v<CleanElement>,
           bool IsInlineStruct = can_inline_struct_v<CleanElement> && !is_tuple_like_v<CleanElement>>
 struct array_vector_ptr_impl {
-    using type = const fb_vector<table_offset_t>*;
+    using type = const Vector<table_offset_t>*;
 };
 
 template <typename Element, typename CleanElement, bool IsString, bool IsInlineStruct>
 struct array_vector_ptr_impl<Element, CleanElement, true, IsString, IsInlineStruct> {
-    using type = const fb_vector<scalar_storage_t<CleanElement>>*;
+    using type = const Vector<scalar_storage_t<CleanElement>>*;
 };
 
 template <typename Element, typename CleanElement, bool IsInlineStruct>
 struct array_vector_ptr_impl<Element, CleanElement, false, true, IsInlineStruct> {
-    using type = const fb_vector<string_offset_t>*;
+    using type = const Vector<string_offset_t>*;
 };
 
 template <typename Element, typename CleanElement>
 struct array_vector_ptr_impl<Element, CleanElement, false, false, true> {
-    using type = const fb_vector<const CleanElement*>*;
+    using type = const Vector<const CleanElement*>*;
 };
 
 template <typename Element>
@@ -422,16 +422,16 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
             return static_cast<T>(view.template get_scalar<double>(field));
         }
     } else if constexpr(is_string_like_v<T>) {
-        const auto* text = table->template GetPointer<const fb_string*>(field);
+        const auto* text = table->template GetPointer<const String*>(field);
         if(text == nullptr) {
             return {};
         }
         return std::string_view(text->data(), text->size());
     } else if constexpr(is_specialization_of<std::variant, T>) {
-        const auto* nested = table->template GetPointer<const fb_table*>(field);
+        const auto* nested = table->template GetPointer<const Table*>(field);
         return return_t(table_view_type(nested));
     } else if constexpr(is_tuple_like_v<T>) {
-        const auto* nested = table->template GetPointer<const fb_table*>(field);
+        const auto* nested = table->template GetPointer<const Table*>(field);
         return return_t(table_view_type(nested));
     } else if constexpr(can_inline_struct_v<T>) {
         const auto* value = table->template GetStruct<const T*>(field);
@@ -440,7 +440,7 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         }
         return *value;
     } else if constexpr(is_map_range_v<T>) {
-        const auto* vec = table->template GetPointer<const fb_vector<table_offset_t>*>(field);
+        const auto* vec = table->template GetPointer<const Vector<table_offset_t>*>(field);
         return return_t(vec);
     } else if constexpr(is_range_like_v<T>) {
         using element_type = clean_t<std::ranges::range_value_t<T>>;
@@ -448,7 +448,7 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         const auto* value = table->template GetPointer<vector_ptr_t>(field);
         return return_t(value);
     } else {
-        const auto* nested = table->template GetPointer<const fb_table*>(field);
+        const auto* nested = table->template GetPointer<const Table*>(field);
         return return_t(table_view_type(nested));
     }
 }
@@ -512,7 +512,7 @@ public:
             return std::string_view(text->data(), text->size());
         } else if constexpr(proxy_detail::is_tuple_like_v<element_type>) {
             // tuple-like types (std::array, etc.) are encoded as tables, not inline structs.
-            const auto* nested = vector->template GetAs<fb_table>(static_cast<uoffset_t>(index));
+            const auto* nested = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
             return value_type(proxy_detail::table_view_type(nested));
         } else if constexpr(can_inline_struct_v<element_type>) {
             const auto* value = vector->Get(static_cast<uoffset_t>(index));
@@ -521,7 +521,7 @@ public:
             }
             return *value;
         } else {
-            const auto* nested = vector->template GetAs<fb_table>(static_cast<uoffset_t>(index));
+            const auto* nested = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
             return value_type(proxy_detail::table_view_type(nested));
         }
     }
@@ -574,7 +574,7 @@ public:
         return proxy_detail::read_field<clean_alt_t>(view, proxy_detail::variant_payload_slot(I));
     }
 
-    constexpr auto raw() const noexcept -> const fb_table* {
+    constexpr auto raw() const noexcept -> const Table* {
         return view.raw();
     }
 
@@ -614,7 +614,7 @@ public:
         return proxy_detail::read_field<clean_element_t>(view, proxy_detail::field_slot(I));
     }
 
-    constexpr auto raw() const noexcept -> const fb_table* {
+    constexpr auto raw() const noexcept -> const Table* {
         return view.raw();
     }
 
@@ -625,7 +625,7 @@ private:
 template <typename K, typename V>
 class map_view {
 public:
-    using vector_type = const fb_vector<table_offset_t>*;
+    using vector_type = const Vector<table_offset_t>*;
 
     constexpr map_view() = default;
 
@@ -651,7 +651,7 @@ public:
         if(!valid() || index >= size()) {
             return {};
         }
-        const auto* entry = vector->template GetAs<fb_table>(static_cast<uoffset_t>(index));
+        const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
         return tuple_view<K, V>(proxy_detail::table_view_type(entry));
     }
 
@@ -708,7 +708,7 @@ private:
         std::size_t hi = size();
         while(lo < hi) {
             auto mid = lo + (hi - lo) / 2;
-            const auto* entry = vector->template GetAs<fb_table>(static_cast<uoffset_t>(mid));
+            const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_view_type(entry),
                                                                proxy_detail::field_slot(0));
             if(entry_key < key) {
@@ -722,7 +722,7 @@ private:
             return {};
         }
 
-        const auto* entry = vector->template GetAs<fb_table>(static_cast<uoffset_t>(lo));
+        const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_view_type(entry);
         auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
         if(entry_key == key) {
@@ -748,7 +748,7 @@ public:
         if(bytes.empty()) {
             return {};
         }
-        return table_view(view_type(::flatbuffers::GetRoot<fb_table>(bytes.data())));
+        return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
     }
 
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
@@ -756,7 +756,7 @@ public:
             return {};
         }
         const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
-        return table_view(view_type(::flatbuffers::GetRoot<fb_table>(data)));
+        return table_view(view_type(::flatbuffers::GetRoot<Table>(data)));
     }
 
     constexpr auto valid() const noexcept -> bool {
@@ -767,7 +767,7 @@ public:
         return valid();
     }
 
-    constexpr auto raw() const noexcept -> const fb_table* {
+    constexpr auto raw() const noexcept -> const Table* {
         return view.raw();
     }
 
