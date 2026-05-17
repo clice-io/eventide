@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "kota/codec/dyn/decode.h"
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/decode.h"
@@ -74,92 +75,6 @@ struct deserialize_visit<json::reader, RawValue, Config> {
             return scoped_context<rich_error>::fail(rich_error("failed to read raw JSON value"));
         value.data.assign(raw.data(), raw.size());
         return true;
-    }
-};
-
-namespace detail {
-
-inline bool decode_dyn_value_from_json(json::reader& vis, dyn::Value& value) {
-    simdjson::ondemand::json_type t;
-    if(vis.apply([&](auto& s) { return s.type().get(t); }) != simdjson::SUCCESS)
-        return false;
-
-    switch(t) {
-        case simdjson::ondemand::json_type::null:
-            if(!vis.visit_null())
-                return false;
-            value = dyn::Value(nullptr);
-            return true;
-        case simdjson::ondemand::json_type::boolean: {
-            bool b = false;
-            if(!vis.visit_bool(b))
-                return false;
-            value = dyn::Value(b);
-            return true;
-        }
-        case simdjson::ondemand::json_type::number: {
-            std::int64_t i = 0;
-            if(vis.apply([&](auto& s) { return s.get_int64().get(i); }) == simdjson::SUCCESS) {
-                value = dyn::Value(i);
-                return true;
-            }
-            std::uint64_t u = 0;
-            if(vis.apply([&](auto& s) { return s.get_uint64().get(u); }) == simdjson::SUCCESS) {
-                value = dyn::Value(u);
-                return true;
-            }
-            double d = 0.0;
-            if(!vis.visit_float(d))
-                return false;
-            value = dyn::Value(d);
-            return true;
-        }
-        case simdjson::ondemand::json_type::string: {
-            std::string s;
-            if(!vis.visit_str(s))
-                return false;
-            value = dyn::Value(std::move(s));
-            return true;
-        }
-        case simdjson::ondemand::json_type::array: {
-            dyn::Array arr;
-            bool ok = vis.visit_seq([&](auto& ev) -> bool {
-                dyn::Value elem;
-                if(!decode_dyn_value_from_json(ev, elem))
-                    return false;
-                arr.push_back(std::move(elem));
-                return true;
-            });
-            if(!ok)
-                return false;
-            value = dyn::Value(std::move(arr));
-            return true;
-        }
-        case simdjson::ondemand::json_type::object: {
-            dyn::Object obj;
-            bool ok = vis.visit_struct([&](std::string_view key, json::reader& fv) -> bool {
-                dyn::Value field_value;
-                if(!decode_dyn_value_from_json(fv, field_value))
-                    return false;
-                obj.insert(std::string(key), std::move(field_value));
-                return true;
-            });
-            if(!ok)
-                return false;
-            value = dyn::Value(std::move(obj));
-            return true;
-        }
-        default: break;
-    }
-    return false;
-}
-
-}  // namespace detail
-
-template <typename Config>
-struct deserialize_visit<json::reader, dyn::Value, Config> {
-    static bool visit(json::reader& vis, dyn::Value& value) {
-        return detail::decode_dyn_value_from_json(vis, value);
     }
 };
 
