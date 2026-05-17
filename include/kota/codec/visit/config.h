@@ -12,16 +12,16 @@
 namespace kota::codec {
 
 /// How enums map to wire format.
-enum class enum_repr { integer, string };
+enum class enum_repr { Integer, String };
 
 /// How NaN/Infinity float values are serialized.
-enum class nan_repr { passthrough, null, string, error };
+enum class nan_repr { Passthrough, Null, String, Error };
 
 /// How chrono time_point values are serialized. No default — must be explicitly chosen.
-enum class chrono_repr { iso8601, epoch_seconds, epoch_millis };
+enum class chrono_repr { Iso8601, EpochSeconds, EpochMillis };
 
 /// What to do when a duplicate key is encountered during data-driven deserialization.
-enum class duplicate_keys { last_wins, error };
+enum class duplicate_keys { LastWins, Error };
 
 namespace spelling {
 
@@ -59,13 +59,13 @@ template <typename UserConfig = void>
 struct default_config :
     std::conditional_t<std::is_void_v<UserConfig>, detail::empty_config_base, UserConfig> {
     /// Enum wire representation.
-    KOTA_CFG_FIELD_(enum_repr, kota::codec::enum_repr::integer);
+    KOTA_CFG_FIELD_(enum_repr, kota::codec::enum_repr::Integer);
 
     /// NaN/Infinity handling.
-    KOTA_CFG_FIELD_(nan_repr, kota::codec::nan_repr::passthrough);
+    KOTA_CFG_FIELD_(nan_repr, kota::codec::nan_repr::Passthrough);
 
     /// Duplicate key policy in data-driven deserialization.
-    KOTA_CFG_FIELD_(duplicate_keys, kota::codec::duplicate_keys::last_wins);
+    KOTA_CFG_FIELD_(duplicate_keys, kota::codec::duplicate_keys::LastWins);
 
     /// Serialize: skip nullable fields (optional/unique_ptr/shared_ptr) when null.
     KOTA_CFG_FIELD_(skip_none_fields, false);

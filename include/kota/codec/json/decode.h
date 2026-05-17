@@ -55,21 +55,21 @@ inline char32_t decode_first_codepoint(std::string_view sv) {
 /// Tagged pointer that unifies simdjson::ondemand::document and value behind a single handle.
 struct json_source {
     explicit json_source(simdjson::ondemand::value& v) :
-        ptr_(reinterpret_cast<std::uintptr_t>(&v)) {}
+        ptr(reinterpret_cast<std::uintptr_t>(&v)) {}
 
     explicit json_source(simdjson::ondemand::document& d) :
-        ptr_(reinterpret_cast<std::uintptr_t>(&d) | tag_) {}
+        ptr(reinterpret_cast<std::uintptr_t>(&d) | tag) {}
 
     bool is_document() const {
-        return (ptr_ & tag_) != 0;
+        return (ptr & tag) != 0;
     }
 
     simdjson::ondemand::document& doc() const {
-        return *reinterpret_cast<simdjson::ondemand::document*>(ptr_ & ~tag_);
+        return *reinterpret_cast<simdjson::ondemand::document*>(ptr & ~tag);
     }
 
     simdjson::ondemand::value& value() const {
-        return *reinterpret_cast<simdjson::ondemand::value*>(ptr_);
+        return *reinterpret_cast<simdjson::ondemand::value*>(ptr);
     }
 
     template <typename F>
@@ -80,8 +80,8 @@ struct json_source {
     }
 
 private:
-    std::uintptr_t ptr_;
-    constexpr static std::uintptr_t tag_ = 1;
+    std::uintptr_t ptr;
+    constexpr static std::uintptr_t tag = 1;
 };
 
 struct reader;
@@ -133,8 +133,8 @@ struct json_str_reader {
 
 struct struct_reader {
     simdjson::ondemand::object obj;
-    const char* buf_base_ = nullptr;
-    std::size_t buf_size_ = 0;
+    const char* buf_base = nullptr;
+    std::size_t buf_size = 0;
     using error_type = rich_error;
 
     template <typename Callback>
@@ -147,38 +147,38 @@ struct struct_reader {
 };
 
 struct reader {
-    json_source src_;
-    const char* buf_base_ = nullptr;
-    std::size_t buf_size_ = 0;
+    json_source src;
+    const char* buf_base = nullptr;
+    std::size_t buf_size = 0;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
 
-    explicit reader(simdjson::ondemand::value& v) : src_(v) {}
+    explicit reader(simdjson::ondemand::value& v) : src(v) {}
 
-    explicit reader(simdjson::ondemand::document& d) : src_(d) {}
+    explicit reader(simdjson::ondemand::document& d) : src(d) {}
 
     reader(simdjson::ondemand::document& d, const char* base, std::size_t size) :
-        src_(d), buf_base_(base), buf_size_(size) {}
+        src(d), buf_base(base), buf_size(size) {}
 
     reader(simdjson::ondemand::value& v, const char* base, std::size_t size) :
-        src_(v), buf_base_(base), buf_size_(size) {}
+        src(v), buf_base(base), buf_size(size) {}
 
     template <typename F>
     decltype(auto) apply(F&& f) const {
-        return src_.apply(std::forward<F>(f));
+        return src.apply(std::forward<F>(f));
     }
 
     bool fail_located(rich_error err) {
-        if(buf_base_) {
-            auto loc_result = src_.apply([](auto& s) { return s.current_location(); });
+        if(buf_base) {
+            auto loc_result = src.apply([](auto& s) { return s.current_location(); });
             if(!loc_result.error()) {
                 const char* loc = loc_result.value_unsafe();
-                if(loc >= buf_base_ && loc <= buf_base_ + buf_size_) {
-                    auto offset = static_cast<std::size_t>(loc - buf_base_);
+                if(loc >= buf_base && loc <= buf_base + buf_size) {
+                    auto offset = static_cast<std::size_t>(loc - buf_base);
                     std::size_t line = 1, col = 1;
                     for(std::size_t i = 0; i < offset; ++i) {
-                        if(buf_base_[i] == '\n') {
+                        if(buf_base[i] == '\n') {
                             ++line;
                             col = 1;
                         } else {
@@ -198,15 +198,15 @@ struct reader {
         scoped_context<error_type> guard(discard_err);
         if(fn(*this))
             return true;
-        if(src_.is_document())
-            src_.doc().rewind();
+        if(src.is_document())
+            src.doc().rewind();
         return false;
     }
 
     // --- scalar visitors ---
 
     bool visit_bool(bool& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_bool(); });
+        auto r = src.apply([&](auto& s) { return s.get_bool(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         out = r.value_unsafe();
@@ -215,7 +215,7 @@ struct reader {
 
     template <typename T>
     bool visit_int(T& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_int64(); });
+        auto r = src.apply([&](auto& s) { return s.get_int64(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto v = r.value_unsafe();
@@ -231,7 +231,7 @@ struct reader {
 
     template <typename T>
     bool visit_uint(T& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_uint64(); });
+        auto r = src.apply([&](auto& s) { return s.get_uint64(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto v = r.value_unsafe();
@@ -246,7 +246,7 @@ struct reader {
 
     template <typename T>
     bool visit_float(T& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_double(); });
+        auto r = src.apply([&](auto& s) { return s.get_double(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         out = static_cast<T>(r.value_unsafe());
@@ -255,7 +255,7 @@ struct reader {
 
     template <typename T>
     bool visit_str(T& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_string(); });
+        auto r = src.apply([&](auto& s) { return s.get_string(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         out = T(r.value_unsafe());
@@ -264,7 +264,7 @@ struct reader {
 
     template <typename T>
     bool visit_char(T& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_string(); });
+        auto r = src.apply([&](auto& s) { return s.get_string(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto sv = r.value_unsafe();
@@ -282,7 +282,7 @@ struct reader {
 
     template <typename T>
     bool visit_bytes(T& out) {
-        auto r = src_.apply([&](auto& s) { return s.get_array(); });
+        auto r = src.apply([&](auto& s) { return s.get_array(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         out.clear();
@@ -302,12 +302,12 @@ struct reader {
     // --- null / peek ---
 
     bool peek_null() {
-        auto r = src_.apply([&](auto& s) { return s.is_null(); });
+        auto r = src.apply([&](auto& s) { return s.is_null(); });
         return !r.error() && r.value_unsafe();
     }
 
     bool visit_null() {
-        auto r = src_.apply([&](auto& s) { return s.is_null(); });
+        auto r = src.apply([&](auto& s) { return s.is_null(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         if(!r.value_unsafe())
@@ -317,7 +317,7 @@ struct reader {
     }
 
     meta::type_kind peek_kind() {
-        return src_.apply([&](auto& s) -> meta::type_kind {
+        return src.apply([&](auto& s) -> meta::type_kind {
             auto null_r = s.is_null();
             if(!null_r.error() && null_r.value_unsafe())
                 return meta::type_kind::null;
@@ -357,7 +357,7 @@ struct reader {
 
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
-        auto r = src_.apply([&](auto& s) { return s.get_object(); });
+        auto r = src.apply([&](auto& s) { return s.get_object(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto& obj = r.value_unsafe();
@@ -378,7 +378,7 @@ struct reader {
                     break;
                 }
                 auto fv = std::move(field).value();
-                reader sub{fv, buf_base_, buf_size_};
+                reader sub{fv, buf_base, buf_size};
                 if(!cb(key.value_unsafe(), sub)) {
                     ok = false;
                     break;
@@ -387,14 +387,14 @@ struct reader {
             obj.reset();
             return ok;
         } else {
-            struct_reader sr{std::move(obj), buf_base_, buf_size_};
+            struct_reader sr{std::move(obj), buf_base, buf_size};
             return cb(sr);
         }
     }
 
     template <typename Callback>
     bool visit_seq(Callback&& cb) {
-        auto r = src_.apply([&](auto& s) { return s.get_array(); });
+        auto r = src.apply([&](auto& s) { return s.get_array(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto& arr = r.value_unsafe();
@@ -405,7 +405,7 @@ struct reader {
                 break;
             }
             auto val = std::move(elem).value_unsafe();
-            reader sub{val, buf_base_, buf_size_};
+            reader sub{val, buf_base, buf_size};
             if(!cb(sub)) {
                 ok = false;
                 break;
@@ -417,7 +417,7 @@ struct reader {
 
     template <typename Callback>
     bool visit_map(Callback&& cb) {
-        auto r = src_.apply([&](auto& s) { return s.get_object(); });
+        auto r = src.apply([&](auto& s) { return s.get_object(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto& obj = r.value_unsafe();
@@ -436,7 +436,7 @@ struct reader {
             }
             auto fv = std::move(field).value();
             json_str_reader kr{key.value_unsafe()};
-            reader vr{fv, buf_base_, buf_size_};
+            reader vr{fv, buf_base, buf_size};
             if(!cb(kr, vr)) {
                 ok = false;
                 break;
@@ -461,7 +461,7 @@ bool struct_reader::visit_field(std::size_t /*index*/, std::string_view name, Ca
     if(ec != success) {
         return scoped_context<rich_error>::fail(rich_error::missing_field(name));
     }
-    reader sub{field_val, buf_base_, buf_size_};
+    reader sub{field_val, buf_base, buf_size};
     return cb(sub);
 }
 

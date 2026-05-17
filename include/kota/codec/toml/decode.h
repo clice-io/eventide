@@ -437,7 +437,7 @@ auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_er
         return std::unexpected(std::move(table).error());
     }
 
-    using V = std::remove_cvref_t<T>;
+    using V = std::remove_const_t<T>;
     const auto* root = detail::select_root_node<V>(*table);
 
     using Cfg = default_config<Config>;
@@ -454,7 +454,7 @@ auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_er
 /// Decode from an already-parsed TOML table into out.
 template <typename Config = default_config<>, typename T>
 auto from_toml_table(const ::toml::table& table, T& out) -> std::expected<void, rich_error> {
-    using V = std::remove_cvref_t<T>;
+    using V = std::remove_const_t<T>;
     const auto* root = detail::select_root_node<V>(table);
 
     using Cfg = default_config<Config>;

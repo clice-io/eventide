@@ -86,10 +86,9 @@ template <typename Config, typename Vis, typename Tuple>
 bool assign_tuple_element(Vis& vis, Tuple& out, std::size_t idx) {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
         bool ok = false;
-        bool found =
+        [[maybe_unused]] bool found =
             ((Is == idx ? (ok = decode_value<Config>(vis, std::get<Is>(out)), true) : false) ||
              ...);
-        (void)found;
         return ok;
     }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
 }
@@ -714,7 +713,7 @@ bool decode_variant(Vis& vis, Var& var) {
 
 template <typename Config, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out) {
-    using V = std::remove_cvref_t<T>;
+    using V = std::remove_const_t<T>;
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
@@ -808,7 +807,7 @@ bool decode_value(Vis& vis, T& out) {
                 return decode_value<Config>(vis, *out);
             }
         } else if constexpr(kind == enumeration) {
-            if constexpr(Config::enum_repr == enum_repr::string) {
+            if constexpr(Config::enum_repr == enum_repr::String) {
                 std::string name_str;
                 KOTA_CODEC_TRY(vis.visit_str(name_str));
                 auto renamed = apply_enum_rename<Config>(false, name_str);
@@ -899,15 +898,13 @@ bool decode_value(Vis& vis, T& out) {
             if constexpr(detail::data_driven<Vis>) {
                 constexpr std::size_t expected = std::tuple_size_v<V>;
                 std::size_t idx = 0;
-                bool seq_ok = vis.visit_tuple([&](auto& ev) -> bool {
+                bool seq_ok = vis.visit_tuple([&]([[maybe_unused]] auto& ev) -> bool {
                     if constexpr(expected == 0) {
-                        (void)ev;
                         // Any element is too many for an empty tuple
                         return scoped_context<typename Vis::error_type>::fail(
                             rich_error("too many elements for tuple (expected 0)"));
                     } else if(idx >= expected) {
                         // Too many elements
-                        (void)ev;
                         return scoped_context<typename Vis::error_type>::fail(
                             rich_error("too many elements for tuple (expected " +
                                        std::to_string(expected) + ")"));

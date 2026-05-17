@@ -1082,7 +1082,7 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
     encode_detail::root_visitor vis{fbb, {}};
 
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(object_error_code::invalid_state);
+        return std::unexpected(object_error_code::InvalidState);
     }
 
     fbb.Finish(vis.root_off, detail::buffer_identifier);

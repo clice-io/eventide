@@ -315,7 +315,7 @@ bool toml_map_writer::visit_entry(KF&& key_fn, VF&& value_fn) {
 
 template <typename Config = default_config<>, typename T>
 auto to_toml(const T& value) -> std::expected<::toml::table, toml::error> {
-    using V = std::remove_cvref_t<T>;
+    using V = T;
     constexpr auto kind = meta::kind_of<V>();
 
     if constexpr(kind == meta::type_kind::optional || kind == meta::type_kind::pointer) {

@@ -51,7 +51,7 @@ struct reader {
     bool check_remaining(std::size_t n) {
         if(n > data.size() - pos) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::unexpected_eof))));
+                rich_error(std::string(error_message(error_kind::UnexpectedEof))));
         }
         return true;
     }
@@ -86,7 +86,7 @@ struct reader {
         auto byte = read_u8();
         if(byte > 1U) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::type_mismatch))));
+                rich_error(std::string(error_message(error_kind::TypeMismatch))));
         }
         out = byte == 1U;
         return true;
@@ -98,7 +98,7 @@ struct reader {
         auto raw = read_le<std::int64_t>();
         if(!std::in_range<std::remove_const_t<T>>(raw)) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::number_out_of_range))));
+                rich_error(std::string(error_message(error_kind::NumberOutOfRange))));
         }
         out = static_cast<T>(raw);
         return true;
@@ -110,7 +110,7 @@ struct reader {
         auto raw = read_le<std::uint64_t>();
         if(!std::in_range<std::remove_const_t<T>>(raw)) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::number_out_of_range))));
+                rich_error(std::string(error_message(error_kind::NumberOutOfRange))));
         }
         out = static_cast<T>(raw);
         return true;
@@ -131,7 +131,7 @@ struct reader {
         auto length = read_le<std::uint64_t>();
         if(length > static_cast<std::uint64_t>(data.size())) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::unexpected_eof))));
+                rich_error(std::string(error_message(error_kind::UnexpectedEof))));
         }
         auto len = static_cast<std::size_t>(length);
         KOTA_CODEC_TRY(check_remaining(len));
@@ -154,7 +154,7 @@ struct reader {
         auto length = read_le<std::uint64_t>();
         if(length > static_cast<std::uint64_t>(data.size())) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::unexpected_eof))));
+                rich_error(std::string(error_message(error_kind::UnexpectedEof))));
         }
         auto len = static_cast<std::size_t>(length);
         KOTA_CODEC_TRY(check_remaining(len));
@@ -176,7 +176,7 @@ struct reader {
         }
         if(byte != 0x01) {
             return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::type_mismatch))));
+                rich_error(std::string(error_message(error_kind::TypeMismatch))));
         }
         return body(*this);
     }
@@ -295,7 +295,7 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
         return std::unexpected(rich_error(err.message));
     }
     if(r.pos != data.size()) {
-        return std::unexpected(rich_error(std::string(error_message(error_kind::trailing_bytes))));
+        return std::unexpected(rich_error(std::string(error_message(error_kind::TrailingBytes))));
     }
     return {};
 }

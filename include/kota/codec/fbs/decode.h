@@ -121,7 +121,7 @@ struct scalar_reader {
 
     template <typename U, typename Body>
     bool visit_struct(U& out, Body&&) {
-        if constexpr(std::is_same_v<std::remove_cvref_t<U>, T>) {
+        if constexpr(std::is_same_v<std::remove_const_t<U>, T>) {
             out = value;
         }
         return true;
@@ -493,7 +493,7 @@ struct root_reader {
 
 template <typename T, typename Body>
 bool field_reader::visit_struct(T& out, Body&& body) {
-    using V = std::remove_cvref_t<T>;
+    using V = std::remove_const_t<T>;
     if constexpr(std::same_as<V, std::monostate>) {
         return true;
     } else if constexpr(can_inline_struct_v<V>) {
@@ -511,11 +511,10 @@ bool field_reader::visit_struct(T& out, Body&& body) {
 }
 
 template <typename T, typename Body>
-bool field_reader::visit_seq(T& out, Body&& body) {
-    (void)out;
+bool field_reader::visit_seq([[maybe_unused]] T& out, Body&& body) {
     if(table == nullptr)
         return true;
-    using V = std::remove_cvref_t<T>;
+    using V = std::remove_const_t<T>;
     using E = std::ranges::range_value_t<V>;
     const auto effective_slot = (slot == 0) ? detail::first_field : slot;
     using vr_t = vec_reader<E>;

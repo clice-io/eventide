@@ -166,7 +166,7 @@ bool encode_one_field(Vis& vis, const T& value) {
 
 template <typename Config, typename Vis, typename T>
 bool encode_value(Vis& vis, const T& value) {
-    using V = std::remove_cvref_t<T>;
+    using V = T;
 
     if constexpr(requires(Vis& v, const V& val) {
                      serialize_visit<Vis, V, Config>::visit(v, val);
@@ -224,15 +224,15 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(meta::uint_like<V>) {
             return vis.visit_uint(value);
         } else if constexpr(kind == float32 || kind == float64) {
-            if constexpr(Config::nan_repr != nan_repr::passthrough) {
+            if constexpr(Config::nan_repr != nan_repr::Passthrough) {
                 if(std::isnan(value) || std::isinf(value)) {
-                    if constexpr(Config::nan_repr == nan_repr::null) {
+                    if constexpr(Config::nan_repr == nan_repr::Null) {
                         return vis.visit_null();
-                    } else if constexpr(Config::nan_repr == nan_repr::string) {
+                    } else if constexpr(Config::nan_repr == nan_repr::String) {
                         return vis.visit_str(std::isnan(value) ? "NaN"
                                              : value > 0       ? "Infinity"
                                                                : "-Infinity");
-                    } else if constexpr(Config::nan_repr == nan_repr::error) {
+                    } else if constexpr(Config::nan_repr == nan_repr::Error) {
                         return scoped_context<rich_error>::fail(
                             rich_error("NaN or Infinity is not allowed"));
                     } else {
@@ -266,7 +266,7 @@ bool encode_value(Vis& vis, const T& value) {
             }
             return vis.visit_null();
         } else if constexpr(kind == enumeration) {
-            if constexpr(Config::enum_repr == enum_repr::string) {
+            if constexpr(Config::enum_repr == enum_repr::String) {
                 auto name = apply_enum_rename<Config>(true, meta::enum_name(value));
                 std::string_view sv(name);
                 return vis.visit_str(sv);
