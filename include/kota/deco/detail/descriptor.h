@@ -10,7 +10,7 @@
 #include "./config.h"
 #include "./decl.h"
 #include "./ty.h"
-#include "kota/codec/visit/spelling.h"
+#include "kota/support/spelling.h"
 
 /*
  * generate string that describes the structure of options declared in kota::deco::desc namespace,

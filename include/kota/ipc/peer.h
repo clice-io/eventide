@@ -12,7 +12,7 @@
 #include "kota/ipc/logger.h"
 #include "kota/ipc/transport.h"
 #include "kota/async/async.h"
-#include "kota/codec/visit/raw_value.h"
+#include "kota/codec/visit/common.h"
 
 namespace kota::ipc {
 

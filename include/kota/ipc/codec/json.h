@@ -4,9 +4,8 @@
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
+#include "kota/support/spelling.h"
 #include "kota/codec/json/json.h"
-#include "kota/codec/visit/raw_value.h"
-#include "kota/codec/visit/spelling.h"
 
 namespace kota::ipc {
 

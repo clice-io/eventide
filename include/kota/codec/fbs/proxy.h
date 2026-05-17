@@ -18,7 +18,6 @@
 
 #include "kota/meta/schema.h"
 #include "kota/codec/fbs/type.h"
-#include "kota/codec/visit/backend.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/encode.h"
 

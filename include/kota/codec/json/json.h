@@ -11,7 +11,7 @@
 #include "kota/codec/json/decode.h"
 #include "kota/codec/json/encode.h"
 #include "kota/codec/json/type.h"
-#include "kota/codec/visit/raw_value.h"
+#include "kota/codec/visit/common.h"
 
 namespace kota::codec::json {
 
