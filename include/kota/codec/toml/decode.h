@@ -4,11 +4,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <ranges>
 #include <string>
 #include <string_view>
 
+#include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
 #include "kota/codec/visit/config.h"
@@ -158,7 +158,10 @@ struct value_reader {
         if(!node || !node->is_integer()) {
             return fail_type("integer");
         }
-        out = static_cast<T>(*node->value<std::int64_t>());
+        auto val = *node->value<std::int64_t>();
+        if(!kota::narrow_int(val, out)) {
+            return fail_with_location("integer value out of range");
+        }
         return true;
     }
 
@@ -168,10 +171,9 @@ struct value_reader {
             return fail_type("integer");
         }
         auto val = *node->value<std::int64_t>();
-        if(val < 0) {
-            return fail_with_location("negative value cannot be stored as unsigned integer");
+        if(!kota::narrow_int(val, out)) {
+            return fail_with_location("integer value out of range");
         }
-        out = static_cast<T>(static_cast<std::uint64_t>(val));
         return true;
     }
 

@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "kota/support/numeric.h"
 #include "kota/codec/bincode/type.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
@@ -92,11 +93,10 @@ struct reader {
     bool visit_int(T& out) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::int64_t)));
         auto raw = read_le<std::int64_t>();
-        if(!std::in_range<std::remove_const_t<T>>(raw)) {
+        if(!kota::narrow_int(raw, out)) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string(error_message(error_kind::NumberOutOfRange))));
         }
-        out = static_cast<T>(raw);
         return true;
     }
 
@@ -104,11 +104,10 @@ struct reader {
     bool visit_uint(T& out) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto raw = read_le<std::uint64_t>();
-        if(!std::in_range<std::remove_const_t<T>>(raw)) {
+        if(!kota::narrow_int(raw, out)) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string(error_message(error_kind::NumberOutOfRange))));
         }
-        out = static_cast<T>(raw);
         return true;
     }
 
@@ -154,7 +153,8 @@ struct reader {
         }
         auto len = static_cast<std::size_t>(length);
         KOTA_CODEC_TRY(check_remaining(len));
-        auto* begin = data.data() + pos;
+        using value_type = typename T::value_type;
+        auto* begin = reinterpret_cast<const value_type*>(data.data() + pos);
         out = T(begin, begin + len);
         pos += len;
         return true;

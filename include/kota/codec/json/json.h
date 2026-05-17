@@ -68,10 +68,10 @@ struct deserialize_visit<json::reader, RawValue, Config> {
     static bool visit(json::reader& vis, RawValue& value) {
         simdjson::ondemand::json_type t;
         if(vis.apply([&](auto& s) { return s.type().get(t); }) != simdjson::SUCCESS)
-            return false;
+            return scoped_context<rich_error>::fail(rich_error("failed to read JSON value type"));
         std::string_view raw;
         if(vis.apply([&](auto& s) { return s.raw_json().get(raw); }) != simdjson::SUCCESS)
-            return false;
+            return scoped_context<rich_error>::fail(rich_error("failed to read raw JSON value"));
         value.data.assign(raw.data(), raw.size());
         return true;
     }

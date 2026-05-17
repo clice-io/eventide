@@ -7,6 +7,7 @@
 #include <string_view>
 #include <type_traits>
 
+#include "kota/support/numeric.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/dyn/error.h"
@@ -91,7 +92,9 @@ struct value_reader {
         if(!val) {
             return fail_type("integer");
         }
-        out = static_cast<T>(*val);
+        if(!kota::narrow_int(*val, out)) {
+            return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
+        }
         return true;
     }
 
@@ -104,7 +107,9 @@ struct value_reader {
         if(!val) {
             return fail_type("integer");
         }
-        out = static_cast<T>(*val);
+        if(!kota::narrow_int(*val, out)) {
+            return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
+        }
         return true;
     }
 

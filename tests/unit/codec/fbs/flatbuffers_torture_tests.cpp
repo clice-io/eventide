@@ -11,7 +11,7 @@ namespace {
 auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     auto encoded = fbs::to_flatbuffer(input);
     if(!encoded) {
-        return std::unexpected(rich_error(std::string(fbs::error_message(encoded.error()))));
+        return std::unexpected(std::move(encoded.error()));
     }
     if(encoded->empty()) {
         return std::unexpected(rich_error("empty flatbuffer"));

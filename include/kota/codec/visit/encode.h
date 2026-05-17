@@ -233,7 +233,7 @@ bool encode_value(Vis& vis, const T& value) {
                                              : value > 0       ? "Infinity"
                                                                : "-Infinity");
                     } else if constexpr(Config::nan_repr == nan_repr::Error) {
-                        return scoped_context<rich_error>::fail(
+                        return scoped_context<typename Vis::error_type>::fail(
                             rich_error("NaN or Infinity is not allowed"));
                     } else {
                         static_assert(dependent_false<V>, "unknown nan_repr value");

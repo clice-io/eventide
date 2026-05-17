@@ -331,6 +331,10 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
     constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
     bool found = false;
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
+        if(found) {
+            return scoped_context<typename Vis::error_type>::fail(
+                rich_error("externally tagged variant: expected exactly one field"));
+        }
         found = true;
         auto idx = find_tag_index(key, names);
         if(idx >= sizeof...(Ts)) {

@@ -4,12 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/numeric.h"
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
@@ -102,13 +102,9 @@ struct json_str_reader {
         if(ec != std::errc{} || ptr != str.data() + str.size()) {
             return scoped_context<rich_error>::fail(rich_error::invalid_type("integer", "string"));
         }
-        if constexpr(sizeof(T) < sizeof(std::int64_t)) {
-            if(v < static_cast<std::int64_t>(std::numeric_limits<T>::min()) ||
-               v > static_cast<std::int64_t>(std::numeric_limits<T>::max())) {
-                return scoped_context<rich_error>::fail(rich_error("number out of range"));
-            }
+        if(!kota::narrow_int(v, out)) {
+            return scoped_context<rich_error>::fail(rich_error("number out of range"));
         }
-        out = static_cast<T>(v);
         return true;
     }
 
@@ -120,12 +116,9 @@ struct json_str_reader {
             return scoped_context<rich_error>::fail(
                 rich_error::invalid_type("unsigned integer", "string"));
         }
-        if constexpr(sizeof(T) < sizeof(std::uint64_t)) {
-            if(v > static_cast<std::uint64_t>(std::numeric_limits<T>::max())) {
-                return scoped_context<rich_error>::fail(rich_error("number out of range"));
-            }
+        if(!kota::narrow_int(v, out)) {
+            return scoped_context<rich_error>::fail(rich_error("number out of range"));
         }
-        out = static_cast<T>(v);
         return true;
     }
 };
@@ -215,14 +208,9 @@ struct reader {
         auto r = src.apply([&](auto& s) { return s.get_int64(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
-        auto v = r.value_unsafe();
-        if constexpr(sizeof(T) < sizeof(std::int64_t)) {
-            if(v < static_cast<std::int64_t>(std::numeric_limits<T>::min()) ||
-               v > static_cast<std::int64_t>(std::numeric_limits<T>::max())) {
-                return fail_located(rich_error("number out of range"));
-            }
+        if(!kota::narrow_int(r.value_unsafe(), out)) {
+            return fail_located(rich_error("number out of range"));
         }
-        out = static_cast<T>(v);
         return true;
     }
 
@@ -231,13 +219,9 @@ struct reader {
         auto r = src.apply([&](auto& s) { return s.get_uint64(); });
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
-        auto v = r.value_unsafe();
-        if constexpr(sizeof(T) < sizeof(std::uint64_t)) {
-            if(v > static_cast<std::uint64_t>(std::numeric_limits<T>::max())) {
-                return fail_located(rich_error("number out of range"));
-            }
+        if(!kota::narrow_int(r.value_unsafe(), out)) {
+            return fail_located(rich_error("number out of range"));
         }
-        out = static_cast<T>(v);
         return true;
     }
 

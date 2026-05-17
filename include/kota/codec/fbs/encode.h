@@ -1029,7 +1029,7 @@ bool root_visitor::visit_variant(std::size_t index, Body&& body) {
 
 template <typename Config = default_config<>, typename T>
 auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> object_result_t<std::vector<std::uint8_t>> {
+    -> std::expected<std::vector<std::uint8_t>, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
 
@@ -1037,7 +1037,7 @@ auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity =
     encode_detail::root_visitor vis{fbb, {}};
 
     if(!encode_value<default_config<Config>>(vis, value)) {
-        return std::unexpected(object_error_code::InvalidState);
+        return std::unexpected(std::move(err));
     }
 
     fbb.Finish(vis.root_off, detail::buffer_identifier);
