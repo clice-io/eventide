@@ -568,35 +568,30 @@ constexpr bool kind_compatible(meta::type_kind src) {
 
     if(src == unknown)
         return true;
-
-    if(target == boolean)
+    else if(target == boolean)
         return src == boolean;
-    if constexpr(meta::int_like<T>)
+    else if(meta::int_like<T> || meta::uint_like<T>)
         return src == int64 || src == uint64;
-    if constexpr(meta::uint_like<T>)
-        return src == int64 || src == uint64;
-    if(target == float32 || target == float64)
+    else if(target == float32 || target == float64)
         return src == float64;
-    if(target == character)
+    else if(target == character || meta::str_like<T>)
         return src == string;
-    if constexpr(meta::str_like<T>)
-        return src == string;
-    if(target == null)
+    else if(target == null)
         return src == null;
-    if(target == optional || target == pointer)
+    else if(target == optional || target == pointer)
         return true;
-    if(target == structure)
+    else if(target == structure)
         return src == structure;
-    if(target == array || target == set)
+    else if(target == array || target == set)
         return src == array;
-    if(target == map)
+    else if(target == map)
         return src == structure;
-    if(target == variant)
+    else if(target == variant)
         return true;
-    if(target == enumeration)
+    else if(target == enumeration)
         return src == string || src == int64 || src == uint64;
-
-    return true;
+    else
+        return true;
 }
 
 template <typename Config, typename Vis, typename... Ts>
