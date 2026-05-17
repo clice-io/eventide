@@ -161,9 +161,9 @@ struct struct_writer {
     bool first = true;
 
     template <typename F>
-    [[gnu::always_inline]] inline bool visit_field(std::size_t /*index*/,
-                                                   std::string_view name,
-                                                   F&& writer);
+    inline bool visit_field(std::size_t /*index*/,
+                            std::string_view name,
+                            F&& writer);
 };
 
 struct seq_writer {

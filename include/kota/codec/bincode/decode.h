@@ -207,7 +207,7 @@ struct reader {
     }
 
     template <typename Idx, typename F>
-    [[gnu::always_inline]] bool visit_field(Idx, std::string_view, F&& r) {
+    bool visit_field(Idx, std::string_view, F&& r) {
         return r(*this);
     }
 

@@ -97,7 +97,7 @@ struct writer {
     }
 
     template <typename F>
-    [[gnu::always_inline]] bool visit_field(std::size_t /*index*/,
+    bool visit_field(std::size_t /*index*/,
                                             std::string_view /*name*/,
                                             F&& field_writer) {
         return field_writer(*this);

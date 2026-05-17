@@ -145,7 +145,7 @@ struct alloc_table_visitor {
 
     // For struct fields (called by encode_struct_fields)
     template <typename F>
-    [[gnu::always_inline]] bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
+    bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
         if(offsets.size() <= I) {
             offsets.resize(I + 1, 0);
@@ -270,7 +270,7 @@ struct write_table_visitor {
 
     // For struct fields
     template <typename F>
-    [[gnu::always_inline]] bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
+    bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
         const std::size_t I = index;
         const slot_id_t sid = detail::first_field + detail::field_step * static_cast<slot_id_t>(I);
         const auto off = (I < offsets.size()) ? offsets[I] : uoffset_t{0};

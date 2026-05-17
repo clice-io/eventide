@@ -319,7 +319,7 @@ struct tuple_view_for<std::array<T, N>> {
 private:
     template <std::size_t... Is>
     static auto helper(std::index_sequence<Is...>)
-        -> tuple_view<std::enable_if_t<(Is, true), T>...>;
+        -> tuple_view<std::enable_if_t<(void(Is), true), T>...>;
 
 public:
     using type = decltype(helper(std::make_index_sequence<N>{}));

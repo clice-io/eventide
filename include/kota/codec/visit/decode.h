@@ -118,7 +118,7 @@ concept has_native_variant =
 template <typename... Ts>
 void emplace_variant_by_index(std::variant<Ts...>& var, std::size_t idx) {
     [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        (void)((Is == idx ? (void(var.template emplace<Is>()), true) : false) || ...);
+        ((Is == idx ? void(var.template emplace<Is>()) : void()), ...);
     }(std::index_sequence_for<Ts...>{});
 }
 
@@ -292,7 +292,7 @@ bool check_required_fields(std::uint64_t field_mask) {
                     using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
                     using attrs_t = typename slot_t::attrs;
 
-                    constexpr auto kind = meta::kind_of<raw_t>();
+                    [[maybe_unused]] constexpr auto kind = meta::kind_of<raw_t>();
                     if constexpr(kind == meta::type_kind::optional ||
                                  kind == meta::type_kind::pointer ||
                                  kind == meta::type_kind::null) {
@@ -400,16 +400,15 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             }
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 bool r = true;
-                (void)((Is == idx ? (void(r = match_field<
-                                              Config,
-                                              std::variant_alternative_t<Is, std::variant<Ts...>>>(
-                                              key,
-                                              fv,
-                                              std::get<Is>(var),
-                                              &field_mask)),
-                                     true)
-                                  : false) ||
-                       ...);
+                ((Is == idx ? void(r = match_field<
+                                           Config,
+                                           std::variant_alternative_t<Is, std::variant<Ts...>>>(
+                                           key,
+                                           fv,
+                                           std::get<Is>(var),
+                                           &field_mask))
+                            : void()),
+                 ...);
                 return r;
             }(std::index_sequence_for<Ts...>{});
         });
@@ -417,12 +416,11 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
         if(result && idx != npos) {
             result = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 bool ok = true;
-                ((Is == idx ? (void(ok = check_required_fields<
-                                        Config,
-                                        std::variant_alternative_t<Is, std::variant<Ts...>>,
-                                        Vis>(field_mask)),
-                               true)
-                            : false) ||
+                ((Is == idx ? void(ok = check_required_fields<
+                                            Config,
+                                            std::variant_alternative_t<Is, std::variant<Ts...>>,
+                                            Vis>(field_mask))
+                            : void()),
                  ...);
                 return ok;
             }(std::index_sequence_for<Ts...>{});
@@ -604,7 +602,7 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
         if constexpr(has_peek_kind<Vis>) {
             auto src_kind = vis.peek_kind();
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                constexpr std::size_t last = sizeof...(Ts) - 1;
+                [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
                 return (([&] {
                             using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
                             if constexpr(Is != last) {
@@ -621,7 +619,7 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
             }(std::index_sequence_for<Ts...>{});
         } else {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                constexpr std::size_t last = sizeof...(Ts) - 1;
+                [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
                 return (([&] {
                             if constexpr(Is == last) {
                                 return construct_and_visit<Config>(vis, out, Is);
