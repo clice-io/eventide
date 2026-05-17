@@ -213,8 +213,9 @@ bool decode_field_value(Vis& vis, T& out) {
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
             if constexpr(requires { vis.visit_skip(); }) {
                 return vis.visit_skip();
+            } else {
+                return true;
             }
-            return true;
         }
     }
 
@@ -266,8 +267,9 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
             if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
                 return scoped_context<typename Vis::error_type>::fail(
                     rich_error::unknown_field(key));
+            } else {
+                return reader.visit_skip();
             }
-            return reader.visit_skip();
         }
         return result;
     }(std::make_index_sequence<N>{});
@@ -568,27 +570,27 @@ constexpr bool kind_compatible(meta::type_kind src) {
 
     if(src == unknown)
         return true;
-    else if(target == boolean)
+    if constexpr(target == boolean)
         return src == boolean;
-    else if(meta::int_like<T> || meta::uint_like<T>)
+    else if constexpr(meta::int_like<T> || meta::uint_like<T>)
         return src == int64 || src == uint64;
-    else if(target == float32 || target == float64)
+    else if constexpr(target == float32 || target == float64)
         return src == float64;
-    else if(target == character || meta::str_like<T>)
+    else if constexpr(target == character || meta::str_like<T>)
         return src == string;
-    else if(target == null)
+    else if constexpr(target == null)
         return src == null;
-    else if(target == optional || target == pointer)
+    else if constexpr(target == optional || target == pointer)
         return true;
-    else if(target == structure)
+    else if constexpr(target == structure)
         return src == structure;
-    else if(target == array || target == set)
+    else if constexpr(target == array || target == set)
         return src == array;
-    else if(target == map)
+    else if constexpr(target == map)
         return src == structure;
-    else if(target == variant)
+    else if constexpr(target == variant)
         return true;
-    else if(target == enumeration)
+    else if constexpr(target == enumeration)
         return src == string || src == int64 || src == uint64;
     else
         return true;
@@ -896,25 +898,26 @@ bool decode_value(Vis& vis, T& out) {
                 std::size_t idx = 0;
                 bool seq_ok = vis.visit_tuple([&]([[maybe_unused]] auto& ev) -> bool {
                     if constexpr(expected == 0) {
-                        // Any element is too many for an empty tuple
                         return scoped_context<typename Vis::error_type>::fail(
                             rich_error("too many elements for tuple (expected 0)"));
-                    } else if(idx >= expected) {
-                        // Too many elements
-                        return scoped_context<typename Vis::error_type>::fail(
-                            rich_error("too many elements for tuple (expected " +
-                                       std::to_string(expected) + ")"));
-                    }
-                    bool ok = detail::assign_tuple_element<Config>(ev, out, idx);
-                    if(!ok) {
-                        if constexpr(Config::detailed_error) {
-                            if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                                e->prepend_index(idx);
+                    } else {
+                        if(idx >= expected) {
+                            return scoped_context<typename Vis::error_type>::fail(
+                                rich_error("too many elements for tuple (expected " +
+                                           std::to_string(expected) + ")"));
                         }
-                        return false;
+                        bool ok = detail::assign_tuple_element<Config>(ev, out, idx);
+                        if(!ok) {
+                            if constexpr(Config::detailed_error) {
+                                if(auto* e =
+                                       scoped_context<typename Vis::error_type>::try_current())
+                                    e->prepend_index(idx);
+                            }
+                            return false;
+                        }
+                        ++idx;
+                        return true;
                     }
-                    ++idx;
-                    return true;
                 });
                 if(!seq_ok)
                     return false;

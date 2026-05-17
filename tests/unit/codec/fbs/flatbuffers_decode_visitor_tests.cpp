@@ -395,7 +395,8 @@ TEST_CASE(diag_variant_vector_int) {
     EXPECT_EQ(tag, 1U);  // vector<int> is at index 1
 
     // Step 3: Compute payload slot
-    auto payload_slot = fbs::detail::first_field + fbs::detail::field_step * (tag + 1);
+    auto payload_slot =
+        static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step * (tag + 1));
 
     // Step 4: Check what's at the payload slot
     bool has_payload = root->GetOptionalFieldOffset(payload_slot) != 0;
@@ -495,7 +496,8 @@ TEST_CASE(diag_tagged_ext_variant_int) {
     auto tag = root->GetField<std::uint32_t>(fbs::detail::first_field, 0);
     EXPECT_EQ(tag, 0U);  // int is at index 0
 
-    auto payload_slot = fbs::detail::first_field + fbs::detail::field_step * 1;
+    auto payload_slot =
+        static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step * 1);
     auto int_val = root->GetField<std::int32_t>(payload_slot, 0);
     EXPECT_EQ(int_val, 42);
 
