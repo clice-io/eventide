@@ -13,7 +13,9 @@ constexpr bool narrow_int(Source value, Target& out) {
     static_assert(sizeof(Target) <= sizeof(Source), "not a narrowing conversion");
 
     bool in_range;
-    if constexpr(std::is_signed_v<Source> == std::is_signed_v<Target>) {
+    if constexpr(std::same_as<Target, bool>) {
+        in_range = (value == 0) || (value == 1);
+    } else if constexpr(std::is_signed_v<Source> == std::is_signed_v<Target>) {
         in_range = value >= (std::numeric_limits<Target>::min)() &&
                    value <= (std::numeric_limits<Target>::max)();
     } else if constexpr(std::is_signed_v<Source>) {
