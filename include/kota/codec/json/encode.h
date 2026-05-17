@@ -16,39 +16,6 @@
 
 namespace kota::codec::json {
 
-namespace detail {
-
-inline std::string base64_encode(const std::uint8_t* data, std::size_t len) {
-    constexpr static char table[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string result;
-    result.reserve(((len + 2) / 3) * 4);
-    std::size_t i = 0;
-    while(i + 2 < len) {
-        std::uint32_t triplet = (static_cast<std::uint32_t>(data[i]) << 16) |
-                                (static_cast<std::uint32_t>(data[i + 1]) << 8) |
-                                static_cast<std::uint32_t>(data[i + 2]);
-        result.push_back(table[(triplet >> 18) & 0x3F]);
-        result.push_back(table[(triplet >> 12) & 0x3F]);
-        result.push_back(table[(triplet >> 6) & 0x3F]);
-        result.push_back(table[triplet & 0x3F]);
-        i += 3;
-    }
-    if(i < len) {
-        std::uint32_t triplet = static_cast<std::uint32_t>(data[i]) << 16;
-        if(i + 1 < len) {
-            triplet |= static_cast<std::uint32_t>(data[i + 1]) << 8;
-        }
-        result.push_back(table[(triplet >> 18) & 0x3F]);
-        result.push_back(table[(triplet >> 12) & 0x3F]);
-        result.push_back((i + 1 < len) ? table[(triplet >> 6) & 0x3F] : '=');
-        result.push_back('=');
-    }
-    return result;
-}
-
-}  // namespace detail
-
 struct value_writer;
 struct struct_writer;
 struct seq_writer;
@@ -97,6 +64,9 @@ struct value_writer {
     template <typename T>
     bool visit_char(T v) {
         char32_t cp = static_cast<char32_t>(v);
+        if(cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+            return scoped_context<rich_error>::fail(rich_error("invalid Unicode codepoint"));
+        }
         char buf[4];
         std::size_t len = 0;
         if(cp < 0x80) {
