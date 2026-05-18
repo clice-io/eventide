@@ -351,6 +351,7 @@ if has_config("test") and has_config("ztest") then
 	target("unit_tests", function()
 		set_default(false)
 		set_kind("binary")
+		set_rundir("$(projectdir)")
 		add_rules("cl-flags")
 		add_includedirs("tests")
 		add_files(
