@@ -298,7 +298,7 @@ void reset_snapshot_context(std::string_view suite, std::string_view test, std::
     auto& ctx = context();
     ctx.suite_name = suite;
     ctx.test_name = test;
-    ctx.source_file = file;
+    ctx.source_file = fs::absolute(file).lexically_normal().string();
     ctx.unnamed_used = false;
 }
 
