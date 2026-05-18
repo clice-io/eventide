@@ -22,7 +22,8 @@
             ::kota::zest::failure();                                                                \
             return_action;                                                                          \
         }                                                                                           \
-        ZEST_SNAPSHOT_STR_IMPL(return_action, *_zest_snap_pretty __VA_OPT__(, __VA_ARGS__));        \
+        ZEST_CHECK_IMPL(::kota::zest::check_snapshot_expr(                                        \
+            *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__)), return_action);                 \
     } while(0)
 
 #define EXPECT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)

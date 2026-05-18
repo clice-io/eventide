@@ -192,7 +192,6 @@ if has_config("ztest") then
 		add_rules("cl-flags")
 		add_deps("support", "deco")
 		add_packages("cpptrace", { public = true })
-		add_defines('KOTA_ZEST_BUILD_ROOT="' .. os.projectdir():gsub("\\", "/") .. '"')
 	end)
 end
 

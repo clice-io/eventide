@@ -14,6 +14,7 @@
 
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
+#include "kota/support/glob_pattern.h"
 #include "kota/zest/detail/registry.h"
 #include "kota/zest/detail/snapshot.h"
 #include "kota/zest/run.h"
@@ -50,6 +51,14 @@ struct ZestCliOptions {
 
     DecoFlag(help = "Update snapshot files instead of comparing"; required = false)
     update_snapshots = false;
+
+    DecoFlag(help = "Remove orphaned snapshot files not used in this run"; required = false)
+    cleanup_snapshots = false;
+
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<DIR>";
+                 help = "Directory for snapshot files (default: next to test source)";
+                 required = false)
+    <std::string> snapshot_dir = "";
 };
 
 auto to_runner_options(ZestCliOptions options)
@@ -63,6 +72,8 @@ auto to_runner_options(ZestCliOptions options)
     runner_options.parallel = *options.parallel;
     runner_options.parallel_workers = *options.parallel_workers;
     runner_options.update_snapshots = *options.update_snapshots;
+    runner_options.cleanup_snapshots = *options.cleanup_snapshots;
+    runner_options.snapshot_dir = std::move(*options.snapshot_dir);
     if(options.test_filter_input.has_value()) {
         runner_options.filter = std::move(*options.test_filter_input);
     } else {
@@ -72,8 +83,8 @@ auto to_runner_options(ZestCliOptions options)
 }
 
 struct FilterPatternSet {
-    std::string suite = std::string(wildcard_pattern);
-    std::string display = std::string(wildcard_pattern);
+    kota::GlobPattern suite;
+    kota::GlobPattern display;
 };
 
 struct FailedTest {
@@ -101,55 +112,54 @@ struct TestResult {
 
 using SuiteMap = std::unordered_map<std::string, std::vector<kota::zest::TestCase>>;
 
-bool matches_pattern(std::string_view text, std::string_view pattern) {
-    std::size_t ti = 0, pi = 0, star = std::string_view::npos, match = 0;
-    while(ti < text.size()) {
-        if(pi < pattern.size() && (pattern[pi] == text[ti])) {
-            ++ti;
-            ++pi;
-        } else if(pi < pattern.size() && pattern[pi] == '*') {
-            star = pi++;
-            match = ti;
-        } else if(star != std::string_view::npos) {
-            pi = star + 1;
-            ti = ++match;
-        } else {
-            return false;
-        }
-    }
-    while(pi < pattern.size() && pattern[pi] == '*') {
-        ++pi;
-    }
-    return pi == pattern.size();
-}
-
 auto make_display_name(std::string_view suite_name, std::string_view test_name) -> std::string {
     return std::format("{}.{}", suite_name, test_name);
 }
 
-auto resolve_filter_patterns(std::string_view filter) -> FilterPatternSet {
-    FilterPatternSet patterns;
+auto resolve_filter_patterns(std::string_view filter)
+    -> std::expected<FilterPatternSet, std::string> {
     if(filter.empty()) {
-        return patterns;
+        return FilterPatternSet{
+            .suite = *kota::GlobPattern::create("*"),
+            .display = *kota::GlobPattern::create("*"),
+        };
     }
 
     auto dot = filter.find('.');
     if(dot == std::string_view::npos) {
-        patterns.suite.assign(filter);
-        patterns.display = patterns.suite + ".*";
-        return patterns;
+        auto suite_glob = kota::GlobPattern::create(filter);
+        if(!suite_glob) {
+            return std::unexpected(suite_glob.error().message);
+        }
+        auto display_glob = kota::GlobPattern::create(std::string(filter) + ".*");
+        if(!display_glob) {
+            return std::unexpected(display_glob.error().message);
+        }
+        return FilterPatternSet{
+            .suite = *std::move(suite_glob),
+            .display = *std::move(display_glob),
+        };
     }
 
-    patterns.suite.assign(filter.substr(0, dot));
+    auto suite_pattern = filter.substr(0, dot);
     auto test_pattern = filter.substr(dot + 1);
     if(test_pattern.empty()) {
         test_pattern = wildcard_pattern;
     }
 
-    patterns.display.assign(filter.substr(0, dot));
-    patterns.display.push_back('.');
-    patterns.display.append(test_pattern);
-    return patterns;
+    auto suite_glob = kota::GlobPattern::create(suite_pattern);
+    if(!suite_glob) {
+        return std::unexpected(suite_glob.error().message);
+    }
+    auto display_str = std::format("{}.{}", suite_pattern, test_pattern);
+    auto display_glob = kota::GlobPattern::create(display_str);
+    if(!display_glob) {
+        return std::unexpected(display_glob.error().message);
+    }
+    return FilterPatternSet{
+        .suite = *std::move(suite_glob),
+        .display = *std::move(display_glob),
+    };
 }
 
 auto group_suites(const std::vector<kota::zest::TestSuite>& suites) -> SuiteMap {
@@ -165,16 +175,16 @@ auto group_suites(const std::vector<kota::zest::TestSuite>& suites) -> SuiteMap 
 }
 
 bool matches_suite_filter(std::string_view suite_name, const FilterPatternSet& patterns) {
-    return matches_pattern(suite_name, patterns.suite);
+    return patterns.suite.match(suite_name);
 }
 
 bool matches_test_filter(std::string_view suite_name,
                          std::string_view test_name,
                          const FilterPatternSet& patterns) {
-    if(patterns.display == wildcard_pattern) {
+    if(patterns.display.is_trivial_match_all()) {
         return true;
     }
-    return matches_pattern(make_display_name(suite_name, test_name), patterns.display);
+    return patterns.display.match(make_display_name(suite_name, test_name));
 }
 
 bool has_focused_tests(const SuiteMap& grouped_suites, const FilterPatternSet& patterns) {
@@ -245,7 +255,10 @@ void print_summary(const RunSummary& summary) {
 
 namespace kota::zest {
 
-int run_cli(int argc, char** argv, std::string_view command_overview) {
+int run_cli(int argc,
+            char** argv,
+            std::string_view command_overview,
+            std::string_view default_snapshot_dir) {
     auto args = kota::deco::util::argvify(argc, argv);
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<ZestCliOptions> command(command_overview);
@@ -263,6 +276,10 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
         std::cerr << "Error parsing options: " << options.error() << "\n";
         command.usage(std::cerr);
         std::exit(1);
+    }
+
+    if(options->snapshot_dir.empty() && !default_snapshot_dir.empty()) {
+        options->snapshot_dir = default_snapshot_dir;
     }
 
     return run_tests(std::move(*options));
@@ -286,12 +303,18 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 }
 
 int Runner::run_tests(std::string_view filter) {
-    return run_tests(RunnerOptions{.filter = std::string(filter)});
+    return run_tests(RunnerOptions{.filter = std::string(filter), .snapshot_dir = {}});
 }
 
 int Runner::run_tests(RunnerOptions options) {
     set_update_snapshots(options.update_snapshots);
-    const auto patterns = resolve_filter_patterns(options.filter);
+    set_snapshot_dir(options.snapshot_dir);
+    auto patterns_result = resolve_filter_patterns(options.filter);
+    if(!patterns_result) {
+        std::println("{}Error: invalid filter pattern: {}{}", red, patterns_result.error(), clear);
+        return 1;
+    }
+    auto patterns = std::move(*patterns_result);
     auto grouped_suites = group_suites(suites);
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
 
@@ -457,6 +480,14 @@ int Runner::run_tests(RunnerOptions options) {
         for(std::size_t i = 0; i < runnable.size(); ++i) {
             results[i] = run_single(runnable[i], true);
             record_result(results[i]);
+        }
+    }
+
+    if(options.cleanup_snapshots) {
+        auto removed = cleanup_unused_snapshots();
+        if(removed > 0) {
+            std::println("[snapshot] cleaned up {} orphaned file{}", removed,
+                         removed == 1 ? "" : "s");
         }
     }
 

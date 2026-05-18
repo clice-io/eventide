@@ -17,12 +17,18 @@ struct RunnerOptions {
     unsigned parallel_workers = 0;
     /// When true, snapshot files are created/overwritten instead of compared.
     bool update_snapshots = false;
+    /// When true, remove snapshot files that were not accessed during this run.
+    bool cleanup_snapshots = false;
+    /// Directory for snapshot files. If empty, snapshots are stored next to each test source file.
+    std::string snapshot_dir;
 };
 
 /// Parse CLI arguments into RunnerOptions and execute registered tests.
+/// If default_snapshot_dir is non-empty, it is used when --snapshot-dir is not passed on the CLI.
 int run_cli(int argc,
             char** argv,
-            std::string_view command_overview = "unitest [options] Run unit tests");
+            std::string_view command_overview = "unitest [options] Run unit tests",
+            std::string_view default_snapshot_dir = {});
 
 /// Execute all registered tests using an explicit runtime configuration.
 int run_tests(RunnerOptions options);

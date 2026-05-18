@@ -6,8 +6,10 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <print>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -27,6 +29,17 @@ struct SnapshotContext {
 };
 
 std::atomic<bool> update_snapshots_flag{false};
+std::string global_snapshot_dir;
+
+std::mutex accessed_mutex;
+std::set<std::string> accessed_snap_paths;
+std::set<std::string> accessed_snap_dirs;
+
+void record_access(const fs::path& snap_path) {
+    std::lock_guard lock(accessed_mutex);
+    accessed_snap_paths.insert(snap_path.lexically_normal().string());
+    accessed_snap_dirs.insert(snap_path.parent_path().lexically_normal().string());
+}
 
 SnapshotContext& context() {
     thread_local SnapshotContext ctx;
@@ -75,6 +88,7 @@ std::optional<SnapData> read_snap(const fs::path& path) {
 
 std::string format_snap(std::string_view source,
                         std::string_view input_file,
+                        std::string_view expression,
                         std::string_view content,
                         std::string_view created_at = {}) {
     std::string date_str;
@@ -89,6 +103,9 @@ std::string format_snap(std::string_view source,
     std::string result = "---\n";
     result += std::format("source: {}\n", source);
     result += std::format("created_at: {}\n", date_str);
+    if(!expression.empty()) {
+        result += std::format("expression: {}\n", expression);
+    }
     if(!input_file.empty()) {
         result += std::format("input_file: {}\n", input_file);
     }
@@ -113,7 +130,29 @@ bool write_snap(const fs::path& path, std::string_view content) {
 }
 
 fs::path snap_dir() {
-    return fs::path(context().source_file).parent_path() / "snapshots";
+    return fs::path(global_snapshot_dir);
+}
+
+fs::path snap_suite_dir() {
+    return snap_dir() / context().suite_name;
+}
+
+fs::path snap_test_dir() {
+    auto& ctx = context();
+    return snap_dir() / ctx.suite_name / ctx.test_name;
+}
+
+fs::path glob_literal_prefix(std::string_view pattern) {
+    auto end = pattern.find_first_of("*?[{");
+    if(end == std::string_view::npos) {
+        return fs::path(pattern).parent_path();
+    }
+    auto prefix = pattern.substr(0, end);
+    auto last_sep = prefix.find_last_of('/');
+    if(last_sep == std::string_view::npos) {
+        return {};
+    }
+    return fs::path(prefix.substr(0, last_sep + 1));
 }
 
 std::string normalize_newlines(std::string_view s) {
@@ -122,16 +161,95 @@ std::string normalize_newlines(std::string_view s) {
     return result;
 }
 
+std::vector<std::string_view> split_lines(std::string_view s) {
+    std::vector<std::string_view> lines;
+    std::size_t pos = 0;
+    while(pos < s.size()) {
+        auto nl = s.find('\n', pos);
+        if(nl == std::string_view::npos) {
+            lines.push_back(s.substr(pos));
+            break;
+        }
+        lines.push_back(s.substr(pos, nl - pos));
+        pos = nl + 1;
+    }
+    return lines;
+}
+
+void print_diff(std::string_view expected, std::string_view actual) {
+    auto old_lines = split_lines(expected);
+    auto new_lines = split_lines(actual);
+
+    auto max_lines = (std::max)(old_lines.size(), new_lines.size());
+    constexpr std::size_t max_diff_lines = 30;
+
+    std::size_t printed = 0;
+    std::size_t i = 0;
+    while(i < max_lines && printed < max_diff_lines) {
+        bool have_old = i < old_lines.size();
+        bool have_new = i < new_lines.size();
+
+        if(have_old && have_new && old_lines[i] == new_lines[i]) {
+            ++i;
+            continue;
+        }
+
+        if(have_old && have_new) {
+            std::println("           \033[31m-  {}\033[0m", old_lines[i]);
+            std::println("           \033[32m+  {}\033[0m", new_lines[i]);
+            printed += 2;
+        } else if(have_old) {
+            std::println("           \033[31m-  {}\033[0m", old_lines[i]);
+            ++printed;
+        } else {
+            std::println("           \033[32m+  {}\033[0m", new_lines[i]);
+            ++printed;
+        }
+        ++i;
+    }
+
+    if(i < max_lines) {
+        std::println("           ... ({} more differing lines)", max_lines - i);
+    }
+}
+
+void migrate_snap_extension(const fs::path& target) {
+    std::error_code ec;
+    if(fs::exists(target, ec)) {
+        return;
+    }
+
+    auto parent = target.parent_path();
+    // target: foo.snap.yml → base: foo
+    auto base = target.stem().stem().string();
+
+    for(auto ext: {".yml", ".snap"}) {
+        auto old_path = parent / (base + ext);
+        if(fs::exists(old_path, ec)) {
+            fs::rename(old_path, target, ec);
+            if(!ec) {
+                std::println("[snapshot] migrated {} -> {}", old_path.filename().string(),
+                             target.filename().string());
+            }
+            return;
+        }
+    }
+}
+
 bool check_impl(const fs::path& snap_path,
                 std::string_view value,
                 std::string_view input_file,
+                std::string_view expression,
                 std::source_location loc) {
+    migrate_snap_extension(snap_path);
+    record_access(snap_path);
+
     auto existing = read_snap(snap_path);
     auto source = fs::path(loc.file_name()).filename().string();
     auto normalized = normalize_newlines(value);
 
     if(!existing) {
-        auto formatted = format_snap(source, input_file, normalized);
+        auto formatted = format_snap(source, input_file, expression, normalized);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -147,7 +265,7 @@ bool check_impl(const fs::path& snap_path,
     }
 
     if(update_snapshots_flag.load(std::memory_order_acquire)) {
-        auto formatted = format_snap(source, input_file, normalized, existing->created_at);
+        auto formatted = format_snap(source, input_file, expression, normalized, existing->created_at);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -157,7 +275,7 @@ bool check_impl(const fs::path& snap_path,
     }
 
     auto new_path = fs::path(snap_path.string() + ".new");
-    auto formatted = format_snap(source, input_file, normalized);
+    auto formatted = format_snap(source, input_file, expression, normalized);
     bool wrote_new = write_snap(new_path, formatted);
 
     std::println("[snapshot] mismatch: {}", snap_path.string());
@@ -166,6 +284,7 @@ bool check_impl(const fs::path& snap_path,
     } else {
         std::println("           failed to write new result file");
     }
+    print_diff(existing->body, normalized);
     std::println("           run with --update-snapshots to accept");
     std::println("           at {}:{}", loc.file_name(), loc.line());
     return true;
@@ -177,14 +296,7 @@ void reset_snapshot_context(std::string_view suite, std::string_view test, std::
     auto& ctx = context();
     ctx.suite_name = suite;
     ctx.test_name = test;
-
-    fs::path p(file);
-#ifdef KOTA_ZEST_BUILD_ROOT
-    if(!file.empty() && p.is_relative()) {
-        p = (fs::path(KOTA_ZEST_BUILD_ROOT) / p).lexically_normal();
-    }
-#endif
-    ctx.source_file = p.string();
+    ctx.source_file = file;
     ctx.unnamed_used = false;
 }
 
@@ -192,16 +304,24 @@ void set_update_snapshots(bool enabled) {
     update_snapshots_flag.store(enabled, std::memory_order_release);
 }
 
+void set_snapshot_dir(std::string_view dir) {
+    global_snapshot_dir = dir;
+}
+
 bool check_snapshot(std::string_view value, std::string_view name, std::source_location loc) {
     auto& ctx = context();
 
-    if(ctx.source_file.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+    if(global_snapshot_dir.empty()) {
+        std::println("[snapshot] error: no snapshot directory configured (use --snapshot-dir)");
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }
 
-    auto stem = fs::path(ctx.source_file).stem().string();
+    if(ctx.suite_name.empty()) {
+        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
 
     if(name.empty()) {
         if(ctx.unnamed_used) {
@@ -212,8 +332,8 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
             return true;
         }
         ctx.unnamed_used = true;
-        auto filename = std::format("{}__{}__{}.snap", stem, ctx.suite_name, ctx.test_name);
-        return check_impl(snap_dir() / filename, value, "", loc);
+        auto path = snap_suite_dir() / (ctx.test_name + ".snap.yml");
+        return check_impl(path, value, "", "", loc);
     }
 
     if(name.find_first_of("/\\:*?\"<>|") != std::string_view::npos) {
@@ -222,8 +342,49 @@ bool check_snapshot(std::string_view value, std::string_view name, std::source_l
         return true;
     }
 
-    auto filename = std::format("{}__{}__{}__{}.snap", stem, ctx.suite_name, ctx.test_name, name);
-    return check_impl(snap_dir() / filename, value, "", loc);
+    auto path = snap_test_dir() / (std::string(name) + ".snap.yml");
+    return check_impl(path, value, "", "", loc);
+}
+
+bool check_snapshot_expr(std::string_view value,
+                         std::string_view expression,
+                         std::string_view name,
+                         std::source_location loc) {
+    auto& ctx = context();
+
+    if(global_snapshot_dir.empty()) {
+        std::println("[snapshot] error: no snapshot directory configured (use --snapshot-dir)");
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    if(ctx.suite_name.empty()) {
+        std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    if(name.empty()) {
+        if(ctx.unnamed_used) {
+            std::println("[snapshot] error: duplicate unnamed snapshot in same TEST_CASE");
+            std::println(
+                "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
+            std::println("           at {}:{}", loc.file_name(), loc.line());
+            return true;
+        }
+        ctx.unnamed_used = true;
+        auto path = snap_suite_dir() / (ctx.test_name + ".snap.yml");
+        return check_impl(path, value, "", expression, loc);
+    }
+
+    if(name.find_first_of("/\\:*?\"<>|") != std::string_view::npos) {
+        std::println("[snapshot] error: snapshot name contains unsafe characters: `{}`", name);
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    auto path = snap_test_dir() / (std::string(name) + ".snap.yml");
+    return check_impl(path, value, "", expression, loc);
 }
 
 bool check_snapshot_glob(std::string_view pattern,
@@ -231,7 +392,13 @@ bool check_snapshot_glob(std::string_view pattern,
                          std::source_location loc) {
     auto& ctx = context();
 
-    if(ctx.source_file.empty()) {
+    if(global_snapshot_dir.empty()) {
+        std::println("[snapshot] error: no snapshot directory configured (use --snapshot-dir)");
+        std::println("           at {}:{}", loc.file_name(), loc.line());
+        return true;
+    }
+
+    if(ctx.suite_name.empty()) {
         std::println("[snapshot] error: no snapshot context (used outside TEST_CASE?)");
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
@@ -246,19 +413,22 @@ bool check_snapshot_glob(std::string_view pattern,
     }
 
     auto base_dir = fs::path(ctx.source_file).parent_path();
+    auto prefix = glob_literal_prefix(pattern);
+    auto scan_dir = (base_dir / prefix).lexically_normal();
+
     std::error_code ec;
-    auto iter = fs::recursive_directory_iterator(base_dir, ec);
+    auto iter = fs::recursive_directory_iterator(scan_dir, ec);
     if(ec) {
-        std::println("[snapshot] error: cannot iterate `{}`", base_dir.string());
+        std::println("[snapshot] error: cannot iterate `{}`", scan_dir.string());
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }
 
-    auto snap_base = snap_dir();
+    auto snap_base = snap_test_dir();
 
-    std::vector<fs::path> matched;
+    std::vector<std::pair<fs::path, fs::path>> matched;
     for(auto& entry: iter) {
-        if(entry.is_directory() && entry.path() == snap_base) {
+        if(entry.is_directory() && entry.path().lexically_normal() == snap_dir().lexically_normal()) {
             iter.disable_recursion_pending();
             continue;
         }
@@ -272,29 +442,65 @@ bool check_snapshot_glob(std::string_view pattern,
         }
         auto rel_str = rel.generic_string();
         if(glob->match(rel_str)) {
-            matched.push_back(std::move(rel));
+            auto snap_rel = fs::relative(entry.path(), scan_dir, rel_ec);
+            if(rel_ec) {
+                continue;
+            }
+            matched.emplace_back(std::move(rel), std::move(snap_rel));
         }
     }
 
-    std::ranges::sort(matched);
+    std::ranges::sort(matched, {}, &std::pair<fs::path, fs::path>::first);
 
     if(matched.empty()) {
         std::println("[snapshot] error: no files matched pattern `{}`", pattern);
-        std::println("           base dir: {}", base_dir.string());
+        std::println("           base dir: {}", scan_dir.string());
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }
 
     bool failed = false;
-    for(auto& rel: matched) {
+    for(auto& [rel, snap_rel]: matched) {
         auto full_path = (base_dir / rel).string();
         auto value = transform(full_path);
-        auto snap_path = snap_base / (rel.generic_string() + ".snap");
-        if(check_impl(snap_path, value, rel.generic_string(), loc)) {
+        auto snap_path = snap_base / (snap_rel.generic_string() + ".snap.yml");
+        if(check_impl(snap_path, value, rel.generic_string(), "", loc)) {
             failed = true;
         }
     }
     return failed;
+}
+
+std::size_t cleanup_unused_snapshots() {
+    std::lock_guard lock(accessed_mutex);
+
+    std::size_t removed = 0;
+    for(auto& dir_str: accessed_snap_dirs) {
+        fs::path dir(dir_str);
+        std::error_code ec;
+        if(!fs::is_directory(dir, ec)) {
+            continue;
+        }
+        for(auto& entry: fs::recursive_directory_iterator(dir, ec)) {
+            if(!entry.is_regular_file()) {
+                continue;
+            }
+            auto normalized = entry.path().lexically_normal().string();
+            if(accessed_snap_paths.contains(normalized)) {
+                continue;
+            }
+            auto ext = entry.path().extension();
+            auto stem_ext = entry.path().stem().extension();
+            bool is_snapshot = (ext == ".yml" && stem_ext == ".snap") || ext == ".snap";
+            if(!is_snapshot) {
+                continue;
+            }
+            std::println("[snapshot] removing orphan: {}", entry.path().filename().string());
+            fs::remove(entry.path(), ec);
+            ++removed;
+        }
+    }
+    return removed;
 }
 
 }  // namespace kota::zest
