@@ -14,10 +14,10 @@
 
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
-#include "kota/support/glob_pattern.h"
 #include "kota/zest/detail/registry.h"
 #include "kota/zest/detail/snapshot.h"
 #include "kota/zest/run.h"
+#include "kota/support/glob_pattern.h"
 
 namespace {
 
@@ -486,7 +486,8 @@ int Runner::run_tests(RunnerOptions options) {
     if(options.cleanup_snapshots) {
         auto removed = cleanup_unused_snapshots();
         if(removed > 0) {
-            std::println("[snapshot] cleaned up {} orphaned file{}", removed,
+            std::println("[snapshot] cleaned up {} orphaned file{}",
+                         removed,
                          removed == 1 ? "" : "s");
         }
     }

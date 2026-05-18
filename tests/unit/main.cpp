@@ -21,6 +21,8 @@ int main(int argc, char** argv) {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
-    return kota::zest::run_cli(argc, argv, "unitest [options] Run unit tests",
+    return kota::zest::run_cli(argc,
+                               argv,
+                               "unitest [options] Run unit tests",
                                default_snapshot_dir());
 }

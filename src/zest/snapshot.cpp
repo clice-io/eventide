@@ -228,7 +228,8 @@ void migrate_snap_extension(const fs::path& target) {
         if(fs::exists(old_path, ec)) {
             fs::rename(old_path, target, ec);
             if(!ec) {
-                std::println("[snapshot] migrated {} -> {}", old_path.filename().string(),
+                std::println("[snapshot] migrated {} -> {}",
+                             old_path.filename().string(),
                              target.filename().string());
             }
             return;
@@ -265,7 +266,8 @@ bool check_impl(const fs::path& snap_path,
     }
 
     if(update_snapshots_flag.load(std::memory_order_acquire)) {
-        auto formatted = format_snap(source, input_file, expression, normalized, existing->created_at);
+        auto formatted =
+            format_snap(source, input_file, expression, normalized, existing->created_at);
         if(!write_snap(snap_path, formatted)) {
             std::println("[snapshot] failed to write {}", snap_path.string());
             return true;
@@ -428,7 +430,8 @@ bool check_snapshot_glob(std::string_view pattern,
 
     std::vector<std::pair<fs::path, fs::path>> matched;
     for(auto& entry: iter) {
-        if(entry.is_directory() && entry.path().lexically_normal() == snap_dir().lexically_normal()) {
+        if(entry.is_directory() &&
+           entry.path().lexically_normal() == snap_dir().lexically_normal()) {
             iter.disable_recursion_pending();
             continue;
         }
