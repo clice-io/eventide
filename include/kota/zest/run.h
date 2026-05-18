@@ -19,7 +19,7 @@ struct RunnerOptions {
     bool update_snapshots = false;
     /// When true, remove snapshot files that were not accessed during this run.
     bool cleanup_snapshots = false;
-    /// Directory for snapshot files. If empty, snapshots are stored next to each test source file.
+    /// Directory for snapshot files. If empty when a snapshot is used, a lazy error is reported.
     std::string snapshot_dir;
 };
 

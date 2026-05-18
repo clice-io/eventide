@@ -38,7 +38,13 @@ std::set<std::string> accessed_snap_dirs;
 void record_access(const fs::path& snap_path) {
     std::lock_guard lock(accessed_mutex);
     accessed_snap_paths.insert(snap_path.lexically_normal().string());
-    accessed_snap_dirs.insert(snap_path.parent_path().lexically_normal().string());
+    auto dir = snap_path.parent_path().lexically_normal();
+    auto root = fs::path(global_snapshot_dir).lexically_normal();
+    while(!dir.empty() && dir != root && dir.has_relative_path()) {
+        accessed_snap_dirs.insert(dir.string());
+        dir = dir.parent_path();
+    }
+    accessed_snap_dirs.insert(root.string());
 }
 
 SnapshotContext& context() {
@@ -104,7 +110,17 @@ std::string format_snap(std::string_view source,
     result += std::format("source: {}\n", source);
     result += std::format("created_at: {}\n", date_str);
     if(!expression.empty()) {
-        result += std::format("expression: {}\n", expression);
+        if(expression.find_first_of(":#{}[]|>&*!?,'\"") != std::string_view::npos) {
+            std::string escaped(expression);
+            std::string::size_type pos = 0;
+            while((pos = escaped.find('\'', pos)) != std::string::npos) {
+                escaped.replace(pos, 1, "''");
+                pos += 2;
+            }
+            result += std::format("expression: '{}'\n", escaped);
+        } else {
+            result += std::format("expression: {}\n", expression);
+        }
     }
     if(!input_file.empty()) {
         result += std::format("input_file: {}\n", input_file);
@@ -500,7 +516,13 @@ std::size_t cleanup_unused_snapshots() {
             }
             std::println("[snapshot] removing orphan: {}", entry.path().filename().string());
             fs::remove(entry.path(), ec);
-            ++removed;
+            if(ec) {
+                std::println("[snapshot] warning: failed to remove {}: {}",
+                             entry.path().string(),
+                             ec.message());
+            } else {
+                ++removed;
+            }
         }
     }
     return removed;
