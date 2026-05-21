@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -161,13 +162,12 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_bytes(const T& v) {
-        auto data = reinterpret_cast<const std::uint8_t*>(std::data(v));
-        auto len = std::size(v);
+        std::span<const std::byte> bytes(v);
         fmt.out += '[';
-        for(std::size_t i = 0; i < len; ++i) {
+        for(std::size_t i = 0; i < bytes.size(); ++i) {
             if(i > 0)
                 fmt.out += ", ";
-            auto byte = data[i];
+            auto byte = static_cast<std::uint8_t>(bytes[i]);
             fmt.out += "0x";
             fmt.out += "0123456789abcdef"[byte >> 4];
             fmt.out += "0123456789abcdef"[byte & 0xf];
@@ -254,46 +254,7 @@ struct TupleWriter {
     inline bool visit_element(F&& writer);
 };
 
-struct KeyWriter {
-    Formatter& fmt;
-    using error_type = rich_error;
-
-    template <typename T>
-    bool visit_str(const T& v) {
-        fmt.write_escape_string(std::string_view(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T v) {
-        fmt.out += std::to_string(static_cast<std::int64_t>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T v) {
-        fmt.out += std::to_string(static_cast<std::uint64_t>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_enum(T v) {
-        fmt.out += meta::type_name<T>();
-        fmt.out += "::";
-        auto name = meta::enum_name(v);
-        if(name.empty()) {
-            using U = std::underlying_type_t<T>;
-            if constexpr(std::is_signed_v<U>) {
-                fmt.out += std::to_string(static_cast<std::int64_t>(v));
-            } else {
-                fmt.out += std::to_string(static_cast<std::uint64_t>(v));
-            }
-        } else {
-            fmt.out += name;
-        }
-        return true;
-    }
-};
+struct KeyWriter : ValueWriter {};
 
 struct MapWriter {
     Formatter& fmt;
