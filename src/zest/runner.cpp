@@ -239,10 +239,6 @@ int run_tests(Options options) {
     return Runner::instance().run_tests(std::move(options));
 }
 
-int run_tests(std::string_view filter) {
-    return Runner::instance().run_tests(filter);
-}
-
 Runner& Runner::instance() {
     static Runner runner;
     return runner;
@@ -250,12 +246,6 @@ Runner& Runner::instance() {
 
 void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) {
     suites.emplace_back(std::string(name), cases);
-}
-
-int Runner::run_tests(std::string_view filter) {
-    Options options;
-    options.test_filter = std::string(filter);
-    return run_tests(std::move(options));
 }
 
 int Runner::run_tests(Options options) {

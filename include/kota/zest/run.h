@@ -68,7 +68,4 @@ int run_cli(int argc,
 /// Run all registered tests with explicit configuration.
 int run_tests(Options options);
 
-/// Convenience overload: run all tests matching a filter pattern.
-int run_tests(std::string_view filter);
-
 }  // namespace kota::zest

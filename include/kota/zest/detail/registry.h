@@ -59,7 +59,6 @@ public:
     void add_suite(std::string_view suite, std::vector<TestCase> (*cases)());
 
     int run_tests(Options options);
-    int run_tests(std::string_view filter);
 
 private:
     std::vector<TestSuite> suites;
