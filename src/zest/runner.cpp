@@ -59,6 +59,11 @@ struct ZestCliOptions {
                  help = "Directory for snapshot files (default: next to test source)";
                  required = false)
     <std::string> snapshot_dir = "";
+
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<DIR>";
+                 help = "Root directory for test data (fixtures, corpus files, etc.)";
+                 required = false)
+    <std::string> test_dir = "";
 };
 
 auto to_runner_options(ZestCliOptions options)
@@ -74,6 +79,7 @@ auto to_runner_options(ZestCliOptions options)
     runner_options.update_snapshots = *options.update_snapshots;
     runner_options.cleanup_snapshots = *options.cleanup_snapshots;
     runner_options.snapshot_dir = std::move(*options.snapshot_dir);
+    runner_options.test_dir = std::move(*options.test_dir);
     if(options.test_filter_input.has_value()) {
         runner_options.filter = std::move(*options.test_filter_input);
     } else {
@@ -255,10 +261,7 @@ void print_summary(const RunSummary& summary) {
 
 namespace kota::zest {
 
-int run_cli(int argc,
-            char** argv,
-            std::string_view command_overview,
-            std::string_view default_snapshot_dir) {
+int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto args = kota::deco::util::argvify(argc, argv);
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<ZestCliOptions> command(command_overview);
@@ -276,10 +279,6 @@ int run_cli(int argc,
         std::cerr << "Error parsing options: " << options.error() << "\n";
         command.usage(std::cerr);
         std::exit(1);
-    }
-
-    if(options->snapshot_dir.empty() && !default_snapshot_dir.empty()) {
-        options->snapshot_dir = default_snapshot_dir;
     }
 
     return run_tests(std::move(*options));
@@ -303,12 +302,15 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 }
 
 int Runner::run_tests(std::string_view filter) {
-    return run_tests(RunnerOptions{.filter = std::string(filter), .snapshot_dir = {}});
+    RunnerOptions options;
+    options.filter = std::string(filter);
+    return run_tests(std::move(options));
 }
 
 int Runner::run_tests(RunnerOptions options) {
     set_update_snapshots(options.update_snapshots);
     set_snapshot_dir(options.snapshot_dir);
+    set_test_dir(options.test_dir);
     auto patterns_result = resolve_filter_patterns(options.filter);
     if(!patterns_result) {
         std::println("{}Error: invalid filter pattern: {}{}", red, patterns_result.error(), clear);

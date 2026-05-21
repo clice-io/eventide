@@ -1,5 +1,3 @@
-#include <filesystem>
-
 #include "kota/zest/zest.h"
 
 #if defined(_WIN32) && defined(_DEBUG)
@@ -7,10 +5,6 @@
 #include <cstdlib>
 #include <windows.h>
 #endif
-
-static auto default_snapshot_dir() -> std::string {
-    return (std::filesystem::path(__FILE__).parent_path().parent_path() / "snapshots").string();
-}
 
 int main(int argc, char** argv) {
 #if defined(_WIN32) && defined(_DEBUG)
@@ -21,8 +15,5 @@ int main(int argc, char** argv) {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
-    return kota::zest::run_cli(argc,
-                               argv,
-                               "unitest [options] Run unit tests",
-                               default_snapshot_dir());
+    return kota::zest::run_cli(argc, argv);
 }

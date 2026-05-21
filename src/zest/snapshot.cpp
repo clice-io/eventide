@@ -30,6 +30,7 @@ struct SnapshotContext {
 
 std::atomic<bool> update_snapshots_flag{false};
 std::string global_snapshot_dir;
+std::string global_test_dir;
 
 std::mutex accessed_mutex;
 std::set<std::string> accessed_snap_paths;
@@ -311,6 +312,14 @@ void set_update_snapshots(bool enabled) {
 
 void set_snapshot_dir(std::string_view dir) {
     global_snapshot_dir = dir;
+}
+
+void set_test_dir(std::string_view dir) {
+    global_test_dir = dir;
+}
+
+std::string_view test_dir() {
+    return global_test_dir;
 }
 
 bool check_snapshot(std::string_view value, std::string_view name, std::source_location loc) {

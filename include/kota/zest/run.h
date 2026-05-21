@@ -21,14 +21,14 @@ struct RunnerOptions {
     bool cleanup_snapshots = false;
     /// Directory for snapshot files. If empty when a snapshot is used, a lazy error is reported.
     std::string snapshot_dir;
+    /// Root directory for test data (fixtures, corpus files, etc.).
+    std::string test_dir;
 };
 
 /// Parse CLI arguments into RunnerOptions and execute registered tests.
-/// If default_snapshot_dir is non-empty, it is used when --snapshot-dir is not passed on the CLI.
 int run_cli(int argc,
             char** argv,
-            std::string_view command_overview = "unitest [options] Run unit tests",
-            std::string_view default_snapshot_dir = {});
+            std::string_view command_overview = "unitest [options] Run unit tests");
 
 /// Execute all registered tests using an explicit runtime configuration.
 int run_tests(RunnerOptions options);

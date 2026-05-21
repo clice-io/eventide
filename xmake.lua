@@ -394,6 +394,6 @@ if has_config("test") and has_config("ztest") then
 
 		add_deps("kotatsu")
 
-		add_tests("default")
+		add_tests("default", {runargs = {"--snapshot-dir=tests/snapshots", "--test-dir=tests"}})
 	end)
 end

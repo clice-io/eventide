@@ -13,6 +13,10 @@ namespace {
 
 namespace fs = std::filesystem;
 
+std::string fixtures_dir() {
+    return std::string(test_dir()) + "/unit/zest/fixtures";
+}
+
 std::string read_file(std::string_view path) {
     std::ifstream file(std::string(path), std::ios::binary);
     if(!file) {
@@ -64,7 +68,7 @@ TEST_CASE(json_map) {
 }
 
 TEST_CASE(glob_fixtures) {
-    ASSERT_SNAPSHOT_GLOB("fixtures/**/*.txt", read_file);
+    ASSERT_SNAPSHOT_GLOB(fixtures_dir(), "**/*.txt", read_file);
 }
 
 TEST_CASE(mismatch_detection, serial = true) {
@@ -101,12 +105,12 @@ TEST_CASE(missing_context_error) {
 }
 
 TEST_CASE(invalid_glob_error) {
-    auto result = check_snapshot_glob("[unclosed", [](std::string_view) { return std::string{}; });
+    auto result = check_snapshot_glob(".", "[unclosed", [](std::string_view) { return std::string{}; });
     EXPECT_TRUE(result);
 }
 
 TEST_CASE(glob_no_matches) {
-    auto result = check_snapshot_glob("nonexistent_dir/**/*.xyz",
+    auto result = check_snapshot_glob("nonexistent_dir", "**/*.xyz",
                                       [](std::string_view) { return std::string{}; });
     EXPECT_TRUE(result);
 }
@@ -125,8 +129,8 @@ TEST_CASE(unsafe_name_chars) {
 
 TEST_CASE(glob_empty_context) {
     reset_snapshot_context("", "", "");
-    auto result =
-        check_snapshot_glob("fixtures/**/*.txt", [](std::string_view) { return std::string{}; });
+    auto result = check_snapshot_glob(fixtures_dir(), "**/*.txt",
+                                      [](std::string_view) { return std::string{}; });
     EXPECT_TRUE(result);
 }
 

@@ -13,6 +13,10 @@ void set_update_snapshots(bool enabled);
 
 void set_snapshot_dir(std::string_view dir);
 
+void set_test_dir(std::string_view dir);
+
+std::string_view test_dir();
+
 bool check_snapshot(std::string_view value,
                     std::string_view name = {},
                     std::source_location loc = std::source_location::current());
