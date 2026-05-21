@@ -253,18 +253,33 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(kind == null) {
             return vis.visit_null();
         } else if constexpr(kind == optional || kind == pointer) {
-            if(value) {
-                if constexpr(requires(Vis& v, int x) {
-                                 v.visit_some(x, [](auto&) -> bool { return true; });
-                             }) {
-                    return vis.visit_some(*value, [&](auto& sv) -> bool {
-                        return encode_value<Config>(sv, *value);
-                    });
+            if constexpr(is_specialization_of<std::weak_ptr, V>) {
+                auto sp = value.lock();
+                if constexpr(requires(Vis& v, const decltype(sp)& p) { v.visit_pointer(p); }) {
+                    return vis.visit_pointer(sp);
                 } else {
-                    return encode_value<Config>(vis, *value);
+                    if(sp) {
+                        return encode_value<Config>(vis, *sp);
+                    }
+                    return vis.visit_null();
                 }
+            } else if constexpr(kind == pointer &&
+                                requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
+                return vis.visit_pointer(value);
+            } else {
+                if(value) {
+                    if constexpr(requires(Vis& v, int x) {
+                                     v.visit_some(x, [](auto&) -> bool { return true; });
+                                 }) {
+                        return vis.visit_some(*value, [&](auto& sv) -> bool {
+                            return encode_value<Config>(sv, *value);
+                        });
+                    } else {
+                        return encode_value<Config>(vis, *value);
+                    }
+                }
+                return vis.visit_null();
             }
-            return vis.visit_null();
         } else if constexpr(kind == enumeration) {
             if constexpr(Config::enum_repr == enum_repr::String) {
                 auto name = apply_enum_rename<Config>(true, meta::enum_name(value));
@@ -338,9 +353,25 @@ bool encode_value(Vis& vis, const T& value) {
                 return encode_struct_fields<Config>(sv, value);
             });
         } else if constexpr(kind == variant) {
-            if constexpr(requires(Vis& v) {
-                             v.visit_variant(std::size_t{}, [](auto&) -> bool { return true; });
-                         }) {
+            if constexpr(is_expected_v<V>) {
+                if(value.has_value()) {
+                    if constexpr(!std::is_void_v<typename V::value_type>) {
+                        return encode_value<Config>(vis, *value);
+                    } else {
+                        return vis.visit_null();
+                    }
+                } else {
+                    using E = std::remove_cvref_t<decltype(value.error())>;
+                    if constexpr(meta::kind_of<E>() != meta::type_kind::unknown) {
+                        return encode_value<Config>(vis, value.error());
+                    } else {
+                        return vis.visit_null();
+                    }
+                }
+            } else if constexpr(requires(Vis& v) {
+                                    v.visit_variant(std::size_t{},
+                                                    [](auto&) -> bool { return true; });
+                                }) {
                 return vis.visit_variant(value.index(), [&](auto& pv) -> bool {
                     return std::visit(
                         [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
@@ -351,6 +382,9 @@ bool encode_value(Vis& vis, const T& value) {
                     [&](const auto& alt) -> bool { return encode_value<Config>(vis, alt); },
                     value);
             }
+        } else if constexpr(std::is_pointer_v<V> &&
+                            requires(Vis& v, const V& p) { v.visit_pointer(p); }) {
+            return vis.visit_pointer(value);
         } else {
             static_assert(dependent_false<V>,
                           "cannot serialize this type; specialize serialize_visit to add support");

@@ -185,9 +185,10 @@ consteval type_kind kind_of() {
     } else if constexpr(is_optional_v<T>) {
         return type_kind::optional;
     } else if constexpr(is_specialization_of<std::unique_ptr, T> ||
-                        is_specialization_of<std::shared_ptr, T>) {
+                        is_specialization_of<std::shared_ptr, T> ||
+                        is_specialization_of<std::weak_ptr, T>) {
         return type_kind::pointer;
-    } else if constexpr(is_specialization_of<std::variant, T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || is_expected_v<T>) {
         return type_kind::variant;
     } else if constexpr(tuple_like<T>) {
         return type_kind::tuple;

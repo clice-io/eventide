@@ -1,9 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <expected>
-#include <format>
-#include <optional>
 #include <print>
 #include <source_location>
 #include <string>
@@ -11,31 +8,23 @@
 
 #include "kota/zest/detail/trace.h"
 #include "kota/support/functional.h"
-#include "kota/support/type_traits.h"
 #include "kota/meta/compare.h"
 #include "kota/meta/name.h"
+#include "kota/meta/type_kind.h"
+#include "kota/codec/debug/encode.h"
 
 namespace kota::zest {
 
 template <typename T>
 inline std::string pretty_dump(const T& value) {
-    if constexpr(is_optional_v<T>) {
-        if(!value) {
-            return std::string("nullopt");
-        }
-        return zest::pretty_dump(*value);
-    } else if constexpr(is_expected_v<T>) {
-        if(value.has_value()) {
-            return std::format("expected({})", zest::pretty_dump(*value));
-        }
-        return std::format("unexpected({})", zest::pretty_dump(value.error()));
-    } else {
-        if constexpr(Formattable<T>) {
-            return std::format("{}", value);
-        } else {
-            return std::string("<unformattable>");
+    constexpr auto kind = meta::kind_of<T>();
+    if constexpr(kind != meta::type_kind::unknown || std::is_pointer_v<T>) {
+        auto result = codec::debug::to_string(value);
+        if(result) {
+            return std::move(*result);
         }
     }
+    return std::string(meta::type_name<T>());
 }
 
 struct binary_expr_pair {
