@@ -163,6 +163,9 @@ jobs:
 
           ctest --test-dir "${build_dir}" --verbose
 
+          echo "--- Running tests in parallel mode (multi-process) ---"
+          "${build_dir}/unit_tests" --parallel --snapshot-dir=tests/snapshots
+
       - name: Show compiler cache stats
         if: always()
         shell: bash

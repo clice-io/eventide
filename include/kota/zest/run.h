@@ -51,6 +51,9 @@ struct Options {
                  help = "directory for snapshot files";
                  required = false)
     <std::string> snapshot_dir = "";
+
+    // Internal fields — set by run_cli, not exposed via CLI.
+    std::string _program;
 };
 
 /// Parse CLI arguments and run all registered tests.

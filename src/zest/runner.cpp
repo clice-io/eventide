@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <expected>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <print>
@@ -18,6 +20,7 @@
 #include "kota/zest/detail/snapshot.h"
 #include "kota/zest/run.h"
 #include "kota/support/glob_pattern.h"
+#include "worker.h"
 
 namespace {
 
@@ -61,6 +64,7 @@ struct TestResult {
     std::size_t line;
     kota::zest::TestState state;
     std::chrono::milliseconds duration;
+    std::string output;
 };
 
 using SuiteMap = std::unordered_map<std::string, std::vector<kota::zest::TestCase>>;
@@ -204,18 +208,51 @@ void print_summary(const RunSummary& summary) {
     }
 }
 
+std::string resolve_program_path(const char* argv0) {
+#if defined(__linux__)
+    std::error_code ec;
+    auto p = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if(!ec) {
+        return p.string();
+    }
+#endif
+    std::error_code ec2;
+    auto p2 = std::filesystem::canonical(argv0, ec2);
+    if(!ec2) {
+        return p2.string();
+    }
+    return argv0;
+}
+
 }  // namespace
 
 namespace kota::zest {
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    auto args = kota::deco::util::argvify(argc, argv);
+    // Intercept --zest-worker before deco parsing.
+    bool worker_mode = false;
+    std::vector<const char*> clean_argv;
+    for(int i = 0; i < argc; ++i) {
+        if(std::strcmp(argv[i], "--zest-worker") == 0) {
+            worker_mode = true;
+        } else {
+            clean_argv.push_back(argv[i]);
+        }
+    }
+
+    auto args = kota::deco::util::argvify(
+        static_cast<int>(clean_argv.size()),
+        const_cast<char**>(clean_argv.data()));
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<CliOptions> command(command_overview);
     command.render_with(renderer);
 
     auto parsed = kota::deco::cli::parse<CliOptions>(args, renderer);
     if(!parsed.has_value()) {
+        if(worker_mode) {
+            std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+            return 1;
+        }
         std::cerr << "Error parsing options: " << parsed.error().message << "\n";
         command.usage(std::cerr);
         std::exit(1);
@@ -232,6 +269,11 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
         cli.zest.test_filter = std::move(*cli.test_filter_input);
     }
 
+    if(worker_mode) {
+        return Runner::instance().run_as_worker(std::move(cli.zest));
+    }
+
+    cli.zest._program = resolve_program_path(argv[0]);
     return run_tests(std::move(cli.zest));
 }
 
@@ -246,6 +288,45 @@ Runner& Runner::instance() {
 
 void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) {
     suites.emplace_back(std::string(name), cases);
+}
+
+int Runner::run_as_worker(Options options) {
+    set_update_snapshots(*options.update_snapshots);
+    set_snapshot_dir(*options.snapshot_dir);
+
+    auto grouped = group_suites(suites);
+    auto patterns = resolve_filter_patterns(*options.test_filter);
+    if(!patterns) {
+        std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+        return 1;
+    }
+
+    for(auto& [suite_name, test_cases]: grouped) {
+        if(!matches_suite_filter(suite_name, *patterns)) {
+            continue;
+        }
+        for(auto& tc: test_cases) {
+            if(!matches_test_filter(suite_name, tc.name, *patterns)) {
+                continue;
+            }
+            if(tc.attrs.skip) {
+                std::println("{}", detail::format_result_line(TestState::Skipped, std::chrono::milliseconds{0}));
+                return 0;
+            }
+
+            using namespace std::chrono;
+            auto begin = system_clock::now();
+            auto state = tc.test();
+            auto end = system_clock::now();
+            auto dur = duration_cast<milliseconds>(end - begin);
+
+            std::println("{}", detail::format_result_line(state, dur));
+            return 0;
+        }
+    }
+
+    std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+    return 1;
 }
 
 int Runner::run_tests(Options options) {
@@ -337,11 +418,15 @@ int Runner::run_tests(Options options) {
             .line = test.line,
             .state = state,
             .duration = duration_cast<milliseconds>(end - begin),
+            .output = {},
         };
     };
 
     auto record_result = [&](const TestResult& result) {
         const bool failed = is_failure(result.state);
+        if(failed && !result.output.empty()) {
+            std::println("{}", result.output);
+        }
         print_run_result(result.display_name, failed, result.duration, only_failed_output);
         summary.duration += result.duration;
         if(failed) {
@@ -358,6 +443,15 @@ int Runner::run_tests(Options options) {
         using namespace std::chrono;
         auto wall_begin = system_clock::now();
 
+        // Build base args forwarded to each worker process.
+        std::vector<std::string> base_args;
+        if(!options.snapshot_dir->empty()) {
+            base_args.push_back("--snapshot-dir=" + *options.snapshot_dir);
+        }
+        if(*options.update_snapshots) {
+            base_args.push_back("--update-snapshots");
+        }
+
         // Partition: parallel-safe tests first, serial tests after.
         std::vector<std::size_t> parallel_indices;
         std::vector<std::size_t> serial_indices;
@@ -369,7 +463,7 @@ int Runner::run_tests(Options options) {
             }
         }
 
-        // Run parallel-safe tests across the thread pool.
+        // Run parallel-safe tests in separate worker processes.
         const unsigned pw = *options.parallel_workers;
         const auto num_workers = std::min(
             static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
@@ -377,29 +471,39 @@ int Runner::run_tests(Options options) {
 
         std::atomic<std::size_t> next_task{0};
 
-        auto worker = [&]() {
+        auto coordinator = [&]() {
             while(true) {
                 auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
                 if(idx >= parallel_indices.size()) {
                     break;
                 }
                 auto i = parallel_indices[idx];
-                results[i] = run_single(runnable[i], false);
+                auto wr = detail::run_worker_process(
+                    options._program, runnable[i].display_name, base_args);
+
+                results[i] = TestResult{
+                    .display_name = runnable[i].display_name,
+                    .path = runnable[i].path,
+                    .line = runnable[i].line,
+                    .state = wr.state,
+                    .duration = wr.duration,
+                    .output = std::move(wr.output),
+                };
             }
         };
 
         {
             std::vector<std::thread> pool;
             pool.reserve(num_workers);
-            for(unsigned w = 0; w < num_workers; ++w) {
-                pool.emplace_back(worker);
+            for(std::size_t w = 0; w < num_workers; ++w) {
+                pool.emplace_back(coordinator);
             }
             for(auto& t: pool) {
                 t.join();
             }
         }
 
-        // Run serial tests sequentially after the parallel batch.
+        // Run serial tests sequentially in-process after the parallel batch.
         for(auto i: serial_indices) {
             results[i] = run_single(runnable[i], false);
         }
@@ -409,6 +513,9 @@ int Runner::run_tests(Options options) {
         // Print all results in original order.
         for(const auto& result: results) {
             const bool failed = is_failure(result.state);
+            if(failed && !result.output.empty()) {
+                std::println("{}", result.output);
+            }
             print_run_result(result.display_name, failed, result.duration, only_failed_output);
             if(failed) {
                 summary.failed += 1;
