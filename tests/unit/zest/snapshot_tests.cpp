@@ -14,7 +14,7 @@ namespace {
 namespace fs = std::filesystem;
 
 std::string fixtures_dir() {
-    return std::string(test_dir()) + "/unit/zest/fixtures";
+    return "tests/unit/zest/fixtures";
 }
 
 std::string read_file(std::string_view path) {
