@@ -25,8 +25,7 @@ namespace kota::zest {
 ///     kota::zest::run_tests(std::move(parsed->options.zest));
 ///
 struct Options {
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
-                 meta_var = "<PATTERN>";
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<PATTERN>";
                  help = "test name filter: SUITE or SUITE.TEST or SUITE.* or *";
                  required = false)
     <std::string> test_filter = "";
@@ -37,8 +36,7 @@ struct Options {
     DecoFlag(help = "run test cases in parallel"; required = false)
     parallel = false;
 
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
-                 meta_var = "<N>";
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<N>";
                  help = "worker threads for parallel mode (0 = hardware_concurrency)";
                  required = false)
     <unsigned> parallel_workers = 0;
@@ -49,8 +47,7 @@ struct Options {
     DecoFlag(help = "remove orphaned snapshot files not used in this run"; required = false)
     cleanup_snapshots = false;
 
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
-                 meta_var = "<DIR>";
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<DIR>";
                  help = "directory for snapshot files";
                  required = false)
     <std::string> snapshot_dir = "";

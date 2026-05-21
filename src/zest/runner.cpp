@@ -381,11 +381,9 @@ int Runner::run_tests(Options options) {
 
         // Run parallel-safe tests across the thread pool.
         const unsigned pw = *options.parallel_workers;
-        const auto num_workers =
-            std::min(static_cast<std::size_t>(std::max(1u,
-                                                       pw ? pw
-                                                          : std::thread::hardware_concurrency())),
-                     parallel_indices.size());
+        const auto num_workers = std::min(
+            static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
+            parallel_indices.size());
 
         std::atomic<std::size_t> next_task{0};
 

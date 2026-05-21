@@ -105,13 +105,15 @@ TEST_CASE(missing_context_error) {
 }
 
 TEST_CASE(invalid_glob_error) {
-    auto result = check_snapshot_glob(".", "[unclosed", [](std::string_view) { return std::string{}; });
+    auto result =
+        check_snapshot_glob(".", "[unclosed", [](std::string_view) { return std::string{}; });
     EXPECT_TRUE(result);
 }
 
 TEST_CASE(glob_no_matches) {
-    auto result = check_snapshot_glob("nonexistent_dir", "**/*.xyz",
-                                      [](std::string_view) { return std::string{}; });
+    auto result = check_snapshot_glob("nonexistent_dir", "**/*.xyz", [](std::string_view) {
+        return std::string{};
+    });
     EXPECT_TRUE(result);
 }
 
@@ -129,8 +131,9 @@ TEST_CASE(unsafe_name_chars) {
 
 TEST_CASE(glob_empty_context) {
     reset_snapshot_context("", "", "");
-    auto result = check_snapshot_glob(fixtures_dir(), "**/*.txt",
-                                      [](std::string_view) { return std::string{}; });
+    auto result = check_snapshot_glob(fixtures_dir(), "**/*.txt", [](std::string_view) {
+        return std::string{};
+    });
     EXPECT_TRUE(result);
 }
 
