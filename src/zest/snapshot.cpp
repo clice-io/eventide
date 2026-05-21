@@ -158,19 +158,6 @@ fs::path snap_test_dir() {
     return snap_dir() / ctx.suite_name / ctx.test_name;
 }
 
-fs::path glob_literal_prefix(std::string_view pattern) {
-    auto end = pattern.find_first_of("*?[{");
-    if(end == std::string_view::npos) {
-        return fs::path(pattern).parent_path();
-    }
-    auto prefix = pattern.substr(0, end);
-    auto last_sep = prefix.find_last_of('/');
-    if(last_sep == std::string_view::npos) {
-        return {};
-    }
-    return fs::path(prefix.substr(0, last_sep + 1));
-}
-
 std::string normalize_newlines(std::string_view s) {
     std::string result(s);
     std::erase(result, '\r');
@@ -405,7 +392,8 @@ bool check_snapshot_expr(std::string_view value,
     return check_impl(path, value, "", expression, loc);
 }
 
-bool check_snapshot_glob(std::string_view pattern,
+bool check_snapshot_glob(std::string_view base_dir_str,
+                         std::string_view pattern,
                          const std::function<std::string(std::string_view)>& transform,
                          std::source_location loc) {
     auto& ctx = context();
@@ -430,9 +418,7 @@ bool check_snapshot_glob(std::string_view pattern,
         return true;
     }
 
-    auto base_dir = fs::path(ctx.source_file).parent_path();
-    auto prefix = glob_literal_prefix(pattern);
-    auto scan_dir = (base_dir / prefix).lexically_normal();
+    auto scan_dir = fs::path(base_dir_str);
 
     std::error_code ec;
     auto iter = fs::recursive_directory_iterator(scan_dir, ec);
@@ -444,7 +430,7 @@ bool check_snapshot_glob(std::string_view pattern,
 
     auto snap_base = snap_test_dir();
 
-    std::vector<std::pair<fs::path, fs::path>> matched;
+    std::vector<fs::path> matched;
     for(auto& entry: iter) {
         if(entry.is_directory() &&
            entry.path().lexically_normal() == snap_dir().lexically_normal()) {
@@ -455,34 +441,29 @@ bool check_snapshot_glob(std::string_view pattern,
             continue;
         }
         std::error_code rel_ec;
-        auto rel = fs::relative(entry.path(), base_dir, rel_ec);
+        auto rel = fs::relative(entry.path(), scan_dir, rel_ec);
         if(rel_ec) {
             continue;
         }
-        auto rel_str = rel.generic_string();
-        if(glob->match(rel_str)) {
-            auto snap_rel = fs::relative(entry.path(), scan_dir, rel_ec);
-            if(rel_ec) {
-                continue;
-            }
-            matched.emplace_back(std::move(rel), std::move(snap_rel));
+        if(glob->match(rel.generic_string())) {
+            matched.emplace_back(rel);
         }
     }
 
-    std::ranges::sort(matched, {}, &std::pair<fs::path, fs::path>::first);
+    std::ranges::sort(matched);
 
     if(matched.empty()) {
         std::println("[snapshot] error: no files matched pattern `{}`", pattern);
-        std::println("           base dir: {}", scan_dir.string());
+        std::println("           scan dir: {}", scan_dir.string());
         std::println("           at {}:{}", loc.file_name(), loc.line());
         return true;
     }
 
     bool failed = false;
-    for(auto& [rel, snap_rel]: matched) {
-        auto full_path = (base_dir / rel).string();
+    for(auto& rel: matched) {
+        auto full_path = (scan_dir / rel).string();
         auto value = transform(full_path);
-        auto snap_path = snap_base / (snap_rel.generic_string() + ".snap.yml");
+        auto snap_path = snap_base / (rel.generic_string() + ".snap.yml");
         if(check_impl(snap_path, value, rel.generic_string(), "", loc)) {
             failed = true;
         }

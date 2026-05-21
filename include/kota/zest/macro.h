@@ -147,12 +147,12 @@
 #define ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL(return, value __VA_OPT__(,) __VA_ARGS__)
 #define CO_ASSERT_SNAPSHOT(value, ...) ZEST_SNAPSHOT_STR_IMPL(co_return, value __VA_OPT__(,) __VA_ARGS__)
 
-#define ZEST_SNAPSHOT_GLOB_IMPL(return_action, pattern, transform)                                 \
-    ZEST_CHECK_IMPL(::kota::zest::check_snapshot_glob(pattern, transform), return_action)
+#define ZEST_SNAPSHOT_GLOB_IMPL(return_action, base_dir, pattern, transform)                        \
+    ZEST_CHECK_IMPL(::kota::zest::check_snapshot_glob(base_dir, pattern, transform), return_action)
 
-#define EXPECT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL((void)0, pattern, transform)
-#define ASSERT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(return, pattern, transform)
-#define CO_ASSERT_SNAPSHOT_GLOB(pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(co_return, pattern, transform)
+#define EXPECT_SNAPSHOT_GLOB(base_dir, pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL((void)0, base_dir, pattern, transform)
+#define ASSERT_SNAPSHOT_GLOB(base_dir, pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(return, base_dir, pattern, transform)
+#define CO_ASSERT_SNAPSHOT_GLOB(base_dir, pattern, transform) ZEST_SNAPSHOT_GLOB_IMPL(co_return, base_dir, pattern, transform)
 // clang-format on
 
 #ifdef __cpp_exceptions

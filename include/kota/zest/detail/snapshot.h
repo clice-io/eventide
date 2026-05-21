@@ -22,7 +22,8 @@ bool check_snapshot_expr(std::string_view value,
                          std::string_view name = {},
                          std::source_location loc = std::source_location::current());
 
-bool check_snapshot_glob(std::string_view pattern,
+bool check_snapshot_glob(std::string_view base_dir,
+                         std::string_view pattern,
                          const std::function<std::string(std::string_view)>& transform,
                          std::source_location loc = std::source_location::current());
 
