@@ -42,8 +42,9 @@ RunResult run_fixture(const std::string& fixture_path, const std::string& args) 
 }
 
 int main(int argc, char** argv) {
-    assert(argc >= 2 && "usage: bootstrap_runner <fixture_path>");
+    assert(argc >= 3 && "usage: bootstrap_runner <fixture_path> <fixture_focus_path>");
     std::string fixture = argv[1];
+    std::string fixture_focus = argv[2];
 
     // 1. All tests -> non-zero exit (because bootstrap_fail.mismatch fails)
     std::println("--- all tests -> non-zero exit ---");
@@ -86,6 +87,15 @@ int main(int argc, char** argv) {
     {
         auto result = run_fixture(fixture, "--test-filter \"bootstrap_skip.*\"");
         assert(result.exit_code == 0);
+    }
+
+    // 6. Focus mode -> focused test runs, unfocused is skipped
+    std::println("--- focus mode ---");
+    {
+        auto result = run_fixture(fixture_focus, "--test-filter \"bootstrap_focus.*\"");
+        assert(result.exit_code == 0);
+        assert(result.output.find("SKIPPED") != std::string::npos ||
+               result.output.find("skipped") != std::string::npos);
     }
 
     std::println("all bootstrap_runner tests passed");

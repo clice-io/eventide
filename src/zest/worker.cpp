@@ -52,7 +52,7 @@ bool parse_result_line(std::string_view line,
 
     std::int64_t ms = 0;
     auto [ptr, ec] = std::from_chars(dur_str.data(), dur_str.data() + dur_str.size(), ms);
-    if(ec != std::errc{}) {
+    if(ec != std::errc{} || ptr != dur_str.data() + dur_str.size()) {
         return false;
     }
 
@@ -175,6 +175,7 @@ task<void> worker_coro(const std::string& program,
             }
         }
 
+        spawn_res->stdin_pipe = pipe{};
         co_await spawn_res->proc.wait();
     }
 }

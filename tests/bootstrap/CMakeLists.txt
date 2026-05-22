@@ -43,7 +43,23 @@ set_target_properties(bootstrap_runner PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
 )
 add_test(NAME bootstrap_runner
-    COMMAND bootstrap_runner "$<TARGET_FILE:bootstrap_fixture>"
+    COMMAND bootstrap_runner "$<TARGET_FILE:bootstrap_fixture>" "$<TARGET_FILE:bootstrap_fixture_focus>"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
 set_tests_properties(bootstrap_runner PROPERTIES DEPENDS bootstrap_core)
+
+add_executable(bootstrap_fixture_focus fixture_focus.cpp)
+target_link_libraries(bootstrap_fixture_focus PRIVATE
+    kota::codec
+    kota::zest
+    kota::support
+    cpptrace::cpptrace
+)
+kota_apply_project_options(bootstrap_fixture_focus)
+set_target_properties(bootstrap_fixture_focus PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}"
+)

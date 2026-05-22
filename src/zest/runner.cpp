@@ -1,9 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <cstring>
 #include <expected>
-#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <print>
@@ -213,22 +211,6 @@ void print_summary(const RunSummary& summary) {
     }
 }
 
-std::string resolve_program_path(const char* argv0) {
-#if defined(__linux__)
-    std::error_code ec;
-    auto p = std::filesystem::read_symlink("/proc/self/exe", ec);
-    if(!ec) {
-        return p.string();
-    }
-#endif
-    std::error_code ec2;
-    auto p2 = std::filesystem::canonical(argv0, ec2);
-    if(!ec2) {
-        return p2.string();
-    }
-    return argv0;
-}
-
 }  // namespace
 
 namespace kota::zest {
@@ -238,7 +220,7 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     bool worker_mode = false;
     std::vector<const char*> clean_argv;
     for(int i = 0; i < argc; ++i) {
-        if(std::strcmp(argv[i], "--zest-worker") == 0) {
+        if(std::string_view(argv[i]) == "--zest-worker") {
             worker_mode = true;
         } else {
             clean_argv.push_back(argv[i]);
@@ -279,7 +261,7 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
         return Runner::instance().run_as_worker(std::move(cli.zest));
     }
 
-    cli.zest.program = resolve_program_path(argv[0]);
+    cli.zest.program = argv[0];
     return run_tests(std::move(cli.zest));
 }
 
@@ -471,11 +453,13 @@ int Runner::run_tests(Options options) {
 
     auto record_result = [&](const TestResult& result) {
         const bool failed = is_failure(result.state);
+        if(result.state == TestState::Skipped) {
+            summary.skipped += 1;
+        }
         if(failed && !result.output.empty()) {
             std::println("{}", result.output);
         }
         print_run_result(result.display_name, failed, result.duration, only_failed_output);
-        summary.duration += result.duration;
         if(failed) {
             summary.failed += 1;
             summary.failed_tests.push_back(
@@ -549,16 +533,7 @@ int Runner::run_tests(Options options) {
         summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
 
         for(const auto& result: results) {
-            const bool failed = is_failure(result.state);
-            if(failed && !result.output.empty()) {
-                std::println("{}", result.output);
-            }
-            print_run_result(result.display_name, failed, result.duration, only_failed_output);
-            if(failed) {
-                summary.failed += 1;
-                summary.failed_tests.push_back(
-                    FailedTest{result.display_name, result.path, result.line});
-            }
+            record_result(result);
         }
 #else
         std::println("{}[  ERROR ] --parallel requires KOTA_ENABLE_ASYNC=ON{}", red, clear);
@@ -568,6 +543,7 @@ int Runner::run_tests(Options options) {
         for(std::size_t i = 0; i < runnable.size(); ++i) {
             results[i] = run_single(runnable[i], true);
             record_result(results[i]);
+            summary.duration += results[i].duration;
         }
     }
 

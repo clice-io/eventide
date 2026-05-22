@@ -77,6 +77,12 @@ int main() {
         assert(line999 == "__ZEST_RESULT__:fatal:999");
     }
 
+    {
+        TestState s{};
+        std::chrono::milliseconds d{};
+        assert(!parse_result_line("__ZEST_RESULT__:passed:123abc", s, d));
+    }
+
     std::println("--- glob pattern ---");
 
     {
