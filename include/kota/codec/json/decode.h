@@ -76,6 +76,19 @@ struct Source {
         return f(value());
     }
 
+    uint8_t*& string_buf_loc() const {
+        if(is_document()) {
+            struct accessor : simdjson::ondemand::document {
+                uint8_t*& loc() { return iter.string_buf_loc(); }
+            };
+            return reinterpret_cast<accessor&>(doc()).loc();
+        }
+        struct accessor : simdjson::ondemand::value {
+            uint8_t*& loc() { return iter.string_buf_loc(); }
+        };
+        return reinterpret_cast<accessor&>(value()).loc();
+    }
+
 private:
     std::uintptr_t ptr;
     constexpr static std::uintptr_t tag = 1;
@@ -183,15 +196,7 @@ struct Reader {
     }
 
     template <typename F>
-    bool try_read(F&& fn) {
-        error_type discard_err;
-        scoped_context<error_type> guard(discard_err);
-        if(fn(*this))
-            return true;
-        if(src.is_document())
-            src.doc().rewind();
-        return false;
-    }
+    bool try_read(F&& fn);
 
     bool visit_bool(bool& out) {
         auto r = src.apply([&](auto& s) { return s.get_bool(); });
@@ -439,6 +444,23 @@ bool StructReader::visit_field(std::size_t /*index*/, std::string_view name, Cal
     }
     Reader sub{field_val, buf_base, buf_size};
     return cb(sub);
+}
+
+template <typename F>
+bool Reader::try_read(F&& fn) {
+    error_type discard_err;
+    scoped_context<error_type> guard(discard_err);
+
+    auto*& buf_loc = src.string_buf_loc();
+    auto* saved = buf_loc;
+
+    if(fn(*this))
+        return true;
+
+    buf_loc = saved;
+    if(src.is_document())
+        src.doc().rewind();
+    return false;
 }
 
 template <typename Config = default_config<>, typename T>
