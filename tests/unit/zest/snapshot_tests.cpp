@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "kota/zest/snapshot_json.h"
 #include "kota/zest/zest.h"
 
 namespace kota::zest {

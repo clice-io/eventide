@@ -1,6 +1,6 @@
 #pragma once
 
-#include "kota/zest/core/registry.h"
+#include "kota/zest/runner/registry.h"
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/fixed_string.h"
 

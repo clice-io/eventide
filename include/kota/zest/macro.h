@@ -2,7 +2,7 @@
 
 #include "kota/zest/assert/check.h"
 #include "kota/zest/assert/trace.h"
-#include "kota/zest/core/suite.h"
+#include "kota/zest/runner/suite.h"
 #include "kota/zest/snapshot/snapshot.h"
 
 #define TEST_SUITE(name, ...)                                                                      \
@@ -172,6 +172,37 @@
 // clang-format off
 #define EXPECT_THROWS(...) ZEST_EXPECT_THROWS("throw exception", !CAUGHT(false, __VA_ARGS__), (void)0, __VA_ARGS__)
 #define EXPECT_NOTHROWS(...) ZEST_EXPECT_THROWS("not throw exception", CAUGHT(true, __VA_ARGS__), (void)0, __VA_ARGS__)
+// clang-format on
+
+#endif
+
+#if __has_include("kota/codec/json/json.h")
+#include "kota/codec/json/json.h"
+
+// clang-format off
+#define ZEST_SNAPSHOT_JSON_IMPL(return_action, value, ...)                                         \
+    do {                                                                                           \
+        auto _zest_snap_json = ::kota::codec::json::to_json(value);                                \
+        if(!_zest_snap_json.has_value()) {                                                         \
+            std::println("[snapshot] json serialization failed");                                   \
+            ::kota::zest::print_trace(std::source_location::current());                            \
+            ::kota::zest::failure();                                                                \
+            return_action;                                                                          \
+        }                                                                                           \
+        auto _zest_snap_pretty = ::kota::codec::json::prettify(*_zest_snap_json);                   \
+        if(!_zest_snap_pretty.has_value()) {                                                        \
+            std::println("[snapshot] json prettify failed");                                        \
+            ::kota::zest::print_trace(std::source_location::current());                            \
+            ::kota::zest::failure();                                                                \
+            return_action;                                                                          \
+        }                                                                                           \
+        ZEST_CHECK_IMPL(::kota::zest::check_snapshot_expr(                                        \
+            *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__)), return_action);                 \
+    } while(0)
+
+#define EXPECT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)
+#define ASSERT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL(return, value __VA_OPT__(,) __VA_ARGS__)
+#define CO_ASSERT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL(co_return, value __VA_OPT__(,) __VA_ARGS__)
 // clang-format on
 
 #endif
