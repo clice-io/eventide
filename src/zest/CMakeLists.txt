@@ -63,4 +63,9 @@ target_link_libraries(kota_zest PUBLIC
     kota::support
 )
 
+if(KOTA_ENABLE_ASYNC)
+    target_link_libraries(kota_zest PRIVATE kota::async)
+    target_compile_definitions(kota_zest PRIVATE KOTA_ZEST_PARALLEL=1)
+endif()
+
 kota_apply_project_options(kota_zest)

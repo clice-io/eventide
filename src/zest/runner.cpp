@@ -1,6 +1,6 @@
 #include <algorithm>
-#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <expected>
 #include <filesystem>
@@ -291,42 +291,51 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 }
 
 int Runner::run_as_worker(Options options) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
     set_update_snapshots(*options.update_snapshots);
     set_snapshot_dir(*options.snapshot_dir);
 
     auto grouped = group_suites(suites);
-    auto patterns = resolve_filter_patterns(*options.test_filter);
-    if(!patterns) {
-        std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
-        return 1;
+
+    std::unordered_map<std::string, TestCase*> test_map;
+    for(auto& [suite_name, test_cases]: grouped) {
+        for(auto& tc: test_cases) {
+            test_map[make_display_name(suite_name, tc.name)] = &tc;
+        }
     }
 
-    for(auto& [suite_name, test_cases]: grouped) {
-        if(!matches_suite_filter(suite_name, *patterns)) {
+    std::string line;
+    while(std::getline(std::cin, line)) {
+        if(!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if(line.empty()) {
             continue;
         }
-        for(auto& tc: test_cases) {
-            if(!matches_test_filter(suite_name, tc.name, *patterns)) {
-                continue;
-            }
-            if(tc.attrs.skip) {
-                std::println("{}", detail::format_result_line(TestState::Skipped, std::chrono::milliseconds{0}));
-                return 0;
-            }
 
-            using namespace std::chrono;
-            auto begin = system_clock::now();
-            auto state = tc.test();
-            auto end = system_clock::now();
-            auto dur = duration_cast<milliseconds>(end - begin);
-
-            std::println("{}", detail::format_result_line(state, dur));
-            return 0;
+        auto it = test_map.find(line);
+        if(it == test_map.end()) {
+            std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+            continue;
         }
+
+        auto& tc = *it->second;
+        if(tc.attrs.skip) {
+            std::println("{}", detail::format_result_line(TestState::Skipped, std::chrono::milliseconds{0}));
+            continue;
+        }
+
+        using namespace std::chrono;
+        auto begin = system_clock::now();
+        auto state = tc.test();
+        auto end = system_clock::now();
+        auto dur = duration_cast<milliseconds>(end - begin);
+
+        std::println("{}", detail::format_result_line(state, dur));
     }
 
-    std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
-    return 1;
+    return 0;
 }
 
 int Runner::run_tests(Options options) {
@@ -440,10 +449,10 @@ int Runner::run_tests(Options options) {
     std::vector<TestResult> results(runnable.size());
 
     if(*options.parallel) {
+#ifdef KOTA_ZEST_PARALLEL
         using namespace std::chrono;
         auto wall_begin = system_clock::now();
 
-        // Build base args forwarded to each worker process.
         std::vector<std::string> base_args;
         if(!options.snapshot_dir->empty()) {
             base_args.push_back("--snapshot-dir=" + *options.snapshot_dir);
@@ -452,7 +461,6 @@ int Runner::run_tests(Options options) {
             base_args.push_back("--update-snapshots");
         }
 
-        // Partition: parallel-safe tests first, serial tests after.
         std::vector<std::size_t> parallel_indices;
         std::vector<std::size_t> serial_indices;
         for(std::size_t i = 0; i < runnable.size(); ++i) {
@@ -463,54 +471,41 @@ int Runner::run_tests(Options options) {
             }
         }
 
-        // Run parallel-safe tests in separate worker processes.
-        const unsigned pw = *options.parallel_workers;
-        const auto num_workers = std::min(
-            static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
-            parallel_indices.size());
+        if(!parallel_indices.empty()) {
+            const unsigned pw = *options.parallel_workers;
+            const auto num_workers = static_cast<unsigned>(std::min(
+                static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
+                parallel_indices.size()));
 
-        std::atomic<std::size_t> next_task{0};
+            std::vector<std::string> test_names;
+            test_names.reserve(parallel_indices.size());
+            for(auto i: parallel_indices) {
+                test_names.push_back(runnable[i].display_name);
+            }
 
-        auto coordinator = [&]() {
-            while(true) {
-                auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
-                if(idx >= parallel_indices.size()) {
-                    break;
-                }
-                auto i = parallel_indices[idx];
-                auto wr = detail::run_worker_process(
-                    options._program, runnable[i].display_name, base_args);
+            std::vector<detail::WorkerResult> worker_results;
+            detail::run_parallel_workers(
+                options._program, base_args, num_workers, test_names, worker_results);
 
+            for(std::size_t j = 0; j < parallel_indices.size(); ++j) {
+                auto i = parallel_indices[j];
                 results[i] = TestResult{
                     .display_name = runnable[i].display_name,
                     .path = runnable[i].path,
                     .line = runnable[i].line,
-                    .state = wr.state,
-                    .duration = wr.duration,
-                    .output = std::move(wr.output),
+                    .state = worker_results[j].state,
+                    .duration = worker_results[j].duration,
+                    .output = std::move(worker_results[j].output),
                 };
-            }
-        };
-
-        {
-            std::vector<std::thread> pool;
-            pool.reserve(num_workers);
-            for(std::size_t w = 0; w < num_workers; ++w) {
-                pool.emplace_back(coordinator);
-            }
-            for(auto& t: pool) {
-                t.join();
             }
         }
 
-        // Run serial tests sequentially in-process after the parallel batch.
         for(auto i: serial_indices) {
             results[i] = run_single(runnable[i], false);
         }
 
         summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
 
-        // Print all results in original order.
         for(const auto& result: results) {
             const bool failed = is_failure(result.state);
             if(failed && !result.output.empty()) {
@@ -523,6 +518,10 @@ int Runner::run_tests(Options options) {
                     FailedTest{result.display_name, result.path, result.line});
             }
         }
+#else
+        std::println("{}[  ERROR ] --parallel requires KOTA_ENABLE_ASYNC=ON{}", red, clear);
+        return 1;
+#endif
     } else {
         for(std::size_t i = 0; i < runnable.size(); ++i) {
             results[i] = run_single(runnable[i], true);

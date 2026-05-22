@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "kota/zest/detail/registry.h"
@@ -19,10 +20,16 @@ struct WorkerResult {
 
 std::string format_result_line(TestState state, std::chrono::milliseconds duration);
 
-bool parse_result_line(std::string_view line, TestState& state, std::chrono::milliseconds& duration);
+bool parse_result_line(std::string_view line,
+                       TestState& state,
+                       std::chrono::milliseconds& duration);
 
-WorkerResult run_worker_process(const std::string& program,
-                                const std::string& test_name,
-                                const std::vector<std::string>& base_args);
+#ifdef KOTA_ZEST_PARALLEL
+void run_parallel_workers(const std::string& program,
+                          const std::vector<std::string>& base_args,
+                          unsigned num_workers,
+                          const std::vector<std::string>& test_names,
+                          std::vector<WorkerResult>& results);
+#endif
 
 }  // namespace kota::zest::detail
