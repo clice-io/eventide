@@ -9,7 +9,7 @@
 
 namespace kota::zest::detail {
 
-constexpr inline std::string_view kResultPrefix = "__ZEST_RESULT__:";
+constexpr inline std::string_view result_prefix = "__ZEST_RESULT__:";
 
 struct WorkerResult {
     std::string test_name;

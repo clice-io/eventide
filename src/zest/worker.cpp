@@ -29,16 +29,16 @@ TestState parse_state(std::string_view s) {
 
 std::string format_result_line(TestState state, std::chrono::milliseconds duration) {
     auto idx = static_cast<std::size_t>(state);
-    return std::format("{}{}{}{}", kResultPrefix, state_names[idx], ":", duration.count());
+    return std::format("{}{}{}{}", result_prefix, state_names[idx], ":", duration.count());
 }
 
 bool parse_result_line(std::string_view line,
                        TestState& state,
                        std::chrono::milliseconds& duration) {
-    if(!line.starts_with(kResultPrefix)) {
+    if(!line.starts_with(result_prefix)) {
         return false;
     }
-    auto rest = line.substr(kResultPrefix.size());
+    auto rest = line.substr(result_prefix.size());
     auto colon = rest.find(':');
     if(colon == std::string_view::npos) {
         return false;
@@ -65,7 +65,7 @@ bool parse_result_line(std::string_view line,
 namespace {
 
 bool try_extract_result(std::string& buffer, const std::string& test_name, WorkerResult& result) {
-    auto pos = buffer.rfind(kResultPrefix);
+    auto pos = buffer.rfind(result_prefix);
     if(pos == std::string::npos) {
         return false;
     }

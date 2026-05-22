@@ -53,7 +53,7 @@ struct Options {
     <std::string> snapshot_dir = "";
 
     // Internal fields — set by run_cli, not exposed via CLI.
-    std::string _program;
+    std::string program;
 };
 
 /// Parse CLI arguments and run all registered tests.

@@ -349,6 +349,7 @@ if(KOTA_ENABLE_ZEST AND (NOT KOTA_ENABLE_TEST OR BUILD_TESTING))
 endif()
 
 if(KOTA_ENABLE_TEST AND BUILD_TESTING)
+    add_subdirectory(tests/bootstrap)
     add_subdirectory(tests)
 elseif(KOTA_ENABLE_TEST)
     message(STATUS "BUILD_TESTING=OFF: skipping tests")

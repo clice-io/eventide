@@ -212,3 +212,4 @@ add_test(NAME unit_tests COMMAND unit_tests
     "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
+set_tests_properties(unit_tests PROPERTIES DEPENDS "bootstrap_core;bootstrap_runner")

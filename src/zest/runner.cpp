@@ -22,6 +22,11 @@
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
 
+#ifdef KOTA_ZEST_PARALLEL
+#include "kota/async/io/loop.h"
+#include "kota/async/io/stream.h"
+#endif
+
 namespace {
 
 constexpr std::string_view wildcard_pattern = "*";
@@ -274,7 +279,7 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
         return Runner::instance().run_as_worker(std::move(cli.zest));
     }
 
-    cli.zest._program = resolve_program_path(argv[0]);
+    cli.zest.program = resolve_program_path(argv[0]);
     return run_tests(std::move(cli.zest));
 }
 
@@ -292,6 +297,7 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 }
 
 int Runner::run_as_worker(Options options) {
+#ifdef KOTA_ZEST_PARALLEL
     std::setvbuf(stdout, nullptr, _IONBF, 0);
 
     set_update_snapshots(*options.update_snapshots);
@@ -306,41 +312,68 @@ int Runner::run_as_worker(Options options) {
         }
     }
 
-    std::string line;
-    while(std::getline(std::cin, line)) {
-        if(!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
-        if(line.empty()) {
-            continue;
+    auto worker_fn = [&]() -> task<void> {
+        auto in = pipe::open(0);
+        if(!in.has_value()) {
+            co_return;
         }
 
-        auto it = test_map.find(line);
-        if(it == test_map.end()) {
-            std::println(
-                "{}",
-                detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
-            continue;
+        std::string buffer;
+        while(true) {
+            auto data = co_await in->read();
+            if(!data.has_value()) {
+                break;
+            }
+
+            buffer += *data;
+            std::size_t pos;
+            while((pos = buffer.find('\n')) != std::string::npos) {
+                auto line = buffer.substr(0, pos);
+                buffer.erase(0, pos + 1);
+
+                if(!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                if(line.empty()) {
+                    continue;
+                }
+
+                auto it = test_map.find(line);
+                if(it == test_map.end()) {
+                    std::println(
+                        "{}",
+                        detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+                    continue;
+                }
+
+                auto& tc = *it->second;
+                if(tc.attrs.skip) {
+                    std::println("{}",
+                                 detail::format_result_line(TestState::Skipped,
+                                                            std::chrono::milliseconds{0}));
+                    continue;
+                }
+
+                using namespace std::chrono;
+                auto begin = system_clock::now();
+                auto state = tc.test();
+                auto end = system_clock::now();
+                auto dur = duration_cast<milliseconds>(end - begin);
+
+                std::println("{}", detail::format_result_line(state, dur));
+            }
         }
+    };
+    auto worker = worker_fn();
 
-        auto& tc = *it->second;
-        if(tc.attrs.skip) {
-            std::println(
-                "{}",
-                detail::format_result_line(TestState::Skipped, std::chrono::milliseconds{0}));
-            continue;
-        }
-
-        using namespace std::chrono;
-        auto begin = system_clock::now();
-        auto state = tc.test();
-        auto end = system_clock::now();
-        auto dur = duration_cast<milliseconds>(end - begin);
-
-        std::println("{}", detail::format_result_line(state, dur));
-    }
-
+    event_loop loop;
+    loop.schedule(worker);
+    loop.run();
     return 0;
+#else
+    std::println("{}[  ERROR ] --zest-worker requires KOTA_ENABLE_ASYNC=ON{}", red, clear);
+    return 1;
+#endif
 }
 
 int Runner::run_tests(Options options) {
@@ -490,7 +523,7 @@ int Runner::run_tests(Options options) {
             }
 
             std::vector<detail::WorkerResult> worker_results;
-            detail::run_parallel_workers(options._program,
+            detail::run_parallel_workers(options.program,
                                          base_args,
                                          num_workers,
                                          test_names,
