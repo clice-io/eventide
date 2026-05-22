@@ -19,6 +19,21 @@ namespace kota::codec::json {
 
 namespace detail {
 
+struct doc_iter_tag {
+    friend constexpr auto get(doc_iter_tag);
+};
+struct val_iter_tag {
+    friend constexpr auto get(val_iter_tag);
+};
+
+template <typename Tag, auto MemPtr>
+struct steal {
+    friend constexpr auto get(Tag) { return MemPtr; }
+};
+
+template struct steal<doc_iter_tag, &simdjson::ondemand::document::iter>;
+template struct steal<val_iter_tag, &simdjson::ondemand::value::iter>;
+
 inline char32_t decode_first_codepoint(std::string_view sv) {
     if(sv.empty())
         return 0xFFFFFFFF;
@@ -76,17 +91,10 @@ struct Source {
         return f(value());
     }
 
-    uint8_t*& string_buf_loc() const {
-        if(is_document()) {
-            struct accessor : simdjson::ondemand::document {
-                uint8_t*& loc() { return iter.string_buf_loc(); }
-            };
-            return reinterpret_cast<accessor&>(doc()).loc();
-        }
-        struct accessor : simdjson::ondemand::value {
-            uint8_t*& loc() { return iter.string_buf_loc(); }
-        };
-        return reinterpret_cast<accessor&>(value()).loc();
+    simdjson::ondemand::json_iterator& json_iter() const {
+        if(is_document())
+            return doc().*get(detail::doc_iter_tag{});
+        return (value().*get(detail::val_iter_tag{})).json_iter();
     }
 
 private:
@@ -451,15 +459,12 @@ bool Reader::try_read(F&& fn) {
     error_type discard_err;
     scoped_context<error_type> guard(discard_err);
 
-    auto*& buf_loc = src.string_buf_loc();
-    auto* saved = buf_loc;
+    simdjson::ondemand::json_iterator checkpoint(src.json_iter());
 
     if(fn(*this))
         return true;
 
-    buf_loc = saved;
-    if(src.is_document())
-        src.doc().rewind();
+    src.json_iter() = checkpoint;
     return false;
 }
 
