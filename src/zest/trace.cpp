@@ -1,4 +1,4 @@
-#include "kota/zest/detail/trace.h"
+#include "kota/zest/assert/trace.h"
 
 #include <algorithm>
 #include <format>

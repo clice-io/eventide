@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/detail/registry.h"
+#include "kota/zest/core/registry.h"
 
 namespace kota::zest::detail {
 

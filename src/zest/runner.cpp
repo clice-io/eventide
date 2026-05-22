@@ -17,8 +17,8 @@
 #include "worker.h"
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
-#include "kota/zest/detail/registry.h"
-#include "kota/zest/detail/snapshot.h"
+#include "kota/zest/core/registry.h"
+#include "kota/zest/snapshot/snapshot.h"
 #include "kota/zest/run.h"
 #include "kota/support/glob_pattern.h"
 

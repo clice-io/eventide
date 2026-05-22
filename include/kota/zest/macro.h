@@ -1,9 +1,9 @@
 #pragma once
 
-#include "kota/zest/detail/check.h"
-#include "kota/zest/detail/snapshot.h"
-#include "kota/zest/detail/suite.h"
-#include "kota/zest/detail/trace.h"
+#include "kota/zest/assert/check.h"
+#include "kota/zest/assert/trace.h"
+#include "kota/zest/core/suite.h"
+#include "kota/zest/snapshot/snapshot.h"
 
 #define TEST_SUITE(name, ...)                                                                      \
     struct name##TEST : __VA_OPT__(__VA_ARGS__, )::kota::zest::TestSuiteDef<#name, name##TEST>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "kota/zest/detail/registry.h"
-#include "kota/zest/detail/snapshot.h"
+#include "kota/zest/core/registry.h"
+#include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/fixed_string.h"
 
 namespace kota::zest {
