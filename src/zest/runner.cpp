@@ -14,13 +14,13 @@
 #include <unordered_set>
 #include <vector>
 
+#include "worker.h"
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
 #include "kota/zest/detail/registry.h"
 #include "kota/zest/detail/snapshot.h"
 #include "kota/zest/run.h"
 #include "kota/support/glob_pattern.h"
-#include "worker.h"
 
 namespace {
 
@@ -240,9 +240,8 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
         }
     }
 
-    auto args = kota::deco::util::argvify(
-        static_cast<int>(clean_argv.size()),
-        const_cast<char**>(clean_argv.data()));
+    auto args = kota::deco::util::argvify(static_cast<int>(clean_argv.size()),
+                                          const_cast<char**>(clean_argv.data()));
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<CliOptions> command(command_overview);
     command.render_with(renderer);
@@ -250,7 +249,9 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto parsed = kota::deco::cli::parse<CliOptions>(args, renderer);
     if(!parsed.has_value()) {
         if(worker_mode) {
-            std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+            std::println(
+                "{}",
+                detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
             return 1;
         }
         std::cerr << "Error parsing options: " << parsed.error().message << "\n";
@@ -316,13 +317,17 @@ int Runner::run_as_worker(Options options) {
 
         auto it = test_map.find(line);
         if(it == test_map.end()) {
-            std::println("{}", detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
+            std::println(
+                "{}",
+                detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
             continue;
         }
 
         auto& tc = *it->second;
         if(tc.attrs.skip) {
-            std::println("{}", detail::format_result_line(TestState::Skipped, std::chrono::milliseconds{0}));
+            std::println(
+                "{}",
+                detail::format_result_line(TestState::Skipped, std::chrono::milliseconds{0}));
             continue;
         }
 
@@ -473,9 +478,10 @@ int Runner::run_tests(Options options) {
 
         if(!parallel_indices.empty()) {
             const unsigned pw = *options.parallel_workers;
-            const auto num_workers = static_cast<unsigned>(std::min(
-                static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
-                parallel_indices.size()));
+            const auto num_workers = static_cast<unsigned>(
+                std::min(static_cast<std::size_t>(
+                             std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
+                         parallel_indices.size()));
 
             std::vector<std::string> test_names;
             test_names.reserve(parallel_indices.size());
@@ -484,8 +490,11 @@ int Runner::run_tests(Options options) {
             }
 
             std::vector<detail::WorkerResult> worker_results;
-            detail::run_parallel_workers(
-                options._program, base_args, num_workers, test_names, worker_results);
+            detail::run_parallel_workers(options._program,
+                                         base_args,
+                                         num_workers,
+                                         test_names,
+                                         worker_results);
 
             for(std::size_t j = 0; j < parallel_indices.size(); ++j) {
                 auto i = parallel_indices[j];

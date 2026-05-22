@@ -16,9 +16,12 @@ namespace {
 constexpr std::string_view state_names[] = {"passed", "skipped", "failed", "fatal"};
 
 TestState parse_state(std::string_view s) {
-    if(s == "passed") return TestState::Passed;
-    if(s == "skipped") return TestState::Skipped;
-    if(s == "failed") return TestState::Failed;
+    if(s == "passed")
+        return TestState::Passed;
+    if(s == "skipped")
+        return TestState::Skipped;
+    if(s == "failed")
+        return TestState::Failed;
     return TestState::Fatal;
 }
 
@@ -61,9 +64,7 @@ bool parse_result_line(std::string_view line,
 
 namespace {
 
-bool try_extract_result(std::string& buffer,
-                        const std::string& test_name,
-                        WorkerResult& result) {
+bool try_extract_result(std::string& buffer, const std::string& test_name, WorkerResult& result) {
     auto pos = buffer.rfind(kResultPrefix);
     if(pos == std::string::npos) {
         return false;
