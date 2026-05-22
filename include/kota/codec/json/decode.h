@@ -33,25 +33,28 @@ namespace detail {
 // namespace; declaring it also as a friend of the tag struct makes it discoverable
 // via ADL at the call site.
 
+using doc_iter_ptr = simdjson::ondemand::json_iterator simdjson::ondemand::document::*;
+using val_iter_ptr = simdjson::ondemand::value_iterator simdjson::ondemand::value::*;
+
 struct doc_iter_tag {
-    friend constexpr auto get(doc_iter_tag);
+    friend constexpr doc_iter_ptr get(doc_iter_tag);
 };
 
 struct val_iter_tag {
-    friend constexpr auto get(val_iter_tag);
+    friend constexpr val_iter_ptr get(val_iter_tag);
 };
 
-template <typename Tag, auto MemPtr>
+template <typename Tag, typename T, T MemPtr>
 struct steal {
-    friend constexpr auto get(Tag) {
+    friend constexpr T get(Tag) {
         return MemPtr;
     }
 };
 
 // Access control is not checked for explicit instantiation template arguments,
 // allowing us to form pointers to the protected members.
-template struct steal<doc_iter_tag, &simdjson::ondemand::document::iter>;
-template struct steal<val_iter_tag, &simdjson::ondemand::value::iter>;
+template struct steal<doc_iter_tag, doc_iter_ptr, &simdjson::ondemand::document::iter>;
+template struct steal<val_iter_tag, val_iter_ptr, &simdjson::ondemand::value::iter>;
 
 inline char32_t decode_first_codepoint(std::string_view sv) {
     if(sv.empty())
