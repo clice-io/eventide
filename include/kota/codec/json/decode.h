@@ -19,6 +19,20 @@ namespace kota::codec::json {
 
 namespace detail {
 
+// Friend injection to access simdjson's protected `iter` members.
+//
+// simdjson's ondemand API stores parser state in a `json_iterator` that tracks the
+// token cursor position, string buffer write pointer, and parse depth. These are held
+// in protected `iter` fields of `document` and `value`. We need direct access to
+// save/restore this state when `try_read` fails during untagged variant decoding —
+// without this, the string buffer consumed by a failed alternative is never reclaimed,
+// causing heap-buffer-overflow on large payloads.
+//
+// Technique: explicit template instantiation bypasses access control on the member
+// pointer argument. The friend function `get(Tag)` is injected into the enclosing
+// namespace; declaring it also as a friend of the tag struct makes it discoverable
+// via ADL at the call site.
+
 struct doc_iter_tag {
     friend constexpr auto get(doc_iter_tag);
 };
@@ -31,6 +45,8 @@ struct steal {
     friend constexpr auto get(Tag) { return MemPtr; }
 };
 
+// Access control is not checked for explicit instantiation template arguments,
+// allowing us to form pointers to the protected members.
 template struct steal<doc_iter_tag, &simdjson::ondemand::document::iter>;
 template struct steal<val_iter_tag, &simdjson::ondemand::value::iter>;
 
@@ -91,6 +107,9 @@ struct Source {
         return f(value());
     }
 
+    // Access the underlying json_iterator via friend-injected member pointers.
+    // For document: directly access the json_iterator member.
+    // For value: access the value_iterator member, then its public json_iter() method.
     simdjson::ondemand::json_iterator& json_iter() const {
         if(is_document())
             return doc().*get(detail::doc_iter_tag{});
@@ -454,6 +473,19 @@ bool StructReader::visit_field(std::size_t /*index*/, std::string_view name, Cal
     return cb(sub);
 }
 
+/// Attempt to decode using `fn`. On failure, restore the full simdjson parser state.
+///
+/// simdjson's json_iterator holds: token cursor position (into the pre-built structural
+/// index), string buffer write pointer (_string_buf_loc, where unescaped strings are
+/// written), and parse depth. All three must be restored atomically on failure.
+///
+/// Safety: the checkpoint copy is safe because on failure, all decoded outputs from `fn`
+/// are destroyed (e.g. variant's emplace destroys the failed alternative), so no live
+/// string_view references the reclaimed string buffer region.
+///
+/// Note: json_iterator's copy constructor is explicit (to prevent accidental copies in
+/// simdjson internals), so we use direct-initialization. The copy assignment operator
+/// is defaulted and safe — unlike the move assignment which nulls the parser pointer.
 template <typename F>
 bool Reader::try_read(F&& fn) {
     error_type discard_err;
