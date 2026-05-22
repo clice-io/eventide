@@ -36,13 +36,16 @@ namespace detail {
 struct doc_iter_tag {
     friend constexpr auto get(doc_iter_tag);
 };
+
 struct val_iter_tag {
     friend constexpr auto get(val_iter_tag);
 };
 
 template <typename Tag, auto MemPtr>
 struct steal {
-    friend constexpr auto get(Tag) { return MemPtr; }
+    friend constexpr auto get(Tag) {
+        return MemPtr;
+    }
 };
 
 // Access control is not checked for explicit instantiation template arguments,

@@ -72,7 +72,8 @@ int main() {
     std::string text(32768, 'A');
     std::string json;
     json.reserve(text.size() + 256);
-    json += R"({"text_document":{"uri":"file:///test.cpp","version":1},"content_changes":[{"text":)";
+    json +=
+        R"({"text_document":{"uri":"file:///test.cpp","version":1},"content_changes":[{"text":)";
     json += '"';
     json += text;
     json += R"("}]})";
@@ -80,13 +81,13 @@ int main() {
     DidChangeParams params;
     auto result = kota::codec::json::from_json(json, params);
 
-    if (!result.has_value()) {
+    if(!result.has_value()) {
         fprintf(stderr, "FAIL: parse error: %s\n", result.error().to_string().c_str());
         return 1;
     }
 
-    if (params.content_changes.size() != 1 ||
-        !std::holds_alternative<ChangeWhole>(params.content_changes[0])) {
+    if(params.content_changes.size() != 1 ||
+       !std::holds_alternative<ChangeWhole>(params.content_changes[0])) {
         fprintf(stderr, "FAIL: unexpected variant alternative\n");
         return 1;
     }
