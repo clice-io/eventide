@@ -17,7 +17,11 @@ struct RunResult {
 };
 
 RunResult run_fixture(const std::string& fixture_path, const std::string& args) {
-    std::string cmd = "\"" + fixture_path + "\"" + " " + args + " 2>&1";
+#ifdef _WIN32
+    std::string cmd = "\"\"" + fixture_path + "\" " + args + " 2>&1\"";
+#else
+    std::string cmd = "\"" + fixture_path + "\" " + args + " 2>&1";
+#endif
     FILE* pipe = popen(cmd.c_str(), "r");
     assert(pipe && "popen failed");
 
