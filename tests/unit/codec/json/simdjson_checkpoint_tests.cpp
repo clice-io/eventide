@@ -56,14 +56,6 @@ struct Wrapper {
     std::vector<SimpleVariant> items;
 };
 
-Reader make_reader(json::ondemand::Parser& parser,
-                   json::ondemand::Document& doc,
-                   json::padded_string& padded) {
-    auto ec = parser.iterate(padded).get(doc);
-    (void)ec;
-    return Reader{doc, padded.data(), padded.size()};
-}
-
 TEST_SUITE(simdjson_checkpoint_restore) {
 
 TEST_CASE(string_buffer_reclaimed) {
@@ -73,7 +65,8 @@ TEST_CASE(string_buffer_reclaimed) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    auto r = make_reader(parser, doc, padded);
+    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto* buf_before = ji.string_buf_loc();
 
@@ -90,7 +83,8 @@ TEST_CASE(depth_restored) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    auto r = make_reader(parser, doc, padded);
+    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto depth_before = ji.depth();
 
@@ -107,7 +101,8 @@ TEST_CASE(token_position_restored) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    auto r = make_reader(parser, doc, padded);
+    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
     auto pos_before = ji.position();
 
@@ -126,7 +121,8 @@ TEST_CASE(all_state_with_large_string) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    auto r = make_reader(parser, doc, padded);
+    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
     auto pos_before = ji.position();
@@ -149,7 +145,8 @@ TEST_CASE(success_advances_state) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    auto r = make_reader(parser, doc, padded);
+    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
     auto pos_before = ji.position();
@@ -169,7 +166,8 @@ TEST_CASE(multiple_failures_no_drift) {
     json::padded_string padded{std::string_view{input}};
     json::ondemand::Parser parser;
     json::ondemand::Document doc;
-    auto r = make_reader(parser, doc, padded);
+    ASSERT_EQ(parser.iterate(padded).get(doc), json::success);
+    auto r = Reader{doc, padded.data(), padded.size()};
     auto& ji = r.src.json_iter();
 
     auto pos_original = ji.position();
