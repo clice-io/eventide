@@ -195,15 +195,15 @@ bool try_extract_result(std::string& buffer, const std::string& test_name, Worke
     return true;
 }
 
-task<void> worker_coro(const std::string& program,
+task<void> worker_coro(std::string_view program,
                        const std::vector<std::string>& base_args,
                        const std::vector<std::string>& test_names,
                        std::size_t& next_task,
                        std::vector<WorkerResult>& results) {
     while(next_task < test_names.size()) {
         process::options opts;
-        opts.file = program;
-        opts.args.push_back(program);
+        opts.file = std::string(program);
+        opts.args.push_back(std::string(program));
         opts.args.push_back("--zest-worker");
         for(const auto& arg: base_args) {
             opts.args.push_back(arg);
@@ -286,7 +286,7 @@ task<void> worker_coro(const std::string& program,
 
 }  // namespace
 
-void run_parallel_workers(const std::string& program,
+void run_parallel_workers(std::string_view program,
                           const std::vector<std::string>& base_args,
                           unsigned num_workers,
                           const std::vector<std::string>& test_names,

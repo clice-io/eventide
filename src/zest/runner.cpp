@@ -1,9 +1,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <expected>
 #include <functional>
-#include <iostream>
 #include <print>
 #include <string>
 #include <string_view>
@@ -242,15 +242,13 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
                 detail::format_result_line(TestState::Fatal, std::chrono::milliseconds{0}));
             return 1;
         }
-        std::cerr << "Error parsing options: " << parsed.error().message << "\n";
-        command.usage(std::cerr);
+        std::println(stderr, "Error parsing options: {}", parsed.error().message);
         std::exit(1);
     }
 
     auto& cli = parsed->options;
     if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
-        std::cerr << "Error: cannot use both positional filter and --test-filter\n";
-        command.usage(std::cerr);
+        std::println(stderr, "Error: cannot use both positional filter and --test-filter");
         std::exit(1);
     }
 

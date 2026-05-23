@@ -28,7 +28,7 @@ bool parse_result_line(std::string_view line,
                        std::chrono::milliseconds& duration);
 
 #ifdef KOTA_ZEST_PARALLEL
-void run_parallel_workers(const std::string& program,
+void run_parallel_workers(std::string_view program,
                           const std::vector<std::string>& base_args,
                           unsigned num_workers,
                           const std::vector<std::string>& test_names,

@@ -5,7 +5,7 @@ namespace {
 TEST_SUITE(bootstrap_crash) {
 
 TEST_CASE(segfault) {
-    *(volatile int*)0 = 42;
+    *static_cast<volatile int*>(nullptr) = 42;
 }
 
 TEST_CASE(after_crash) {

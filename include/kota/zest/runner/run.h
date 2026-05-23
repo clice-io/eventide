@@ -52,7 +52,7 @@ struct Options {
                  required = false)
     <std::string> snapshot_dir = "";
 
-    // Internal fields — set by run_cli, not exposed via CLI.
+    // Worker subprocess needs this to re-spawn itself.
     std::string program;
 };
 

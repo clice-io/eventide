@@ -2,8 +2,10 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <format>
 #include <print>
 #include <string>
+#include <string_view>
 
 #ifndef _WIN32
 #include <sys/wait.h>
@@ -14,11 +16,11 @@
 #define pclose _pclose
 #endif
 
-int run_fixture(const std::string& fixture_path, const std::string& args) {
+int run_fixture(std::string_view fixture_path, std::string_view args) {
 #ifdef _WIN32
-    std::string cmd = "\"\"" + fixture_path + "\" " + args + "\"";
+    auto cmd = std::format("\"\"{}\" {}\"", fixture_path, args);
 #else
-    std::string cmd = "\"" + fixture_path + "\" " + args;
+    auto cmd = std::format("\"{}\" {}", fixture_path, args);
 #endif
 
     int raw = std::system(cmd.c_str());
@@ -29,11 +31,11 @@ int run_fixture(const std::string& fixture_path, const std::string& args) {
 #endif
 }
 
-std::string run_fixture_output(const std::string& fixture_path, const std::string& args) {
+std::string run_fixture_output(std::string_view fixture_path, std::string_view args) {
 #ifdef _WIN32
-    std::string cmd = "\"\"" + fixture_path + "\" " + args + "\" 2>&1";
+    auto cmd = std::format("\"\"{}\" {}\" 2>&1", fixture_path, args);
 #else
-    std::string cmd = "\"" + fixture_path + "\" " + args + " 2>&1";
+    auto cmd = std::format("\"{}\" {} 2>&1", fixture_path, args);
 #endif
 
     std::string output;
