@@ -14,8 +14,6 @@ namespace kota::zest::detail {
 
 namespace {
 
-constexpr std::string_view state_names[] = {"passed", "skipped", "failed", "fatal"};
-
 std::optional<TestState> parse_state(std::string_view s) {
     if(s == "passed")
         return TestState::Passed;
@@ -31,8 +29,16 @@ std::optional<TestState> parse_state(std::string_view s) {
 }  // namespace
 
 std::string format_result_line(TestState state, std::chrono::milliseconds duration) {
-    auto idx = static_cast<std::size_t>(state);
-    return std::format("{}{}{}{}", result_prefix, state_names[idx], ":", duration.count());
+    const char* name = [&] {
+        switch(state) {
+            case TestState::Passed: return "passed";
+            case TestState::Skipped: return "skipped";
+            case TestState::Failed: return "failed";
+            case TestState::Fatal: return "fatal";
+        }
+        return "fatal";  // unreachable
+    }();
+    return std::format("{}{}:{}", result_prefix, name, duration.count());
 }
 
 bool parse_result_line(std::string_view line,
@@ -200,6 +206,7 @@ void run_parallel_workers(const std::string& program,
     results.resize(test_names.size());
 
     event_loop loop;
+    // Safe: all worker coroutines run on a single-threaded event loop.
     std::size_t next_task = 0;
 
     std::vector<task<void>> tasks;

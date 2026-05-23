@@ -4,6 +4,17 @@
 #include <format>
 #include <print>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <csignal>
+#include <unistd.h>
+#endif
+
+#ifdef __cpp_exceptions
+#include <cpptrace/from_current.hpp>
+#endif
+
 #include "kota/support/functional.h"
 #include <cpptrace/cpptrace.hpp>
 
@@ -34,25 +45,11 @@ void print_trace(std::source_location location) {
     println_trace(trace);
 }
 
-}  // namespace kota::zest
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <csignal>
-#include <unistd.h>
-#endif
-
-namespace kota::zest {
-
 #ifdef _WIN32
 
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS*) {
     std::println("[  CRASH  ] caught fatal exception, printing stack trace:");
-    auto trace = cpptrace::generate_trace();
-    for(const auto& frame: trace.frames) {
-        std::println("{}", frame.to_string());
-    }
+    println_trace(cpptrace::generate_trace());
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -65,10 +62,7 @@ void install_crash_handler() {
 static void crash_handler(int sig) {
     signal(sig, SIG_DFL);
     std::println("[  CRASH  ] caught signal {}, printing stack trace:", sig);
-    auto trace = cpptrace::generate_trace();
-    for(const auto& frame: trace.frames) {
-        std::println("{}", frame.to_string());
-    }
+    println_trace(cpptrace::generate_trace());
     raise(sig);
 }
 
@@ -84,12 +78,7 @@ void install_crash_handler() {
 
 #endif
 
-}  // namespace kota::zest
-
 #ifdef __cpp_exceptions
-#include <cpptrace/from_current.hpp>
-
-namespace kota::zest {
 
 bool trace_exception(function<void()> cb, bool print) {
     bool ret = false;
@@ -116,5 +105,6 @@ bool trace_exception(function<void()> cb, bool print) {
     return ret;
 }
 
-}  // namespace kota::zest
 #endif
+
+}  // namespace kota::zest
