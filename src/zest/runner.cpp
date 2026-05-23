@@ -453,9 +453,6 @@ int Runner::run_tests(Options options) {
 
     auto record_result = [&](const TestResult& result) {
         const bool failed = is_failure(result.state);
-        if(result.state == TestState::Skipped) {
-            summary.skipped += 1;
-        }
         if(failed && !result.output.empty()) {
             std::println("{}", result.output);
         }

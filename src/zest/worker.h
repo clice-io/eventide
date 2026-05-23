@@ -7,6 +7,12 @@
 
 #include "kota/zest/runner/registry.h"
 
+namespace kota::zest {
+
+void install_crash_handler();
+
+}  // namespace kota::zest
+
 namespace kota::zest::detail {
 
 constexpr inline std::string_view result_prefix = "__ZEST_RESULT__:";
@@ -26,6 +32,8 @@ std::string format_result_line(TestState state, std::chrono::milliseconds durati
 bool parse_result_line(std::string_view line,
                        TestState& state,
                        std::chrono::milliseconds& duration);
+
+std::string resolve_crash_frames(const std::string& output);
 
 #ifdef KOTA_ZEST_PARALLEL
 void run_parallel_workers(std::string_view program,

@@ -6,6 +6,8 @@
 #include <format>
 #include <print>
 
+#include "worker.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -44,11 +46,16 @@ std::size_t format_hex(char* buf, std::size_t buf_size, cpptrace::frame_ptr valu
 }
 
 std::size_t format_frame(char* buf, std::size_t buf_size, const cpptrace::object_frame& frame) {
+    // prefix (15) + 2 hex values (max 20 each) + 2 colons + newline = 58 bytes minimum.
+    constexpr std::size_t min_frame_size = detail::frame_prefix.size() + 2 * 20 + 3;
+    if(buf_size < min_frame_size) {
+        return 0;
+    }
+
     std::size_t pos = 0;
 
-    const char prefix[] = "__ZEST_FRAME__:";
-    std::memcpy(buf + pos, prefix, sizeof(prefix) - 1);
-    pos += sizeof(prefix) - 1;
+    std::memcpy(buf + pos, detail::frame_prefix.data(), detail::frame_prefix.size());
+    pos += detail::frame_prefix.size();
 
     pos += format_hex(buf + pos, buf_size - pos, frame.raw_address);
     buf[pos++] = ':';
@@ -100,9 +107,12 @@ void print_trace(std::source_location location) {
 
 static void write_object_trace(HANDLE out, const cpptrace::object_trace& trace) {
     DWORD written;
-    const char begin_marker[] = "__ZEST_TRACE_BEGIN__\n";
-    const char end_marker[] = "__ZEST_TRACE_END__\n";
-    WriteFile(out, begin_marker, sizeof(begin_marker) - 1, &written, nullptr);
+    WriteFile(out,
+              detail::trace_begin_marker.data(),
+              static_cast<DWORD>(detail::trace_begin_marker.size()),
+              &written,
+              nullptr);
+    WriteFile(out, "\n", 1, &written, nullptr);
 
     for(const auto& frame: trace.frames) {
         char buf[CPPTRACE_PATH_MAX + 256];
@@ -110,7 +120,12 @@ static void write_object_trace(HANDLE out, const cpptrace::object_trace& trace) 
         WriteFile(out, buf, static_cast<DWORD>(pos), &written, nullptr);
     }
 
-    WriteFile(out, end_marker, sizeof(end_marker) - 1, &written, nullptr);
+    WriteFile(out,
+              detail::trace_end_marker.data(),
+              static_cast<DWORD>(detail::trace_end_marker.size()),
+              &written,
+              nullptr);
+    WriteFile(out, "\n", 1, &written, nullptr);
 }
 
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS*) {
@@ -132,9 +147,8 @@ void install_crash_handler() {
 #else
 
 static void write_object_trace(int fd, const cpptrace::object_trace& trace) {
-    const char begin_marker[] = "__ZEST_TRACE_BEGIN__\n";
-    const char end_marker[] = "__ZEST_TRACE_END__\n";
-    safe_write_all(fd, begin_marker, sizeof(begin_marker) - 1);
+    safe_write_all(fd, detail::trace_begin_marker.data(), detail::trace_begin_marker.size());
+    safe_write_all(fd, "\n", 1);
 
     for(const auto& frame: trace.frames) {
         char buf[CPPTRACE_PATH_MAX + 256];
@@ -142,11 +156,15 @@ static void write_object_trace(int fd, const cpptrace::object_trace& trace) {
         safe_write_all(fd, buf, pos);
     }
 
-    safe_write_all(fd, end_marker, sizeof(end_marker) - 1);
+    safe_write_all(fd, detail::trace_end_marker.data(), detail::trace_end_marker.size());
+    safe_write_all(fd, "\n", 1);
 }
 
 static void crash_handler(int sig) {
-    signal(sig, SIG_DFL);
+    struct sigaction sa{};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    sigaction(sig, &sa, nullptr);
 
     // Object trace only (no DWARF) to avoid TSAN-spinning during resolution.
     auto trace = cpptrace::generate_object_trace();
@@ -165,12 +183,16 @@ static void crash_handler(int sig) {
 }
 
 void install_crash_handler() {
-    signal(SIGSEGV, crash_handler);
-    signal(SIGABRT, crash_handler);
-    signal(SIGFPE, crash_handler);
-    signal(SIGILL, crash_handler);
+    struct sigaction sa{};
+    sa.sa_handler = crash_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+    sigaction(SIGFPE, &sa, nullptr);
+    sigaction(SIGILL, &sa, nullptr);
 #ifdef SIGBUS
-    signal(SIGBUS, crash_handler);
+    sigaction(SIGBUS, &sa, nullptr);
 #endif
 }
 

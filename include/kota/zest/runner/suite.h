@@ -6,6 +6,14 @@
 
 namespace kota::zest {
 
+/// Strip the "test_" prefix from a test case name, if present.
+constexpr std::string_view strip_test_prefix(std::string_view name) {
+    if(name.starts_with("test_")) {
+        name.remove_prefix(5);
+    }
+    return name;
+}
+
 /// Merge suite-level and case-level test attributes.
 /// Case-level flags override suite defaults when explicitly set to true.
 constexpr TestAttrs merge_attrs(TestAttrs suite, TestAttrs test_case) {
@@ -60,10 +68,7 @@ struct TestSuiteDef {
             current_test_state() = TestState::Passed;
             constexpr auto sn = _suite_name();
             constexpr auto cn = meta::member_name<test_body>();
-            std::string_view cn_sv(cn.data(), cn.size());
-            if(cn_sv.starts_with("test_")) {
-                cn_sv.remove_prefix(5);
-            }
+            auto cn_sv = strip_test_prefix(std::string_view(cn.data(), cn.size()));
             reset_snapshot_context(std::string_view(sn.data(), sn.size()), cn_sv, path);
             Derived test;
             if constexpr(requires { test.setup(); }) {
@@ -79,10 +84,7 @@ struct TestSuiteDef {
             return current_test_state();
         };
 
-        std::string_view cn(case_name_ref.data(), case_name_ref.size());
-        if(cn.starts_with("test_")) {
-            cn.remove_prefix(5);
-        }
+        auto cn = strip_test_prefix(std::string_view(case_name_ref.data(), case_name_ref.size()));
         test_cases().emplace_back(std::string(cn), path, line, effective_attrs, run_test);
         return true;
     }();

@@ -195,6 +195,38 @@ int main() {
         static_assert(static_cast<int>(TestState::Fatal) == 3);
     }
 
+    std::println("--- crash frame resolution ---");
+
+    {
+        // No trace block -> returns input unchanged
+        std::string input = "some output\nmore output";
+        assert(resolve_crash_frames(input) == input);
+    }
+
+    {
+        // Empty trace block -> markers stripped
+        std::string input = "header\n__ZEST_TRACE_BEGIN__\n__ZEST_TRACE_END__\nfooter";
+        auto result = resolve_crash_frames(input);
+        assert(result.find("__ZEST_TRACE_BEGIN__") == std::string::npos);
+        assert(result.find("__ZEST_TRACE_END__") == std::string::npos);
+        assert(result.find("header") != std::string::npos);
+        assert(result.find("footer") != std::string::npos);
+    }
+
+    {
+        // Malformed frame lines are skipped
+        std::string input = "__ZEST_TRACE_BEGIN__\n__ZEST_FRAME__:invalid\n__ZEST_TRACE_END__\n";
+        auto result = resolve_crash_frames(input);
+        // Should not crash, markers should be stripped
+        assert(result.find("__ZEST_TRACE_BEGIN__") == std::string::npos);
+    }
+
+    {
+        // Missing end marker -> returns input unchanged
+        std::string input = "__ZEST_TRACE_BEGIN__\n__ZEST_FRAME__:0x1:0x1:/foo\n";
+        assert(resolve_crash_frames(input) == input);
+    }
+
     std::println("--- expression parsing ---");
 
     {

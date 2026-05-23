@@ -31,6 +31,66 @@ cpptrace::frame_ptr parse_hex(std::string_view s) {
     return result;
 }
 
+std::optional<TestState> parse_state(std::string_view s) {
+    if(s == "passed")
+        return TestState::Passed;
+    if(s == "skipped")
+        return TestState::Skipped;
+    if(s == "failed")
+        return TestState::Failed;
+    if(s == "fatal")
+        return TestState::Fatal;
+    return std::nullopt;
+}
+
+}  // namespace
+
+std::string format_result_line(TestState state, std::chrono::milliseconds duration) {
+    const char* name = [&] {
+        switch(state) {
+            case TestState::Passed: return "passed";
+            case TestState::Skipped: return "skipped";
+            case TestState::Failed: return "failed";
+            case TestState::Fatal: return "fatal";
+        }
+        return "fatal";  // unreachable
+    }();
+    return std::format("{}{}:{}", result_prefix, name, duration.count());
+}
+
+bool parse_result_line(std::string_view line,
+                       TestState& state,
+                       std::chrono::milliseconds& duration) {
+    if(!line.starts_with(result_prefix)) {
+        return false;
+    }
+    auto rest = line.substr(result_prefix.size());
+    auto colon = rest.find(':');
+    if(colon == std::string_view::npos) {
+        return false;
+    }
+
+    auto parsed_state = parse_state(rest.substr(0, colon));
+    if(!parsed_state.has_value()) {
+        return false;
+    }
+
+    auto dur_str = rest.substr(colon + 1);
+    while(!dur_str.empty() && (dur_str.back() == '\n' || dur_str.back() == '\r')) {
+        dur_str.remove_suffix(1);
+    }
+
+    std::int64_t ms = 0;
+    auto [ptr, ec] = std::from_chars(dur_str.data(), dur_str.data() + dur_str.size(), ms);
+    if(ec != std::errc{} || ptr != dur_str.data() + dur_str.size()) {
+        return false;
+    }
+
+    state = *parsed_state;
+    duration = std::chrono::milliseconds(ms);
+    return true;
+}
+
 std::string resolve_crash_frames(const std::string& output) {
     auto begin_pos = output.find(trace_begin_marker);
     if(begin_pos == std::string::npos) {
@@ -104,66 +164,6 @@ std::string resolve_crash_frames(const std::string& output) {
     return result;
 }
 
-std::optional<TestState> parse_state(std::string_view s) {
-    if(s == "passed")
-        return TestState::Passed;
-    if(s == "skipped")
-        return TestState::Skipped;
-    if(s == "failed")
-        return TestState::Failed;
-    if(s == "fatal")
-        return TestState::Fatal;
-    return std::nullopt;
-}
-
-}  // namespace
-
-std::string format_result_line(TestState state, std::chrono::milliseconds duration) {
-    const char* name = [&] {
-        switch(state) {
-            case TestState::Passed: return "passed";
-            case TestState::Skipped: return "skipped";
-            case TestState::Failed: return "failed";
-            case TestState::Fatal: return "fatal";
-        }
-        return "fatal";  // unreachable
-    }();
-    return std::format("{}{}:{}", result_prefix, name, duration.count());
-}
-
-bool parse_result_line(std::string_view line,
-                       TestState& state,
-                       std::chrono::milliseconds& duration) {
-    if(!line.starts_with(result_prefix)) {
-        return false;
-    }
-    auto rest = line.substr(result_prefix.size());
-    auto colon = rest.find(':');
-    if(colon == std::string_view::npos) {
-        return false;
-    }
-
-    auto parsed_state = parse_state(rest.substr(0, colon));
-    if(!parsed_state.has_value()) {
-        return false;
-    }
-
-    auto dur_str = rest.substr(colon + 1);
-    while(!dur_str.empty() && (dur_str.back() == '\n' || dur_str.back() == '\r')) {
-        dur_str.remove_suffix(1);
-    }
-
-    std::int64_t ms = 0;
-    auto [ptr, ec] = std::from_chars(dur_str.data(), dur_str.data() + dur_str.size(), ms);
-    if(ec != std::errc{} || ptr != dur_str.data() + dur_str.size()) {
-        return false;
-    }
-
-    state = *parsed_state;
-    duration = std::chrono::milliseconds(ms);
-    return true;
-}
-
 #ifdef KOTA_ZEST_PARALLEL
 
 namespace {
@@ -234,6 +234,7 @@ task<void> worker_coro(std::string_view program,
             auto idx = next_task++;
             if(idx >= test_names.size()) {
                 spawn_res->stdin_pipe = pipe{};
+                // TODO: add timeout to detect hung worker processes
                 co_await spawn_res->proc.wait();
                 co_return;
             }
@@ -280,6 +281,7 @@ task<void> worker_coro(std::string_view program,
         }
 
         spawn_res->stdin_pipe = pipe{};
+        // TODO: add timeout to detect hung worker processes
         co_await spawn_res->proc.wait();
     }
 }
