@@ -1,13 +1,14 @@
 #undef NDEBUG
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <print>
+#include <sstream>
 #include <string>
 
-#ifdef _WIN32
-#define popen _popen
-#define pclose _pclose
-#else
+#ifndef _WIN32
 #include <sys/wait.h>
 #endif
 
@@ -17,21 +18,16 @@ struct RunResult {
 };
 
 RunResult run_fixture(const std::string& fixture_path, const std::string& args) {
+    auto tmp = std::filesystem::temp_directory_path() / "zest_bootstrap_output.txt";
+    auto tmp_str = tmp.string();
+
 #ifdef _WIN32
-    std::string cmd = "\"\"" + fixture_path + "\" " + args + " 2>&1\"";
+    std::string cmd = "\"\"" + fixture_path + "\" " + args + " > \"" + tmp_str + "\" 2>&1\"";
 #else
-    std::string cmd = "\"" + fixture_path + "\" " + args + " 2>&1";
+    std::string cmd = "\"" + fixture_path + "\" " + args + " > \"" + tmp_str + "\" 2>&1";
 #endif
-    FILE* pipe = popen(cmd.c_str(), "r");
-    assert(pipe && "popen failed");
 
-    std::string output;
-    char buf[256];
-    while(std::fgets(buf, sizeof(buf), pipe)) {
-        output += buf;
-    }
-
-    int raw = pclose(pipe);
+    int raw = std::system(cmd.c_str());
     int exit_code;
 #ifdef _WIN32
     exit_code = raw;
@@ -43,6 +39,14 @@ RunResult run_fixture(const std::string& fixture_path, const std::string& args) 
     }
 #endif
 
+    std::string output;
+    if(std::ifstream ifs(tmp_str); ifs) {
+        std::ostringstream ss;
+        ss << ifs.rdbuf();
+        output = ss.str();
+    }
+
+    std::filesystem::remove(tmp);
     return {exit_code, std::move(output)};
 }
 
@@ -51,28 +55,24 @@ int main(int argc, char** argv) {
     std::string fixture = argv[1];
     std::string fixture_focus = argv[2];
 
-    // 1. All tests -> non-zero exit (because bootstrap_fail.mismatch fails)
     std::println("--- all tests -> non-zero exit ---");
     {
         auto result = run_fixture(fixture, "--test-filter \"*\"");
         assert(result.exit_code != 0);
     }
 
-    // 2. Passing test only -> zero exit
     std::println("--- passing test only -> zero exit ---");
     {
         auto result = run_fixture(fixture, "--test-filter \"bootstrap_pass.*\"");
         assert(result.exit_code == 0);
     }
 
-    // 3. Failing test only -> non-zero exit
     std::println("--- failing test only -> non-zero exit ---");
     {
         auto result = run_fixture(fixture, "--test-filter \"bootstrap_fail.*\"");
         assert(result.exit_code != 0);
     }
 
-    // 4. Output contains expected markers
     std::println("--- output contains expected markers ---");
     {
         auto result = run_fixture(fixture, "--test-filter \"*\"");
@@ -87,14 +87,12 @@ int main(int argc, char** argv) {
                result.output.find("SKIPPED") != std::string::npos);
     }
 
-    // 5. Skipped test only -> zero exit
     std::println("--- skipped test only -> zero exit ---");
     {
         auto result = run_fixture(fixture, "--test-filter \"bootstrap_skip.*\"");
         assert(result.exit_code == 0);
     }
 
-    // 6. Focus mode -> focused test runs, unfocused is skipped
     std::println("--- focus mode ---");
     {
         auto result = run_fixture(fixture_focus, "--test-filter \"bootstrap_focus.*\"");
