@@ -188,16 +188,18 @@
             ::kota::zest::print_trace(std::source_location::current());                            \
             ::kota::zest::failure();                                                                \
             return_action;                                                                          \
+        } else {                                                                                    \
+            auto _zest_snap_pretty = ::kota::codec::json::prettify(*_zest_snap_json);              \
+            if(!_zest_snap_pretty.has_value()) {                                                   \
+                std::println("[snapshot] json prettify failed");                                    \
+                ::kota::zest::print_trace(std::source_location::current());                        \
+                ::kota::zest::failure();                                                            \
+                return_action;                                                                      \
+            } else {                                                                                \
+                ZEST_CHECK_IMPL(::kota::zest::check_snapshot_expr(                                \
+                    *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__)), return_action);         \
+            }                                                                                       \
         }                                                                                           \
-        auto _zest_snap_pretty = ::kota::codec::json::prettify(*_zest_snap_json);                   \
-        if(!_zest_snap_pretty.has_value()) {                                                        \
-            std::println("[snapshot] json prettify failed");                                        \
-            ::kota::zest::print_trace(std::source_location::current());                            \
-            ::kota::zest::failure();                                                                \
-            return_action;                                                                          \
-        }                                                                                           \
-        ZEST_CHECK_IMPL(::kota::zest::check_snapshot_expr(                                        \
-            *_zest_snap_pretty, #value __VA_OPT__(, __VA_ARGS__)), return_action);                 \
     } while(0)
 
 #define EXPECT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL((void)0, value __VA_OPT__(,) __VA_ARGS__)

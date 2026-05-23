@@ -494,6 +494,13 @@ int Runner::run_tests(Options options) {
         }
 
         if(!parallel_indices.empty()) {
+            if(options.program.empty()) {
+                std::println("{}[  ERROR ] parallel execution requires the runner program path{}",
+                             red,
+                             clear);
+                return 1;
+            }
+
             const unsigned pw = *options.parallel_workers;
             const auto num_workers = static_cast<unsigned>(
                 std::min(static_cast<std::size_t>(

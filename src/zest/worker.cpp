@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <format>
+#include <optional>
 #include <string_view>
 
 #ifdef KOTA_ZEST_PARALLEL
@@ -15,14 +16,16 @@ namespace {
 
 constexpr std::string_view state_names[] = {"passed", "skipped", "failed", "fatal"};
 
-TestState parse_state(std::string_view s) {
+std::optional<TestState> parse_state(std::string_view s) {
     if(s == "passed")
         return TestState::Passed;
     if(s == "skipped")
         return TestState::Skipped;
     if(s == "failed")
         return TestState::Failed;
-    return TestState::Fatal;
+    if(s == "fatal")
+        return TestState::Fatal;
+    return std::nullopt;
 }
 
 }  // namespace
@@ -44,7 +47,11 @@ bool parse_result_line(std::string_view line,
         return false;
     }
 
-    state = parse_state(rest.substr(0, colon));
+    auto parsed_state = parse_state(rest.substr(0, colon));
+    if(!parsed_state.has_value()) {
+        return false;
+    }
+
     auto dur_str = rest.substr(colon + 1);
     while(!dur_str.empty() && (dur_str.back() == '\n' || dur_str.back() == '\r')) {
         dur_str.remove_suffix(1);
@@ -56,6 +63,7 @@ bool parse_result_line(std::string_view line,
         return false;
     }
 
+    state = *parsed_state;
     duration = std::chrono::milliseconds(ms);
     return true;
 }
@@ -112,13 +120,15 @@ task<void> worker_coro(const std::string& program,
 
         auto spawn_res = process::spawn(opts);
         if(!spawn_res.has_value()) {
-            auto idx = next_task++;
-            if(idx < test_names.size()) {
-                results[idx] = WorkerResult{
-                    .test_name = test_names[idx],
-                    .state = TestState::Fatal,
-                    .output = "[worker] failed to spawn process",
-                };
+            while(next_task < test_names.size()) {
+                auto idx = next_task++;
+                if(idx < test_names.size()) {
+                    results[idx] = WorkerResult{
+                        .test_name = test_names[idx],
+                        .state = TestState::Fatal,
+                        .output = "[worker] failed to spawn process",
+                    };
+                }
             }
             co_return;
         }

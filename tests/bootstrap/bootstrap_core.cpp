@@ -84,6 +84,12 @@ int main() {
         assert(!parse_result_line("__ZEST_RESULT__:passed:123abc", s, d));
     }
 
+    {
+        TestState s{};
+        std::chrono::milliseconds d{};
+        assert(!parse_result_line("__ZEST_RESULT__:unknown:42", s, d));
+    }
+
     std::println("--- glob pattern ---");
 
     {
