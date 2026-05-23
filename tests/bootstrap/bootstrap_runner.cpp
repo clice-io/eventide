@@ -9,6 +9,11 @@
 #include <sys/wait.h>
 #endif
 
+#ifdef _MSC_VER
+#define popen _popen
+#define pclose _pclose
+#endif
+
 int run_fixture(const std::string& fixture_path, const std::string& args) {
 #ifdef _WIN32
     std::string cmd = "\"\"" + fixture_path + "\" " + args + "\"";
