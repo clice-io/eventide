@@ -170,8 +170,8 @@ bool is_failure(kota::zest::TestState state) {
 void print_run_result(std::string_view display_name,
                       bool failed,
                       std::chrono::milliseconds duration,
-                      bool only_failed_output) {
-    if(failed || !only_failed_output) {
+                      bool verbose) {
+    if(failed || verbose) {
         std::println("{0}[   {1} ] {2} ({3} ms){4}",
                      failed ? red : green,
                      failed ? "FAILED" : "    OK",
@@ -371,7 +371,7 @@ int Runner::run_tests(Options options) {
     auto grouped_suites = group_suites(suites);
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
 
-    const bool only_failed_output = !*options.verbose;
+    const bool verbose = *options.verbose;
 
     RunSummary summary;
 
@@ -410,7 +410,7 @@ int Runner::run_tests(Options options) {
             }
 
             if(test_case.attrs.skip) {
-                if(!only_failed_output) {
+                if(verbose) {
                     std::println("{}[ SKIPPED  ] {}{}", yellow, display_name, clear);
                 }
                 summary.skipped += 1;
@@ -432,7 +432,7 @@ int Runner::run_tests(Options options) {
     summary.tests = static_cast<std::uint32_t>(runnable.size());
 
     auto run_single = [&](const RunnableTest& test, bool show_run_line) -> TestResult {
-        if(show_run_line && !only_failed_output) {
+        if(show_run_line && verbose) {
             std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
         }
 
@@ -459,7 +459,7 @@ int Runner::run_tests(Options options) {
         if(failed && !result.output.empty()) {
             std::println("{}", result.output);
         }
-        print_run_result(result.display_name, failed, result.duration, only_failed_output);
+        print_run_result(result.display_name, failed, result.duration, verbose);
         if(failed) {
             summary.failed += 1;
             summary.failed_tests.push_back(
