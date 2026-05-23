@@ -43,14 +43,6 @@ std::size_t format_hex(char* buf, std::size_t buf_size, cpptrace::frame_ptr valu
     return static_cast<std::size_t>(ptr - buf);
 }
 
-std::size_t format_int(char* buf, std::size_t buf_size, int value) {
-    auto [ptr, ec] = std::to_chars(buf, buf + buf_size, value);
-    if(ec != std::errc{}) {
-        return 0;
-    }
-    return static_cast<std::size_t>(ptr - buf);
-}
-
 std::size_t format_frame(char* buf, std::size_t buf_size, const cpptrace::object_frame& frame) {
     std::size_t pos = 0;
 
@@ -159,15 +151,14 @@ static void crash_handler(int sig) {
     // Object trace only (no DWARF) to avoid TSAN-spinning during resolution.
     auto trace = cpptrace::generate_object_trace();
 
-    {
-        const char msg1[] = "[  CRASH  ] caught signal ";
-        safe_write_all(STDOUT_FILENO, msg1, sizeof(msg1) - 1);
-        char sigbuf[16];
-        auto spos = format_int(sigbuf, sizeof(sigbuf), sig);
-        safe_write_all(STDOUT_FILENO, sigbuf, spos);
-        const char msg2[] = ", printing stack trace:\n";
-        safe_write_all(STDOUT_FILENO, msg2, sizeof(msg2) - 1);
+    const char msg1[] = "[  CRASH  ] caught signal ";
+    safe_write_all(STDOUT_FILENO, msg1, sizeof(msg1) - 1);
+    char sigbuf[16];
+    if(auto [ptr, ec] = std::to_chars(sigbuf, sigbuf + sizeof(sigbuf), sig); ec == std::errc{}) {
+        safe_write_all(STDOUT_FILENO, sigbuf, static_cast<std::size_t>(ptr - sigbuf));
     }
+    const char msg2[] = ", printing stack trace:\n";
+    safe_write_all(STDOUT_FILENO, msg2, sizeof(msg2) - 1);
 
     write_object_trace(STDOUT_FILENO, trace);
     raise(sig);
