@@ -30,8 +30,8 @@ struct Options {
                  required = false)
     <std::string> test_filter = "";
 
-    DecoFlag(help = "only print failed test cases"; required = false)
-    only_failed = false;
+    DecoFlag(help = "print all test results, not just failures"; required = false)
+    verbose = false;
 
     DecoFlag(help = "run test cases in parallel"; required = false)
     parallel = false;

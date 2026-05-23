@@ -371,7 +371,7 @@ int Runner::run_tests(Options options) {
     auto grouped_suites = group_suites(suites);
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
 
-    const bool only_failed_output = *options.only_failed;
+    const bool only_failed_output = !*options.verbose;
 
     RunSummary summary;
 
