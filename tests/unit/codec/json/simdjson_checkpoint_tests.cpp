@@ -200,6 +200,17 @@ TEST_CASE(variant_fallback_reclaims) {
     EXPECT_EQ(std::get<Shallow>(out).a.size(), 8192U);
 }
 
+TEST_CASE(variant_fallback_reclaims_256KB) {
+    std::string big(256 * 1024, 'E');
+    std::string input = R"({"a":")" + big + R"("})";
+
+    NestedVariant out;
+    auto result = from_json<>(input, out);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<Shallow>(out).a.size(), 256U * 1024U);
+}
+
 TEST_CASE(variant_first_alternative_succeeds) {
     // Sanity: when the first alternative matches, no checkpoint restore needed.
     std::string s1(4096, 'A');
