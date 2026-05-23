@@ -71,6 +71,9 @@ int main(int argc, char** argv) {
             run_fixture_output(fixture_crash, "--parallel --test-filter \"bootstrap_crash.*\"");
         assert(output.find("CRASH") != std::string::npos);
         assert(output.find("FAILED") != std::string::npos);
+        assert(output.find("PASSED") != std::string::npos);
+        assert(output.find("segfault") != std::string::npos ||
+               output.find("fixture_crash") != std::string::npos);
     }
 
     std::println("all bootstrap_runner tests passed");
