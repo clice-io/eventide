@@ -6,7 +6,7 @@
 #include "kota/zest/snapshot/snapshot.h"
 
 #define TEST_SUITE(name, ...)                                                                      \
-    struct name##TEST : __VA_OPT__(__VA_ARGS__, )::kota::zest::TestSuiteDef<#name, name##TEST>
+    struct name##TEST : __VA_OPT__(__VA_ARGS__, )::kota::zest::TestSuiteDef<name##TEST>
 
 // clang-format off
 #define ZEST_MAKE_ATTRS(...)                                                                       \
@@ -22,16 +22,11 @@
     constexpr static ::kota::zest::TestAttrs suite_attrs = ZEST_MAKE_ATTRS(__VA_ARGS__)
 
 #define TEST_CASE(name, ...)                                                                       \
+    inline static constexpr char _zest_file_##name[] = __FILE__;                                   \
     void _register_##name() {                                                                      \
-        constexpr auto file_name = std::source_location::current().file_name();                    \
-        constexpr auto file_len = std::string_view(file_name).size();                              \
         (void)_register_suites<>;                                                                  \
         constexpr auto _zest_attrs_ = ZEST_MAKE_ATTRS(__VA_OPT__(__VA_ARGS__));                    \
-        (void)_register_test_case<#name,                                                           \
-                                  &Self::test_##name,                                              \
-                                  ::kota::fixed_string<file_len>(file_name),                       \
-                                  std::source_location::current().line(),                          \
-                                  _zest_attrs_>;                                                   \
+        (void)_register_test_case<&Self::test_##name, _zest_file_##name, __LINE__, _zest_attrs_>;  \
     }                                                                                              \
     void test_##name()
 
