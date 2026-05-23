@@ -1,5 +1,6 @@
 #undef NDEBUG
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <print>
 #include <string>
@@ -23,10 +24,31 @@ int run_fixture(const std::string& fixture_path, const std::string& args) {
 #endif
 }
 
+std::string run_fixture_output(const std::string& fixture_path, const std::string& args) {
+#ifdef _WIN32
+    std::string cmd = "\"\"" + fixture_path + "\" " + args + "\" 2>&1";
+#else
+    std::string cmd = "\"" + fixture_path + "\" " + args + " 2>&1";
+#endif
+
+    std::string output;
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if(pipe) {
+        char buf[4096];
+        while(fgets(buf, sizeof(buf), pipe)) {
+            output += buf;
+        }
+        pclose(pipe);
+    }
+    return output;
+}
+
 int main(int argc, char** argv) {
-    assert(argc >= 3 && "usage: bootstrap_runner <fixture_path> <fixture_focus_path>");
+    assert(argc >= 4 &&
+           "usage: bootstrap_runner <fixture_path> <fixture_focus_path> <fixture_crash_path>");
     std::string fixture = argv[1];
     std::string fixture_focus = argv[2];
+    std::string fixture_crash = argv[3];
 
     std::println("--- all tests -> non-zero exit ---");
     assert(run_fixture(fixture, "--test-filter \"*\"") != 0);
@@ -42,6 +64,14 @@ int main(int argc, char** argv) {
 
     std::println("--- focus mode -> zero exit ---");
     assert(run_fixture(fixture_focus, "--test-filter \"bootstrap_focus.*\"") == 0);
+
+    std::println("--- crash test (parallel) -> non-zero exit with stack trace ---");
+    {
+        auto output =
+            run_fixture_output(fixture_crash, "--parallel --test-filter \"bootstrap_crash.*\"");
+        assert(output.find("CRASH") != std::string::npos);
+        assert(output.find("FAILED") != std::string::npos);
+    }
 
     std::println("all bootstrap_runner tests passed");
     return 0;
