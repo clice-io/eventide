@@ -15,6 +15,7 @@
 #include "worker.h"
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
+#include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
 #include "kota/zest/runner/run.h"
 #include "kota/zest/snapshot/snapshot.h"
@@ -280,6 +281,7 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 
 int Runner::run_as_worker(Options options) {
 #ifdef KOTA_ZEST_PARALLEL
+    install_crash_handler();
     std::setvbuf(stdout, nullptr, _IONBF, 0);
 
     set_update_snapshots(*options.update_snapshots);
