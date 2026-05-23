@@ -1,6 +1,7 @@
 #include "kota/zest/assert/trace.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <format>
 #include <print>
@@ -29,37 +30,50 @@ void println_trace(const cpptrace::stacktrace& trace) {
     }
 }
 
-// Signal-safe hex formatting: writes "0x..." into buf, returns number of chars written.
 std::size_t format_hex(char* buf, std::size_t buf_size, cpptrace::frame_ptr value) {
     if(buf_size < 3) {
         return 0;
     }
     buf[0] = '0';
     buf[1] = 'x';
-    // Format the hex digits in reverse, then reverse them.
-    constexpr char hex_chars[] = "0123456789abcdef";
-    std::size_t pos = 2;
-    if(value == 0) {
-        if(pos < buf_size) {
-            buf[pos++] = '0';
-        }
-    } else {
-        std::size_t start = pos;
-        while(value != 0 && pos < buf_size) {
-            buf[pos++] = hex_chars[value & 0xf];
-            value >>= 4;
-        }
-        // Reverse the hex digits.
-        for(std::size_t i = start, j = pos - 1; i < j; ++i, --j) {
-            char tmp = buf[i];
-            buf[i] = buf[j];
-            buf[j] = tmp;
-        }
+    auto [ptr, ec] = std::to_chars(buf + 2, buf + buf_size, value, 16);
+    if(ec != std::errc{}) {
+        return 0;
     }
+    return static_cast<std::size_t>(ptr - buf);
+}
+
+std::size_t format_int(char* buf, std::size_t buf_size, int value) {
+    auto [ptr, ec] = std::to_chars(buf, buf + buf_size, value);
+    if(ec != std::errc{}) {
+        return 0;
+    }
+    return static_cast<std::size_t>(ptr - buf);
+}
+
+std::size_t format_frame(char* buf, std::size_t buf_size, const cpptrace::object_frame& frame) {
+    std::size_t pos = 0;
+
+    const char prefix[] = "__ZEST_FRAME__:";
+    std::memcpy(buf + pos, prefix, sizeof(prefix) - 1);
+    pos += sizeof(prefix) - 1;
+
+    pos += format_hex(buf + pos, buf_size - pos, frame.raw_address);
+    buf[pos++] = ':';
+
+    pos += format_hex(buf + pos, buf_size - pos, frame.object_address);
+    buf[pos++] = ':';
+
+    auto path_len = frame.object_path.size();
+    if(pos + path_len + 1 < buf_size) {
+        std::memcpy(buf + pos, frame.object_path.data(), path_len);
+        pos += path_len;
+    }
+    buf[pos++] = '\n';
+
     return pos;
 }
 
-// Signal-safe: write all bytes to fd, retrying on partial writes.
 #ifndef _WIN32
 void safe_write_all(int fd, const char* data, std::size_t len) {
     while(len > 0) {
@@ -99,27 +113,8 @@ static void write_object_trace(HANDLE out, const cpptrace::object_trace& trace) 
     WriteFile(out, begin_marker, sizeof(begin_marker) - 1, &written, nullptr);
 
     for(const auto& frame: trace.frames) {
-        // Format: __ZEST_FRAME__:raw_addr:obj_addr:object_path\n
         char buf[CPPTRACE_PATH_MAX + 256];
-        std::size_t pos = 0;
-
-        const char prefix[] = "__ZEST_FRAME__:";
-        std::memcpy(buf + pos, prefix, sizeof(prefix) - 1);
-        pos += sizeof(prefix) - 1;
-
-        pos += format_hex(buf + pos, sizeof(buf) - pos, frame.raw_address);
-        buf[pos++] = ':';
-
-        pos += format_hex(buf + pos, sizeof(buf) - pos, frame.object_address);
-        buf[pos++] = ':';
-
-        auto path_len = frame.object_path.size();
-        if(pos + path_len + 1 < sizeof(buf)) {
-            std::memcpy(buf + pos, frame.object_path.data(), path_len);
-            pos += path_len;
-        }
-        buf[pos++] = '\n';
-
+        auto pos = format_frame(buf, sizeof(buf), frame);
         WriteFile(out, buf, static_cast<DWORD>(pos), &written, nullptr);
     }
 
@@ -127,8 +122,7 @@ static void write_object_trace(HANDLE out, const cpptrace::object_trace& trace) 
 }
 
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS*) {
-    // Use object trace: only stack walk + dladdr, no DWARF parsing.
-    // This avoids the TSAN-spinning issue caused by full DWARF resolution.
+    // Object trace only (no DWARF) to avoid TSAN-spinning during resolution.
     auto trace = cpptrace::generate_object_trace();
 
     const char header[] = "[  CRASH  ] caught fatal exception, printing stack trace:\n";
@@ -151,27 +145,8 @@ static void write_object_trace(int fd, const cpptrace::object_trace& trace) {
     safe_write_all(fd, begin_marker, sizeof(begin_marker) - 1);
 
     for(const auto& frame: trace.frames) {
-        // Format: __ZEST_FRAME__:raw_addr:obj_addr:object_path\n
         char buf[CPPTRACE_PATH_MAX + 256];
-        std::size_t pos = 0;
-
-        const char prefix[] = "__ZEST_FRAME__:";
-        std::memcpy(buf + pos, prefix, sizeof(prefix) - 1);
-        pos += sizeof(prefix) - 1;
-
-        pos += format_hex(buf + pos, sizeof(buf) - pos, frame.raw_address);
-        buf[pos++] = ':';
-
-        pos += format_hex(buf + pos, sizeof(buf) - pos, frame.object_address);
-        buf[pos++] = ':';
-
-        auto path_len = frame.object_path.size();
-        if(pos + path_len + 1 < sizeof(buf)) {
-            std::memcpy(buf + pos, frame.object_path.data(), path_len);
-            pos += path_len;
-        }
-        buf[pos++] = '\n';
-
+        auto pos = format_frame(buf, sizeof(buf), frame);
         safe_write_all(fd, buf, pos);
     }
 
@@ -181,30 +156,14 @@ static void write_object_trace(int fd, const cpptrace::object_trace& trace) {
 static void crash_handler(int sig) {
     signal(sig, SIG_DFL);
 
-    // Use object trace: only stack walk + dladdr, no DWARF parsing.
-    // This avoids the TSAN-spinning issue caused by full DWARF resolution.
+    // Object trace only (no DWARF) to avoid TSAN-spinning during resolution.
     auto trace = cpptrace::generate_object_trace();
 
-    // Write header with signal number using write() (signal-safe I/O).
     {
         const char msg1[] = "[  CRASH  ] caught signal ";
         safe_write_all(STDOUT_FILENO, msg1, sizeof(msg1) - 1);
         char sigbuf[16];
-        std::size_t spos = 0;
-        int s = sig;
-        if(s == 0) {
-            sigbuf[spos++] = '0';
-        } else {
-            char tmp[16];
-            std::size_t tpos = 0;
-            while(s > 0) {
-                tmp[tpos++] = '0' + static_cast<char>(s % 10);
-                s /= 10;
-            }
-            for(std::size_t j = tpos; j > 0; --j) {
-                sigbuf[spos++] = tmp[j - 1];
-            }
-        }
+        auto spos = format_int(sigbuf, sizeof(sigbuf), sig);
         safe_write_all(STDOUT_FILENO, sigbuf, spos);
         const char msg2[] = ", printing stack trace:\n";
         safe_write_all(STDOUT_FILENO, msg2, sizeof(msg2) - 1);

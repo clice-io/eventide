@@ -19,29 +19,18 @@ namespace kota::zest::detail {
 
 namespace {
 
-// Parse a hex string like "0x7f3c..." into a frame_ptr. Returns 0 on failure.
 cpptrace::frame_ptr parse_hex(std::string_view s) {
-    cpptrace::frame_ptr result = 0;
     if(s.starts_with("0x") || s.starts_with("0X")) {
         s.remove_prefix(2);
     }
-    for(char c: s) {
-        result <<= 4;
-        if(c >= '0' && c <= '9') {
-            result |= static_cast<cpptrace::frame_ptr>(c - '0');
-        } else if(c >= 'a' && c <= 'f') {
-            result |= static_cast<cpptrace::frame_ptr>(c - 'a' + 10);
-        } else if(c >= 'A' && c <= 'F') {
-            result |= static_cast<cpptrace::frame_ptr>(c - 'A' + 10);
-        } else {
-            return 0;
-        }
+    cpptrace::frame_ptr result = 0;
+    auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), result, 16);
+    if(ec != std::errc{} || ptr != s.data() + s.size()) {
+        return 0;
     }
     return result;
 }
 
-// Resolve __ZEST_FRAME__ lines in worker output into human-readable stack traces.
-// Replaces the trace block (from __ZEST_TRACE_BEGIN__ to __ZEST_TRACE_END__) with resolved symbols.
 std::string resolve_crash_frames(const std::string& output) {
     auto begin_pos = output.find(trace_begin_marker);
     if(begin_pos == std::string::npos) {
@@ -53,12 +42,9 @@ std::string resolve_crash_frames(const std::string& output) {
         return output;
     }
 
-    // Everything before the trace block (includes the CRASH header line).
     std::string result = output.substr(0, begin_pos);
 
-    // Parse frame lines between markers.
     auto block_start = begin_pos + trace_begin_marker.size();
-    // Skip the newline after __ZEST_TRACE_BEGIN__
     if(block_start < output.size() && output[block_start] == '\n') {
         ++block_start;
     }
@@ -71,7 +57,6 @@ std::string resolve_crash_frames(const std::string& output) {
         auto line = (nl != std::string_view::npos) ? block.substr(0, nl) : block;
         block = (nl != std::string_view::npos) ? block.substr(nl + 1) : std::string_view{};
 
-        // Strip trailing \r
         if(!line.empty() && line.back() == '\r') {
             line.remove_suffix(1);
         }
@@ -81,7 +66,6 @@ std::string resolve_crash_frames(const std::string& output) {
         }
 
         auto rest = line.substr(frame_prefix.size());
-        // Parse: raw_addr:obj_addr:object_path
         auto colon1 = rest.find(':');
         if(colon1 == std::string_view::npos) {
             continue;
@@ -102,7 +86,6 @@ std::string resolve_crash_frames(const std::string& output) {
         });
     }
 
-    // Resolve symbols from the object trace (reads ELF/DWARF from disk).
     if(!obj_trace.frames.empty()) {
         auto resolved = obj_trace.resolve();
         for(const auto& frame: resolved.frames) {
@@ -110,12 +93,10 @@ std::string resolve_crash_frames(const std::string& output) {
         }
     }
 
-    // Skip past __ZEST_TRACE_END__ line.
     auto after_end = end_pos + trace_end_marker.size();
     if(after_end < output.size() && output[after_end] == '\n') {
         ++after_end;
     }
-    // Append anything after the trace block.
     if(after_end < output.size()) {
         result += output.substr(after_end);
     }
@@ -237,13 +218,11 @@ task<void> worker_coro(const std::string& program,
         if(!spawn_res.has_value()) {
             while(next_task < test_names.size()) {
                 auto idx = next_task++;
-                if(idx < test_names.size()) {
-                    results[idx] = WorkerResult{
-                        .test_name = test_names[idx],
-                        .state = TestState::Fatal,
-                        .output = "[worker] failed to spawn process",
-                    };
-                }
+                results[idx] = WorkerResult{
+                    .test_name = test_names[idx],
+                    .state = TestState::Fatal,
+                    .output = "[worker] failed to spawn process",
+                };
             }
             co_return;
         }
