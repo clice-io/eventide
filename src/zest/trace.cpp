@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <iostream>
 #include <print>
 
 #include "kota/support/functional.h"
@@ -21,7 +22,7 @@ void print_trace(std::source_location location) {
     if(it != frames.begin()) {
         frames.erase(it, frames.end());
     }
-    trace.print();
+    trace.print(std::cout);
 }
 
 }  // namespace kota::zest
@@ -41,7 +42,7 @@ bool trace_exception(function<void()> cb, bool print) {
         CPPTRACE_CATCH(const std::exception& e) {
             if(print) {
                 std::println("[ exception ] {}", e.what());
-                cpptrace::from_current_exception().print();
+                cpptrace::from_current_exception().print(std::cout);
             }
             ret = true;
         }
@@ -49,7 +50,7 @@ bool trace_exception(function<void()> cb, bool print) {
     CPPTRACE_CATCH(...) {
         if(print) {
             std::println("[ exception ] <non-std exception>");
-            cpptrace::from_current_exception().print();
+            cpptrace::from_current_exception().print(std::cout);
         }
         ret = true;
     }
