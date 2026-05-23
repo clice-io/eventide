@@ -1,9 +1,14 @@
 #include "worker.h"
 
 #include <charconv>
+#include <cstdint>
 #include <format>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
+
+#include <cpptrace/cpptrace.hpp>
 
 #ifdef KOTA_ZEST_PARALLEL
 #include "kota/async/io/loop.h"
@@ -13,6 +18,110 @@
 namespace kota::zest::detail {
 
 namespace {
+
+// Parse a hex string like "0x7f3c..." into a frame_ptr. Returns 0 on failure.
+cpptrace::frame_ptr parse_hex(std::string_view s) {
+    cpptrace::frame_ptr result = 0;
+    if(s.starts_with("0x") || s.starts_with("0X")) {
+        s.remove_prefix(2);
+    }
+    for(char c: s) {
+        result <<= 4;
+        if(c >= '0' && c <= '9') {
+            result |= static_cast<cpptrace::frame_ptr>(c - '0');
+        } else if(c >= 'a' && c <= 'f') {
+            result |= static_cast<cpptrace::frame_ptr>(c - 'a' + 10);
+        } else if(c >= 'A' && c <= 'F') {
+            result |= static_cast<cpptrace::frame_ptr>(c - 'A' + 10);
+        } else {
+            return 0;
+        }
+    }
+    return result;
+}
+
+// Resolve __ZEST_FRAME__ lines in worker output into human-readable stack traces.
+// Replaces the trace block (from __ZEST_TRACE_BEGIN__ to __ZEST_TRACE_END__) with resolved symbols.
+std::string resolve_crash_frames(const std::string& output) {
+    auto begin_pos = output.find(trace_begin_marker);
+    if(begin_pos == std::string::npos) {
+        return output;
+    }
+
+    auto end_pos = output.find(trace_end_marker, begin_pos);
+    if(end_pos == std::string::npos) {
+        return output;
+    }
+
+    // Everything before the trace block (includes the CRASH header line).
+    std::string result = output.substr(0, begin_pos);
+
+    // Parse frame lines between markers.
+    auto block_start = begin_pos + trace_begin_marker.size();
+    // Skip the newline after __ZEST_TRACE_BEGIN__
+    if(block_start < output.size() && output[block_start] == '\n') {
+        ++block_start;
+    }
+
+    cpptrace::object_trace obj_trace;
+    std::string_view block(output.data() + block_start, end_pos - block_start);
+
+    while(!block.empty()) {
+        auto nl = block.find('\n');
+        auto line = (nl != std::string_view::npos) ? block.substr(0, nl) : block;
+        block = (nl != std::string_view::npos) ? block.substr(nl + 1) : std::string_view{};
+
+        // Strip trailing \r
+        if(!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+
+        if(!line.starts_with(frame_prefix)) {
+            continue;
+        }
+
+        auto rest = line.substr(frame_prefix.size());
+        // Parse: raw_addr:obj_addr:object_path
+        auto colon1 = rest.find(':');
+        if(colon1 == std::string_view::npos) {
+            continue;
+        }
+        auto colon2 = rest.find(':', colon1 + 1);
+        if(colon2 == std::string_view::npos) {
+            continue;
+        }
+
+        auto raw_addr = parse_hex(rest.substr(0, colon1));
+        auto obj_addr = parse_hex(rest.substr(colon1 + 1, colon2 - colon1 - 1));
+        auto obj_path = rest.substr(colon2 + 1);
+
+        obj_trace.frames.push_back(cpptrace::object_frame{
+            .raw_address = raw_addr,
+            .object_address = obj_addr,
+            .object_path = std::string(obj_path),
+        });
+    }
+
+    // Resolve symbols from the object trace (reads ELF/DWARF from disk).
+    if(!obj_trace.frames.empty()) {
+        auto resolved = obj_trace.resolve();
+        for(const auto& frame: resolved.frames) {
+            result += frame.to_string() + '\n';
+        }
+    }
+
+    // Skip past __ZEST_TRACE_END__ line.
+    auto after_end = end_pos + trace_end_marker.size();
+    if(after_end < output.size() && output[after_end] == '\n') {
+        ++after_end;
+    }
+    // Append anything after the trace block.
+    if(after_end < output.size()) {
+        result += output.substr(after_end);
+    }
+
+    return result;
+}
 
 std::optional<TestState> parse_state(std::string_view s) {
     if(s == "passed")
@@ -170,7 +279,7 @@ task<void> worker_coro(const std::string& program,
 
                 auto data = co_await spawn_res->stdout_pipe.read();
                 if(!data.has_value()) {
-                    auto output = std::move(buffer);
+                    auto output = resolve_crash_frames(buffer);
                     if(!output.empty()) {
                         output += '\n';
                     }

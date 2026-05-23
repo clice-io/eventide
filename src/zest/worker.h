@@ -10,6 +10,9 @@
 namespace kota::zest::detail {
 
 constexpr inline std::string_view result_prefix = "__ZEST_RESULT__:";
+constexpr inline std::string_view frame_prefix = "__ZEST_FRAME__:";
+constexpr inline std::string_view trace_begin_marker = "__ZEST_TRACE_BEGIN__";
+constexpr inline std::string_view trace_end_marker = "__ZEST_TRACE_END__";
 
 struct WorkerResult {
     std::string test_name;

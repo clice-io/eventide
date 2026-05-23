@@ -70,22 +70,6 @@ int main(int argc, char** argv) {
     std::println("--- focus mode -> zero exit ---");
     assert(run_fixture(fixture_focus, "--test-filter \"bootstrap_focus.*\"") == 0);
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) ||                                \
-    defined(_CRT_USE_ADDRESS_SANITIZER)
-    std::println("--- crash test SKIPPED (sanitizer active) ---");
-    (void)fixture_crash;
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
-    std::println("--- crash test SKIPPED (sanitizer active) ---");
-    (void)fixture_crash;
-#else
-#define BOOTSTRAP_RUN_CRASH_TEST
-#endif
-#else
-#define BOOTSTRAP_RUN_CRASH_TEST
-#endif
-
-#ifdef BOOTSTRAP_RUN_CRASH_TEST
     std::println("--- crash test (parallel) -> non-zero exit with stack trace ---");
     {
         auto output =
@@ -97,7 +81,6 @@ int main(int argc, char** argv) {
                    output.find("fixture_crash") != std::string::npos);
         }
     }
-#endif
 
     std::println("all bootstrap_runner tests passed");
     return 0;
