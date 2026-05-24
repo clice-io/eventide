@@ -75,7 +75,8 @@ int main(int argc, char** argv) {
     std::println("--- crash test (parallel) -> non-zero exit with stack trace ---");
     {
         auto output =
-            run_fixture_output(fixture_crash, "--parallel --verbose --test-filter \"bootstrap_crash.*\"");
+            run_fixture_output(fixture_crash,
+                               "--parallel --verbose --test-filter \"bootstrap_crash.*\"");
         assert(output.find("FAILED") != std::string::npos);
         assert(output.find("PASSED") != std::string::npos);
         assert(output.find("CRASH") != std::string::npos);
