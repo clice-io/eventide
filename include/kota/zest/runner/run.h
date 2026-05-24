@@ -42,6 +42,9 @@ struct Options {
     DecoFlag(help = "remove orphaned snapshot files not used in this run"; required = false)
     cleanup_snapshots = false;
 
+    DecoFlag(help = "run tests in parallel across worker processes"; required = false)
+    parallel = false;
+
     DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<DIR>";
                  help = "directory for snapshot files";
                  required = false)
