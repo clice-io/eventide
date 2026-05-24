@@ -318,6 +318,11 @@ if(KOTA_ENABLE_ZEST)
         message(STATUS "KOTA_ENABLE_ZEST=ON: enabling KOTA_ENABLE_DECO")
         set(KOTA_ENABLE_DECO ON CACHE BOOL "Enable deco parser headers and tests" FORCE)
     endif()
+
+    if(NOT KOTA_ENABLE_ASYNC)
+        message(STATUS "KOTA_ENABLE_ZEST=ON: enabling KOTA_ENABLE_ASYNC")
+        set(KOTA_ENABLE_ASYNC ON CACHE BOOL "Enable async kotatsu target and libuv dependency" FORCE)
+    endif()
 endif()
 
 add_subdirectory(src/meta)

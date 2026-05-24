@@ -33,14 +33,6 @@ struct Options {
     DecoFlag(help = "print all test results, not just failures"; required = false)
     verbose = false;
 
-    DecoFlag(help = "run test cases in parallel"; required = false)
-    parallel = false;
-
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<N>";
-                 help = "worker threads for parallel mode (0 = hardware_concurrency)";
-                 required = false)
-    <unsigned> parallel_workers = 0;
-
     DecoFlag(help = "update snapshot files instead of comparing"; required = false)
     update_snapshots = false;
 
@@ -51,6 +43,9 @@ struct Options {
                  help = "directory for snapshot files";
                  required = false)
     <std::string> snapshot_dir = "";
+
+    // Worker subprocess needs this to re-spawn itself.
+    std::string program;
 };
 
 /// Parse CLI arguments and run all registered tests.
