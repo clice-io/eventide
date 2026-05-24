@@ -462,73 +462,85 @@ int Runner::run_tests(Options options) {
     using namespace std::chrono;
     auto wall_begin = system_clock::now();
 
-    // Partition: parallel-safe tests first, serial tests after.
-    std::vector<std::size_t> parallel_indices;
-    std::vector<std::size_t> serial_indices;
-    for(std::size_t i = 0; i < runnable.size(); ++i) {
-        if(runnable[i].serial) {
-            serial_indices.push_back(i);
-        } else {
-            parallel_indices.push_back(i);
-        }
-    }
-
-    if(!parallel_indices.empty()) {
-        if(options.program.empty()) {
-            std::println("{}[  ERROR ] parallel execution requires the runner program path{}",
-                         red,
-                         clear);
-            return 1;
+    if(*options.parallel) {
+        // Partition: parallel-safe tests first, serial tests after.
+        std::vector<std::size_t> parallel_indices;
+        std::vector<std::size_t> serial_indices;
+        for(std::size_t i = 0; i < runnable.size(); ++i) {
+            if(runnable[i].serial) {
+                serial_indices.push_back(i);
+            } else {
+                parallel_indices.push_back(i);
+            }
         }
 
-        const auto num_workers = static_cast<unsigned>(
-            std::min(static_cast<std::size_t>(std::max(1u, std::thread::hardware_concurrency())),
-                     parallel_indices.size()));
+        if(!parallel_indices.empty()) {
+            if(options.program.empty()) {
+                std::println(
+                    "{}[  ERROR ] parallel execution requires the runner program path{}",
+                    red,
+                    clear);
+                return 1;
+            }
 
-        std::vector<std::string> base_args;
-        if(!options.snapshot_dir->empty()) {
-            base_args.push_back("--snapshot-dir=" + *options.snapshot_dir);
+            const auto num_workers = static_cast<unsigned>(std::min(
+                static_cast<std::size_t>(std::max(1u, std::thread::hardware_concurrency())),
+                parallel_indices.size()));
+
+            std::vector<std::string> base_args;
+            if(!options.snapshot_dir->empty()) {
+                base_args.push_back("--snapshot-dir=" + *options.snapshot_dir);
+            }
+            if(*options.update_snapshots) {
+                base_args.push_back("--update-snapshots");
+            }
+
+            std::vector<std::string> test_names;
+            test_names.reserve(parallel_indices.size());
+            for(auto i: parallel_indices) {
+                test_names.push_back(runnable[i].display_name);
+            }
+
+            std::vector<detail::WorkerResult> worker_results;
+            detail::run_parallel_workers(options.program,
+                                         base_args,
+                                         num_workers,
+                                         test_names,
+                                         worker_results);
+
+            for(std::size_t j = 0; j < parallel_indices.size(); ++j) {
+                auto i = parallel_indices[j];
+                results[i] = TestResult{
+                    .display_name = runnable[i].display_name,
+                    .path = runnable[i].path,
+                    .line = runnable[i].line,
+                    .state = worker_results[j].state,
+                    .duration = worker_results[j].duration,
+                    .output = std::move(worker_results[j].output),
+                };
+            }
         }
-        if(*options.update_snapshots) {
-            base_args.push_back("--update-snapshots");
+
+        // Run serial tests sequentially after the parallel batch.
+        for(auto i: serial_indices) {
+            results[i] = run_single(runnable[i], false);
         }
-
-        std::vector<std::string> test_names;
-        test_names.reserve(parallel_indices.size());
-        for(auto i: parallel_indices) {
-            test_names.push_back(runnable[i].display_name);
+    } else {
+        // Sequential mode: run all tests in-process, in order.
+        for(std::size_t i = 0; i < runnable.size(); ++i) {
+            results[i] = run_single(runnable[i], true);
+            record_result(results[i]);
+            summary.duration += results[i].duration;
         }
-
-        std::vector<detail::WorkerResult> worker_results;
-        detail::run_parallel_workers(options.program,
-                                     base_args,
-                                     num_workers,
-                                     test_names,
-                                     worker_results);
-
-        for(std::size_t j = 0; j < parallel_indices.size(); ++j) {
-            auto i = parallel_indices[j];
-            results[i] = TestResult{
-                .display_name = runnable[i].display_name,
-                .path = runnable[i].path,
-                .line = runnable[i].line,
-                .state = worker_results[j].state,
-                .duration = worker_results[j].duration,
-                .output = std::move(worker_results[j].output),
-            };
-        }
-    }
-
-    // Run serial tests sequentially after the parallel batch.
-    for(auto i: serial_indices) {
-        results[i] = run_single(runnable[i], false);
     }
 
     summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
 
-    // Print all results in original order.
-    for(const auto& result: results) {
-        record_result(result);
+    // Print all results in original order (parallel mode defers printing).
+    if(*options.parallel) {
+        for(const auto& result: results) {
+            record_result(result);
+        }
     }
 
     if(*options.cleanup_snapshots) {
