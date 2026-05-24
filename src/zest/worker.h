@@ -7,9 +7,18 @@
 
 #include "kota/zest/runner/registry.h"
 
+namespace kota::zest {
+
+void install_crash_handler();
+
+}  // namespace kota::zest
+
 namespace kota::zest::detail {
 
 constexpr inline std::string_view result_prefix = "__ZEST_RESULT__:";
+constexpr inline std::string_view frame_prefix = "__ZEST_FRAME__:";
+constexpr inline std::string_view trace_begin_marker = "__ZEST_TRACE_BEGIN__";
+constexpr inline std::string_view trace_end_marker = "__ZEST_TRACE_END__";
 
 struct WorkerResult {
     std::string test_name;
@@ -23,6 +32,8 @@ std::string format_result_line(TestState state, std::chrono::milliseconds durati
 bool parse_result_line(std::string_view line,
                        TestState& state,
                        std::chrono::milliseconds& duration);
+
+std::string resolve_crash_frames(const std::string& output);
 
 void run_parallel_workers(std::string_view program,
                           const std::vector<std::string>& base_args,
