@@ -1,4 +1,4 @@
 #pragma once
 
-#include "macro.h"
-#include "run.h"
+#include "kota/zest/macro.h"
+#include "kota/zest/runner/run.h"

@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/detail/trace.h"
+#include "kota/zest/assert/trace.h"
 #include "kota/support/functional.h"
 #include "kota/meta/compare.h"
 #include "kota/meta/name.h"

@@ -1,9 +1,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <expected>
 #include <functional>
-#include <iostream>
 #include <print>
 #include <string>
 #include <string_view>
@@ -14,9 +15,10 @@
 
 #include "kota/deco/deco.h"
 #include "kota/deco/detail/text.h"
-#include "kota/zest/detail/registry.h"
-#include "kota/zest/detail/snapshot.h"
-#include "kota/zest/run.h"
+#include "kota/zest/assert/trace.h"
+#include "kota/zest/runner/registry.h"
+#include "kota/zest/runner/run.h"
+#include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
 
 namespace {
@@ -61,6 +63,7 @@ struct TestResult {
     std::size_t line;
     kota::zest::TestState state;
     std::chrono::milliseconds duration;
+    std::string output;
 };
 
 using SuiteMap = std::unordered_map<std::string, std::vector<kota::zest::TestCase>>;
@@ -163,8 +166,8 @@ bool is_failure(kota::zest::TestState state) {
 void print_run_result(std::string_view display_name,
                       bool failed,
                       std::chrono::milliseconds duration,
-                      bool only_failed_output) {
-    if(failed || !only_failed_output) {
+                      bool verbose) {
+    if(failed || verbose) {
         std::println("{0}[   {1} ] {2} ({3} ms){4}",
                      failed ? red : green,
                      failed ? "FAILED" : "    OK",
@@ -216,15 +219,13 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
 
     auto parsed = kota::deco::cli::parse<CliOptions>(args, renderer);
     if(!parsed.has_value()) {
-        std::cerr << "Error parsing options: " << parsed.error().message << "\n";
-        command.usage(std::cerr);
+        std::println(stderr, "Error parsing options: {}", parsed.error().message);
         std::exit(1);
     }
 
     auto& cli = parsed->options;
     if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
-        std::cerr << "Error: cannot use both positional filter and --test-filter\n";
-        command.usage(std::cerr);
+        std::println(stderr, "Error: cannot use both positional filter and --test-filter");
         std::exit(1);
     }
 
@@ -261,7 +262,7 @@ int Runner::run_tests(Options options) {
     auto grouped_suites = group_suites(suites);
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
 
-    const bool only_failed_output = *options.only_failed;
+    const bool verbose = *options.verbose;
 
     RunSummary summary;
 
@@ -300,7 +301,7 @@ int Runner::run_tests(Options options) {
             }
 
             if(test_case.attrs.skip) {
-                if(!only_failed_output) {
+                if(verbose) {
                     std::println("{}[ SKIPPED  ] {}{}", yellow, display_name, clear);
                 }
                 summary.skipped += 1;
@@ -322,7 +323,7 @@ int Runner::run_tests(Options options) {
     summary.tests = static_cast<std::uint32_t>(runnable.size());
 
     auto run_single = [&](const RunnableTest& test, bool show_run_line) -> TestResult {
-        if(show_run_line && !only_failed_output) {
+        if(show_run_line && verbose) {
             std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
         }
 
@@ -337,13 +338,16 @@ int Runner::run_tests(Options options) {
             .line = test.line,
             .state = state,
             .duration = duration_cast<milliseconds>(end - begin),
+            .output = {},
         };
     };
 
     auto record_result = [&](const TestResult& result) {
         const bool failed = is_failure(result.state);
-        print_run_result(result.display_name, failed, result.duration, only_failed_output);
-        summary.duration += result.duration;
+        if(failed && !result.output.empty()) {
+            std::println("{}", result.output);
+        }
+        print_run_result(result.display_name, failed, result.duration, verbose);
         if(failed) {
             summary.failed += 1;
             summary.failed_tests.push_back(
@@ -408,18 +412,13 @@ int Runner::run_tests(Options options) {
 
         // Print all results in original order.
         for(const auto& result: results) {
-            const bool failed = is_failure(result.state);
-            print_run_result(result.display_name, failed, result.duration, only_failed_output);
-            if(failed) {
-                summary.failed += 1;
-                summary.failed_tests.push_back(
-                    FailedTest{result.display_name, result.path, result.line});
-            }
+            record_result(result);
         }
     } else {
         for(std::size_t i = 0; i < runnable.size(); ++i) {
             results[i] = run_single(runnable[i], true);
             record_result(results[i]);
+            summary.duration += results[i].duration;
         }
     }
 

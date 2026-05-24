@@ -1,4 +1,4 @@
-#include "kota/zest/detail/snapshot.h"
+#include "kota/zest/snapshot/snapshot.h"
 
 #include <algorithm>
 #include <atomic>

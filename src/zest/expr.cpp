@@ -1,4 +1,4 @@
-#include "kota/zest/detail/check.h"
+#include "kota/zest/assert/check.h"
 
 namespace {
 

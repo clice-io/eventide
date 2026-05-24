@@ -1,13 +1,27 @@
-#include "kota/zest/detail/trace.h"
+#include "kota/zest/assert/trace.h"
 
 #include <algorithm>
 #include <format>
 #include <print>
 
+#ifdef __cpp_exceptions
+#include <cpptrace/from_current.hpp>
+#endif
+
 #include "kota/support/functional.h"
 #include <cpptrace/cpptrace.hpp>
 
 namespace kota::zest {
+
+namespace {
+
+void println_trace(const cpptrace::stacktrace& trace) {
+    for(const auto& frame: trace.frames) {
+        std::println("{}", frame.to_string());
+    }
+}
+
+}  // namespace
 
 void print_trace(std::source_location location) {
     auto trace = cpptrace::generate_trace();
@@ -21,15 +35,10 @@ void print_trace(std::source_location location) {
     if(it != frames.begin()) {
         frames.erase(it, frames.end());
     }
-    trace.print();
+    println_trace(trace);
 }
 
-}  // namespace kota::zest
-
 #ifdef __cpp_exceptions
-#include <cpptrace/from_current.hpp>
-
-namespace kota::zest {
 
 bool trace_exception(function<void()> cb, bool print) {
     bool ret = false;
@@ -41,7 +50,7 @@ bool trace_exception(function<void()> cb, bool print) {
         CPPTRACE_CATCH(const std::exception& e) {
             if(print) {
                 std::println("[ exception ] {}", e.what());
-                cpptrace::from_current_exception().print();
+                println_trace(cpptrace::from_current_exception());
             }
             ret = true;
         }
@@ -49,12 +58,13 @@ bool trace_exception(function<void()> cb, bool print) {
     CPPTRACE_CATCH(...) {
         if(print) {
             std::println("[ exception ] <non-std exception>");
-            cpptrace::from_current_exception().print();
+            println_trace(cpptrace::from_current_exception());
         }
         ret = true;
     }
     return ret;
 }
 
-}  // namespace kota::zest
 #endif
+
+}  // namespace kota::zest
