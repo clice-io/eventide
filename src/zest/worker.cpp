@@ -8,12 +8,26 @@
 #include <string_view>
 #include <vector>
 
+#include <cpptrace/cpptrace.hpp>
+
 #include "kota/async/io/loop.h"
 #include "kota/async/io/process.h"
 
 namespace kota::zest::detail {
 
 namespace {
+
+cpptrace::frame_ptr parse_hex(std::string_view s) {
+    if(s.starts_with("0x") || s.starts_with("0X")) {
+        s.remove_prefix(2);
+    }
+    cpptrace::frame_ptr result = 0;
+    auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), result, 16);
+    if(ec != std::errc{} || ptr != s.data() + s.size()) {
+        return 0;
+    }
+    return result;
+}
 
 std::optional<TestState> parse_state(std::string_view s) {
     if(s == "passed")
@@ -118,7 +132,7 @@ task<void> worker_coro(std::string_view program,
 
                 auto data = co_await spawn_res->stdout_pipe.read();
                 if(!data.has_value()) {
-                    std::string output = buffer;
+                    auto output = resolve_crash_frames(buffer);
                     if(!output.empty()) {
                         output += '\n';
                     }
@@ -191,6 +205,79 @@ bool parse_result_line(std::string_view line,
     state = *parsed_state;
     duration = std::chrono::milliseconds(ms);
     return true;
+}
+
+std::string resolve_crash_frames(const std::string& output) {
+    auto begin_pos = output.find(trace_begin_marker);
+    if(begin_pos == std::string::npos) {
+        return output;
+    }
+
+    auto end_pos = output.find(trace_end_marker, begin_pos);
+    if(end_pos == std::string::npos) {
+        return output;
+    }
+
+    std::string result = output.substr(0, begin_pos);
+
+    auto block_start = begin_pos + trace_begin_marker.size();
+    if(block_start < output.size() && output[block_start] == '\n') {
+        ++block_start;
+    }
+
+    cpptrace::object_trace obj_trace;
+    std::string_view block(output.data() + block_start, end_pos - block_start);
+
+    while(!block.empty()) {
+        auto nl = block.find('\n');
+        auto line = (nl != std::string_view::npos) ? block.substr(0, nl) : block;
+        block = (nl != std::string_view::npos) ? block.substr(nl + 1) : std::string_view{};
+
+        if(!line.empty() && line.back() == '\r') {
+            line.remove_suffix(1);
+        }
+
+        if(!line.starts_with(frame_prefix)) {
+            continue;
+        }
+
+        auto rest = line.substr(frame_prefix.size());
+        auto colon1 = rest.find(':');
+        if(colon1 == std::string_view::npos) {
+            continue;
+        }
+        auto colon2 = rest.find(':', colon1 + 1);
+        if(colon2 == std::string_view::npos) {
+            continue;
+        }
+
+        auto raw_addr = parse_hex(rest.substr(0, colon1));
+        auto obj_addr = parse_hex(rest.substr(colon1 + 1, colon2 - colon1 - 1));
+        auto obj_path = rest.substr(colon2 + 1);
+
+        obj_trace.frames.push_back(cpptrace::object_frame{
+            .raw_address = raw_addr,
+            .object_address = obj_addr,
+            .object_path = std::string(obj_path),
+        });
+    }
+
+    if(!obj_trace.frames.empty()) {
+        auto resolved = obj_trace.resolve();
+        for(const auto& frame: resolved.frames) {
+            result += frame.to_string() + '\n';
+        }
+    }
+
+    auto after_end = end_pos + trace_end_marker.size();
+    if(after_end < output.size() && output[after_end] == '\n') {
+        ++after_end;
+    }
+    if(after_end < output.size()) {
+        result += output.substr(after_end);
+    }
+
+    return result;
 }
 
 void run_parallel_workers(std::string_view program,

@@ -276,6 +276,7 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 }
 
 int Runner::run_as_worker(Options options) {
+    install_crash_handler();
     std::setvbuf(stdout, nullptr, _IONBF, 0);
 
     set_update_snapshots(*options.update_snapshots);
