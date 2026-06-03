@@ -162,15 +162,7 @@ struct dot_emitter : async_visitor<dot_emitter> {
 
 std::string dump_dot(const async_node& root) {
     const auto* node = &root;
-    const sync_primitive* sync_root = nullptr;
-    while(node) {
-        if(auto* resource = get_resource(*node)) {
-            sync_root = resource;
-            break;
-        }
-        auto* p = get_parent(*node);
-        if(!p)
-            break;
+    while(auto* p = get_parent(*node)) {
         node = p;
     }
 
@@ -182,11 +174,7 @@ std::string dump_dot(const async_node& root) {
     emitter.out += R"(  node [fontname="Helvetica", fontsize=10];
 )";
 
-    if(sync_root) {
-        emitter.walk_sync(*sync_root);
-    } else {
-        emitter.walk_node(*node);
-    }
+    emitter.walk_node(*node);
 
     emitter.out += R"(}
 )";

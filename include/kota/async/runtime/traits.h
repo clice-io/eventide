@@ -127,7 +127,7 @@ auto strip_channels_from_result(outcome<T, E, C>&& result) {
     if constexpr(!std::is_void_v<C>) {
         if constexpr(!CaptureCancel) {
             if(result.is_cancelled()) {
-                return type(outcome_cancel(C{}));
+                return type(outcome_cancel(std::move(result).cancellation()));
             }
         } else {
             assert(!result.is_cancelled());
