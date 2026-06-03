@@ -17,26 +17,13 @@ list(FILTER TEST_BASE_SOURCES INCLUDE REGEX "^tests/unit/(main\\.cpp|support/.*\
 list(TRANSFORM TEST_BASE_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
 target_sources(unit_tests PRIVATE ${TEST_BASE_SOURCES})
 
-if(KOTA_ENABLE_OPTION)
-    set(TEST_OPTION_SOURCES ${TEST_SOURCES})
-    list(FILTER TEST_OPTION_SOURCES INCLUDE REGEX "^tests/unit/option/.*\\.cpp$")
-    list(TRANSFORM TEST_OPTION_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
-    target_sources(unit_tests PRIVATE
-        ${TEST_OPTION_SOURCES}
-    )
-else()
-    message(STATUS "KOTA_ENABLE_OPTION=OFF: skipping tests/unit/option/*")
-endif()
-
-if(KOTA_ENABLE_DECO AND KOTA_ENABLE_OPTION)
+if(KOTA_ENABLE_DECO)
     set(TEST_DECO_SOURCES ${TEST_SOURCES})
     list(FILTER TEST_DECO_SOURCES INCLUDE REGEX "^tests/unit/deco/.*\\.(cpp|cc)$")
     list(TRANSFORM TEST_DECO_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     target_sources(unit_tests PRIVATE
         ${TEST_DECO_SOURCES}
     )
-elseif(KOTA_ENABLE_DECO)
-    message(STATUS "KOTA_ENABLE_OPTION=OFF: skipping tests/unit/deco/*")
 else()
     message(STATUS "KOTA_ENABLE_DECO=OFF: skipping tests/unit/deco/*")
 endif()
@@ -148,13 +135,7 @@ target_link_libraries(unit_tests PRIVATE
     cpptrace::cpptrace
 )
 
-if(KOTA_ENABLE_OPTION)
-    target_link_libraries(unit_tests PRIVATE
-        kota::option
-    )
-endif()
-
-if(KOTA_ENABLE_DECO AND KOTA_ENABLE_OPTION)
+if(KOTA_ENABLE_DECO)
     target_link_libraries(unit_tests PRIVATE
         kota::deco
     )

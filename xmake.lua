@@ -9,14 +9,13 @@ option("async", { default = true })
 option("http", { default = true })
 option("ztest", { default = true })
 option("codec", { default = true })
-option("option", { default = true })
 option("deco", { default = true })
 option("codec_simdjson", { default = false })
 option("codec_flatbuffers", { default = false })
 option("codec_toml", { default = false })
 
-if has_config("ztest") and (not has_config("deco") or not has_config("option")) then
-	raise("ztest requires deco and option")
+if has_config("ztest") and not has_config("deco") then
+	raise("ztest requires deco")
 end
 
 if has_config("http") and not has_config("async") then
@@ -226,25 +225,14 @@ if has_config("http") then
 	end)
 end
 
-if has_config("option") then
-	target("option", function()
-		set_kind("$(kind)")
-		add_rules("cl-flags")
-		add_files("src/option/*.cc")
-		add_includedirs("include", { public = true })
-		add_headerfiles("include/(kota/option/option.h)", "include/(kota/option/detail/**.h)")
-		add_deps("support")
-	end)
-end
-
-if has_config("deco") and has_config("option") then
+if has_config("deco") then
 	target("deco", function()
 		set_kind("$(kind)")
 		add_files("src/deco/*.cc")
 		add_includedirs("include", { public = true })
 		add_rules("cl-flags")
-		add_headerfiles("include/(kota/deco/deco.h)", "include/(kota/deco/detail/**.h)")
-		add_deps("option")
+		add_headerfiles("include/(kota/deco/option.h)", "include/(kota/deco/deco.h)", "include/(kota/deco/detail/**.h)")
+		add_deps("support")
 	end)
 end
 
@@ -298,10 +286,7 @@ target("kotatsu", function()
 		end
 	end
 
-	if has_config("option") then
-		add_deps("option", { public = true })
-	end
-	if has_config("deco") and has_config("option") then
+	if has_config("deco") then
 		add_deps("deco", { public = true })
 	end
 	if has_config("ztest") then

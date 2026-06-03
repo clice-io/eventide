@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/option/option.h"
+#include "kota/deco/option.h"
 #include "kota/zest/zest.h"
 
 namespace kota::option {

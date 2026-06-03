@@ -1,4 +1,4 @@
-#include "kota/option/option.h"
+#include "kota/deco/option.h"
 
 #include <cassert>
 #include <ostream>

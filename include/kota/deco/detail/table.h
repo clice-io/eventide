@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-#include "opt_types.h"
+#include "arg.h"
 
 namespace kota::option {
 
