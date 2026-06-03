@@ -85,7 +85,7 @@ struct accept_await : uv::await_op<accept_await<Stream>> {
             return waiting;
         }
         self->arm(*this, outcome);
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     result<Stream> await_resume() noexcept {
@@ -247,7 +247,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
             return waiting;
         }
 
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     result<Stream> await_resume() noexcept {

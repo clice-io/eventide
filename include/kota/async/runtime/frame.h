@@ -113,11 +113,11 @@ public:
 
     void resume();
 
-    std::coroutine_handle<> link_continuation(async_node* awaiter, std::source_location location);
+    std::coroutine_handle<> link_continuation(async_node& awaiter, std::source_location location);
 
     std::coroutine_handle<> final_transition();
 
-    std::coroutine_handle<> handle_subtask_result(async_node* parent);
+    std::coroutine_handle<> handle_subtask_result(async_node& child);
 
     /// Dump the async graph reachable from this node as a DOT (graphviz) graph.
     std::string dump_dot() const;
@@ -150,7 +150,7 @@ public:
     /// Optional hook invoked when a child task fails, allowing the parent to
     /// intercept the error before normal resumption. Used by or_fail_task_await
     /// to propagate errors directly without resuming the parent coroutine.
-    using error_hook = std::coroutine_handle<> (*)(async_node* child, async_node* parent);
+    using error_hook = std::coroutine_handle<> (*)(async_node& child, async_node& parent);
 
     std::coroutine_handle<> handle() {
         return std::coroutine_handle<>::from_address(address);
@@ -158,11 +158,6 @@ public:
 
     bool has_awaitee() const noexcept {
         return awaitee != nullptr;
-    }
-
-    void detach_as_root() noexcept {
-        awaiter = nullptr;
-        root = true;
     }
 
     void set_awaitee(async_node* node) noexcept {
@@ -344,6 +339,34 @@ protected:
         deferred = Deferred::Error;
     }
 
+    std::size_t find_child_index(const async_node& child) const {
+        for(std::size_t i = 0; i < awaitees.size(); ++i) {
+            if(awaitees[i] == &child) {
+                return i;
+            }
+        }
+        assert(false && "child not found in aggregate");
+        std::abort();
+    }
+
+    void cancel_siblings(async_node* exclude = nullptr) {
+        bool found_exclude = exclude == nullptr;
+        auto saved = phase;
+        phase = Phase::Cancelling;
+        for(auto* child : awaitees) {
+            assert(child && "aggregate contains a null child");
+            if(child == exclude) {
+                found_exclude = true;
+                continue;
+            }
+            child->cancel();
+        }
+        assert(found_exclude && "cancel_siblings exclude is not a child of this aggregate");
+        if(phase == Phase::Cancelling) {
+            phase = saved;
+        }
+    }
+
     /// Rethrows the propagated exception if one was captured from a failed child.
     void rethrow_if_propagated() {
 #if KOTA_ENABLE_EXCEPTIONS
@@ -365,9 +388,8 @@ protected:
         this->location = location;
 
         auto* awaiter_node = static_cast<async_node*>(&awaiter_handle.promise());
-        if(awaiter_node->kind == async_node::NodeKind::Task) {
-            static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
-        }
+        assert(awaiter_node->is_standard_task() && "aggregate awaiter must be a task");
+        static_cast<standard_task*>(awaiter_node)->set_awaitee(this);
 
         awaiter = awaiter_node;
         completed = 0;
@@ -380,17 +402,15 @@ protected:
         state = Running;
 
         for(auto* child: awaitees) {
-            if(child) {
-                child->link_continuation(this, location);
-            }
+            assert(child && "aggregate contains a null child");
+            child->link_continuation(*this, location);
         }
 
         for(auto* child: awaitees) {
-            if(child) {
-                child->resume();
-                if(is_settled() || deferred != Deferred::None) {
-                    break;
-                }
+            assert(child && "aggregate contains a null child");
+            child->resume();
+            if(is_settled() || deferred != Deferred::None) {
+                break;
             }
         }
 
@@ -398,7 +418,12 @@ protected:
             phase = Phase::Open;
         }
 
-        return deferred != Deferred::None ? deliver_deferred() : std::noop_coroutine();
+        assert(completed <= total && "aggregate completed more children than it owns");
+        if(completed == total && deferred != Deferred::None) {
+            return deliver_deferred();
+        }
+
+        return std::noop_coroutine();
     }
 };
 
@@ -419,48 +444,5 @@ protected:
 public:
     void complete() noexcept;
 };
-
-class task_group_node : public aggregate_op {
-protected:
-    friend class async_node;
-
-    explicit task_group_node() : aggregate_op(NodeKind::TaskGroup) {}
-
-    bool stopped = false;
-
-    using error_handler = void (*)(async_node* child, task_group_node* group);
-
-    std::vector<error_handler> error_handlers;
-
-    void cancel_children(async_node* exclude = nullptr) {
-        phase = Phase::Cancelling;
-        const std::size_t n = awaitees.size();
-        for(std::size_t i = 0; i < n; ++i) {
-            auto* child = awaitees[i];
-            if(child && child != exclude) {
-                child->cancel();
-            }
-        }
-        if(phase == Phase::Cancelling) {
-            phase = Phase::Open;
-        }
-    }
-};
-
-namespace detail {
-
-inline void destroy_or_detach(async_node* child) noexcept {
-    assert(child && child->kind == async_node::NodeKind::Task);
-    auto* task = static_cast<standard_task*>(child);
-
-    if(task->has_awaitee()) {
-        task->detach_as_root();
-        return;
-    }
-
-    task->handle().destroy();
-}
-
-}  // namespace detail
 
 }  // namespace kota

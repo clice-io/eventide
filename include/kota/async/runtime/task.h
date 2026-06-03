@@ -235,11 +235,11 @@ struct or_fail_proxy {
 /// If the child threw an exception instead, clears the hook and lets the
 /// parent resume normally so await_resume can rethrow via rethrow_if_exception.
 template <typename ParentPromise, typename ParentError, typename ChildTask>
-std::coroutine_handle<> propagate_fail(async_node* child_node, async_node* parent_node) {
-    auto* child = static_cast<typename ChildTask::promise_type*>(child_node);
-    auto* parent = static_cast<ParentPromise*>(parent_node);
-    auto* child_task = static_cast<standard_task*>(child_node);
-    auto* parent_task = static_cast<standard_task*>(parent_node);
+std::coroutine_handle<> propagate_fail(async_node& child_node, async_node& parent_node) {
+    auto* child = static_cast<typename ChildTask::promise_type*>(&child_node);
+    auto* parent = static_cast<ParentPromise*>(&parent_node);
+    auto* child_task = static_cast<standard_task*>(&child_node);
+    auto* parent_task = static_cast<standard_task*>(&parent_node);
 
     child_task->clear_error_hook();
 
@@ -403,7 +403,7 @@ public:
         auto await_suspend(
             std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
-            return awaitee.h.promise().link_continuation(&awaiter.promise(), location);
+            return awaitee.h.promise().link_continuation(awaiter.promise(), location);
         }
 
         auto await_resume() {

@@ -120,15 +120,6 @@ auto take_success_result(Task& task) {
     return strip_channels_from_result<CaptureCancel>(take_result(task));
 }
 
-template <typename Task>
-void release_inflight(Task& task) noexcept {
-    auto* node = static_cast<standard_task*>(node_from(task));
-    if(node && node->has_awaitee()) {
-        node->detach_as_root();
-        task.release();
-    }
-}
-
 template <typename Return, std::size_t I = 0, typename Tuple, typename F>
 Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
     if constexpr(I < std::tuple_size_v<std::remove_reference_t<Tuple>>) {
@@ -179,9 +170,7 @@ public:
         }
     }
 
-    ~when_op() {
-        std::apply([](auto&... ts) { (detail::release_inflight(ts), ...); }, tasks);
-    }
+    ~when_op() = default;
 
     bool await_ready() const noexcept {
         if constexpr(All) {
@@ -309,11 +298,7 @@ public:
         }
     }
 
-    ~when_op() {
-        for(auto& task: tasks) {
-            detail::release_inflight(task);
-        }
-    }
+    ~when_op() = default;
 
     bool await_ready() const noexcept {
         if constexpr(All) {
@@ -395,8 +380,8 @@ private:
 /// propagates to all siblings and the combinator returns the cancellation.
 /// Errors take priority over cancellations.
 ///
-/// When a child has a pending in-flight operation at cancellation time, it is detached
-/// rather than destroyed, and cleaned up once the operation completes (quiescent).
+/// All children are guaranteed to have completed before the aggregate returns
+/// (structured completion).
 ///
 /// Accepts any awaitable that satisfies the `awaitable` concept, including synchronous
 /// awaiters like `semaphore::acquire_awaiter`.
@@ -421,8 +406,8 @@ class when_all : public when_op<true, Tasks...> {
 ///
 /// Requires at least one task; `when_any<>` is explicitly deleted.
 ///
-/// When a cancelled sibling has a pending in-flight operation, it is detached
-/// rather than destroyed, and cleaned up once the operation completes (quiescent).
+/// All siblings are guaranteed to have completed before the aggregate returns
+/// (structured completion).
 ///
 /// Accepts any awaitable that satisfies the `awaitable` concept, including synchronous
 /// awaiters like `semaphore::acquire_awaiter`.

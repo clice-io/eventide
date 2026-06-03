@@ -73,7 +73,7 @@ struct process_await : uv::await_op<process_await> {
             return waiting;
         }
         self->arm(*this, result);
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     process::wait_result await_resume() noexcept {

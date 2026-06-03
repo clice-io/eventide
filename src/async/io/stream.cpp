@@ -116,7 +116,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
             return waiting;
         }
         self->reader.arm(*this);
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
@@ -218,7 +218,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
             return waiting;
         }
 
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     result<std::size_t> await_resume() noexcept {
@@ -293,7 +293,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
             return waiting;
         }
 
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

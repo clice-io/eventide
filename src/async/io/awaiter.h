@@ -81,11 +81,8 @@ struct await_op : system_op {
 
     template <typename CleanupFn>
     static void complete_cancel(system_op* op, CleanupFn&& cleanup) noexcept {
+        assert(op && "complete_cancel requires a non-null operation");
         auto* aw = static_cast<Derived*>(op);
-        if(aw == nullptr) {
-            return;
-        }
-
         cleanup(*aw);
         aw->complete();
     }

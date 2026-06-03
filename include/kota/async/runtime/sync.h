@@ -51,13 +51,11 @@ protected:
         return head && head->generation == snapshot;
     }
 
-    bool resume_waiter(waiter_link* link) noexcept {
-        if(!link) {
-            return false;
-        }
-        auto* awaiting = link->awaiter;
-        link->awaiter = nullptr;
-        if(!awaiting || awaiting->is_cancelled()) {
+    bool resume_waiter(waiter_link& link) noexcept {
+        auto* awaiting = link.awaiter;
+        link.awaiter = nullptr;
+        assert(awaiting && "resume_waiter: waiter has no awaiter");
+        if(awaiting->is_cancelled()) {
             return false;
         }
         awaiting->clear_awaitee();
@@ -65,7 +63,7 @@ protected:
         return true;
     }
 
-    bool cancel_waiter(waiter_link* link) noexcept;
+    bool cancel_waiter(waiter_link& link) noexcept;
 
     /// Processes the waiters that were already queued when this call began.
     ///
@@ -77,7 +75,7 @@ protected:
     void drain_waiter_snapshot(Fn&& fn) {
         const auto snapshot = begin_waiter_snapshot();
         while(front_waiter_matches(snapshot)) {
-            fn(pop_waiter());
+            fn(*pop_waiter());
         }
     }
 
@@ -128,7 +126,7 @@ public:
             std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(&awaiter.promise(), location);
+            return link_continuation(awaiter.promise(), location);
         }
 
         void await_resume() noexcept {}
@@ -152,7 +150,7 @@ public:
     void unlock() noexcept {
         assert(locked && "mutex::unlock without lock");
         while(auto* waiter = pop_waiter()) {
-            if(resume_waiter(waiter)) {
+            if(resume_waiter(*waiter)) {
                 return;
             }
         }
@@ -192,7 +190,7 @@ public:
             std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(&awaiter.promise(), location);
+            return link_continuation(awaiter.promise(), location);
         }
 
         void await_resume() noexcept {}
@@ -218,7 +216,7 @@ public:
         for(std::ptrdiff_t i = 0; i < n; ++i) {
             if(has_waiters()) {
                 while(auto* waiter = pop_waiter()) {
-                    if(resume_waiter(waiter)) {
+                    if(resume_waiter(*waiter)) {
                         break;
                     }
                 }
@@ -256,7 +254,7 @@ public:
             std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(&awaiter.promise(), location);
+            return link_continuation(awaiter.promise(), location);
         }
 
         outcome<void, void, cancellation> await_resume() noexcept {
@@ -282,7 +280,7 @@ public:
 
     void set() noexcept {
         signaled = true;
-        drain_waiter_snapshot([this](waiter_link* waiter) { resume_waiter(waiter); });
+        drain_waiter_snapshot([this](waiter_link& waiter) { resume_waiter(waiter); });
     }
 
     void reset() noexcept {
@@ -294,7 +292,7 @@ public:
         // cancel_waiter() resumes user code synchronously. New waits may be
         // linked before we return, but they belong to a newer generation and
         // are excluded by drain_waiter_snapshot().
-        drain_waiter_snapshot([this](waiter_link* waiter) { cancel_waiter(waiter); });
+        drain_waiter_snapshot([this](waiter_link& waiter) { cancel_waiter(waiter); });
     }
 
     bool is_set() const noexcept {
@@ -329,7 +327,7 @@ public:
             std::coroutine_handle<Promise> awaiter,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(&awaiter.promise(), location);
+            return link_continuation(awaiter.promise(), location);
         }
 
         void await_resume() noexcept {}
@@ -356,14 +354,14 @@ public:
 
     void notify_one() {
         while(auto* waiter = pop_waiter()) {
-            if(resume_waiter(waiter)) {
+            if(resume_waiter(*waiter)) {
                 break;
             }
         }
     }
 
     void notify_all() {
-        drain_waiter_snapshot([this](waiter_link* waiter) { resume_waiter(waiter); });
+        drain_waiter_snapshot([this](waiter_link& waiter) { resume_waiter(waiter); });
     }
 };
 

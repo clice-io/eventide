@@ -84,7 +84,7 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
             return waiting;
         }
         self->waiter = this;
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     void await_resume() noexcept {
@@ -152,7 +152,7 @@ struct signal_await : uv::await_op<signal_await> {
         }
         self->waiter = this;
         self->active = &result;
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

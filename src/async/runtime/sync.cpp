@@ -45,24 +45,16 @@ void sync_primitive::remove(waiter_link* link) {
     link->resource = nullptr;
 }
 
-bool sync_primitive::cancel_waiter(waiter_link* link) noexcept {
-    if(!link) {
+bool sync_primitive::cancel_waiter(waiter_link& link) noexcept {
+    auto* awaiting = link.awaiter;
+    link.awaiter = nullptr;
+    assert(awaiting && "cancel_waiter: waiter has no awaiter");
+    if(awaiting->is_cancelled()) {
         return false;
     }
 
-    auto* awaiting = link->awaiter;
-    link->awaiter = nullptr;
-    if(!awaiting || awaiting->is_cancelled()) {
-        return false;
-    }
-
-    // This callback may resume arbitrary user code immediately. In particular,
-    // that code may enqueue a brand-new waiter on the same resource, or even
-    // destroy other waiters that used to be siblings of `link`. That is why
-    // interrupt() must process the queue in-place with generation checks rather
-    // than first stashing raw waiter pointers into a temporary container.
-    link->state = async_node::Cancelled;
-    link->policy = static_cast<async_node::Policy>(link->policy | async_node::InterceptCancel);
+    link.state = async_node::Cancelled;
+    link.policy = static_cast<async_node::Policy>(link.policy | async_node::InterceptCancel);
     auto next = awaiting->handle_subtask_result(link);
     detail::resume_and_drain(next);
     return true;

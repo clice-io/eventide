@@ -47,7 +47,7 @@ struct deferred_cancel_await : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        return this->link_continuation(&waiting.promise(), location);
+        return this->link_continuation(waiting.promise(), location);
     }
 
     void await_resume() const noexcept {}
@@ -777,7 +777,7 @@ TEST_CASE(any_token_cancel) {
     EXPECT_EQ(finished, 0);
 }
 
-TEST_CASE(all_detaches_until_quiescent) {
+TEST_CASE(all_waits_for_cancelled_children) {
     int op_destroyed = 0;
 
     auto slow = [&]() -> task<int> {
@@ -791,6 +791,11 @@ TEST_CASE(all_detaches_until_quiescent) {
         co_return 1;
     };
 
+    auto finisher = []() -> task<> {
+        co_await sleep(1);
+        deferred_cancel_await::finish_pending_cancel();
+    };
+
     auto combined = [&]() -> task<> {
         co_await when_all(slow(), canceler());
     };
@@ -800,14 +805,13 @@ TEST_CASE(all_detaches_until_quiescent) {
         EXPECT_FALSE(res.has_value());
     };
 
-    run(probe());
-    EXPECT_EQ(op_destroyed, 0);
-
-    deferred_cancel_await::finish_pending_cancel();
+    auto probe_task = probe();
+    auto finisher_task = finisher();
+    run(probe_task, finisher_task);
     EXPECT_EQ(op_destroyed, 1);
 }
 
-TEST_CASE(any_detaches_until_quiescent) {
+TEST_CASE(any_waits_for_cancelled_children) {
     int op_destroyed = 0;
 
     auto slow = [&]() -> task<int> {
@@ -820,17 +824,22 @@ TEST_CASE(any_detaches_until_quiescent) {
         co_return 1;
     };
 
+    auto finisher = []() -> task<> {
+        co_await sleep(1);
+        deferred_cancel_await::finish_pending_cancel();
+    };
+
     auto combined = [&]() -> task<std::variant<int, int>> {
         co_return co_await when_any(slow(), fast());
     };
 
-    auto [winner] = run(combined());
-    EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 1U);
-    EXPECT_EQ(std::get<1>(*winner), 1);
-    EXPECT_EQ(op_destroyed, 0);
-
-    deferred_cancel_await::finish_pending_cancel();
+    auto task = combined();
+    auto finisher_task = finisher();
+    run(task, finisher_task);
+    EXPECT_TRUE(task->is_finished());
+    auto winner = task.result();
+    EXPECT_EQ(winner.index(), 1U);
+    EXPECT_EQ(std::get<1>(winner), 1);
     EXPECT_EQ(op_destroyed, 1);
 }
 
@@ -2146,40 +2155,29 @@ TEST_CASE(destroy_mixed_completed_and_pending) {
         co_await op;
     };
 
-    {
+    auto finisher = []() -> task<> {
+        co_await sleep(1);
+        deferred_cancel_await::finish_pending_cancel();
+    };
+
+    auto runner = [&]() -> task<> {
         task_group<> group(loop);
         group.spawn(sync_work());
         group.spawn(sync_work());
         group.spawn(pending_work());
-    }
-
-    EXPECT_EQ(sync_count, 2);
-    EXPECT_EQ(op_destroyed, 0);
-
-    deferred_cancel_await::finish_pending_cancel();
-    EXPECT_EQ(op_destroyed, 1);
-}
-
-TEST_CASE(detach_as_root_on_destroy) {
-    int op_destroyed = 0;
-
-    auto slow = [&]() -> task<> {
-        deferred_cancel_await op(op_destroyed);
-        co_await op;
+        group.cancel();
+        co_await group.join();
     };
 
-    {
-        task_group<> group(loop);
-        group.spawn(slow());
-    }
+    auto runner_task = runner();
+    auto finisher_task = finisher();
+    schedule_all(runner_task, finisher_task);
 
-    EXPECT_EQ(op_destroyed, 0);
-
-    deferred_cancel_await::finish_pending_cancel();
+    EXPECT_EQ(sync_count, 2);
     EXPECT_EQ(op_destroyed, 1);
 }
 
-TEST_CASE(detaches_until_quiescent) {
+TEST_CASE(group_waits_for_cancelled_children) {
     int op_destroyed = 0;
 
     auto slow = [&]() -> task<> {
@@ -2191,18 +2189,22 @@ TEST_CASE(detaches_until_quiescent) {
         co_await fail(error::connection_refused);
     };
 
-    {
+    auto finisher = []() -> task<> {
+        co_await sleep(1);
+        deferred_cancel_await::finish_pending_cancel();
+    };
+
+    auto runner = [&]() -> task<> {
         task_group<error> group(loop);
         group.spawn(slow());
         group.spawn(fast_fail());
-        // fast_fail completes synchronously with Failed → fail-fast cancels slow.
-        // slow's deferred_cancel_await on_cancel is noop → cancel doesn't complete.
-        // Group destructs: slow has pending awaitee → detach_as_root.
-    }
+        auto result = co_await group.join();
+        EXPECT_TRUE(result.has_error());
+    };
 
-    EXPECT_EQ(op_destroyed, 0);
-
-    deferred_cancel_await::finish_pending_cancel();
+    auto runner_task = runner();
+    auto finisher_task = finisher();
+    schedule_all(runner_task, finisher_task);
     EXPECT_EQ(op_destroyed, 1);
 }
 

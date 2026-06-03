@@ -111,7 +111,7 @@ struct request_awaiter : uv::await_op<request_awaiter> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     result_type await_resume() noexcept {

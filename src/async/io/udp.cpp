@@ -186,7 +186,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
             }
         }
 
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     result<udp::recv_result> await_resume() noexcept {
@@ -275,7 +275,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         }
 
         self->send_inflight = true;
-        return this->link_continuation(&waiting.promise(), loc);
+        return this->link_continuation(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
