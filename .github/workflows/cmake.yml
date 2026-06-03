@@ -178,7 +178,11 @@ jobs:
         if: always() && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          gh api --method DELETE "repos/${{ github.repository }}/actions/caches?key=${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}&ref=refs/heads/main" --silent || true
+          cache_key="${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}"
+          encoded_key=$(python3 -c "import urllib.parse; print(urllib.parse.quote_plus('${cache_key}'))")
+          if ! gh api --method DELETE "repos/${{ github.repository }}/actions/caches?key=${encoded_key}&ref=refs/heads/main" --silent; then
+            echo "::warning::Failed to delete Actions cache for key=${cache_key}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
