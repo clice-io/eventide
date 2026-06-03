@@ -464,12 +464,12 @@ public:
         std::span<const std::string_view> static_tokens = {};
         decl::AliasForwardFn dynamic = nullptr;
         decl::AliasForwardFnWithContext dynamic_with_context = nullptr;
-        unsigned arg_num = 0;
+        std::uint32_t arg_num = 0;
         char style = 0;
     };
 
 private:
-    using info_item = backend::OptTable::Info;
+    using info_item = backend::OptTableInfo;
     using resource_ty = kota::comptime::ComptimeMemoryResource<record>;
     using item_pool_type = kota::comptime::ComptimeVector<info_item, resource_ty, 0>;
     using id_map_type = kota::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
@@ -492,27 +492,27 @@ private:
     bool hasInputSlot = false;
     bool hasTrailingSlot = false;
     bool hasTrailingPack = false;
-    unsigned inputOptionId = 0;
+    std::uint32_t inputOptionId = 0;
     accessor_fn trailingAccessor = nullptr;
     const decl::Category* trailingCategory = nullptr;
     parse_callback_t trailingCallback{};
 
-    constexpr static auto make_default_item(unsigned id) {
+    constexpr static auto make_default_item(std::uint32_t id) {
         return info_item::unaliased_one(backend::pfx_none,
                                         "",
                                         id,
-                                        backend::Option::UnknownClass,
+                                        backend::Kind::Unknown,
                                         0,
                                         "no help text",
                                         "");
     }
 
-    constexpr auto& item_by_id(unsigned id) {
+    constexpr auto& item_by_id(std::uint32_t id) {
         return itemPool[id];
     }
 
     constexpr auto& new_item(accessor_fn mapped_accessor = nullptr) {
-        const auto item_id = static_cast<unsigned>(itemPool.size());
+        const auto item_id = static_cast<std::uint32_t>(itemPool.size());
         itemPool.push_back(make_default_item(item_id));
         auto& item = itemPool.back();
         item.id = item_id;
@@ -527,11 +527,11 @@ private:
         return decl::is_alias_placeholder_name(field_name);
     }
 
-    constexpr void set_category_for_item(unsigned item_id, const decl::Category* category) {
+    constexpr void set_category_for_item(std::uint32_t item_id, const decl::Category* category) {
         categoryMap[item_id] = category;
     }
 
-    constexpr void set_callback_for_item(unsigned item_id, parse_callback_t callback) {
+    constexpr void set_callback_for_item(std::uint32_t item_id, parse_callback_t callback) {
         callbackMap[item_id] = callback;
     }
 
@@ -544,7 +544,7 @@ private:
         return std::span<const std::string_view>(aliasStringPool.data() + offset, tokens.size());
     }
 
-    constexpr void set_alias_meta_for_item(unsigned item_id, AliasRuntimeMeta meta) {
+    constexpr void set_alias_meta_for_item(std::uint32_t item_id, AliasRuntimeMeta meta) {
         if(!meta.static_tokens.empty()) {
             meta.static_tokens = store_alias_tokens(meta.static_tokens);
         }
@@ -555,11 +555,12 @@ private:
         AliasRuntimeMeta meta{};
     };
 
-    constexpr auto snapshot_alias_storage(unsigned item_id) const -> AliasStorageSnapshot {
+    constexpr auto snapshot_alias_storage(std::uint32_t item_id) const -> AliasStorageSnapshot {
         return AliasStorageSnapshot{.meta = aliasMetaMap[item_id]};
     }
 
-    constexpr void restore_alias_storage(unsigned item_id, const AliasStorageSnapshot& snapshot) {
+    constexpr void restore_alias_storage(std::uint32_t item_id,
+                                         const AliasStorageSnapshot& snapshot) {
         aliasMetaMap[item_id] = snapshot.meta;
     }
 
@@ -589,8 +590,8 @@ private:
 
     template <typename ResultTy, typename CallbackTy>
     static auto invoke_parse_callback(const parse_callback_t::storage_t& storage,
-                                      const backend::ParsedArgumentOwning& arg,
-                                      unsigned next_cursor,
+                                      const ParsedArgOwning& arg,
+                                      std::uint32_t next_cursor,
                                       std::span<std::string> argv,
                                       const decl::DecoOptionBase& option) -> decl::ParseControl {
         const auto callback = decode_callback<CallbackTy>(storage);
@@ -646,24 +647,24 @@ private:
                                                  std::string_view suffix = {}) {
         auto normalized_name = generate_name_from_field(field_name);
         if(normalized_name.size() == 1) {
-            item._prefixes = backend::pfx_dash;
-            item._prefixed_name = suffix.empty() ? strPool.add("-", normalized_name)
-                                                 : strPool.add("-", normalized_name, suffix);
+            item.prefixes = backend::pfx_dash;
+            item.prefixed_name = suffix.empty() ? strPool.add("-", normalized_name)
+                                                : strPool.add("-", normalized_name, suffix);
         } else {
-            item._prefixes = backend::pfx_double;
-            item._prefixed_name = suffix.empty() ? strPool.add("--", normalized_name)
-                                                 : strPool.add("--", normalized_name, suffix);
+            item.prefixes = backend::pfx_double;
+            item.prefixed_name = suffix.empty() ? strPool.add("--", normalized_name)
+                                                : strPool.add("--", normalized_name, suffix);
         }
     }
 
     constexpr void set_prefixed_name(info_item& target, std::string_view full_name) {
         auto parsed = parse_named_option(full_name);
-        target._prefixes = parsed.prefixes;
-        target._prefixed_name = strPool.add(parsed.prefix, parsed.name);
+        target.prefixes = parsed.prefixes;
+        target.prefixed_name = strPool.add(parsed.prefix, parsed.name);
     }
 
     template <typename FieldsTy>
-    constexpr auto& set_named_options(unsigned item_id,
+    constexpr auto& set_named_options(std::uint32_t item_id,
                                       accessor_fn mapped_accessor,
                                       std::string_view field_name,
                                       const FieldsTy& fields,
@@ -749,8 +750,8 @@ private:
                                    std::string_view field_name) {
         const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         auto& item = new_item(mapped_accessor);
-        item.kind = backend::Option::FlagClass;
-        item.param = 0;
+        item.kind = backend::Kind::Flag;
+        item.num_args = 0;
         set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
@@ -758,15 +759,15 @@ private:
         return (style & static_cast<char>(expected)) != 0;
     }
 
-    constexpr static unsigned char kv_kind_from_name(std::string_view full_name) {
+    constexpr static backend::Kind kv_kind_from_name(std::string_view full_name) {
         if(full_name.ends_with('=') || full_name.ends_with(':')) {
-            return backend::Option::JoinedClass;
+            return backend::Kind::Joined;
         }
-        return backend::Option::SeparateClass;
+        return backend::Kind::Separate;
     }
 
     template <typename FieldsTy>
-    constexpr void add_generated_kv_joined_alias(unsigned item_id,
+    constexpr void add_generated_kv_joined_alias(std::uint32_t item_id,
                                                  accessor_fn mapped_accessor,
                                                  std::string_view field_name,
                                                  const FieldsTy& fields) {
@@ -776,7 +777,7 @@ private:
         auto alias_id = alias.id;
         alias = base_item;
         alias.id = alias_id;
-        alias.kind = backend::Option::JoinedClass;
+        alias.kind = backend::Kind::Joined;
         set_generated_name_from_field(alias, field_name, "=");
         set_common_options(alias, fields);
         set_category_for_item(alias.id, fields.category.ptr());
@@ -787,7 +788,7 @@ private:
     }
 
     template <typename FieldsTy>
-    constexpr void add_generated_kv_joined_alias_without_callback(unsigned item_id,
+    constexpr void add_generated_kv_joined_alias_without_callback(std::uint32_t item_id,
                                                                   std::string_view field_name,
                                                                   const FieldsTy& fields) {
         const auto base_item = item_by_id(item_id);
@@ -796,7 +797,7 @@ private:
         auto alias_id = alias.id;
         alias = base_item;
         alias.id = alias_id;
-        alias.kind = backend::Option::JoinedClass;
+        alias.kind = backend::Kind::Joined;
         set_generated_name_from_field(alias, field_name, "=");
         set_common_options(alias, fields);
         set_category_for_item(alias.id, fields.category.ptr());
@@ -804,7 +805,7 @@ private:
     }
 
     template <typename FieldsTy>
-    constexpr auto& set_kv_alias_options_split_by_name(unsigned item_id,
+    constexpr auto& set_kv_alias_options_split_by_name(std::uint32_t item_id,
                                                        std::string_view field_name,
                                                        const FieldsTy& fields) {
         const auto category = fields.category.ptr();
@@ -817,7 +818,7 @@ private:
 
         if(fields.names.empty()) {
             set_generated_name_from_field(item, field_name);
-            item.kind = backend::Option::SeparateClass;
+            item.kind = backend::Kind::Separate;
             set_common_options(item, fields);
             set_category_for_item(item.id, category);
             add_generated_kv_joined_alias_without_callback(item.id, field_name, fields);
@@ -845,7 +846,7 @@ private:
     }
 
     template <typename FieldsTy>
-    constexpr auto& set_kv_options_split_by_name(unsigned item_id,
+    constexpr auto& set_kv_options_split_by_name(std::uint32_t item_id,
                                                  accessor_fn mapped_accessor,
                                                  std::string_view field_name,
                                                  const FieldsTy& fields) {
@@ -859,7 +860,7 @@ private:
 
         if(fields.names.empty()) {
             set_generated_name_from_field(item, field_name);
-            item.kind = backend::Option::SeparateClass;
+            item.kind = backend::Kind::Separate;
             set_common_options(item, fields);
             set_category_for_item(item.id, category);
             set_callback_for_item(
@@ -907,13 +908,12 @@ private:
         }
 
         auto& item = new_item(mapped_accessor);
-        item.param = 1;
+        item.num_args = 1;
         if(allow_joined && allow_separate) {
             set_kv_options_split_by_name(item.id, mapped_accessor, field_name, cfg);
             return;
         }
-        item.kind = static_cast<unsigned char>(allow_joined ? backend::Option::JoinedClass
-                                                            : backend::Option::SeparateClass);
+        item.kind = allow_joined ? backend::Kind::Joined : backend::Kind::Separate;
         set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
         if(allow_joined && cfg.names.empty()) {
             add_generated_kv_joined_alias(item.id, mapped_accessor, field_name, cfg);
@@ -926,8 +926,8 @@ private:
                                     std::string_view field_name) {
         const auto callback = make_parse_callback<typename CfgTy::result_type>(cfg.after_parsed);
         auto& item = new_item(mapped_accessor);
-        item.kind = backend::Option::CommaJoinedClass;
-        item.param = 1;
+        item.kind = backend::Kind::CommaJoined;
+        item.num_args = 1;
         set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
@@ -943,8 +943,8 @@ private:
             KOTA_THROW("DecoMulti arg_num exceeds backend param capacity");
         }
         auto& item = new_item(mapped_accessor);
-        item.kind = backend::Option::MultiArgClass;
-        item.param = static_cast<unsigned char>(cfg.arg_num);
+        item.kind = backend::Kind::MultiArg;
+        item.num_args = static_cast<unsigned char>(cfg.arg_num);
         set_named_options(item.id, mapped_accessor, field_name, cfg, callback);
     }
 
@@ -997,8 +997,8 @@ private:
     template <typename CfgTy>
     constexpr auto create_alias_item(const CfgTy& cfg,
                                      std::string_view field_name,
-                                     unsigned char kind,
-                                     unsigned char param) -> unsigned {
+                                     backend::Kind kind,
+                                     unsigned char param) -> std::uint32_t {
         if(!cfg.forward) {
             KOTA_THROW("Deco alias requires forward");
         }
@@ -1007,7 +1007,7 @@ private:
         }
         auto& item = new_item(nullptr);
         item.kind = kind;
-        item.param = param;
+        item.num_args = param;
         set_alias_meta_for_item(item.id, make_alias_meta(cfg));
         return item.id;
     }
@@ -1015,8 +1015,8 @@ private:
     template <typename CfgTy>
     constexpr auto add_alias_option(const CfgTy& cfg,
                                     std::string_view field_name,
-                                    unsigned char kind,
-                                    unsigned char param) -> unsigned {
+                                    backend::Kind kind,
+                                    unsigned char param) -> std::uint32_t {
         const auto item_id = create_alias_item(cfg, field_name, kind, param);
         set_named_options(item_id, nullptr, field_name, cfg, {});
         return item_id;
@@ -1028,7 +1028,7 @@ private:
     }
 
 public:
-    constexpr static unsigned unknown_option_id = 1;
+    constexpr static std::uint32_t unknown_option_id = 1;
 
     constexpr explicit LLVMOptGenerator() :
         strPool(resource), itemPool(resource), idMap(resource), categoryMap(resource),
@@ -1111,7 +1111,7 @@ public:
     constexpr bool on_flag_alias(const CfgTy& cfg,
                                  std::string_view field_name,
                                  std::index_sequence<Path...>) {
-        add_alias_option(cfg, field_name, backend::Option::FlagClass, 0);
+        add_alias_option(cfg, field_name, backend::Kind::Flag, 0);
         return true;
     }
 
@@ -1125,17 +1125,15 @@ public:
             KOTA_THROW("DecoKVAlias style must include Joined and/or Separate");
         }
         if(allow_joined && allow_separate) {
-            const auto item_id =
-                create_alias_item(cfg, field_name, backend::Option::SeparateClass, 1);
+            const auto item_id = create_alias_item(cfg, field_name, backend::Kind::Separate, 1);
             set_kv_alias_options_split_by_name(item_id, field_name, cfg);
             return true;
         }
-        const auto item_id = add_alias_option(
-            cfg,
-            field_name,
-            static_cast<unsigned char>(allow_joined ? backend::Option::JoinedClass
-                                                    : backend::Option::SeparateClass),
-            1);
+        const auto item_id =
+            add_alias_option(cfg,
+                             field_name,
+                             allow_joined ? backend::Kind::Joined : backend::Kind::Separate,
+                             1);
         if(allow_joined && cfg.names.empty()) {
             add_generated_kv_joined_alias_without_callback(item_id, field_name, cfg);
         }
@@ -1146,7 +1144,7 @@ public:
     constexpr bool on_comma_joined_alias(const CfgTy& cfg,
                                          std::string_view field_name,
                                          std::index_sequence<Path...>) {
-        add_alias_option(cfg, field_name, backend::Option::CommaJoinedClass, 1);
+        add_alias_option(cfg, field_name, backend::Kind::CommaJoined, 1);
         return true;
     }
 
@@ -1162,7 +1160,7 @@ public:
         }
         add_alias_option(cfg,
                          field_name,
-                         backend::Option::MultiArgClass,
+                         backend::Kind::MultiArg,
                          static_cast<unsigned char>(cfg.arg_num));
         return true;
     }
@@ -1171,8 +1169,8 @@ public:
         (void)this->consume_deco_struct_schema();
     }
 
-    constexpr bool is_unknown_option_id(backend::OptSpecifier id) const {
-        return id.id() == 0 || id.id() == unknown_option_id;
+    constexpr bool is_unknown_option_id(std::uint32_t id) const {
+        return id == 0 || id == unknown_option_id;
     }
 
     constexpr bool has_input_option() const {
@@ -1211,51 +1209,49 @@ public:
         return std::span<const AliasRuntimeMeta>(aliasMetaMap.data(), aliasMetaMap.size());
     }
 
-    constexpr bool is_alias_option_id(backend::OptSpecifier opt) const {
-        if(!opt.is_valid()) {
+    constexpr bool is_alias_option_id(std::uint32_t opt) const {
+        if(opt == 0) {
             return false;
         }
-        const auto id = opt.id();
-        if(id >= aliasMetaMap.size()) {
+        if(opt >= aliasMetaMap.size()) {
             return false;
         }
-        return aliasMetaMap[id].kind != AliasRuntimeMeta::Kind::None;
+        return aliasMetaMap[opt].kind != AliasRuntimeMeta::Kind::None;
     }
 
-    constexpr auto alias_meta_of(backend::OptSpecifier opt) const -> const AliasRuntimeMeta* {
+    constexpr auto alias_meta_of(std::uint32_t opt) const -> const AliasRuntimeMeta* {
         if(!is_alias_option_id(opt)) {
             return nullptr;
         }
-        return &aliasMetaMap[opt.id()];
+        return &aliasMetaMap[opt];
     }
 
-    constexpr void* field_ptr_of(backend::OptSpecifier opt, RootTy& object) const {
-        if(!opt.is_valid()) {
+    constexpr void* field_ptr_of(std::uint32_t opt, RootTy& object) const {
+        if(opt == 0) {
             return nullptr;
         }
-        const auto id = opt.id();
-        if(id >= id_map().size()) {
+        if(opt >= id_map().size()) {
             return nullptr;
         }
-        auto accessor = idMap[id];
+        auto accessor = idMap[opt];
         if(accessor == nullptr) {
             return nullptr;
         }
         return accessor(static_cast<void*>(&object));
     }
 
-    constexpr bool is_input_argument(const backend::ParsedArgument& arg) const {
-        if(arg.option_id.id() != inputOptionId) {
+    constexpr bool is_input_argument(const backend::ParsedArg& arg) const {
+        if(arg.id != inputOptionId) {
             return false;
         }
         return !is_trailing_argument(arg);
     }
 
-    constexpr bool is_trailing_argument(const backend::ParsedArgument& arg) const {
-        if(arg.option_id.id() != inputOptionId) {
+    constexpr bool is_trailing_argument(const backend::ParsedArg& arg) const {
+        if(arg.id != inputOptionId) {
             return false;
         }
-        return arg.get_spelling_view() == "--";
+        return arg.spelling == "--";
     }
 
     constexpr void* trailing_ptr_of(RootTy& object) const {
@@ -1273,26 +1269,24 @@ public:
         return trailingCallback;
     }
 
-    constexpr const decl::Category* category_of(backend::OptSpecifier opt) const {
-        if(!opt.is_valid()) {
+    constexpr const decl::Category* category_of(std::uint32_t opt) const {
+        if(opt == 0) {
             return nullptr;
         }
-        const auto id = opt.id();
-        if(id >= category_map().size()) {
+        if(opt >= category_map().size()) {
             return nullptr;
         }
-        return categoryMap[id];
+        return categoryMap[opt];
     }
 
-    constexpr parse_callback_t callback_of(backend::OptSpecifier opt) const {
-        if(!opt.is_valid()) {
+    constexpr parse_callback_t callback_of(std::uint32_t opt) const {
+        if(opt == 0) {
             return {};
         }
-        const auto id = opt.id();
-        if(id >= callback_map().size()) {
+        if(opt >= callback_map().size()) {
             return {};
         }
-        return callbackMap[id];
+        return callbackMap[opt];
     }
 
     auto make_opt_table() const& {

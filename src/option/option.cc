@@ -1,77 +1,164 @@
 #include "kota/option/option.h"
 
 #include <cassert>
-#include <cstring>
 #include <ostream>
-#include <ranges>
 #include <string_view>
+#include <utility>
 
 namespace kota::option {
-namespace {
 
-constexpr const char* k_no_match = "internal error: option does not match argument";
-constexpr const char* k_missing_value = "missing argument value";
-constexpr const char* k_missing_values = "missing one or more argument values";
-
-}  // namespace
-
-Option::Option(const OptTable::Info* info, const OptTable* owner) : info(info), owner(owner) {
-    // Multi-level aliases are not supported. This just simplifies option
-    // tracking, it is not an inherent limitation.
+Option::Option(const OptTableInfo* info, const OptTable* owner) : info(info), owner(owner) {
     assert((!info || !this->alias().valid() || !this->alias().alias().valid()) &&
            "Multi-level aliases are not supported.");
 
     if(info && this->alias_args()) {
         assert(this->alias().valid() && "Only alias options can have alias args.");
-        assert(this->kind() == FlagClass && "Only Flag aliases can have alias args.");
-        assert(this->alias().kind() != FlagClass && "Cannot provide alias args to a flag option.");
+        assert(this->kind() == Kind::Flag && "Only Flag aliases can have alias args.");
+        assert(this->alias().kind() != Kind::Flag && "Cannot provide alias args to a flag option.");
     }
+}
+
+std::uint32_t Option::id() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->id;
+}
+
+Kind Option::kind() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->kind;
+}
+
+std::string_view Option::name() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->name();
+}
+
+const Option Option::group() const {
+    assert(this->info && "Must have a valid info!");
+    assert(this->owner && "Must have a valid owner!");
+    return this->owner->option(this->info->group_id);
+}
+
+const Option Option::alias() const {
+    assert(this->info && "Must have a valid info!");
+    assert(this->owner && "Must have a valid owner!");
+    return this->owner->option(this->info->alias_id);
+}
+
+const char* Option::alias_args() const {
+    assert(this->info && "Must have a valid info!");
+    assert((!this->info->alias_args || this->info->alias_args[0] != 0) &&
+           "AliasArgs should be either 0 or non-empty.");
+    return this->info->alias_args;
+}
+
+std::string_view Option::prefix() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->has_no_prefix() ? "" : this->info->prefixes[0];
+}
+
+std::string_view Option::prefixed_name() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->prefixed_name;
+}
+
+std::string_view Option::help_text() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->help_text;
+}
+
+std::string_view Option::meta_var() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->meta_var;
+}
+
+std::uint32_t Option::num_args() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->num_args;
+}
+
+bool Option::has_no_opt_as_input() const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->flags & RenderAsInput;
+}
+
+RenderStyle Option::render_style() const {
+    assert(this->info && "Must have a valid info!");
+    if(this->info->flags & RenderJoined)
+        return RenderStyle::Joined;
+    if(this->info->flags & RenderSeparate)
+        return RenderStyle::Separate;
+    switch(this->kind()) {
+        case Kind::Group:
+        case Kind::Input:
+        case Kind::Unknown: return RenderStyle::Values;
+        case Kind::Joined:
+        case Kind::JoinedAndSeparate: return RenderStyle::Joined;
+        case Kind::CommaJoined: return RenderStyle::CommaJoined;
+        case Kind::Flag:
+        case Kind::Values:
+        case Kind::Separate:
+        case Kind::MultiArg:
+        case Kind::JoinedOrSeparate:
+        case Kind::RemainingArgs:
+        case Kind::RemainingArgsJoined: return RenderStyle::Separate;
+    }
+    std::unreachable();
+}
+
+bool Option::has_flag(std::uint32_t val) const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->flags & val;
+}
+
+bool Option::has_visibility_flag(std::uint32_t val) const {
+    assert(this->info && "Must have a valid info!");
+    return this->info->visibility & val;
 }
 
 void Option::print(std::ostream& o, bool add_new_line) const {
     o << "<";
     switch(this->kind()) {
-        // FIXME: Use reflection to print enum names.
 #define P(N)                                                                                       \
     case N: o << #N; break
-        P(GroupClass);
-        P(InputClass);
-        P(UnknownClass);
-        P(FlagClass);
-        P(JoinedClass);
-        P(ValuesClass);
-        P(SeparateClass);
-        P(CommaJoinedClass);
-        P(MultiArgClass);
-        P(JoinedOrSeparateClass);
-        P(JoinedAndSeparateClass);
-        P(RemainingArgsClass);
-        P(RemainingArgsJoinedClass);
+        P(Kind::Group);
+        P(Kind::Input);
+        P(Kind::Unknown);
+        P(Kind::Flag);
+        P(Kind::Joined);
+        P(Kind::Values);
+        P(Kind::Separate);
+        P(Kind::CommaJoined);
+        P(Kind::MultiArg);
+        P(Kind::JoinedOrSeparate);
+        P(Kind::JoinedAndSeparate);
+        P(Kind::RemainingArgs);
+        P(Kind::RemainingArgsJoined);
 #undef P
     }
 
     if(!this->info->has_no_prefix()) {
         o << " Prefixes:[";
-        for(size_t i = 0, n = this->info->num_prefixes(); i != n; ++i)
-            o << '"' << this->info->prefixes()[i] << (i == n - 1 ? "\"" : "\", ");
+        for(size_t i = 0, n = this->info->prefixes.size(); i != n; ++i)
+            o << '"' << this->info->prefixes[i] << (i == n - 1 ? "\"" : "\", ");
         o << ']';
     }
 
     o << " Name:\"" << this->name() << '"';
 
-    const Option group = this->group();
-    if(group.valid()) {
+    const Option g = this->group();
+    if(g.valid()) {
         o << " Group:";
-        group.print(o, /*AddNewLine=*/false);
+        g.print(o, false);
     }
 
     const Option als = this->alias();
     if(als.valid()) {
         o << " Alias:";
-        als.print(o, /*AddNewLine=*/false);
+        als.print(o, false);
     }
 
-    if(this->kind() == MultiArgClass)
+    if(this->kind() == Kind::MultiArg)
         o << " NumArgs:" << this->num_args();
 
     o << ">";
@@ -80,238 +167,21 @@ void Option::print(std::ostream& o, bool add_new_line) const {
     }
 }
 
-bool Option::matches(OptSpecifier opt) const {
-    // Aliases are never considered in matching, look through them.
+bool Option::matches(std::uint32_t opt_id) const {
     const Option als = this->alias();
     if(als.valid()) {
-        return als.matches(opt);
+        return als.matches(opt_id);
     }
 
-    // Check exact match.
-    if(this->id() == opt.id()) {
+    if(this->id() == opt_id) {
         return true;
     }
 
-    const Option group = this->group();
-    if(group.valid()) {
-        return group.matches(opt);
+    const Option g = this->group();
+    if(g.valid()) {
+        return g.matches(opt_id);
     }
     return false;
-}
-
-PArgResult Option::accept_internal(const ArgList& args,
-                                   std::string_view spelling,
-                                   unsigned& index) const {
-    const size_t spelling_sz = spelling.size();
-    const size_t args_idx_sz = args[index].size();
-    switch(this->kind()) {
-        case FlagClass: {
-            if(spelling_sz != args_idx_sz) {
-                return std::unexpected(k_no_match);
-            }
-            return ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {},
-                .index = index++,
-            };
-        }
-        case JoinedClass: {
-            auto value = std::string_view(args[index]).substr(spelling_sz);
-            return ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {value},
-                .index = index++,
-            };
-        }
-        case CommaJoinedClass: {
-            // Always matches.
-            auto a = ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {},
-                .index = index,
-            };
-            // Parse out the comma separated values.
-            for(const auto& part:
-                std::views::split(std::string_view(args[index]).substr(spelling_sz), ',') |
-                    std::views::filter([](auto&& r) { return !r.empty(); })) {
-                a.values.emplace_back(part);
-            }
-            index++;
-            return a;
-        }
-        case SeparateClass:
-            // Matches iff this is an exact match.
-            if(spelling_sz != args_idx_sz) {
-                return std::unexpected(k_no_match);
-            }
-
-            index += 2;
-            if(index > args.size() || args[index - 1].empty()) {
-                return std::unexpected(k_missing_value);
-            }
-
-            return ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {std::string_view(args[index - 1])},
-                .index = index - 2,
-            };
-        case MultiArgClass: {
-            // Matches iff this is an exact match.
-            if(spelling_sz != args_idx_sz) {
-                return std::unexpected(k_no_match);
-            }
-
-            index += 1 + this->num_args();
-            if(index > args.size())
-                return std::unexpected(k_missing_values);
-
-            auto a = ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {},
-                .index = index - (1 + this->num_args()),
-            };
-            for(unsigned i = 0; i != this->num_args(); ++i)
-                a.values.emplace_back(std::string_view(args[index - this->num_args() + i]));
-            return a;
-        }
-        case JoinedOrSeparateClass: {
-            // If this is not an exact match, it is a joined arg.
-            if(spelling_sz != args_idx_sz) {
-                auto value = std::string_view(args[index]).substr(spelling_sz);
-                return ParsedArgument{
-                    .option_id = this->id(),
-                    .spelling = spelling,
-                    .values = {value},
-                    .index = index++,
-                };
-            }
-
-            // Otherwise it must be separate.
-            index += 2;
-            if(index > args.size() || args[index - 1].empty()) {
-                return std::unexpected(k_missing_value);
-            }
-            return ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {std::string_view(args[index - 1])},
-                .index = index - 2,
-            };
-        }
-        case JoinedAndSeparateClass:
-            // Always matches.
-            index += 2;
-            if(index > args.size() || args[index - 1].empty()) {
-                return std::unexpected(k_missing_value);
-            }
-            return ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {std::string_view(args[index - 2]).substr(spelling_sz),
-                           std::string_view(args[index - 1])},
-                .index = index - 2,
-            };
-        case RemainingArgsClass: {
-            // Matches iff this is an exact match.
-            if(spelling_sz != args_idx_sz) {
-                return std::unexpected(k_no_match);
-            }
-            auto a = ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {},
-                .index = index++,
-            };
-            while(index < args.size() && !args[index].empty())
-                a.values.push_back(std::string_view(args[index++]));
-            return a;
-        }
-        case RemainingArgsJoinedClass: {
-            auto a = ParsedArgument{
-                .option_id = this->id(),
-                .spelling = spelling,
-                .values = {},
-                .index = index,
-            };
-            if(spelling_sz != args_idx_sz) {
-                // An inexact match means there is a joined arg.
-                a.values.push_back(std::string_view(args[index]).substr(spelling_sz));
-            }
-            index++;
-            while(index < args.size() && !args[index].empty())
-                a.values.push_back(args[index++]);
-            return a;
-        }
-
-        default: std::unreachable();
-    }
-}
-
-PArgResult Option::accept(const ArgList& args,
-                          std::string_view spelling,
-                          bool grouped_short_option,
-                          unsigned& index) const {
-    PArgResult a = std::unexpected(k_no_match);
-    if(grouped_short_option && this->kind() == FlagClass) {
-        // when grouped short option, it is a temporary spelling from argv
-        // because argv[index] will be changed to the remaining part after this option
-        // therefore we should store the spelling into the variant
-
-        a = ParsedArgument{
-            .option_id = this->id(),
-            .spelling = to_spelling_array(spelling),
-            .values = {},
-            .index = index,
-        };
-    } else {
-        a = this->accept_internal(args, spelling, index);
-    }
-    if(!a.has_value()) {
-        return a;
-    }
-
-    const Option& unaliased_opt = this->unaliased_option();
-    if(this->id() == unaliased_opt.id()) {
-        return a;
-    }
-
-    // "a" is an alias for a different flag. For most clients it's more convenient
-    // if this function returns unaliased Args, so create an unaliased arg for
-    // returning.
-
-    // It's a bit weird that aliased and unaliased arg share one index, but
-    // the index is mostly use as a memory optimization in render().
-    // Due to this, ArgList::getArgString(A->getIndex()) will return the spelling
-    // of the aliased arg always, while A->getSpelling() returns either the
-    // unaliased or the aliased arg, depending on which Arg object it's called on.
-    a->unaliased_option_id = unaliased_opt.id();
-
-    if(this->kind() != FlagClass) {
-        return a;
-    }
-
-    // FlagClass aliases can have AliasArgs<>; add those to the unaliased arg.
-    // eg. -O => --optimize 2
-    if(const char* val = this->alias_args()) {
-        a->unaliased_addition_values.emplace();
-        while(*val != '\0') {
-            a->unaliased_addition_values->push_back(val);
-            // Move past the '\0' to the next argument.
-            val += std::strlen(val) + 1;
-        }
-    }
-    if(this->owner->option(a->unaliased_option_id.value()).kind() == JoinedClass &&
-       !this->alias_args()) {
-        a->unaliased_addition_values.emplace();
-        // A Flag alias for a Joined option must provide an argument.
-        a->unaliased_addition_values->push_back("");
-    }
-    return a;
 }
 
 }  // namespace kota::option

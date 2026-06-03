@@ -19,6 +19,32 @@
 #include "trait.h"
 #include "kota/support/spelling.h"
 
+namespace kota::deco {
+
+struct ParsedArgOwning {
+    std::uint32_t id = 0;
+    std::uint32_t index = 0;
+    std::string spelling;
+    std::vector<std::string> values;
+
+    static ParsedArgOwning from(const option::ParsedArg& arg) {
+        ParsedArgOwning owning;
+        owning.id = arg.id;
+        owning.index = arg.index;
+        owning.spelling = arg.spelling;
+        for(auto v: arg.values) {
+            owning.values.emplace_back(v);
+        }
+        return owning;
+    }
+
+    std::string_view get_spelling_view() const {
+        return spelling;
+    }
+};
+
+}  // namespace kota::deco
+
 namespace kota::deco::decl {
 
 enum class DecoType {
@@ -148,24 +174,24 @@ struct ParseControl {
 
 template <typename ResTy>
 struct ParseStep {
-    const backend::ParsedArgumentOwning* parsed_arg = nullptr;
-    unsigned next_cursor_index = 0;
+    const ParsedArgOwning* parsed_arg = nullptr;
+    std::uint32_t next_cursor_index = 0;
     std::span<std::string> argv_span{};
     const ResTy* parsed_value = nullptr;
 
     constexpr ParseStep() = default;
 
-    constexpr ParseStep(const backend::ParsedArgumentOwning& arg,
-                        unsigned next_cursor,
+    constexpr ParseStep(const ParsedArgOwning& arg,
+                        std::uint32_t next_cursor,
                         std::span<std::string> argv,
                         const ResTy& value) :
         parsed_arg(&arg), next_cursor_index(next_cursor), argv_span(argv), parsed_value(&value) {}
 
-    constexpr auto arg() const -> const backend::ParsedArgumentOwning& {
+    constexpr auto arg() const -> const ParsedArgOwning& {
         return *parsed_arg;
     }
 
-    constexpr auto next_cursor() const -> unsigned {
+    constexpr auto next_cursor() const -> std::uint32_t {
         return next_cursor_index;
     }
 
@@ -196,15 +222,15 @@ struct ParseStep {
 
 struct IntoContext {
     std::span<const std::string> argv_span{};
-    unsigned highlight_begin_index = 0;
-    unsigned highlight_end_index = 0;
+    std::uint32_t highlight_begin_index = 0;
+    std::uint32_t highlight_end_index = 0;
     const cli::text::Renderer* renderer_ptr = nullptr;
 
     constexpr IntoContext() = default;
 
     constexpr IntoContext(std::span<const std::string> argv,
-                          unsigned highlight_begin,
-                          unsigned highlight_end,
+                          std::uint32_t highlight_begin,
+                          std::uint32_t highlight_end,
                           const cli::text::Renderer* renderer = nullptr) :
         argv_span(argv), highlight_begin_index(highlight_begin), highlight_end_index(highlight_end),
         renderer_ptr(renderer) {}
@@ -213,11 +239,11 @@ struct IntoContext {
         return argv_span;
     }
 
-    constexpr auto highlight_begin() const -> unsigned {
+    constexpr auto highlight_begin() const -> std::uint32_t {
         return highlight_begin_index;
     }
 
-    constexpr auto highlight_end() const -> unsigned {
+    constexpr auto highlight_end() const -> std::uint32_t {
         return highlight_end_index;
     }
 
@@ -226,9 +252,10 @@ struct IntoContext {
     }
 
     static auto at_cursor(std::span<const std::string> argv,
-                          unsigned index,
+                          std::uint32_t index,
                           const cli::text::Renderer* renderer = nullptr) -> IntoContext {
-        const unsigned clamped = std::min<unsigned>(index, static_cast<unsigned>(argv.size()));
+        const std::uint32_t clamped =
+            std::min<std::uint32_t>(index, static_cast<std::uint32_t>(argv.size()));
         return IntoContext(argv, clamped, clamped, renderer);
     }
 
@@ -236,13 +263,14 @@ struct IntoContext {
     static auto from_argument(std::span<const std::string> argv,
                               const ArgTy& arg,
                               const cli::text::Renderer* renderer = nullptr) -> IntoContext {
-        const unsigned begin = std::min<unsigned>(arg.index, static_cast<unsigned>(argv.size()));
+        const std::uint32_t begin =
+            std::min<std::uint32_t>(arg.index, static_cast<std::uint32_t>(argv.size()));
         if(begin >= argv.size()) {
             return at_cursor(argv, begin, renderer);
         }
 
-        unsigned end = begin + 1;
-        unsigned cursor = begin + 1;
+        std::uint32_t end = begin + 1;
+        std::uint32_t cursor = begin + 1;
         for(const auto& value: arg.values) {
             if(cursor >= argv.size() || argv[cursor] != value) {
                 break;
@@ -258,7 +286,8 @@ struct IntoContext {
                            const ArgTy& arg,
                            std::string_view value,
                            const cli::text::Renderer* renderer = nullptr) -> IntoContext {
-        const unsigned begin = std::min<unsigned>(arg.index, static_cast<unsigned>(argv.size()));
+        const std::uint32_t begin =
+            std::min<std::uint32_t>(arg.index, static_cast<std::uint32_t>(argv.size()));
         if(begin >= argv.size()) {
             return at_cursor(argv, begin, renderer);
         }
@@ -267,7 +296,7 @@ struct IntoContext {
             return IntoContext(argv, begin, begin + 1, renderer);
         }
 
-        unsigned cursor = begin + 1;
+        std::uint32_t cursor = begin + 1;
         for(const auto& item: arg.values) {
             if(cursor >= argv.size() || argv[cursor] != item) {
                 break;
@@ -302,8 +331,8 @@ struct IntoContext {
 };
 
 using AliasForwardResult = std::expected<std::vector<std::string>, std::string>;
-using AliasForwardFn = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg);
-using AliasForwardFnWithContext = AliasForwardResult (*)(const backend::ParsedArgumentOwning& arg,
+using AliasForwardFn = AliasForwardResult (*)(const ParsedArgOwning& arg);
+using AliasForwardFnWithContext = AliasForwardResult (*)(const ParsedArgOwning& arg,
                                                          const IntoContext& context);
 
 struct AliasForwardField {
@@ -508,7 +537,7 @@ struct CommaJoinedFields : NamedOptionFields {
 
 struct MultiFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Multi;
-    unsigned arg_num = 1;
+    std::uint32_t arg_num = 1;
     constexpr MultiFields() = default;
 };
 
@@ -535,19 +564,18 @@ struct CommaJoinedAliasFields : AliasFields {
 
 struct MultiAliasFields : AliasFields {
     constexpr static DecoType deco_field_ty = DecoType::Multi;
-    unsigned arg_num = 1;
+    std::uint32_t arg_num = 1;
     constexpr MultiAliasFields() = default;
 };
 
 struct DecoOptionBase {
     constexpr virtual ~DecoOptionBase() = default;
-    // return error message if parsing fails, otherwise return std::nullopt
-    virtual std::optional<std::string> into(backend::ParsedArgument&& arg) = 0;
+    virtual std::optional<std::string> into(const ParsedArgOwning& arg) = 0;
 
-    virtual std::optional<std::string> into(backend::ParsedArgument&& arg,
+    virtual std::optional<std::string> into(const ParsedArgOwning& arg,
                                             const IntoContext& context) {
         (void)context;
-        return into(std::move(arg));
+        return into(arg);
     }
 };
 
@@ -555,8 +583,8 @@ struct ErasedParseCallback {
     constexpr static std::size_t storage_size = sizeof(void (*)());
     using storage_t = std::array<char, storage_size>;
     using invoker_t = ParseControl (*)(const storage_t& storage,
-                                       const backend::ParsedArgumentOwning& arg,
-                                       unsigned next_cursor,
+                                       const ParsedArgOwning& arg,
+                                       std::uint32_t next_cursor,
                                        std::span<std::string> argv,
                                        const DecoOptionBase& option);
 
@@ -567,8 +595,8 @@ struct ErasedParseCallback {
         return invoke != nullptr;
     }
 
-    constexpr auto operator()(const backend::ParsedArgumentOwning& arg,
-                              unsigned next_cursor,
+    constexpr auto operator()(const ParsedArgOwning& arg,
+                              std::uint32_t next_cursor,
                               std::span<std::string> argv,
                               const DecoOptionBase& option) const -> ParseControl {
         if(invoke == nullptr) {
@@ -619,7 +647,7 @@ struct DecoOption : public DecoOptionBase, private std::optional<ResTy> {
         return *this;
     }
 
-    virtual std::optional<std::string> into(backend::ParsedArgument&& arg) override = 0;
+    virtual std::optional<std::string> into(const ParsedArgOwning& arg) override = 0;
 };
 
 namespace detail {
@@ -809,11 +837,11 @@ struct FlagOption : DecoOption<ResTy> {
     using DecoOption<ResTy>::DecoOption;
     constexpr ~FlagOption() = default;
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg) override {
-        return into(std::move(arg), {});
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
     }
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg,
+    std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
         if(!arg.values.empty()) {
             return context.format_error("flag option does not accept values");
@@ -833,11 +861,11 @@ struct ScalarOption : DecoOption<ResTy> {
     using DecoOption<ResTy>::DecoOption;
     constexpr ~ScalarOption() = default;
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg) override {
-        return into(std::move(arg), {});
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
     }
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg,
+    std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
         if(arg.values.size() != 1) {
             return context.format_error("expected exactly one value");
@@ -855,21 +883,17 @@ struct InputOption : DecoOption<ResTy> {
     std::vector<std::string> raw_inputs;
     constexpr ~InputOption() = default;
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg) override {
-        return into(std::move(arg), {});
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
     }
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg,
+    std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
         if constexpr(trait::ScalarResultType<ResTy>) {
             if(arg.values.empty()) {
-                const auto value_context = IntoContext::from_value(context.argv(),
-                                                                   arg,
-                                                                   arg.get_spelling_view(),
-                                                                   context.renderer());
-                return detail::assign_scalar(this->as_optional(),
-                                             arg.get_spelling_view(),
-                                             value_context);
+                const auto value_context =
+                    IntoContext::from_value(context.argv(), arg, arg.spelling, context.renderer());
+                return detail::assign_scalar(this->as_optional(), arg.spelling, value_context);
             }
             if(arg.values.size() == 1) {
                 const auto value_context = IntoContext::from_value(context.argv(),
@@ -883,15 +907,19 @@ struct InputOption : DecoOption<ResTy> {
             return context.format_error("input option expects at most one value");
         } else {
             if(arg.values.empty()) {
-                const std::string_view spelling = arg.get_spelling_view();
+                const std::string_view spelling = arg.spelling;
                 return detail::assign_input_vector(this->as_optional(),
                                                    this->raw_inputs,
                                                    {&spelling, 1},
                                                    context);
             }
+            std::vector<std::string_view> views;
+            views.reserve(arg.values.size());
+            for(const auto& v: arg.values)
+                views.emplace_back(v);
             return detail::assign_input_vector(this->as_optional(),
                                                this->raw_inputs,
-                                               arg.values,
+                                               views,
                                                context);
         }
     }
@@ -903,13 +931,17 @@ struct VectorOption : DecoOption<ResTy> {
     using DecoOption<ResTy>::DecoOption;
     constexpr ~VectorOption() = default;
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg) override {
-        return into(std::move(arg), {});
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
     }
 
-    std::optional<std::string> into(backend::ParsedArgument&& arg,
+    std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
-        return detail::assign_vector(this->as_optional(), arg.values, context);
+        std::vector<std::string_view> views;
+        views.reserve(arg.values.size());
+        for(const auto& v: arg.values)
+            views.emplace_back(v);
+        return detail::assign_vector(this->as_optional(), views, context);
     }
 };
 

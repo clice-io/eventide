@@ -1,347 +1,198 @@
 #pragma once
 
-#include <array>
 #include <cassert>
 #include <expected>
-#include <format>
-#include <functional>
+#include <iterator>
+#include <ostream>
+#include <ranges>
 #include <set>
 #include <span>
-#include <string>
 #include <string_view>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
-#include "opt_specifier.h"
-#include "parsed_arg.h"
-#include "util.h"
+#include "opt_types.h"
 
 namespace kota::option {
 
-class Option;
+class OptTable;
 
-/// Helper for overload resolution while transitioning from
-/// FlagsToInclude/FlagsToExclude APIs to VisibilityMask APIs.
-class Visibility {
-    unsigned mask = ~0U;
+class Option {
+protected:
+    const struct OptTableInfo* info;
+    const OptTable* owner;
 
 public:
-    explicit Visibility(unsigned mask) : mask(mask) {}
+    Option(const OptTableInfo* info, const OptTable* owner);
 
-    Visibility() = default;
+    bool valid() const {
+        return this->info != nullptr;
+    }
 
-    operator unsigned() const {
-        return this->mask;
+    std::uint32_t id() const;
+    Kind kind() const;
+    std::string_view name() const;
+    const Option group() const;
+    const Option alias() const;
+    const char* alias_args() const;
+    std::string_view prefix() const;
+    std::string_view prefixed_name() const;
+    std::string_view help_text() const;
+    std::string_view meta_var() const;
+    std::uint32_t num_args() const;
+
+    bool has_no_opt_as_input() const;
+    RenderStyle render_style() const;
+    bool has_flag(std::uint32_t val) const;
+    bool has_visibility_flag(std::uint32_t val) const;
+
+    const Option unaliased_option() const {
+        const Option als = this->alias();
+        if(als.valid())
+            return als.unaliased_option();
+        return *this;
+    }
+
+    std::string_view render_name() const {
+        return this->unaliased_option().name();
+    }
+
+    bool matches(std::uint32_t opt_id) const;
+
+    void print(std::ostream& o, bool add_new_line) const;
+};
+
+struct OptFilter {
+    std::uint32_t visibility = ~0U;
+    std::uint32_t include_flags = 0;
+    std::uint32_t exclude_flags = 0;
+
+    OptFilter() = default;
+
+    OptFilter(std::uint32_t vis) : visibility(vis) {}
+
+    OptFilter(std::uint32_t vis, std::uint32_t include, std::uint32_t exclude) :
+        visibility(vis), include_flags(include), exclude_flags(exclude) {}
+
+    bool excludes(const Option& opt) const;
+};
+
+using ArgAccessFn = std::string_view (*)(const void* data, std::uint32_t index);
+
+struct OptTableInfo {
+    std::span<const std::string_view> prefixes;
+    std::string_view prefixed_name;
+    std::uint32_t id;
+    Kind kind;
+    unsigned short group_id;
+    unsigned short alias_id;
+    const char* alias_args;
+    std::uint32_t flags;
+    std::uint32_t visibility;
+    unsigned char num_args;
+    const char* help_text;
+    const char* meta_var;
+
+    bool has_no_prefix() const {
+        return this->prefixes.size() == 0;
+    }
+
+    std::string_view name() const {
+        std::uint32_t prefix_length =
+            this->has_no_prefix() ? 0 : static_cast<std::uint32_t>(this->prefixes[0].size());
+        return this->prefixed_name.substr(prefix_length);
+    }
+
+    constexpr static OptTableInfo unaliased_one(std::span<const std::string_view> prefixes,
+                                                std::string_view prefixed_name,
+                                                std::uint32_t id,
+                                                Kind kind,
+                                                unsigned char num_args,
+                                                const char* help_text = "no help text",
+                                                const char* meta_var = "<nullptr>",
+                                                unsigned short group_id = 0,
+                                                std::uint32_t flags = 0,
+                                                std::uint32_t visibility = 1 << 0) {
+        return OptTableInfo{
+            .prefixes = prefixes,
+            .prefixed_name = prefixed_name,
+            .id = id,
+            .kind = kind,
+            .group_id = group_id,
+            .alias_id = 0,
+            .alias_args = nullptr,
+            .flags = flags,
+            .visibility = visibility,
+            .num_args = num_args,
+            .help_text = help_text,
+            .meta_var = meta_var,
+        };
+    };
+
+    constexpr static OptTableInfo unknown(std::uint32_t id) {
+        return OptTableInfo::unaliased_one(pfx_none,
+                                           "<unknown>",
+                                           id,
+                                           Kind::Unknown,
+                                           0,
+                                           "Unknown option");
+    }
+
+    constexpr static OptTableInfo input(std::uint32_t id) {
+        return OptTableInfo::unaliased_one(pfx_none,
+                                           "<input>",
+                                           id,
+                                           Kind::Input,
+                                           0,
+                                           "input content");
+    }
+
+    constexpr auto alias_of(std::uint32_t origin_id, const char* origin_args = nullptr) {
+        this->alias_args = origin_args;
+        this->alias_id = static_cast<unsigned short>(origin_id);
+        return *this;
     }
 };
 
-/// Provide access to the Option info table.
-///
-/// The OptTable class provides a layer of indirection which allows Option
-/// instance to be created lazily. In the common case, only a few options will
-/// be needed at runtime; the OptTable class maintains enough information to
-/// parse command lines without instantiating Options, while letting other
-/// parts of the driver still use Option instances where convenient.
+class ParseIter;
+
 class OptTable {
 public:
-    //   /// Represents a subcommand and its options in the option table.
-    //   struct SubCommand {
-    //     const char *Name;
-    //     const char *HelpText;
-    //     const char *Usage;
-    //   };
+    using Info = OptTableInfo;
 
-    /// Entry for a single option instance in the option data table.
-    /// It is static data generated by TableGen.
-    struct Info {
-        std::span<const std::string_view> _prefixes;
-        std::string_view _prefixed_name;
-        unsigned id;
-        unsigned char kind;
-        unsigned short group_id;
-        unsigned short alias_id;
-        const char* alias_args;
-        unsigned int flags;
-        unsigned int visibility;
-        unsigned char param;
-        const char* help_text;
-        // Help text for specific visibilities. A list of pairs, where each pair
-        // is a list of visibilities and a specific help string for those
-        // visibilities. If no help text is found in this list for the visibility of
-        // the program, HelpText is used instead.
-        // In short, print different help text for different visibility levels.
-        // do not use in catter
-        std::array<std::pair<std::array<unsigned int, 2 /*MaxVisibilityPerHelp*/>, const char*>,
-                   1 /*MaxVisibilityHelp*/>
-            help_texts_for_variants;
-        // placeholder for meta variable name.
-        // eg. FILENAME for --output=FILENAME
-        const char* meta_var;
-
-        // std::vector<unsigned> SubCommandIndexes;
-
-        bool has_no_prefix() const {
-            return this->_prefixes.size() == 0;
-        }
-
-        unsigned num_prefixes() const {
-            return static_cast<unsigned>(this->_prefixes.size());
-        }
-
-        std::span<const std::string_view> prefixes() const {
-            return this->_prefixes;
-        }
-
-        /// llvm recent add it, but catter do not use it now
-        // bool hasSubCommands() const { return this->SubCommandIndexes.size() != 0;
-        // }
-
-        // std::span<const unsigned> getSubCommandIndexes() const {
-        //   return std::span(this->SubCommandIndexes);
-        // }
-
-        std::string_view prefixed_name() const {
-            return this->_prefixed_name;
-        }
-
-        std::string_view name() const {
-            unsigned prefix_length =
-                this->has_no_prefix() ? 0 : static_cast<unsigned>(this->_prefixes[0].size());
-            return this->_prefixed_name.substr(prefix_length);
-        }
-
-        constexpr static Info unaliased_one(
-            std::span<const std::string_view> prefixes,
-            std::string_view prefixed_name,
-            unsigned id,
-            unsigned char kind,
-            unsigned char param,
-            const char* help_text = "no help text",
-            const char* meta_var = "<nullptr>",
-            unsigned short group_id = 0,
-            unsigned int flags = 0,
-            unsigned int visibility = 1 << 0 /* DefaultVis */,
-            std::array<std::pair<std::array<unsigned int, 2 /*MaxVisibilityPerHelp*/>, const char*>,
-                       1 /*MaxVisibilityHelp*/> help_texts_for_variants = {
-                {{std::array<unsigned, 2>{{0, 0}}, nullptr}}}) {
-            return Info{
-                ._prefixes = prefixes,
-                ._prefixed_name = prefixed_name,
-                .id = id,
-                .kind = kind,
-                .group_id = group_id,
-                .alias_id = 0,
-                .alias_args = nullptr,
-                .flags = flags,
-                .visibility = visibility,
-                .param = param,
-                .help_text = help_text,
-                .help_texts_for_variants = help_texts_for_variants,
-                .meta_var = meta_var,
-            };
-        };
-
-        constexpr static Info unknown(unsigned id) {
-            return Info::unaliased_one(pfx_none,
-                                       "<unknown>",
-                                       id,
-                                       OptionEnum::UnknownClass,
-                                       0,
-                                       "Unknown option");
-        }
-
-        constexpr static Info input(unsigned id) {
-            return Info::unaliased_one(pfx_none,
-                                       "<input>",
-                                       id,
-                                       OptionEnum::InputClass,
-                                       0,
-                                       "input content");
-        }
-
-        constexpr auto alias_of(unsigned origin_id, const char* origin_args = nullptr) {
-            this->alias_args = origin_args;
-            this->alias_id = static_cast<unsigned short>(origin_id);
-            return *this;
-        }
-    };
-
-public:
-    //   bool isValidForSubCommand(const Info *CandidateInfo,
-    //                             std::string_view SubCommand) const {
-    //     assert(!SubCommand.empty() &&
-    //            "This helper is only for valid registered subcommands.");
-    //     auto SCIT =
-    //         std::find_if(this->SubCommands.begin(), this->SubCommands.end(),
-    //                      [&](const auto &C) { return SubCommand == C.Name; });
-    //     assert(SCIT != SubCommands.end() &&
-    //            "This helper is only for valid registered subcommands.");
-    //     auto SearchRes = std::find_if(
-    //         CandidateInfo->getSubCommandIndexes().begin(),
-    //         CandidateInfo->getSubCommandIndexes().end(), [&](unsigned Idx) {
-    //           return this->SubCommands[Idx].Name == SubCommand;
-    //         });
-    //     return SearchRes != CandidateInfo->getSubCommandIndexes().end();
-    //   }
-
-private:
-    /// The option information table.
-    std::span<const Info> option_infos;
-
-    bool ignore_case;
-
-    /// The subcommand information table.
-    //   std::span<SubCommand> SubCommands;
-
-    bool grouped_short_options = false;
-    bool dash_dash_parsing = false;
-    bool input_random_index = false;
-    bool dash_dash_as_single_pack = false;
-    const char* env_var = nullptr;
-
-    unsigned input_option_id = 0;
-    unsigned unknown_option_id = 0;
-
-    bool tablegen_mode = false;
-
-protected:
-    /// The index of the first option which can be parsed (i.e., is not a
-    /// special option like 'input' or 'unknown', and is not an option group).
-    unsigned first_searchable_index = 0;
-
-    /// The union of all option prefixes. If an argument does not begin with
-    /// one of these, it is an input.
-    std::vector<std::string_view> _prefixes_union;
-
-    /// The union of the first element of all option prefixes.
-    std::vector<char> prefix_chars;
-
-private:
-    const Info& info(OptSpecifier opt) const {
-        unsigned id = opt.id();
-        assert(id > 0 && id - 1 < this->num_options() && "Invalid Option ID.");
-        return this->option_infos[id - 1];
-    }
-
-public:
-    OptTable(std::span<const OptTable::Info> option_infos,
+    OptTable(std::span<const Info> option_infos,
              bool ignore_case = false,
-             //    std::span<SubCommand> SubCommands = {},
              std::vector<std::string_view> prefixes_union = {},
              bool build_now = true);
 
     OptTable& build();
 
-    /// Build (or rebuild) the PrefixChars member.
-    void buildPrefixChars() {
-        assert(this->prefix_chars.empty() && "rebuilding a non-empty prefix char");
-        std::set<char> seen_chars;
-
-        // Build prefix chars.
-        for(auto& prefix: this->_prefixes_union) {
-            seen_chars.insert(prefix.begin(), prefix.end());
-        }
-        this->prefix_chars.assign(seen_chars.begin(), seen_chars.end());
-    }
-
-public:
     virtual ~OptTable() = default;
 
-    //   std::span<SubCommand> getSubCommands() const { return SubCommands; }
-
-    /// Return the total number of option classes.
-    unsigned num_options() const {
-        return static_cast<unsigned>(this->option_infos.size());
+    std::uint32_t num_options() const {
+        return static_cast<std::uint32_t>(this->option_infos.size());
     }
 
     auto options() const {
         return this->option_infos;
     }
 
-    /// Get the given Opt's Option instance, lazily creating it
-    /// if necessary.
-    ///
-    /// \return The option, or null for the INVALID option id.
-    const Option option(OptSpecifier opt) const;
+    const Option option(std::uint32_t opt_id) const;
 
-    /// Lookup the name of the given option.
-    std::string_view option_name(OptSpecifier id) const {
-        return this->info(id).name();
-    }
-
-    /// Lookup the prefix of the given option.
-    const std::string_view option_prefix(OptSpecifier id) const {
-        const Info& i = this->info(id);
-        return i.has_no_prefix() ? "" : i.prefixes()[0];
-    }
-
-    std::string_view option_prefixed_name(OptSpecifier id) const {
-        return this->info(id).prefixed_name();
-    }
-
-    /// Get the kind of the given option.
-    unsigned option_kind(OptSpecifier id) const {
-        return this->info(id).kind;
-    }
-
-    /// Get the group id for the given option.
-    unsigned option_group_id(OptSpecifier id) const {
-        return this->info(id).group_id;
-    }
-
-    /// Get the help text to use to describe this option.
-    const char* option_help_text(OptSpecifier id) const {
-        return this->option_help_text(id, Visibility(0));
-    }
-
-    // Get the help text to use to describe this option.
-    // If it has visibility specific help text and that visibility is in the
-    // visibility mask, use that text instead of the generic text.
-    const char* option_help_text(OptSpecifier id, Visibility visibility_mask) const {
-        auto info = this->info(id);
-        for(auto [visibilities, text]: info.help_texts_for_variants)
-            for(auto visibility: visibilities)
-                if(visibility_mask & visibility)
-                    return text;
-        return info.help_text;
-    }
-
-    /// Get the meta-variable name to use when describing
-    /// this options values in the help text.
-    const char* option_meta_var(OptSpecifier id) const {
-        return this->info(id).meta_var;
-    }
-
-    /// Specify the environment variable where initial options should be read.
-    auto set_initial_options_from_environment(const char* e) {
-        this->env_var = e;
-        return *this;
-    }
-
-    /// Support grouped short options. e.g. -ab represents -a -b.
     auto set_grouped_short_options(bool value) {
         this->grouped_short_options = value;
         return *this;
     }
 
-    /// Set whether "--" stops option parsing and treats all subsequent
-    /// arguments as positional. E.g. -- -a -b gives two positional inputs.
     auto set_dash_dash_parsing(bool value) {
         this->dash_dash_parsing = value;
         return *this;
     }
 
-    // command part 1-- [options] will be treated as a single option pack
-    // which values contains all the rest arguments
-    // and spelling is "--"
     auto set_dash_dash_as_single_pack(bool value) {
         this->dash_dash_as_single_pack = value;
         return *this;
     }
 
-    /// The infos is generated by tablegen,
-    /// therefore we can use bipartite search to find the option.
     auto set_tablegen_mode(bool value) {
         this->tablegen_mode = value;
         return *this;
@@ -361,207 +212,129 @@ public:
         return std::span(this->_prefixes_union);
     }
 
-    using InputArgv = std::span<std::string>;
+    std::uint32_t find_option(std::string_view argument, OptFilter filter = {}) const;
 
-public:
-    std::expected<PArg, const char*> parse_one_arg_grouped(InputArgv argv, unsigned& index) const;
-
-    std::expected<PArg, const char*> parse_one_arg(InputArgv argv,
-                                                   unsigned& index,
-                                                   Visibility visibility_mask = Visibility()) const;
-
-    std::expected<PArg, const char*> parse_one_arg(InputArgv argv,
-                                                   unsigned& index,
-                                                   unsigned flags_to_include,
-                                                   unsigned flags_to_exclude) const;
-    std::expected<PArg, const char*>
-        internal_parse_one_arg(InputArgv argv,
-                               unsigned& index,
-                               std::function<bool(const Option&)> exclude_option) const;
+    template <typename Range>
+    auto parse(Range& argv, OptFilter filter = {}) const;
 
 private:
-    bool exclude_for_visibility(const Option& opt, Visibility visibility_mask) const;
-    bool exclude_for_flags(const Option& opt,
-                           unsigned flags_to_include,
-                           unsigned flags_to_exclude) const;
+    friend class ParseIter;
 
-    template <typename Callback, typename Arg>
-    static bool invoke_parse_callback(unsigned index, Callback&& callback, Arg&& arg) {
-        constexpr bool with_index = std::is_invocable_v<Callback, unsigned, Arg>;
+    int parse_step(const void* data,
+                   std::uint32_t size,
+                   ArgAccessFn access,
+                   std::uint32_t& index,
+                   ParsedArg& out,
+                   OptFilter filter = {}) const;
 
-        auto perform_call = [&]() -> decltype(auto) {
-            if constexpr(with_index) {
-                return std::invoke(std::forward<Callback>(callback), index, std::forward<Arg>(arg));
-            } else {
-                return std::invoke(std::forward<Callback>(callback), std::forward<Arg>(arg));
-            }
-        };
+    int parse_step_grouped(const void* data,
+                           std::uint32_t size,
+                           ArgAccessFn access,
+                           std::uint32_t& index,
+                           ParsedArg& out,
+                           std::string& group_buf,
+                           OptFilter filter = {}) const;
 
-        using result_t = decltype(perform_call());
+    const Info& info(std::uint32_t opt_id) const {
+        assert(opt_id > 0 && opt_id - 1 < this->num_options() && "Invalid Option ID.");
+        return this->option_infos[opt_id - 1];
+    }
 
-        if constexpr(std::is_void_v<result_t>) {
-            perform_call();
-            return true;
-        } else {
-            static_assert(std::is_same_v<std::remove_cvref_t<result_t>, bool>,
-                          "Eventide Error: parse callback must return void or bool");
-            return perform_call();
+    void buildPrefixChars() {
+        assert(this->prefix_chars.empty() && "rebuilding a non-empty prefix char");
+        std::set<char> seen_chars;
+        for(auto& prefix: this->_prefixes_union) {
+            seen_chars.insert(prefix.begin(), prefix.end());
         }
+        this->prefix_chars.assign(seen_chars.begin(), seen_chars.end());
     }
 
-public:
-    template <typename ArgCallback>
-    void parse_args(InputArgv argv,
-                    unsigned& missing_arg_index,
-                    unsigned& missing_arg_count,
-                    ArgCallback&& arg_callback,
-                    Visibility visibility_mask = Visibility(),
-                    const char** missing_arg_reason = nullptr) const {
-        internal_parse_args(
-            argv,
-            missing_arg_index,
-            missing_arg_count,
-            std::forward<ArgCallback>(arg_callback),
-            [this, visibility_mask](const Option& opt) {
-                return this->exclude_for_visibility(opt, visibility_mask);
-            },
-            missing_arg_reason);
-    }
+    std::span<const Info> option_infos;
+    bool ignore_case;
+    bool grouped_short_options = false;
+    bool dash_dash_parsing = false;
+    bool input_random_index = false;
+    bool dash_dash_as_single_pack = false;
+    std::uint32_t input_option_id = 0;
+    std::uint32_t unknown_option_id = 0;
+    bool tablegen_mode = false;
 
-    template <typename ArgCallback>
-    void parse_args(InputArgv argv,
-                    unsigned& missing_arg_index,
-                    unsigned& missing_arg_count,
-                    ArgCallback&& arg_callback,
-                    unsigned flags_to_include,
-                    unsigned flags_to_exclude,
-                    const char** missing_arg_reason = nullptr) const {
-        internal_parse_args(
-            argv,
-            missing_arg_index,
-            missing_arg_count,
-            std::forward<ArgCallback>(arg_callback),
-            [this, flags_to_include, flags_to_exclude](const Option& opt) {
-                return this->exclude_for_flags(opt, flags_to_include, flags_to_exclude);
-            },
-            missing_arg_reason);
-    }
-
-    template <typename ResErrFn>
-    void parse_args(InputArgv argv, ResErrFn&& res_err_fn) const {
-        unsigned missing_arg_index = 0;
-        unsigned missing_arg_count = 0;
-        const char* missing_reason = nullptr;
-
-        this->parse_args(
-            argv,
-            missing_arg_index,
-            missing_arg_count,
-            [&](unsigned index, auto&& parsed) -> bool {
-                auto res = std::expected<ParsedArgument, std::string>(
-                    std::forward<decltype(parsed)>(parsed));
-                return invoke_parse_callback(index, res_err_fn, std::move(res));
-            },
-            Visibility(),
-            &missing_reason);
-
-        if(missing_arg_count) {
-            const auto failing_arg = missing_arg_index < argv.size()
-                                         ? std::string_view(argv[missing_arg_index])
-                                         : "<end-of-argv>";
-            const auto reason = missing_reason != nullptr ? missing_reason : "missing argument";
-            const auto noun = missing_arg_count == 1 ? "value" : "values";
-            auto res = std::expected<ParsedArgument, std::string>(
-                std::unexpected(std::format("failed to parse '{}' (arg #{}) : {} (missing {} {})",
-                                            failing_arg,
-                                            missing_arg_index,
-                                            reason,
-                                            missing_arg_count,
-                                            noun)));
-            (void)invoke_parse_callback(missing_arg_index, res_err_fn, std::move(res));
-        }
-    }
-
-    template <typename ArgCallback, typename ExcludeOption>
-    void internal_parse_args(InputArgv argv,
-                             unsigned& missing_arg_index,
-                             unsigned& missing_arg_count,
-                             ArgCallback&& arg_callback,
-                             ExcludeOption&& exclude_option,
-                             const char** missing_arg_reason = nullptr) const {
-        // FIXME: Handle '@' args (or at least error on them).
-
-        missing_arg_index = missing_arg_count = 0;
-        if(missing_arg_reason != nullptr) {
-            *missing_arg_reason = nullptr;
-        }
-        unsigned index = 0, end = static_cast<unsigned>(argv.size());
-        bool continue_parsing = true;
-
-        auto exclude_option_fn =
-            std::function<bool(const Option&)>(std::forward<ExcludeOption>(exclude_option));
-
-        while(continue_parsing && index < end) {
-            // Ignore empty arguments (other things may still take them as
-            // arguments).
-            auto str = std::string_view(argv[index]);
-            if(str.empty()) {
-                ++index;
-                continue;
-            }
-
-            // In DashDashParsing mode, the first "--" stops option scanning and
-            // treats all subsequent arguments as positional.
-            if(this->dash_dash_parsing && str == "--") {
-                if(this->dash_dash_as_single_pack) {
-                    continue_parsing = invoke_parse_callback(
-                        end,
-                        arg_callback,
-                        ParsedArgument{
-                            .option_id = this->input_option_id,
-                            .spelling = "--",
-                            .values =
-                                std::vector<std::string_view>(argv.begin() + index + 1, argv.end()),
-                            .index = index,
-                        });
-                    index = end;
-                } else {
-                    while(continue_parsing && ++index < end) {
-                        continue_parsing =
-                            invoke_parse_callback(index,
-                                                  arg_callback,
-                                                  ParsedArgument{
-                                                      .option_id = this->input_option_id,
-                                                      .spelling = std::string_view(argv[index]),
-                                                      .values = {},
-                                                      .index = index,
-                                                  });
-                    }
-                }
-                break;
-            }
-
-            unsigned prev = index;
-            auto a = this->grouped_short_options
-                         ? this->parse_one_arg_grouped(argv, index)
-                         : this->internal_parse_one_arg(argv, index, exclude_option_fn);
-            assert((index > prev || this->grouped_short_options) &&
-                   "Parser failed to consume argument.");
-
-            // Check for missing argument error.
-            if(!a.has_value()) {
-                assert(index >= end && "Unexpected parser error.");
-                assert(index - prev - 1 && "No missing arguments!");
-                missing_arg_index = prev;
-                missing_arg_count = index - prev - 1;
-                if(missing_arg_reason != nullptr) {
-                    *missing_arg_reason = a.error() != nullptr ? a.error() : "missing argument";
-                }
-                return;
-            }
-            continue_parsing = invoke_parse_callback(index, arg_callback, std::move(a).value());
-        }
-    }
+protected:
+    std::uint32_t first_searchable_index = 0;
+    std::vector<std::string_view> _prefixes_union;
+    std::vector<char> prefix_chars;
 };
+
+/// Yields ParsedArg views into the argv range; the range must outlive iteration.
+class ParseIter {
+public:
+    using iterator_concept = std::input_iterator_tag;
+    using value_type = std::expected<ParsedArg, ParseError>;
+    using difference_type = std::ptrdiff_t;
+
+    ParseIter() = default;
+
+    ParseIter(const OptTable* table,
+              const void* data,
+              std::uint32_t size,
+              ArgAccessFn access,
+              OptFilter filter);
+
+    const value_type& operator*() const {
+        return current;
+    }
+
+    const value_type* operator->() const {
+        return &current;
+    }
+
+    ParseIter& operator++() {
+        advance();
+        return *this;
+    }
+
+    ParseIter operator++(int) {
+        ParseIter tmp = *this;
+        advance();
+        return tmp;
+    }
+
+    bool operator==(const ParseIter& other) const {
+        return done && other.done;
+    }
+
+    bool operator!=(const ParseIter& other) const {
+        return !(*this == other);
+    }
+
+private:
+    void advance();
+
+    const OptTable* table = nullptr;
+    const void* data = nullptr;
+    std::uint32_t count = 0;
+    ArgAccessFn access = nullptr;
+    std::uint32_t index = 0;
+    OptFilter filter;
+    bool done = true;
+    value_type current;
+    bool is_dash_dash_parsing = false;
+    bool is_dash_dash_as_single_pack = false;
+    bool is_grouped = false;
+    std::string group_buf;
+    bool in_group = false;
+    bool past_dash_dash = false;
+};
+
+template <typename Range>
+auto OptTable::parse(Range& argv, OptFilter filter) const {
+    using Elem = std::remove_cvref_t<decltype(argv[0])>;
+    auto access = [](const void* d, std::uint32_t i) -> std::string_view {
+        return static_cast<const Elem*>(d)[i];
+    };
+    return std::ranges::subrange(
+        ParseIter(this, argv.data(), static_cast<std::uint32_t>(argv.size()), access, filter),
+        ParseIter());
+}
 
 }  // namespace kota::option

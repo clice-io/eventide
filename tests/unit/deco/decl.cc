@@ -69,12 +69,12 @@ struct CustomScalarResult {
     }
 };
 
-auto make_parsed_arg(std::string_view spelling, std::vector<std::string_view> values = {}) {
-    return option::ParsedArgument{
-        .option_id = option::OptSpecifier(1u),
-        .spelling = spelling,
-        .values = std::move(values),
+auto make_parsed_arg(std::string_view spelling, std::vector<std::string> values = {}) {
+    return deco::ParsedArgOwning{
+        .id = 1u,
         .index = 0,
+        .spelling = std::string(spelling),
+        .values = std::move(values),
     };
 }
 
@@ -103,13 +103,12 @@ struct DeclOpt {
     <std::vector<int>> pair = std::vector<int>{1, 2};
 };
 
-auto alias_decl_forward_fn(const option::ParsedArgumentOwning&)
+auto alias_decl_forward_fn(const deco::ParsedArgOwning&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--target", "value"};
 }
 
-auto alias_decl_forward_with_context_fn(const option::ParsedArgumentOwning&,
-                                        const decl::IntoContext&)
+auto alias_decl_forward_with_context_fn(const deco::ParsedArgOwning&, const decl::IntoContext&)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::vector<std::string>{"--target", "value"};
 }

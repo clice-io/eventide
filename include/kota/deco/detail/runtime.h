@@ -26,7 +26,7 @@
 
 namespace kota::deco::util {
 
-std::vector<std::string> argvify(int argc, const char* const* argv, unsigned skip_num = 1);
+std::vector<std::string> argvify(int argc, const char* const* argv, std::uint32_t skip_num = 1);
 
 }  // namespace kota::deco::util
 
@@ -37,13 +37,13 @@ using runtime_callable_t = kota::function<Signature>;
 
 template <typename T>
 struct Invocation {
-    unsigned next_index = 0;
+    std::uint32_t next_index = 0;
     T options{};
     std::set<const decl::Category*> matched_categories;
     std::span<std::string> original_argv{};
     std::span<std::string> active_argv{};
     std::shared_ptr<std::vector<std::string>> owned_active_argv{};
-    std::vector<backend::ParsedArgumentOwning> parsed_arguments{};
+    std::vector<ParsedArgOwning> parsed_arguments{};
     std::vector<std::string> command_path{};
     std::string_view command_overview{};
     std::optional<config::Config> usage_config{};
@@ -55,7 +55,7 @@ struct Invocation {
                          const text::Renderer*) = nullptr;
     const text::Renderer* renderer_ptr = nullptr;
 
-    auto next_cursor() const -> unsigned {
+    auto next_cursor() const -> std::uint32_t {
         return next_index;
     }
 
@@ -70,11 +70,11 @@ struct Invocation {
         return active_argv.subspan(next_index);
     }
 
-    auto trace() const -> std::span<const backend::ParsedArgumentOwning> {
+    auto trace() const -> std::span<const ParsedArgOwning> {
         return parsed_arguments;
     }
 
-    auto trace() -> std::span<backend::ParsedArgumentOwning> {
+    auto trace() -> std::span<ParsedArgOwning> {
         return parsed_arguments;
     }
 
@@ -89,12 +89,12 @@ struct Invocation {
         return text::resolve_renderer(renderer_ptr);
     }
 
-    auto into_context_at_cursor(unsigned index) const -> decl::IntoContext {
+    auto into_context_at_cursor(std::uint32_t index) const -> decl::IntoContext {
         const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
         return decl::IntoContext::at_cursor(argv_view, index, renderer_ptr);
     }
 
-    auto into_context(const backend::ParsedArgumentOwning& arg) const -> decl::IntoContext {
+    auto into_context(const ParsedArgOwning& arg) const -> decl::IntoContext {
         const auto argv_view = std::span<const std::string>(argv().data(), argv().size());
         return decl::IntoContext::from_argument(argv_view, arg, renderer_ptr);
     }
@@ -131,8 +131,7 @@ struct ResolvedAliasForward {
 };
 
 template <typename AliasMeta>
-inline auto resolve_static_alias_forward(const AliasMeta& meta,
-                                         const backend::ParsedArgumentOwning& arg)
+inline auto resolve_static_alias_forward(const AliasMeta& meta, const ParsedArgOwning& arg)
     -> std::expected<std::vector<std::string>, std::string> {
     std::vector<std::string> argv;
     switch(meta.kind) {
@@ -172,7 +171,7 @@ inline auto resolve_static_alias_forward(const AliasMeta& meta,
 
 template <typename AliasMeta>
 inline auto resolve_alias_forward(const AliasMeta& meta,
-                                  const backend::ParsedArgumentOwning& arg,
+                                  const ParsedArgOwning& arg,
                                   const decl::IntoContext& context)
     -> std::expected<ResolvedAliasForward, std::string> {
     if(meta.forward_kind == decl::AliasForwardField::Kind::Static) {
@@ -302,8 +301,8 @@ class AfterStep {
     using invocation_t = Invocation<T>;
 
     invocation_t* invocation_ptr = nullptr;
-    const backend::ParsedArgumentOwning* parsed_arg = nullptr;
-    unsigned next_cursor_index = 0;
+    const ParsedArgOwning* parsed_arg = nullptr;
+    std::uint32_t next_cursor_index = 0;
     std::span<std::string> argv_span{};
     const FieldTy* parsed_value = nullptr;
 
@@ -311,8 +310,8 @@ public:
     AfterStep() = default;
 
     AfterStep(invocation_t& invocation,
-              const backend::ParsedArgumentOwning& arg,
-              unsigned next_cursor,
+              const ParsedArgOwning& arg,
+              std::uint32_t next_cursor,
               std::span<std::string> argv,
               const FieldTy& value) :
         invocation_ptr(&invocation), parsed_arg(&arg), next_cursor_index(next_cursor),
@@ -334,11 +333,11 @@ public:
         return invocation().options;
     }
 
-    auto arg() const -> const backend::ParsedArgumentOwning& {
+    auto arg() const -> const ParsedArgOwning& {
         return *parsed_arg;
     }
 
-    auto trace() const -> std::span<const backend::ParsedArgumentOwning> {
+    auto trace() const -> std::span<const ParsedArgOwning> {
         return invocation().trace();
     }
 
@@ -358,15 +357,15 @@ public:
         return *parsed_value;
     }
 
-    auto arg_index() const -> unsigned {
+    auto arg_index() const -> std::uint32_t {
         return arg().index;
     }
 
-    auto cursor() const -> unsigned {
+    auto cursor() const -> std::uint32_t {
         return next_cursor_index;
     }
 
-    auto next_cursor() const -> unsigned {
+    auto next_cursor() const -> std::uint32_t {
         return next_cursor_index;
     }
 
@@ -374,7 +373,7 @@ public:
         return invocation().renderer();
     }
 
-    auto into_context_at_cursor(unsigned index) const -> decl::IntoContext {
+    auto into_context_at_cursor(std::uint32_t index) const -> decl::IntoContext {
         return invocation().into_context_at_cursor(index);
     }
 
@@ -402,7 +401,7 @@ public:
         return decl::ParseControl::stop();
     }
 
-    auto seek(unsigned index) const -> decl::ParseControl {
+    auto seek(std::uint32_t index) const -> decl::ParseControl {
         if(index >= argv_span.size()) {
             return resume_from(std::span<std::string>{});
         }
@@ -541,160 +540,155 @@ std::expected<Invocation<T>, ParseError>
         const auto argv_view =
             std::span<const std::string>(current_argv.data(), current_argv.size());
 
-        table.parse_args(
-            current_argv,
-            [&](unsigned next_cursor, std::expected<backend::ParsedArgument, std::string> arg) {
-                auto error_at_cursor = [&](std::string_view reason) {
-                    return decl::IntoContext::at_cursor(argv_view, next_cursor, formatter)
-                        .format_error(reason);
-                };
-                if(!arg.has_value()) {
-                    err = {ParseError::Type::BackendParsing, error_at_cursor(arg.error())};
-                    return false;
-                }
-
-                const auto arg_snapshot = backend::ParsedArgumentOwning::from_parsed_argument(*arg);
-                auto error_at_argument = [&](std::string_view reason) {
-                    return decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter)
-                        .format_error(reason);
-                };
-                if(storage.is_unknown_option_id(arg->option_id)) {
-                    err = {ParseError::Type::BackendParsing,
-                           error_at_argument(
-                               std::format("unknown option '{}'", arg->get_spelling_view()))};
-                    return false;
-                }
-
-                auto& raw_parg = *arg;
-                void* opt_raw_ptr = nullptr;
-                const decl::Category* category = nullptr;
-                decl::ErasedParseCallback option_callback{};
-
-                if(storage.is_input_argument(raw_parg)) {
-                    if(!storage.has_input_option()) {
-                        err = {ParseError::Type::DecoParsing,
-                               error_at_argument(std::format("unexpected input argument {}",
-                                                             raw_parg.get_spelling_view()))};
-                        return false;
-                    }
-                } else if(storage.is_trailing_argument(raw_parg)) {
-                    if(!storage.has_trailing_option()) {
-                        err = {ParseError::Type::DecoParsing,
-                               error_at_argument(std::format("unexpected trailing argument {}",
-                                                             raw_parg.get_spelling_view()))};
-                        return false;
-                    }
-                    opt_raw_ptr = storage.trailing_ptr_of(res.options);
-                    category = storage.trailing_category();
-                    option_callback = storage.trailing_callback();
-                }
-
-                category = category ? category : storage.category_of(raw_parg.option_id);
-                const auto into_context =
-                    decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
-                if(const auto* alias_meta = storage.alias_meta_of(raw_parg.option_id)) {
-                    if(category == nullptr) {
-                        err = {ParseError::Type::Internal,
-                               error_at_argument("no category found for alias option id " +
-                                                 std::to_string(raw_parg.option_id.id()))};
-                        return false;
-                    }
-                    auto resolved = resolve_alias_forward(*alias_meta, arg_snapshot, into_context);
-                    if(!resolved.has_value()) {
-                        const auto reason = resolved.error();
-                        const bool should_format =
-                            alias_meta->forward_kind !=
-                            decl::AliasForwardField::Kind::DynamicWithContext;
-                        err = {ParseError::Type::IntoError,
-                               reason.empty() || !should_format
-                                   ? std::string(reason)
-                                   : into_context.format_error(reason)};
-                        return false;
-                    }
-
-                    std::vector<std::string> rewritten = std::move(resolved->argv);
-                    const auto suffix = current_argv.subspan(next_cursor);
-                    rewritten.reserve(rewritten.size() + suffix.size());
-                    for(const auto& token: suffix) {
-                        rewritten.push_back(token);
-                    }
-
-                    res.next_index = next_cursor;
+        auto apply_control = [&](const decl::ParseControl& control) {
+            switch(control.action) {
+                case decl::ParseControl::Action::Continue: return true;
+                case decl::ParseControl::Action::Stop: stopped_during_parse = true; return false;
+                case decl::ParseControl::Action::Restart:
                     restart_requested = true;
-                    restart_owned_argv =
-                        std::make_shared<std::vector<std::string>>(std::move(rewritten));
-                    restart_argv = std::span<std::string>(restart_owned_argv->data(),
-                                                          restart_owned_argv->size());
+                    restart_argv = control.next_argv;
+                    restart_owned_argv = control.owned_next_argv;
+                    if(!restart_owned_argv && current_owned_argv && !current_owned_argv->empty()) {
+                        std::less<std::string*> ptr_less;
+                        auto* begin = current_owned_argv->data();
+                        auto* end = begin + current_owned_argv->size();
+                        auto* cursor = restart_argv.data();
+                        if(cursor != nullptr && !ptr_less(cursor, begin) &&
+                           !ptr_less(end, cursor)) {
+                            restart_owned_argv = current_owned_argv;
+                        }
+                    }
                     return false;
-                }
+            }
+            return true;
+        };
 
-                opt_raw_ptr = opt_raw_ptr ? opt_raw_ptr
-                                          : storage.field_ptr_of(raw_parg.option_id, res.options);
-                if(!option_callback) {
-                    option_callback = storage.callback_of(raw_parg.option_id);
-                }
+        for(auto& result: table.parse(current_argv)) {
+            if(!result.has_value()) {
+                auto& parse_error = result.error();
+                auto error_msg =
+                    decl::IntoContext::at_cursor(argv_view, parse_error.index, formatter)
+                        .format_error(parse_error.message);
+                err = {ParseError::Type::BackendParsing, std::move(error_msg)};
+                break;
+            }
 
-                auto* opt_accessor = static_cast<decl::DecoOptionBase*>(opt_raw_ptr);
-                if(opt_accessor == nullptr) {
-                    err = {ParseError::Type::Internal,
-                           error_at_argument("no option accessor found for option id " +
-                                             std::to_string(raw_parg.option_id.id()))};
-                    return false;
-                }
-                if(auto parse_err = opt_accessor->into(std::move(raw_parg), into_context)) {
-                    err = {ParseError::Type::IntoError, std::move(*parse_err)};
-                    return false;
-                }
+            auto& raw_parg = *result;
+            std::uint32_t next_cursor = raw_parg.next_index;
+            auto arg_snapshot = ParsedArgOwning::from(raw_parg);
+            auto error_at_argument = [&](std::string_view reason) {
+                return decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter)
+                    .format_error(reason);
+            };
+            if(storage.is_unknown_option_id(raw_parg.id)) {
+                err = {ParseError::Type::BackendParsing,
+                       error_at_argument(std::format("unknown option '{}'", raw_parg.spelling))};
+                break;
+            }
 
+            void* opt_raw_ptr = nullptr;
+            const decl::Category* category = nullptr;
+            decl::ErasedParseCallback option_callback{};
+
+            if(storage.is_input_argument(raw_parg)) {
+                if(!storage.has_input_option()) {
+                    err = {ParseError::Type::DecoParsing,
+                           error_at_argument(
+                               std::format("unexpected input argument {}", raw_parg.spelling))};
+                    break;
+                }
+            } else if(storage.is_trailing_argument(raw_parg)) {
+                if(!storage.has_trailing_option()) {
+                    err = {ParseError::Type::DecoParsing,
+                           error_at_argument(
+                               std::format("unexpected trailing argument {}", raw_parg.spelling))};
+                    break;
+                }
+                opt_raw_ptr = storage.trailing_ptr_of(res.options);
+                category = storage.trailing_category();
+                option_callback = storage.trailing_callback();
+            }
+
+            category = category ? category : storage.category_of(raw_parg.id);
+            const auto into_context =
+                decl::IntoContext::from_argument(argv_view, arg_snapshot, formatter);
+            if(const auto* alias_meta = storage.alias_meta_of(raw_parg.id)) {
                 if(category == nullptr) {
                     err = {ParseError::Type::Internal,
-                           error_at_argument("no category found for option id " +
-                                             std::to_string(raw_parg.option_id.id()))};
-                    return false;
+                           error_at_argument("no category found for alias option id " +
+                                             std::to_string(raw_parg.id))};
+                    break;
                 }
-                res.matched_categories.insert(category);
+                auto resolved = resolve_alias_forward(*alias_meta, arg_snapshot, into_context);
+                if(!resolved.has_value()) {
+                    const auto reason = resolved.error();
+                    const bool should_format = alias_meta->forward_kind !=
+                                               decl::AliasForwardField::Kind::DynamicWithContext;
+                    err = {ParseError::Type::IntoError,
+                           reason.empty() || !should_format ? std::string(reason)
+                                                            : into_context.format_error(reason)};
+                    break;
+                }
+
+                std::vector<std::string> rewritten = std::move(resolved->argv);
+                const auto suffix = current_argv.subspan(next_cursor);
+                rewritten.reserve(rewritten.size() + suffix.size());
+                for(const auto& token: suffix) {
+                    rewritten.push_back(token);
+                }
+
                 res.next_index = next_cursor;
-                res.parsed_arguments.push_back(arg_snapshot);
+                restart_requested = true;
+                restart_owned_argv =
+                    std::make_shared<std::vector<std::string>>(std::move(rewritten));
+                restart_argv =
+                    std::span<std::string>(restart_owned_argv->data(), restart_owned_argv->size());
+                break;
+            }
 
-                auto apply_control = [&](const decl::ParseControl& control) {
-                    switch(control.action) {
-                        case decl::ParseControl::Action::Continue: return true;
-                        case decl::ParseControl::Action::Stop:
-                            stopped_during_parse = true;
-                            return false;
-                        case decl::ParseControl::Action::Restart:
-                            restart_requested = true;
-                            restart_argv = control.next_argv;
-                            restart_owned_argv = control.owned_next_argv;
-                            if(!restart_owned_argv && current_owned_argv &&
-                               !current_owned_argv->empty()) {
-                                std::less<std::string*> ptr_less;
-                                auto* begin = current_owned_argv->data();
-                                auto* end = begin + current_owned_argv->size();
-                                auto* cursor = restart_argv.data();
-                                if(cursor != nullptr && !ptr_less(cursor, begin) &&
-                                   !ptr_less(end, cursor)) {
-                                    restart_owned_argv = current_owned_argv;
-                                }
-                            }
-                            return false;
-                    }
-                    return true;
-                };
+            opt_raw_ptr =
+                opt_raw_ptr ? opt_raw_ptr : storage.field_ptr_of(raw_parg.id, res.options);
+            if(!option_callback) {
+                option_callback = storage.callback_of(raw_parg.id);
+            }
 
-                if(option_callback &&
-                   !apply_control(
-                       option_callback(arg_snapshot, next_cursor, current_argv, *opt_accessor))) {
-                    return false;
-                }
+            auto* opt_accessor = static_cast<decl::DecoOptionBase*>(opt_raw_ptr);
+            if(opt_accessor == nullptr) {
+                err = {ParseError::Type::Internal,
+                       error_at_argument("no option accessor found for option id " +
+                                         std::to_string(raw_parg.id))};
+                break;
+            }
+            if(auto parse_err = opt_accessor->into(arg_snapshot, into_context)) {
+                err = {ParseError::Type::IntoError, std::move(*parse_err)};
+                break;
+            }
 
-                if(!apply_control(
-                       on_option(res, *opt_accessor, arg_snapshot, next_cursor, current_argv))) {
-                    return false;
-                }
+            if(category == nullptr) {
+                err = {ParseError::Type::Internal,
+                       error_at_argument("no category found for option id " +
+                                         std::to_string(raw_parg.id))};
+                break;
+            }
+            res.matched_categories.insert(category);
+            res.next_index = next_cursor;
+            res.parsed_arguments.push_back(std::move(arg_snapshot));
 
-                return true;
-            });
+            if(option_callback && !apply_control(option_callback(res.parsed_arguments.back(),
+                                                                 next_cursor,
+                                                                 current_argv,
+                                                                 *opt_accessor))) {
+                break;
+            }
+
+            if(!apply_control(on_option(res,
+                                        *opt_accessor,
+                                        res.parsed_arguments.back(),
+                                        next_cursor,
+                                        current_argv))) {
+                break;
+            }
+        }
 
         if(stopped_during_parse || !err.message.empty()) {
             break;
@@ -759,8 +753,8 @@ std::expected<ParsedResult<T>, ParseError> parse_with_callback(std::span<std::st
         argv,
         [fn = std::forward<Fn>(cont_fn)](Invocation<T>& res,
                                          decl::DecoOptionBase& accessor,
-                                         const backend::ParsedArgumentOwning&,
-                                         unsigned,
+                                         const ParsedArgOwning&,
+                                         std::uint32_t,
                                          std::span<std::string>) mutable -> decl::ParseControl {
             if(std::invoke(fn, std::as_const(res.options), &accessor)) {
                 return decl::ParseControl::next();
@@ -774,7 +768,7 @@ std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv,
                                                 const text::Renderer& formatter) {
     return detail::run_parse_session<T>(
         argv,
-        [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
+        [](auto&, decl::DecoOptionBase&, const ParsedArgOwning&, std::uint32_t, auto) {
             return decl::ParseControl::next();
         },
         &formatter);
@@ -784,7 +778,7 @@ template <typename T>
 std::expected<Invocation<T>, ParseError> invoke(std::span<std::string> argv) {
     return detail::run_parse_session<T>(
         argv,
-        [](auto&, decl::DecoOptionBase&, const backend::ParsedArgumentOwning&, unsigned, auto) {
+        [](auto&, decl::DecoOptionBase&, const ParsedArgOwning&, std::uint32_t, auto) {
             return decl::ParseControl::next();
         });
 }
@@ -806,12 +800,11 @@ class Command {
     using finalize_handler_t = runtime_callable_t<void(invocation_t&)>;
     using match_handler_t = runtime_callable_t<void(invocation_t&)>;
     using error_fn_t = runtime_callable_t<void(ParseError)>;
-    using step_runner_t =
-        runtime_callable_t<decl::ParseControl(invocation_t&,
-                                              const backend::ParsedArgumentOwning&,
-                                              unsigned,
-                                              std::span<std::string>,
-                                              decl::DecoOptionBase&)>;
+    using step_runner_t = runtime_callable_t<decl::ParseControl(invocation_t&,
+                                                                const ParsedArgOwning&,
+                                                                std::uint32_t,
+                                                                std::span<std::string>,
+                                                                decl::DecoOptionBase&)>;
 
     struct CategoryMatch {
         const decl::Category* category = nullptr;
@@ -936,8 +929,8 @@ public:
                 },
             .handler = [fn = std::forward<Fn>(fn)](
                            invocation_t& invocation,
-                           const backend::ParsedArgumentOwning& arg,
-                           unsigned cursor,
+                           const ParsedArgOwning& arg,
+                           std::uint32_t cursor,
                            std::span<std::string> argv,
                            decl::DecoOptionBase& accessor) mutable -> decl::ParseControl {
                 auto& typed_option = static_cast<OptionTy&>(accessor);
@@ -1032,8 +1025,8 @@ public:
             argv,
             [this, active_renderer](invocation_t& invocation,
                                     decl::DecoOptionBase& accessor,
-                                    const backend::ParsedArgumentOwning& arg,
-                                    unsigned cursor,
+                                    const ParsedArgOwning& arg,
+                                    std::uint32_t cursor,
                                     std::span<std::string> active_argv) {
                 if(afterHooks.empty()) {
                     return decl::ParseControl::next();

@@ -164,8 +164,8 @@ struct TrailingOnlyOpt {
 };
 
 struct CallbackStopState {
-    inline thread_local static unsigned arg_index = 0;
-    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::uint32_t arg_index = 0;
+    inline thread_local static std::uint32_t next_cursor = 0;
     inline thread_local static std::size_t argv_size = 0;
     inline thread_local static std::string value;
 
@@ -192,8 +192,8 @@ struct CallbackStopOpt {
 };
 
 struct CallbackRestartState {
-    inline thread_local static unsigned arg_index = 0;
-    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::uint32_t arg_index = 0;
+    inline thread_local static std::uint32_t next_cursor = 0;
     inline thread_local static std::string value;
 
     static void reset() {
@@ -220,8 +220,8 @@ struct CallbackRestartOpt {
 };
 
 struct CallbackRestartOwnedState {
-    inline thread_local static unsigned arg_index = 0;
-    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::uint32_t arg_index = 0;
+    inline thread_local static std::uint32_t next_cursor = 0;
     inline thread_local static std::string value;
 
     static void reset() {
@@ -247,7 +247,7 @@ struct CallbackRestartOwnedOpt {
 };
 
 struct CallbackRestartTwiceState {
-    inline thread_local static unsigned restart_count = 0;
+    inline thread_local static std::uint32_t restart_count = 0;
 
     static void reset() {
         restart_count = 0;
@@ -281,11 +281,11 @@ struct CallbackShortcutOpt {
 };
 
 struct CallbackComposeState {
-    inline thread_local static unsigned arg_index = 0;
-    inline thread_local static unsigned next_cursor = 0;
+    inline thread_local static std::uint32_t arg_index = 0;
+    inline thread_local static std::uint32_t next_cursor = 0;
     inline thread_local static std::size_t argv_size = 0;
     inline thread_local static bool value = false;
-    inline thread_local static unsigned count = 0;
+    inline thread_local static std::uint32_t count = 0;
 
     static void reset() {
         arg_index = 0;
@@ -399,7 +399,7 @@ struct CatterSelf {
     <std::string> s;
 };
 
-auto runtime_alias_forward_pair(const option::ParsedArgumentOwning& arg)
+auto runtime_alias_forward_pair(const deco::ParsedArgOwning& arg)
     -> std::expected<std::vector<std::string>, std::string> {
     if(arg.values.empty()) {
         return std::unexpected(std::string("missing alias payload"));
@@ -407,7 +407,7 @@ auto runtime_alias_forward_pair(const option::ParsedArgumentOwning& arg)
     return std::vector<std::string>{"--target", arg.values.front()};
 }
 
-auto runtime_alias_forward_pair_with_context(const option::ParsedArgumentOwning&,
+auto runtime_alias_forward_pair_with_context(const deco::ParsedArgOwning&,
                                              const decl::IntoContext& context)
     -> std::expected<std::vector<std::string>, std::string> {
     return std::unexpected(context.format_error("ctx failure"));
@@ -733,8 +733,8 @@ TEST_CASE(invocation_exposes_trace_and_remaining_args) {
     EXPECT_EQ(res->remaining().size(), 4u);
     EXPECT_TRUE(res->remaining()[0] == "-t");
     EXPECT_EQ(res->trace().size(), 2u);
-    EXPECT_TRUE(res->trace()[0].get_spelling_view() == "-v");
-    EXPECT_TRUE(res->trace()[1].get_spelling_view() == "script::cdb");
+    EXPECT_TRUE(res->trace()[0].spelling == "-v");
+    EXPECT_TRUE(res->trace()[1].spelling == "script::cdb");
 }
 
 TEST_CASE(option_callback_can_stop_early_with_current_result) {
@@ -890,7 +890,7 @@ TEST_CASE(option_callback_supports_action_shortcut) {
 
 TEST_CASE(command_after_runs_after_field_callback) {
     CallbackComposeState::reset();
-    unsigned command_count = 0;
+    std::uint32_t command_count = 0;
 
     auto command = cli::command<CallbackComposeOpt>("compose");
     command.after<&CallbackComposeOpt::verbose>([&](const auto& step) {
@@ -918,7 +918,7 @@ TEST_CASE(command_after_runs_after_field_callback) {
 }
 
 TEST_CASE(command_after_supports_nested_member_paths) {
-    unsigned hit_count = 0;
+    std::uint32_t hit_count = 0;
     std::string seen;
 
     auto command = cli::command<NestedAfterOpt>("nested");
@@ -927,7 +927,7 @@ TEST_CASE(command_after_supports_nested_member_paths) {
             [&](const auto& step) {
                 ++hit_count;
                 seen = step.value();
-                EXPECT_TRUE(step.arg().get_spelling_view() == "--first-token");
+                EXPECT_TRUE(step.arg().spelling == "--first-token");
                 return step.next();
             });
 
@@ -995,11 +995,11 @@ TEST_CASE(match_dispatches_by_category) {
 TEST_CASE(match_can_observe_invocation_context) {
     auto command = cli::command<WebCliOpt>("webcli [OPTIONS]");
     std::string seen_url;
-    unsigned seen_trace_size = 0;
+    std::uint32_t seen_trace_size = 0;
     command.match(WebCliOpt::Cate::request_category,
                   [&](const cli::Invocation<WebCliOpt>& invocation) {
                       EXPECT_TRUE(invocation.matched(WebCliOpt::Cate::request_category));
-                      seen_trace_size = static_cast<unsigned>(invocation.trace().size());
+                      seen_trace_size = static_cast<std::uint32_t>(invocation.trace().size());
                       seen_url = invocation.options.request.url->url;
                   });
 
@@ -1333,7 +1333,7 @@ TEST_CASE(catter_v2) {
     auto cli =
         cli::command<CatterOpt>("catter [OPTIONS] [OPTIONS for script] -- [OPTIONS for command]");
     auto eat_script_args = [](auto& step) {
-        unsigned idx = step.next_cursor();
+        std::uint32_t idx = step.next_cursor();
         std::span<std::string> original_argv = step.original_argv();
         while(idx < original_argv.size() && original_argv[idx] != "--") {
             step.options().script_args.push_back(original_argv[idx++]);
