@@ -331,14 +331,14 @@ TEST_CASE(wait_sync_primitive) {
     auto blocked = worker();
     blocked->resume();
 
-    auto waiting_dot = dump_dot(*blocked.operator->());
+    auto waiting_dot = dump_dot(blocked);
     EXPECT_NE(waiting_dot.find("Task"), std::string::npos);
     EXPECT_NE(waiting_dot.find("EventWaiter"), std::string::npos);
     EXPECT_NE(waiting_dot.find("Event"), std::string::npos);
 
     blocked->cancel();
 
-    auto cancelled_dot = dump_dot(*blocked.operator->());
+    auto cancelled_dot = dump_dot(blocked);
     EXPECT_EQ(cancelled_dot.find("EventWaiter"), std::string::npos);
 
     gate.set();

@@ -90,6 +90,7 @@ private:
         task_group& group;
 
         bool await_ready() noexcept {
+            assert(!group.joined && "join() called twice on the same task_group");
             assert(group.completed <= group.total &&
                    "task_group completed more children than it owns");
             if(group.completed == group.total) {
@@ -116,6 +117,7 @@ private:
         }
 
         result_type await_resume() {
+            group.joined = true;
             group.collect_errors();
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -164,6 +166,8 @@ private:
             }
         }
     }
+
+    bool joined = false;
 
     std::vector<error_handler_fn> error_handlers;
 

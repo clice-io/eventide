@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <coroutine>
 #include <cstddef>
@@ -340,13 +341,10 @@ protected:
     }
 
     std::size_t find_child_index(const async_node& child) const {
-        for(std::size_t i = 0; i < children.size(); ++i) {
-            if(children[i] == &child) {
-                return i;
-            }
-        }
-        assert(false && "child not found in aggregate");
-        std::abort();
+        auto it = std::ranges::find(children, &child);
+        assert(it != children.end() && "child not found in aggregate");
+        if(it == children.end()) std::abort();
+        return static_cast<std::size_t>(it - children.begin());
     }
 
     void cancel_siblings(async_node* exclude = nullptr) {

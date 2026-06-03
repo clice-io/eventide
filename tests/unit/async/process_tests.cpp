@@ -316,6 +316,40 @@ TEST_CASE(process_stat_child) {
     schedule_all(task);
 }
 
+TEST_CASE(wait_cancel) {
+    process::options opts;
+#ifdef _WIN32
+    opts.file = "cmd.exe";
+    opts.args = {opts.file, "/c", "ping -n 60 127.0.0.1 >nul"};
+#else
+    opts.file = "/bin/sleep";
+    opts.args = {opts.file, "60"};
+#endif
+    opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
+
+    auto spawn_res = process::spawn(opts, loop);
+    ASSERT_TRUE(spawn_res.has_value());
+
+    cancellation_source source;
+
+    auto worker = [&]() -> task<process::wait_result, void, cancellation> {
+        auto status = co_await spawn_res->proc.wait();
+        co_return status;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(10, loop);
+        source.cancel();
+    };
+
+    auto guarded = with_token(worker(), source.token());
+    auto cancel_task = canceler();
+    schedule_all(guarded, cancel_task);
+
+    auto result = guarded.result();
+    EXPECT_TRUE(result.is_cancelled());
+}
+
 };  // TEST_SUITE(process_io)
 
 }  // namespace kota

@@ -21,8 +21,6 @@
 
 namespace kota::detail {
 
-// --- task identity & normalization ---
-
 template <typename T>
 constexpr inline bool is_task_v = is_specialization_of<task, std::remove_cvref_t<T>>;
 
@@ -77,15 +75,11 @@ async_node* node_from(task<T, E, C>& t) {
     return t.operator->();
 }
 
-// --- channel type extraction ---
-
 template <typename Task>
 using task_error_type_t = typename Task::error_type;
 
 template <typename Task>
 using task_cancel_type_t = typename Task::cancel_type;
-
-// --- channel aggregation ---
 
 template <typename T>
 struct keep_non_void : std::bool_constant<!std::is_void_v<T>> {};
@@ -107,8 +101,6 @@ using aggregated_cancel_t = std::
 template <typename... Ts>
 using task_group_error_type_t =
     typename type_list_to_union<type_list_unique_t<type_list<Ts...>>>::type;
-
-// --- result type computation ---
 
 template <typename Task>
 using task_result_t = decltype(std::declval<Task&>().result());
@@ -171,8 +163,6 @@ auto take_success_result(Task& task) {
     return strip_channels_from_result<CaptureCancel>(take_result(task));
 }
 
-// --- range support ---
-
 template <typename Task>
 struct range_tasks {
     using task_type = Task;
@@ -186,8 +176,6 @@ using normalized_range_task_t = normalized_task_t<range_async_value_t<Range>>;
 
 template <typename Range>
 concept async_range = std::ranges::input_range<Range> && awaitable<range_async_value_t<Range>>;
-
-// --- utilities ---
 
 template <typename Return, std::size_t I = 0, typename Tuple, typename F>
 Return tuple_visit_at_return(std::size_t index, Tuple& tuple, F&& f) {
