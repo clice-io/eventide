@@ -197,6 +197,7 @@ if(MSVC)
         /external:W0
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/wd4530>
         $<$<CXX_COMPILER_ID:MSVC>:/wd4033>
+        $<$<CXX_COMPILER_ID:MSVC>:/wd4459>
     )
 else()
     target_compile_options(kota_project_options INTERFACE
