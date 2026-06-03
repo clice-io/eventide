@@ -117,6 +117,39 @@ std::uint32_t match_opt(const OptTableInfo* i, std::string_view str, bool ignore
     return 0;
 }
 
+void consume_unknown_values(const OptTable* table,
+                            const OptTableInfo* search_begin,
+                            const OptTableInfo* search_end,
+                            bool ignore_case,
+                            ArgSpan args,
+                            std::uint32_t& index,
+                            ParsedArg& out,
+                            OptFilter filter) {
+    while(index < args.size()) {
+        auto next = args[index];
+        if(next.empty() || next == "--")
+            break;
+
+        if(!is_input(table, next)) {
+            bool found_known = false;
+            for(auto* s = search_begin; s != search_end; ++s) {
+                if(match_opt(s, next, ignore_case)) {
+                    Option opt(s, table);
+                    if(!filter.excludes(opt)) {
+                        found_known = true;
+                        break;
+                    }
+                }
+            }
+            if(found_known)
+                break;
+        }
+
+        out.add_value(next);
+        ++index;
+    }
+}
+
 AcceptResult accept_internal(const Option& opt,
                              ArgSpan args,
                              std::string_view spelling,
@@ -472,41 +505,15 @@ int OptTable::parse_step(const void* data,
     out.spelling = str;
     out.index = index++;
 
-    // Greedy consumption: consume following tokens until a known option is found.
-    // Skip greedy consumption for "--" itself to preserve its separator semantics.
     if(str != "--") {
-        while(index < args.size()) {
-            auto next = args[index];
-            if(next.empty() || next == "--")
-                break;
-
-            if(is_input(this, next)) {
-                out.add_value(next);
-                ++index;
-                continue;
-            }
-
-            // Token starts with a prefix — check if it matches any known option.
-            bool found_known = false;
-            const Info* s = this->option_infos.data() + this->first_searchable_index;
-            const Info* e = this->option_infos.data() + this->option_infos.size();
-            for(; s != e; ++s) {
-                if(match_opt(s, next, this->ignore_case)) {
-                    Option opt(s, this);
-                    if(!filter.excludes(opt)) {
-                        found_known = true;
-                        break;
-                    }
-                }
-            }
-
-            if(found_known)
-                break;
-
-            // No known option matched — consume as a value of this unknown option.
-            out.add_value(next);
-            ++index;
-        }
+        consume_unknown_values(this,
+                               this->option_infos.data() + this->first_searchable_index,
+                               this->option_infos.data() + this->option_infos.size(),
+                               this->ignore_case,
+                               args,
+                               index,
+                               out,
+                               filter);
     }
 
     return static_cast<int>(AcceptResult::Matched);
@@ -614,41 +621,15 @@ int OptTable::parse_step_grouped(const void* data,
     out.index = index++;
     group_buf.clear();
 
-    // Greedy consumption: consume following tokens until a known option is found.
-    // Skip greedy consumption for "--" itself to preserve its separator semantics.
     if(str != "--") {
-        while(index < args.size()) {
-            auto next = args[index];
-            if(next.empty() || next == "--")
-                break;
-
-            if(is_input(this, next)) {
-                out.add_value(next);
-                ++index;
-                continue;
-            }
-
-            // Token starts with a prefix — check if it matches any known option.
-            bool found_known = false;
-            const Info* s = this->option_infos.data() + this->first_searchable_index;
-            const Info* e = this->option_infos.data() + this->option_infos.size();
-            for(; s != e; ++s) {
-                if(match_opt(s, next, this->ignore_case)) {
-                    Option opt(s, this);
-                    if(!filter.excludes(opt)) {
-                        found_known = true;
-                        break;
-                    }
-                }
-            }
-
-            if(found_known)
-                break;
-
-            // No known option matched — consume as a value of this unknown option.
-            out.add_value(next);
-            ++index;
-        }
+        consume_unknown_values(this,
+                               this->option_infos.data() + this->first_searchable_index,
+                               this->option_infos.data() + this->option_infos.size(),
+                               this->ignore_case,
+                               args,
+                               index,
+                               out,
+                               filter);
     }
 
     return static_cast<int>(AcceptResult::Matched);
