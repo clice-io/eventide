@@ -178,8 +178,7 @@ jobs:
         if: always() && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          gh actions-cache delete "${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}" \
-            --ref refs/heads/main --confirm || true
+          gh api --method DELETE "repos/${{ github.repository }}/actions/caches?key=${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}&ref=refs/heads/main" --silent || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
