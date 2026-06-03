@@ -7,9 +7,7 @@
 #include <cstdlib>
 #include <exception>
 #include <limits>
-#include <set>
 #include <source_location>
-#include <string>
 #include <vector>
 
 #include "kota/support/config.h"
@@ -17,13 +15,6 @@
 namespace kota {
 
 class sync_primitive;
-
-namespace detail {
-
-/// Resume a coroutine and immediately drain any deferred root-frame destruction.
-void resume_and_drain(std::coroutine_handle<> handle);
-
-}  // namespace detail
 
 /// Type-erased base for all coroutine-related nodes in the task tree.
 ///
@@ -73,8 +64,6 @@ public:
 
     State state = Pending;
 
-    bool root = false;
-
     std::source_location location;
 
     bool is_task_frame() const noexcept {
@@ -119,19 +108,7 @@ public:
 
     std::coroutine_handle<> on_child_complete(async_node& child);
 
-    /// Dump the async graph reachable from this node as a DOT (graphviz) graph.
-    std::string dump_dot() const;
-
-private:
-    const static async_node* get_parent(const async_node* node);
-    const static sync_primitive* get_resource_parent(const async_node* node);
-
-    static void dump_dot_walk(const async_node* node,
-                              std::set<const void*>& visited,
-                              std::string& out);
-    static void dump_dot_walk(const sync_primitive* resource,
-                              std::set<const void*>& visited,
-                              std::string& out);
+    static void resume_and_drain(std::coroutine_handle<> handle);
 
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
@@ -147,6 +124,8 @@ protected:
     explicit task_frame() : async_node(NodeKind::Task) {}
 
 public:
+    bool root = false;
+
     /// Optional hook invoked when a child task fails, allowing the parent to
     /// intercept the error before normal resumption. Used by or_fail_task_await
     /// to propagate errors directly without resuming the parent coroutine.
@@ -176,6 +155,14 @@ public:
         error_hook_fn = nullptr;
     }
 
+    const async_node* get_parent() const noexcept {
+        return parent;
+    }
+
+    const async_node* get_child() const noexcept {
+        return child;
+    }
+
 protected:
     /// Stores the raw address of the coroutine frame (handle).
     ///
@@ -203,6 +190,18 @@ public:
     friend class sync_primitive;
 
     explicit wait_node(NodeKind k) : async_node(k) {}
+
+    const async_node* get_parent() const noexcept {
+        return parent;
+    }
+
+    const sync_primitive* get_resource() const noexcept {
+        return resource;
+    }
+
+    const wait_node* get_next() const noexcept {
+        return next;
+    }
 
 protected:
     /// The sync_primitive this waiter is queued on (nullptr if not queued).
@@ -242,6 +241,15 @@ protected:
     friend class async_node;
 
     explicit aggregate_op(NodeKind k) : async_node(k) {}
+
+public:
+    const async_node* get_parent() const noexcept {
+        return parent;
+    }
+
+    const std::vector<async_node*>& get_children() const noexcept {
+        return children;
+    }
 
 protected:
     enum class Phase : std::uint8_t {
@@ -372,16 +380,14 @@ protected:
     /// to resume or propagate out of the current callback stack.
     std::coroutine_handle<> flush_deferred() noexcept;
 
-    template <typename Promise>
-    std::coroutine_handle<> arm_and_resume(std::coroutine_handle<Promise> parent_handle,
+    std::coroutine_handle<> arm_and_resume(async_node& parent_node,
                                            std::source_location location) noexcept {
         this->location = location;
 
-        auto* parent_node = static_cast<async_node*>(&parent_handle.promise());
-        assert(parent_node->is_task_frame() && "aggregate parent must be a task");
-        static_cast<task_frame*>(parent_node)->set_child(this);
+        assert(parent_node.is_task_frame() && "aggregate parent must be a task");
+        static_cast<task_frame*>(&parent_node)->set_child(this);
 
-        parent = parent_node;
+        parent = &parent_node;
         completed = 0;
         winner = npos;
         first_error_child = npos;
@@ -432,6 +438,10 @@ protected:
 
 public:
     void complete() noexcept;
+
+    const async_node* get_parent() const noexcept {
+        return parent;
+    }
 };
 
 }  // namespace kota

@@ -145,7 +145,7 @@ TEST_CASE(dump_dot_basic) {
     auto outer = [&]() -> task<> {
         auto t = inner();
         auto* node = t.operator->();
-        auto dot = node->dump_dot();
+        auto dot = dump_dot(*node);
         EXPECT_TRUE(!dot.empty());
         EXPECT_TRUE(dot.find("digraph") != std::string::npos);
         EXPECT_TRUE(dot.find("Task") != std::string::npos);

@@ -96,7 +96,7 @@ task<int> fast_work(event_loop& loop) {
 task<> observer(event_loop& loop) {
     co_await sleep(5ms, loop);
     if(observer_node) {
-        std::println("{}", observer_node->dump_dot());
+        std::println("{}", dump_dot(*observer_node));
     }
     // Keep alive until everything else finishes.
     co_await sleep(300ms, loop);

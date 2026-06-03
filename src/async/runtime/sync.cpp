@@ -56,7 +56,7 @@ bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
     link.state = async_node::Cancelled;
     link.policy = static_cast<async_node::Policy>(link.policy | async_node::InterceptCancel);
     auto next = awaiting->on_child_complete(link);
-    detail::resume_and_drain(next);
+    async_node::resume_and_drain(next);
     return true;
 }
 

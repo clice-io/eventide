@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <type_traits>
 
 #include "awaiter.h"
 #include "kota/async/io/loop.h"
@@ -55,6 +56,15 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
     static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
+                if constexpr(std::is_same_v<HandleT, uv_timer_t>) {
+                    uv::timer_stop(aw.self->handle);
+                } else if constexpr(std::is_same_v<HandleT, uv_idle_t>) {
+                    uv::idle_stop(aw.self->handle);
+                } else if constexpr(std::is_same_v<HandleT, uv_prepare_t>) {
+                    uv::prepare_stop(aw.self->handle);
+                } else if constexpr(std::is_same_v<HandleT, uv_check_t>) {
+                    uv::check_stop(aw.self->handle);
+                }
                 aw.self->waiter = nullptr;
             }
         });
@@ -117,6 +127,7 @@ struct signal_await : uv::await_op<signal_await> {
     static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
+                uv::signal_stop(aw.self->handle);
                 aw.self->waiter = nullptr;
                 aw.self->active = nullptr;
             }

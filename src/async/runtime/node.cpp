@@ -31,7 +31,7 @@ void drain_pending_destroys() {
 
 }  // namespace
 
-void detail::resume_and_drain(std::coroutine_handle<> handle) {
+void async_node::resume_and_drain(std::coroutine_handle<> handle) {
     assert(handle && "resume_and_drain called with null handle");
     handle.resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
@@ -95,7 +95,7 @@ void async_node::cancel() {
                 self->child->cancel();
             } else if(self->parent) {
                 auto next = self->finalize();
-                detail::resume_and_drain(next);
+                async_node::resume_and_drain(next);
             }
             break;
         }
@@ -109,7 +109,7 @@ void async_node::cancel() {
             self->parent = nullptr;
             assert(p && "wait_node cancelled without a parent");
             auto next = p->on_child_complete(*self);
-            detail::resume_and_drain(next);
+            async_node::resume_and_drain(next);
             break;
         }
 
@@ -127,7 +127,7 @@ void async_node::cancel() {
             if(self->is_settled() || self->completed == self->total) {
                 self->phase = aggregate_op::Phase::Settled;
                 auto next = self->flush_deferred();
-                detail::resume_and_drain(next);
+                async_node::resume_and_drain(next);
             }
             break;
         }
@@ -163,7 +163,7 @@ void io_op::complete() noexcept {
     parent = nullptr;
     assert(p && "io_op completed without a linked parent");
     auto next = p->on_child_complete(*this);
-    detail::resume_and_drain(next);
+    async_node::resume_and_drain(next);
 }
 
 /// Wires this node as a child of `parent_node`. For Task nodes, sets state

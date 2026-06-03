@@ -1,10 +1,8 @@
 #include <format>
-#include <set>
 #include <string>
 #include <string_view>
 
-#include "kota/async/runtime/node.h"
-#include "kota/async/runtime/sync.h"
+#include "kota/async/runtime/walk.h"
 
 namespace kota {
 
@@ -55,7 +53,7 @@ static std::string_view basename(const char* path) {
     return pos != std::string_view::npos ? sv.substr(pos + 1) : sv;
 }
 
-static void emit_node(const async_node* node, std::string& out) {
+static void emit_async_node(const async_node* node, std::string& out) {
     auto file = basename(node->location.file_name());
     std::string label;
     if(!file.empty()) {
@@ -102,7 +100,7 @@ static void emit_node(const async_node* node, std::string& out) {
                    color);
 }
 
-static void emit_node(const sync_primitive* resource, std::string& out) {
+static void emit_sync_node(const sync_primitive* resource, std::string& out) {
     auto file = basename(resource->location.file_name());
     std::string label;
     if(!file.empty()) {
@@ -123,133 +121,73 @@ static void emit_node(const sync_primitive* resource, std::string& out) {
                    "#ADD8E6");
 }
 
-static void emit_edge(const void* from, const void* to, std::string& out) {
-    std::format_to(std::back_inserter(out),
-                   R"(  {} -> {};
-)",
-                   node_id(from),
-                   node_id(to));
-}
-
-const sync_primitive* async_node::get_resource_parent(const async_node* node) {
-    switch(node->kind) {
-        case NodeKind::MutexWaiter:
-        case NodeKind::EventWaiter: return static_cast<const wait_node*>(node)->resource;
-        default: return nullptr;
-    }
-}
-
-const async_node* async_node::get_parent(const async_node* node) {
-    switch(node->kind) {
-        case NodeKind::Task: return static_cast<const task_frame*>(node)->parent;
-        case NodeKind::MutexWaiter:
-        case NodeKind::EventWaiter: {
-            auto* link = static_cast<const wait_node*>(node);
-            return link->parent;
-        }
-        case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::TaskGroup: return static_cast<const aggregate_op*>(node)->parent;
-        case NodeKind::SystemIO: return static_cast<const io_op*>(node)->parent;
-        default: return nullptr;
-    }
-}
-
-void async_node::dump_dot_walk(const async_node* node,
-                               std::set<const void*>& visited,
-                               std::string& out) {
-    if(!node || !visited.insert(node).second) {
-        return;
-    }
-
-    emit_node(node, out);
-
-    switch(node->kind) {
-        case NodeKind::Task: {
-            auto* task = static_cast<const task_frame*>(node);
-            if(task->child) {
-                emit_edge(node, task->child, out);
-                dump_dot_walk(task->child, visited, out);
-            }
-            break;
-        }
-
-        case NodeKind::MutexWaiter:
-        case NodeKind::EventWaiter: {
-            auto* link = static_cast<const wait_node*>(node);
-            if(link->resource) {
-                emit_edge(node, link->resource, out);
-                dump_dot_walk(link->resource, visited, out);
-            }
-            break;
-        }
-
-        case NodeKind::WhenAll:
-        case NodeKind::WhenAny:
-        case NodeKind::TaskGroup: {
-            auto* agg = static_cast<const aggregate_op*>(node);
-            for(auto* child: agg->children) {
-                if(child) {
-                    emit_edge(node, child, out);
-                    dump_dot_walk(child, visited, out);
-                }
-            }
-            break;
-        }
-
-        case NodeKind::SystemIO: break;
-    }
-}
-
-void async_node::dump_dot_walk(const sync_primitive* resource,
-                               std::set<const void*>& visited,
-                               std::string& out) {
-    if(!resource || !visited.insert(resource).second) {
-        return;
-    }
-
-    emit_node(resource, out);
-    for(auto* waiter = resource->head; waiter != nullptr; waiter = waiter->next) {
-        emit_edge(resource, waiter, out);
-        dump_dot_walk(waiter, visited, out);
-    }
-}
-
-std::string async_node::dump_dot() const {
-    // Walk up to find the root of the graph.
-    const auto* async_root = this;
-    const sync_primitive* resource_root = nullptr;
-    while(async_root) {
-        if(auto* resource = get_resource_parent(async_root)) {
-            resource_root = resource;
-            break;
-        }
-
-        auto* p = get_parent(async_root);
-        if(!p) {
-            break;
-        }
-        async_root = p;
-    }
-
+struct dot_emitter : async_visitor<dot_emitter> {
     std::string out;
-    out += R"(digraph async_graph {
-)";
-    out += R"(  rankdir=TB;
-)";
-    out += R"(  node [fontname="Helvetica", fontsize=10];
-)";
 
-    std::set<const void*> visited;
-    if(resource_root) {
-        dump_dot_walk(resource_root, visited, out);
-    } else {
-        dump_dot_walk(async_root, visited, out);
+    bool visit_task(const task_frame& node) {
+        emit_async_node(&node, out);
+        return true;
     }
 
-    out += R"(}
+    bool visit_wait_node(const wait_node& node) {
+        emit_async_node(&node, out);
+        return true;
+    }
+
+    bool visit_aggregate(const aggregate_op& node) {
+        emit_async_node(&node, out);
+        return true;
+    }
+
+    bool visit_io(const io_op& node) {
+        emit_async_node(&node, out);
+        return true;
+    }
+
+    bool visit_sync(const sync_primitive& resource) {
+        emit_sync_node(&resource, out);
+        return true;
+    }
+
+    void visit_edge(const void* from, const void* to) {
+        std::format_to(std::back_inserter(out),
+                       R"(  {} -> {};
+)",
+                       node_id(from),
+                       node_id(to));
+    }
+};
+
+std::string dump_dot(const async_node& root) {
+    const auto* node = &root;
+    const sync_primitive* sync_root = nullptr;
+    while(node) {
+        if(auto* resource = get_resource(*node)) {
+            sync_root = resource;
+            break;
+        }
+        auto* p = get_parent(*node);
+        if(!p) break;
+        node = p;
+    }
+
+    dot_emitter emitter;
+    emitter.out += R"(digraph async_graph {
 )";
-    return out;
+    emitter.out += R"(  rankdir=TB;
+)";
+    emitter.out += R"(  node [fontname="Helvetica", fontsize=10];
+)";
+
+    if(sync_root) {
+        emitter.walk_sync(*sync_root);
+    } else {
+        emitter.walk_node(*node);
+    }
+
+    emitter.out += R"(}
+)";
+    return std::move(emitter.out);
 }
 
 }  // namespace kota

@@ -34,6 +34,10 @@ public:
     /// Removes a waiter from the wait queue.
     void remove(wait_node* link);
 
+    const wait_node* get_head() const noexcept {
+        return head;
+    }
+
 protected:
     bool has_waiters() const noexcept {
         return head != nullptr;

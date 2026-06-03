@@ -10,20 +10,11 @@
 #endif
 
 #include "kota/support/config.h"
-#include "kota/support/type_list.h"
 #include "kota/async/runtime/node.h"
-#include "kota/async/runtime/task.h"
+#include "kota/async/runtime/traits.h"
 #include "kota/async/vocab/outcome.h"
 
 namespace kota {
-
-namespace detail {
-
-template <typename... Ts>
-using task_group_error_type_t =
-    typename type_list_to_union<type_list_unique_t<type_list<Ts...>>>::type;
-
-}  // namespace detail
 
 template <typename... Errors>
 class task_group : public aggregate_op {
@@ -71,7 +62,7 @@ public:
         error_handlers.push_back(&extract_error<T, E>);
 
         auto handle = node->attach(*this, std::source_location::current());
-        detail::resume_and_drain(handle);
+        async_node::resume_and_drain(handle);
         return true;
     }
 
@@ -85,7 +76,7 @@ public:
         if(completed == total && parent) {
             phase = Phase::Settled;
             auto handle = flush_deferred();
-            detail::resume_and_drain(handle);
+            async_node::resume_and_drain(handle);
         }
     }
 
