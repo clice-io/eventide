@@ -37,7 +37,7 @@ add_library(kota::async ALIAS kota_async)
 
 target_sources(kota_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/debug.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/frame.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/node.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/sync.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/vocab/error.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/vocab/ringbuffer.cpp"

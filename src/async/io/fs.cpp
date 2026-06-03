@@ -25,7 +25,7 @@ struct fs_op : uv::await_op<fs_op<Result>> {
 
     fs_op() = default;
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         auto* self = static_cast<fs_op*>(op);
         uv::cancel(self->req);
     }
@@ -37,7 +37,7 @@ struct fs_op : uv::await_op<fs_op<Result>> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     result<Result> await_resume() noexcept {

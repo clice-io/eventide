@@ -23,7 +23,7 @@ struct work_op : uv::await_op<work_op> {
 
     explicit work_op(function<void()> fn) : fn(std::move(fn)) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         auto* self = static_cast<work_op*>(op);
         uv::cancel(self->req);
     }
@@ -35,7 +35,7 @@ struct work_op : uv::await_op<work_op> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

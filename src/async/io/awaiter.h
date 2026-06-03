@@ -9,7 +9,7 @@
 #include "../libuv.h"
 #include "../vocab/ringbuffer.h"
 #include "kota/async/io/stream.h"
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/outcome.h"
 
@@ -21,13 +21,13 @@ inline bool is_cancelled_status(StatusT status) noexcept {
 }
 
 struct single_waiter {
-    system_op* waiter = nullptr;
+    io_op* waiter = nullptr;
 
     bool has_waiter() const noexcept {
         return waiter != nullptr;
     }
 
-    void arm(system_op& op) noexcept {
+    void arm(io_op& op) noexcept {
         waiter = &op;
     }
 
@@ -50,7 +50,7 @@ template <typename ResultT>
 struct waiter_binding : single_waiter {
     ResultT* active = nullptr;
 
-    void arm(system_op& op, ResultT& slot) noexcept {
+    void arm(io_op& op, ResultT& slot) noexcept {
         this->waiter = &op;
         active = &slot;
     }
@@ -74,13 +74,13 @@ struct waiter_binding : single_waiter {
 };
 
 template <typename Derived, async_node::NodeKind Kind = async_node::NodeKind::SystemIO>
-struct await_op : system_op {
-    await_op() : system_op(Kind) {
+struct await_op : io_op {
+    await_op() : io_op(Kind) {
         this->action = &Derived::on_cancel;
     }
 
     template <typename CleanupFn>
-    static void complete_cancel(system_op* op, CleanupFn&& cleanup) noexcept {
+    static void complete_cancel(io_op* op, CleanupFn&& cleanup) noexcept {
         assert(op && "complete_cancel requires a non-null operation");
         auto* aw = static_cast<Derived*>(op);
         cleanup(*aw);

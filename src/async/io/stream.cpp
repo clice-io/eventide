@@ -42,7 +42,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
 
     explicit stream_read_await(stream::Self* self) : self(self) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 if(aw.self->active_read_mode != stream::Self::read_mode::none) {
@@ -116,7 +116,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
             return waiting;
         }
         self->reader.arm(*this);
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {
@@ -137,7 +137,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
 
     stream_read_some_await(stream::Self* self, std::span<char> buffer) : self(self), dst(buffer) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 if(aw.self->active_read_mode != stream::Self::read_mode::none) {
@@ -218,7 +218,7 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
             return waiting;
         }
 
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     result<std::size_t> await_resume() noexcept {
@@ -244,7 +244,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
     stream_write_await(stream::Self* self, std::span<const char> data) :
         self(self), storage(data.begin(), data.end()) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         auto* aw = static_cast<stream_write_await*>(op);
         if(!aw->self) {
             return;
@@ -293,7 +293,7 @@ struct stream_write_await : uv::await_op<stream_write_await> {
             return waiting;
         }
 
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

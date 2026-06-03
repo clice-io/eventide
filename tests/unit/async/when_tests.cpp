@@ -9,7 +9,7 @@ namespace kota {
 
 namespace {
 
-struct deferred_cancel_await : system_op {
+struct deferred_cancel_await : io_op {
     static deferred_cancel_await*& pending() {
         thread_local deferred_cancel_await* p = nullptr;
         return p;
@@ -37,7 +37,7 @@ struct deferred_cancel_await : system_op {
         }
     }
 
-    static void on_cancel(system_op*) {}
+    static void on_cancel(io_op*) {}
 
     bool await_ready() const noexcept {
         return false;
@@ -47,7 +47,7 @@ struct deferred_cancel_await : system_op {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> waiting,
                       std::source_location location = std::source_location::current()) noexcept {
-        return this->link_continuation(waiting.promise(), location);
+        return this->attach(waiting.promise(), location);
     }
 
     void await_resume() const noexcept {}
@@ -2208,7 +2208,7 @@ TEST_CASE(group_waits_for_cancelled_children) {
     EXPECT_EQ(op_destroyed, 1);
 }
 
-// cancel() called while join() is suspended — tests deliver_deferred() fast path
+// cancel() called while join() is suspended — tests flush_deferred() fast path
 TEST_CASE(cancel_while_join_suspended) {
     int finished = 0;
     task_group<>* group_ptr = nullptr;

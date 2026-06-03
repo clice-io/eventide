@@ -113,7 +113,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
 
     explicit udp_recv_await(udp::Self* socket) : self(socket) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self && aw.self->receiving) {
                 uv::udp_recv_stop(aw.self->handle);
@@ -186,7 +186,7 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
             }
         }
 
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     result<udp::recv_result> await_resume() noexcept {
@@ -214,7 +214,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
     udp_send_await(udp::Self* u, std::span<const char> data, std::optional<sockaddr_storage>&& d) :
         self(u), storage(data.begin(), data.end()), dest(std::move(d)) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         auto* aw = static_cast<udp_send_await*>(op);
         if(!aw->self) {
             return;
@@ -275,7 +275,7 @@ struct udp_send_await : uv::await_op<udp_send_await> {
         }
 
         self->send_inflight = true;
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     error await_resume() noexcept {

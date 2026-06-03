@@ -50,7 +50,7 @@ struct process_await : uv::await_op<process_await> {
 
     explicit process_await(process::Self* self) : self(self) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 aw.self->disarm();
@@ -73,7 +73,7 @@ struct process_await : uv::await_op<process_await> {
             return waiting;
         }
         self->arm(*this, result);
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     process::wait_result await_resume() noexcept {

@@ -66,7 +66,7 @@ struct accept_await : uv::await_op<accept_await<Stream>> {
 
     explicit accept_await(self_t* acceptor) : self(acceptor) {}
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         await_base::complete_cancel(op, [](auto& aw) {
             if(aw.self) {
                 aw.self->disarm();
@@ -85,7 +85,7 @@ struct accept_await : uv::await_op<accept_await<Stream>> {
             return waiting;
         }
         self->arm(*this, outcome);
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     result<Stream> await_resume() noexcept {
@@ -186,7 +186,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
         }
     }
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         auto* aw = static_cast<connect_await*>(op);
         if(aw->self) {
             // uv_connect_t can't be cancelled; close handle to trigger UV_ECANCELED callback.
@@ -247,7 +247,7 @@ struct connect_await : uv::await_op<connect_await<Stream>> {
             return waiting;
         }
 
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     result<Stream> await_resume() noexcept {

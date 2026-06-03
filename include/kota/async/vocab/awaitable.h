@@ -4,7 +4,7 @@
 #include <coroutine>
 #include <utility>
 
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 
 namespace kota::detail {
 

@@ -11,7 +11,7 @@
 
 #include "kota/support/config.h"
 #include "kota/support/type_list.h"
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/outcome.h"
 
@@ -42,13 +42,13 @@ public:
     task_group& operator=(task_group&&) = delete;
 
     ~task_group() {
-        for(auto* child : awaitees) {
+        for(auto* child : children) {
             assert(child && "task_group contains a null child");
             assert(child->kind == async_node::NodeKind::Task);
             assert((child->state == async_node::Finished || child->state == async_node::Cancelled ||
                     child->state == async_node::Failed) &&
                    "task_group destroyed before all children completed; co_await join() first");
-            static_cast<standard_task*>(child)->handle().destroy();
+            static_cast<task_frame*>(child)->handle().destroy();
         }
     }
 
@@ -62,15 +62,15 @@ public:
         auto* node = detail::node_from(t);
         node->intercept_cancel();
 
-        awaitees.reserve(awaitees.size() + 1);
+        children.reserve(children.size() + 1);
         error_handlers.reserve(error_handlers.size() + 1);
 
         t.release();
         ++total;
-        awaitees.push_back(node);
+        children.push_back(node);
         error_handlers.push_back(&extract_error<T, E>);
 
-        auto handle = node->link_continuation(*this, std::source_location::current());
+        auto handle = node->attach(*this, std::source_location::current());
         detail::resume_and_drain(handle);
         return true;
     }
@@ -82,9 +82,9 @@ public:
         defer_resume();
         cancel_siblings();
 
-        if(completed == total && awaiter) {
+        if(completed == total && parent) {
             phase = Phase::Settled;
-            auto handle = deliver_deferred();
+            auto handle = flush_deferred();
             detail::resume_and_drain(handle);
         }
     }
@@ -117,10 +117,10 @@ private:
             assert(group.completed < group.total &&
                    "join await_suspend called even though task_group is complete");
             group.location = location;
-            auto* awaiter_node = static_cast<async_node*>(&h.promise());
-            assert(awaiter_node->is_standard_task() && "task_group join awaiter must be a task");
-            static_cast<standard_task*>(awaiter_node)->set_awaitee(&group);
-            group.awaiter = awaiter_node;
+            auto* parent_node = static_cast<async_node*>(&h.promise());
+            assert(parent_node->is_task_frame() && "task_group join must be awaited from a task");
+            static_cast<task_frame*>(parent_node)->set_child(&group);
+            group.parent = parent_node;
             group.state = Running;
             return std::noop_coroutine();
         }
@@ -144,11 +144,11 @@ private:
     };
 
     void collect_errors() {
-        assert(awaitees.size() == error_handlers.size() &&
+        assert(children.size() == error_handlers.size() &&
                "task_group child/error-handler vectors diverged");
-        for(std::size_t i = 0; i < awaitees.size(); ++i) {
-            if(awaitees[i]->state == async_node::Failed) {
-                error_handlers[i](*awaitees[i], *this);
+        for(std::size_t i = 0; i < children.size(); ++i) {
+            if(children[i]->state == async_node::Failed) {
+                error_handlers[i](*children[i], *this);
             }
         }
     }
@@ -164,7 +164,7 @@ private:
 
         if constexpr(!std::is_void_v<E>) {
             auto* promise =
-                static_cast<task_promise_object<T, E>*>(static_cast<standard_task*>(&child));
+                static_cast<task_promise_object<T, E>*>(static_cast<task_frame*>(&child));
             if(promise->value.has_value() && promise->value->has_error()) {
                 if constexpr(std::is_same_v<E, error_type>) {
                     g.errors.push_back(std::move(*promise->value).error());

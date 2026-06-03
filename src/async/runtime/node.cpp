@@ -1,4 +1,4 @@
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 
 #include <cassert>
 #include <utility>
@@ -43,31 +43,31 @@ void async_node::intercept_cancel() noexcept {
     policy = static_cast<Policy>(policy | InterceptCancel);
 }
 
-std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
-    assert(deferred != Deferred::None && "deliver_deferred requires a latched completion");
-    assert(awaiter && "aggregate has deferred completion but no awaiter");
+std::coroutine_handle<> aggregate_op::flush_deferred() noexcept {
+    assert(deferred != Deferred::None && "flush_deferred requires a latched completion");
+    assert(parent && "aggregate has deferred completion but no parent");
 
     phase = Phase::Settled;
 
-    assert(awaiter->is_standard_task() && "aggregate awaiter must be a task");
-    auto* parent = static_cast<standard_task*>(awaiter);
-    awaiter = nullptr;
+    assert(parent->is_task_frame() && "aggregate parent must be a task");
+    auto* p = static_cast<task_frame*>(parent);
+    parent = nullptr;
     auto completion = deferred;
     deferred = Deferred::None;
-    parent->clear_awaitee();
+    p->clear_child();
 
     switch(completion) {
-        case Deferred::Resume: return parent->handle();
+        case Deferred::Resume: return p->handle();
 
         case Deferred::Cancel:
             if(policy & InterceptCancel) {
                 state = Cancelled;
-                return parent->handle();
+                return p->handle();
             }
-            parent->state = Cancelled;
-            return parent->final_transition();
+            p->state = Cancelled;
+            return p->finalize();
 
-        case Deferred::Error: return parent->handle();
+        case Deferred::Error: return p->handle();
 
         case Deferred::None: break;
     }
@@ -75,9 +75,9 @@ std::coroutine_handle<> aggregate_op::deliver_deferred() noexcept {
     std::abort();
 }
 
-void async_node::clear_awaitee() noexcept {
-    assert(kind == NodeKind::Task && "clear_awaitee requires a task node");
-    static_cast<standard_task*>(this)->set_awaitee(nullptr);
+void async_node::clear_child() noexcept {
+    assert(kind == NodeKind::Task && "clear_child requires a task node");
+    static_cast<task_frame*>(this)->set_child(nullptr);
 }
 
 /// Recursively cancels this node and all of its descendants.
@@ -90,25 +90,25 @@ void async_node::cancel() {
 
     switch(kind) {
         case NodeKind::Task: {
-            auto* self = static_cast<standard_task*>(this);
-            if(self->awaitee) {
-                self->awaitee->cancel();
-            } else if(self->awaiter) {
-                auto next = self->final_transition();
+            auto* self = static_cast<task_frame*>(this);
+            if(self->child) {
+                self->child->cancel();
+            } else if(self->parent) {
+                auto next = self->finalize();
                 detail::resume_and_drain(next);
             }
             break;
         }
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
-            auto* self = static_cast<waiter_link*>(this);
+            auto* self = static_cast<wait_node*>(this);
             if(auto* res = self->resource) {
                 res->remove(self);
             }
-            auto* parent = self->awaiter;
-            self->awaiter = nullptr;
-            assert(parent && "waiter_link cancelled without an awaiter");
-            auto next = parent->handle_subtask_result(*self);
+            auto* p = self->parent;
+            self->parent = nullptr;
+            assert(p && "wait_node cancelled without a parent");
+            auto next = p->on_child_complete(*self);
             detail::resume_and_drain(next);
             break;
         }
@@ -126,15 +126,15 @@ void async_node::cancel() {
 
             if(self->is_settled() || self->completed == self->total) {
                 self->phase = aggregate_op::Phase::Settled;
-                auto next = self->deliver_deferred();
+                auto next = self->flush_deferred();
                 detail::resume_and_drain(next);
             }
             break;
         }
 
         case NodeKind::SystemIO: {
-            auto* self = static_cast<system_op*>(this);
-            assert(self->action && "system_op cancelled without a cancellation action");
+            auto* self = static_cast<io_op*>(this);
+            assert(self->action && "io_op cancelled without a cancellation action");
             self->action(self);
             break;
         }
@@ -143,9 +143,9 @@ void async_node::cancel() {
 
 /// Resumes a standard task's coroutine, unless it has been cancelled.
 void async_node::resume() {
-    if(is_standard_task()) {
+    if(is_task_frame()) {
         if(!is_cancelled() && !is_failed()) {
-            static_cast<standard_task*>(this)->handle().resume();
+            static_cast<task_frame*>(this)->handle().resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
             drain_pending_destroys();
 #endif
@@ -155,49 +155,48 @@ void async_node::resume() {
 
 /// Called by libuv callbacks when an I/O operation completes.
 /// Preserves Cancelled state if already set, then notifies the parent.
-void system_op::complete() noexcept {
+void io_op::complete() noexcept {
     if(state != Cancelled) {
         state = Finished;
     }
-    auto* parent = awaiter;
-    awaiter = nullptr;
-    assert(parent && "system_op completed without a linked parent");
-    auto next = parent->handle_subtask_result(*this);
+    auto* p = parent;
+    parent = nullptr;
+    assert(p && "io_op completed without a linked parent");
+    auto next = p->on_child_complete(*this);
     detail::resume_and_drain(next);
 }
 
-/// Wires this node as a child of `awaiter`. For Task nodes, sets state
+/// Wires this node as a child of `parent_node`. For Task nodes, sets state
 /// to Running and returns the coroutine handle (ready to resume).
-/// For transient nodes (waiter_link, system_op), records the awaiter
+/// For transient nodes (wait_node, io_op), records the parent
 /// and returns noop_coroutine (resumed later by event/complete).
-std::coroutine_handle<> async_node::link_continuation(async_node& awaiter,
+std::coroutine_handle<> async_node::attach(async_node& parent_node,
                                                       std::source_location loc) {
     this->location = loc;
-    if(awaiter.kind == NodeKind::Task) {
-        auto* p = static_cast<standard_task*>(&awaiter);
-        p->awaitee = this;
+    if(parent_node.kind == NodeKind::Task) {
+        static_cast<task_frame*>(&parent_node)->child = this;
     }
 
     switch(this->kind) {
         case NodeKind::Task: {
-            auto self = static_cast<standard_task*>(this);
+            auto self = static_cast<task_frame*>(this);
             self->state = Running;
-            self->awaiter = &awaiter;
+            self->parent = &parent_node;
             return self->handle();
         }
 
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
-            auto self = static_cast<waiter_link*>(this);
-            self->awaiter = &awaiter;
+            auto self = static_cast<wait_node*>(this);
+            self->parent = &parent_node;
             return std::noop_coroutine();
         }
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
         case NodeKind::TaskGroup: break;
         case NodeKind::SystemIO: {
-            auto self = static_cast<system_op*>(this);
-            self->awaiter = &awaiter;
+            auto self = static_cast<io_op*>(this);
+            self->parent = &parent_node;
             return std::noop_coroutine();
         }
     }
@@ -206,24 +205,24 @@ std::coroutine_handle<> async_node::link_continuation(async_node& awaiter,
 }
 
 /// Called when a task reaches final_suspend (Finished, Cancelled, or Failed).
-/// For root tasks with no awaiter, destroys the coroutine frame.
-/// Otherwise, notifies the parent via handle_subtask_result.
-std::coroutine_handle<> async_node::final_transition() {
+/// For root tasks with no parent, destroys the coroutine frame.
+/// Otherwise, notifies the parent via on_child_complete.
+std::coroutine_handle<> async_node::finalize() {
     switch(kind) {
         case NodeKind::Task: {
-            auto p = static_cast<standard_task*>(this);
-            if(!p->awaiter) {
-                if(p->root) {
+            auto self = static_cast<task_frame*>(this);
+            if(!self->parent) {
+                if(self->root) {
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-                    pending_frame_destroys.push_back(p->handle());
+                    pending_frame_destroys.push_back(self->handle());
 #else
-                    p->handle().destroy();
+                    self->handle().destroy();
 #endif
                 }
                 return std::noop_coroutine();
             }
 
-            return p->awaiter->handle_subtask_result(*p);
+            return self->parent->on_child_complete(*self);
         }
 
         case NodeKind::MutexWaiter:
@@ -243,35 +242,32 @@ std::coroutine_handle<> async_node::final_transition() {
 ///   or propagates cancellation upward.
 /// For Aggregate parents (when_all/when_any/scope):
 ///   - Cancellation: cancels all siblings, propagates upward.
-///   - Failed child (exception or structured error): cancels all siblings, resumes awaiter.
-///   - WhenAny completion: records winner, cancels siblings, resumes awaiter.
-///   - WhenAll completion: increments counter, resumes awaiter when all done.
-std::coroutine_handle<> async_node::handle_subtask_result(async_node& child) {
+///   - Failed child (exception or structured error): cancels all siblings, resumes parent.
+///   - WhenAny completion: records winner, cancels siblings, resumes parent.
+///   - WhenAll completion: increments counter, resumes parent when all done.
+std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
     assert(&child != this && "invalid parameter!");
 
     switch(kind) {
         case NodeKind::Task: {
-            auto self = static_cast<standard_task*>(this);
+            auto self = static_cast<task_frame*>(this);
 
             if(child.state == Cancelled) {
                 if(child.policy & InterceptCancel) {
-                    self->awaitee = nullptr;
+                    self->child = nullptr;
                     return self->handle();
                 }
 
-                self->awaitee = nullptr;
+                self->child = nullptr;
                 self->state = Cancelled;
-                return self->final_transition();
+                return self->finalize();
             }
 
-            // Finished or Failed: resume parent normally.
-            // await_resume handles exceptions (rethrow_if_exception)
-            // and errors (explicit return value inspection).
-            self->awaitee = nullptr;
+            self->child = nullptr;
             // If the child task has an error hook (set by or_fail_task_await),
             // let the hook handle error propagation instead of resuming normally.
             if(child.state == Failed && child.kind == NodeKind::Task) {
-                auto* child_task = static_cast<standard_task*>(&child);
+                auto* child_task = static_cast<task_frame*>(&child);
                 if(auto propagate = child_task->get_error_hook()) {
                     return propagate(child, *self);
                 }
@@ -333,7 +329,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node& child) {
                 if(deferring) {
                     return std::noop_coroutine();
                 }
-                return self->deliver_deferred();
+                return self->flush_deferred();
             }
 
             return std::noop_coroutine();
@@ -361,7 +357,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node& child) {
                 return std::noop_coroutine();
             }
 
-            if(!self->awaiter) {
+            if(!self->parent) {
                 return std::noop_coroutine();
             }
 
@@ -371,7 +367,7 @@ std::coroutine_handle<> async_node::handle_subtask_result(async_node& child) {
             if(deferring) {
                 return std::noop_coroutine();
             }
-            return self->deliver_deferred();
+            return self->flush_deferred();
         }
 
         case NodeKind::MutexWaiter:

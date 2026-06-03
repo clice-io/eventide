@@ -7,7 +7,7 @@
 
 #include "../libuv.h"
 #include "kota/support/functional.h"
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 
 namespace kota {
 

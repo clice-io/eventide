@@ -72,7 +72,7 @@ struct request_awaiter : uv::await_op<request_awaiter> {
         state->mgr = nullptr;
     }
 
-    static void on_cancel(system_op* op) {
+    static void on_cancel(io_op* op) {
         uv::await_op<request_awaiter>::complete_cancel(op, [](request_awaiter& self) {
             self.state->detach_from_multi();
             self.state->release_request();
@@ -111,7 +111,7 @@ struct request_awaiter : uv::await_op<request_awaiter> {
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<promise_t> waiting,
                       std::source_location loc = std::source_location::current()) noexcept {
-        return this->link_continuation(waiting.promise(), loc);
+        return this->attach(waiting.promise(), loc);
     }
 
     result_type await_resume() noexcept {

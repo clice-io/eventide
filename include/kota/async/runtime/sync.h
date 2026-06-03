@@ -4,13 +4,13 @@
 #include <cstddef>
 #include <source_location>
 
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 #include "kota/async/runtime/task.h"
 
 namespace kota {
 
 /// Shared base for synchronization resources. These are not awaitable runtime
-/// nodes; waiter_link sub-objects bridge tasks into the wait queue.
+/// nodes; wait_node sub-objects bridge tasks into the wait queue.
 class sync_primitive {
 public:
     enum class Kind : std::uint8_t {
@@ -29,17 +29,17 @@ public:
     std::source_location location;
 
     /// Appends a waiter to the end of the wait queue.
-    void insert(waiter_link* link);
+    void insert(wait_node* link);
 
     /// Removes a waiter from the wait queue.
-    void remove(waiter_link* link);
+    void remove(wait_node* link);
 
 protected:
     bool has_waiters() const noexcept {
         return head != nullptr;
     }
 
-    waiter_link* pop_waiter() noexcept {
+    wait_node* pop_waiter() noexcept {
         auto* link = head;
         if(link) {
             remove(link);
@@ -51,19 +51,19 @@ protected:
         return head && head->generation == snapshot;
     }
 
-    bool resume_waiter(waiter_link& link) noexcept {
-        auto* awaiting = link.awaiter;
-        link.awaiter = nullptr;
-        assert(awaiting && "resume_waiter: waiter has no awaiter");
+    bool resume_waiter(wait_node& link) noexcept {
+        auto* awaiting = link.parent;
+        link.parent = nullptr;
+        assert(awaiting && "resume_waiter: waiter has no parent");
         if(awaiting->is_cancelled()) {
             return false;
         }
-        awaiting->clear_awaitee();
+        awaiting->clear_child();
         awaiting->resume();
         return true;
     }
 
-    bool cancel_waiter(waiter_link& link) noexcept;
+    bool cancel_waiter(wait_node& link) noexcept;
 
     /// Processes the waiters that were already queued when this call began.
     ///
@@ -95,8 +95,8 @@ protected:
 
 private:
     /// Head and tail of the intrusive doubly-linked waiter queue.
-    waiter_link* head = nullptr;
-    waiter_link* tail = nullptr;
+    wait_node* head = nullptr;
+    wait_node* tail = nullptr;
 
     /// Monotonic tag used to distinguish "already queued" waiters from
     /// re-entrantly added waiters during interrupt().
@@ -113,9 +113,9 @@ public:
     mutex(const mutex&) = delete;
     mutex& operator=(const mutex&) = delete;
 
-    struct lock_awaiter : waiter_link {
+    struct lock_awaiter : wait_node {
         explicit lock_awaiter(mutex& owner) :
-            waiter_link(async_node::NodeKind::MutexWaiter), owner(&owner) {}
+            wait_node(async_node::NodeKind::MutexWaiter), owner(&owner) {}
 
         bool await_ready() noexcept {
             return owner->try_lock();
@@ -123,10 +123,10 @@ public:
 
         template <typename Promise>
         auto await_suspend(
-            std::coroutine_handle<Promise> awaiter,
+            std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(awaiter.promise(), location);
+            return attach(h.promise(), location);
         }
 
         void await_resume() noexcept {}
@@ -174,12 +174,12 @@ public:
     semaphore(const semaphore&) = delete;
     semaphore& operator=(const semaphore&) = delete;
 
-    struct acquire_awaiter : waiter_link {
-        /// Reuses EventWaiter kind — all waiter_link subtypes share identical
-        /// cancel/link_continuation/final_transition logic, so a dedicated
+    struct acquire_awaiter : wait_node {
+        /// Reuses EventWaiter kind — all wait_node subtypes share identical
+        /// cancel/attach/finalize logic, so a dedicated
         /// SemaphoreWaiter kind is unnecessary.
         explicit acquire_awaiter(semaphore& owner) :
-            waiter_link(async_node::NodeKind::EventWaiter), owner(&owner) {}
+            wait_node(async_node::NodeKind::EventWaiter), owner(&owner) {}
 
         bool await_ready() noexcept {
             return owner->try_acquire();
@@ -187,10 +187,10 @@ public:
 
         template <typename Promise>
         auto await_suspend(
-            std::coroutine_handle<Promise> awaiter,
+            std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(awaiter.promise(), location);
+            return attach(h.promise(), location);
         }
 
         void await_resume() noexcept {}
@@ -241,9 +241,9 @@ public:
     event(const event&) = delete;
     event& operator=(const event&) = delete;
 
-    struct wait_awaiter : waiter_link {
+    struct wait_awaiter : wait_node {
         explicit wait_awaiter(event& owner) :
-            waiter_link(async_node::NodeKind::EventWaiter), owner(&owner) {}
+            wait_node(async_node::NodeKind::EventWaiter), owner(&owner) {}
 
         bool await_ready() noexcept {
             return owner->is_set();
@@ -251,10 +251,10 @@ public:
 
         template <typename Promise>
         auto await_suspend(
-            std::coroutine_handle<Promise> awaiter,
+            std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(awaiter.promise(), location);
+            return attach(h.promise(), location);
         }
 
         outcome<void, void, cancellation> await_resume() noexcept {
@@ -280,7 +280,7 @@ public:
 
     void set() noexcept {
         signaled = true;
-        drain_waiter_snapshot([this](waiter_link& waiter) { resume_waiter(waiter); });
+        drain_waiter_snapshot([this](wait_node& waiter) { resume_waiter(waiter); });
     }
 
     void reset() noexcept {
@@ -292,7 +292,7 @@ public:
         // cancel_waiter() resumes user code synchronously. New waits may be
         // linked before we return, but they belong to a newer generation and
         // are excluded by drain_waiter_snapshot().
-        drain_waiter_snapshot([this](waiter_link& waiter) { cancel_waiter(waiter); });
+        drain_waiter_snapshot([this](wait_node& waiter) { cancel_waiter(waiter); });
     }
 
     bool is_set() const noexcept {
@@ -313,10 +313,10 @@ public:
     condition_variable(const condition_variable&) = delete;
     condition_variable& operator=(const condition_variable&) = delete;
 
-    struct wait_awaiter : waiter_link {
+    struct wait_awaiter : wait_node {
         /// Reuses EventWaiter kind — see semaphore::acquire_awaiter comment.
         explicit wait_awaiter(condition_variable& owner) :
-            waiter_link(async_node::NodeKind::EventWaiter), owner(&owner) {}
+            wait_node(async_node::NodeKind::EventWaiter), owner(&owner) {}
 
         bool await_ready() const noexcept {
             return false;
@@ -324,10 +324,10 @@ public:
 
         template <typename Promise>
         auto await_suspend(
-            std::coroutine_handle<Promise> awaiter,
+            std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
             owner->insert(this);
-            return link_continuation(awaiter.promise(), location);
+            return attach(h.promise(), location);
         }
 
         void await_resume() noexcept {}
@@ -361,7 +361,7 @@ public:
     }
 
     void notify_all() {
-        drain_waiter_snapshot([this](waiter_link& waiter) { resume_waiter(waiter); });
+        drain_waiter_snapshot([this](wait_node& waiter) { resume_waiter(waiter); });
     }
 };
 

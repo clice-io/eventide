@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 #include "kota/async/runtime/sync.h"
 
 namespace kota {
@@ -76,7 +76,7 @@ static void emit_node(const async_node* node, std::string& out) {
     std::string_view shape = "box";
     std::string_view color = "white";
 
-    if(node->is_standard_task()) {
+    if(node->is_task_frame()) {
         switch(node->state) {
             case async_node::Running: color = R"("#90EE90")"; break;
             case async_node::Finished: color = R"("#D3D3D3")"; break;
@@ -89,7 +89,7 @@ static void emit_node(const async_node* node, std::string& out) {
         color = R"("#D8BFD8")";
     } else if(node->kind == async_node::NodeKind::SystemIO) {
         color = R"("#FFFFE0")";
-    } else if(node->is_waiter_link()) {
+    } else if(node->is_wait_node()) {
         color = R"("#FFDAB9")";
     }
 
@@ -134,24 +134,23 @@ static void emit_edge(const void* from, const void* to, std::string& out) {
 const sync_primitive* async_node::get_resource_parent(const async_node* node) {
     switch(node->kind) {
         case NodeKind::MutexWaiter:
-        case NodeKind::EventWaiter: return static_cast<const waiter_link*>(node)->resource;
+        case NodeKind::EventWaiter: return static_cast<const wait_node*>(node)->resource;
         default: return nullptr;
     }
 }
 
-/// Returns the awaiter (parent) of a node, or nullptr for roots.
-const async_node* async_node::get_awaiter(const async_node* node) {
+const async_node* async_node::get_parent(const async_node* node) {
     switch(node->kind) {
-        case NodeKind::Task: return static_cast<const standard_task*>(node)->awaiter;
+        case NodeKind::Task: return static_cast<const task_frame*>(node)->parent;
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
-            auto* link = static_cast<const waiter_link*>(node);
-            return link->awaiter;
+            auto* link = static_cast<const wait_node*>(node);
+            return link->parent;
         }
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
-        case NodeKind::TaskGroup: return static_cast<const aggregate_op*>(node)->awaiter;
-        case NodeKind::SystemIO: return static_cast<const system_op*>(node)->awaiter;
+        case NodeKind::TaskGroup: return static_cast<const aggregate_op*>(node)->parent;
+        case NodeKind::SystemIO: return static_cast<const io_op*>(node)->parent;
         default: return nullptr;
     }
 }
@@ -167,17 +166,17 @@ void async_node::dump_dot_walk(const async_node* node,
 
     switch(node->kind) {
         case NodeKind::Task: {
-            auto* task = static_cast<const standard_task*>(node);
-            if(task->awaitee) {
-                emit_edge(node, task->awaitee, out);
-                dump_dot_walk(task->awaitee, visited, out);
+            auto* task = static_cast<const task_frame*>(node);
+            if(task->child) {
+                emit_edge(node, task->child, out);
+                dump_dot_walk(task->child, visited, out);
             }
             break;
         }
 
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
-            auto* link = static_cast<const waiter_link*>(node);
+            auto* link = static_cast<const wait_node*>(node);
             if(link->resource) {
                 emit_edge(node, link->resource, out);
                 dump_dot_walk(link->resource, visited, out);
@@ -189,7 +188,7 @@ void async_node::dump_dot_walk(const async_node* node,
         case NodeKind::WhenAny:
         case NodeKind::TaskGroup: {
             auto* agg = static_cast<const aggregate_op*>(node);
-            for(auto* child: agg->awaitees) {
+            for(auto* child: agg->children) {
                 if(child) {
                     emit_edge(node, child, out);
                     dump_dot_walk(child, visited, out);
@@ -226,11 +225,11 @@ std::string async_node::dump_dot() const {
             break;
         }
 
-        auto* parent = get_awaiter(async_root);
-        if(!parent) {
+        auto* p = get_parent(async_root);
+        if(!p) {
             break;
         }
-        async_root = parent;
+        async_root = p;
     }
 
     std::string out;

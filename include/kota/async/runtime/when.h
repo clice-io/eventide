@@ -14,7 +14,7 @@
 #include "kota/support/memory.h"
 #include "kota/support/small_vector.h"
 #include "kota/support/type_list.h"
-#include "kota/async/runtime/frame.h"
+#include "kota/async/runtime/node.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/outcome.h"
 
@@ -182,13 +182,13 @@ public:
 
     template <typename Promise>
     std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<Promise> awaiter_handle,
+        await_suspend(std::coroutine_handle<Promise> parent_handle,
                       std::source_location location = std::source_location::current()) noexcept {
         total = sizeof...(Tasks);
-        awaitees.clear();
-        awaitees.reserve(total);
-        std::apply([&](auto&... ts) { (awaitees.push_back(detail::node_from(ts)), ...); }, tasks);
-        return arm_and_resume(awaiter_handle, location);
+        children.clear();
+        children.reserve(total);
+        std::apply([&](auto&... ts) { (children.push_back(detail::node_from(ts)), ...); }, tasks);
+        return arm_and_resume(parent_handle, location);
     }
 
     auto await_resume() -> result_type {
@@ -310,15 +310,15 @@ public:
 
     template <typename Promise>
     std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<Promise> awaiter_handle,
+        await_suspend(std::coroutine_handle<Promise> parent_handle,
                       std::source_location location = std::source_location::current()) noexcept {
         total = tasks.size();
-        awaitees.clear();
-        awaitees.reserve(total);
+        children.clear();
+        children.reserve(total);
         for(auto& task: tasks) {
-            awaitees.push_back(detail::node_from(task));
+            children.push_back(detail::node_from(task));
         }
-        return arm_and_resume(awaiter_handle, location);
+        return arm_and_resume(parent_handle, location);
     }
 
     auto await_resume() -> result_type {
