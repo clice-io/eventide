@@ -343,7 +343,8 @@ protected:
     std::size_t find_child_index(const async_node& child) const {
         auto it = std::ranges::find(children, &child);
         assert(it != children.end() && "child not found in aggregate");
-        if(it == children.end()) std::abort();
+        if(it == children.end())
+            std::abort();
         return static_cast<std::size_t>(it - children.begin());
     }
 
