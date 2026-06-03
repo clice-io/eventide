@@ -17,6 +17,7 @@
 
 #include "text.h"
 #include "trait.h"
+#include "kota/option/detail/opt_types.h"
 #include "kota/support/spelling.h"
 
 namespace kota::deco {
