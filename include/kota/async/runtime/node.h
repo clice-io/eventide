@@ -350,18 +350,18 @@ protected:
     }
 
     void cancel_siblings(async_node* exclude = nullptr) {
-        bool found_exclude = exclude == nullptr;
+        [[maybe_unused]] bool found = exclude == nullptr;
         auto saved = phase;
         phase = Phase::Cancelling;
-        for(auto* child : children) {
+        for(auto* child: children) {
             assert(child && "aggregate contains a null child");
             if(child == exclude) {
-                found_exclude = true;
+                found = true;
                 continue;
             }
             child->cancel();
         }
-        assert(found_exclude && "cancel_siblings exclude is not a child of this aggregate");
+        assert(found && "cancel_siblings exclude is not a child of this aggregate");
         if(phase == Phase::Cancelling) {
             phase = saved;
         }
@@ -381,8 +381,8 @@ protected:
     std::coroutine_handle<> flush_deferred() noexcept;
 
     std::coroutine_handle<> arm_and_resume(async_node& parent_node,
-                                           std::source_location location) noexcept {
-        this->location = location;
+                                           std::source_location loc) noexcept {
+        this->location = loc;
 
         assert(parent_node.is_task_frame() && "aggregate parent must be a task");
         static_cast<task_frame*>(&parent_node)->set_child(this);

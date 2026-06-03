@@ -24,8 +24,7 @@ public:
                                            void,
                                            outcome<void, std::vector<error_type>, void>>;
 
-    explicit task_group([[maybe_unused]] event_loop& loop) :
-        aggregate_op(NodeKind::TaskGroup) {}
+    explicit task_group([[maybe_unused]] event_loop& loop) : aggregate_op(NodeKind::TaskGroup) {}
 
     task_group(const task_group&) = delete;
     task_group& operator=(const task_group&) = delete;
@@ -33,7 +32,7 @@ public:
     task_group& operator=(task_group&&) = delete;
 
     ~task_group() {
-        for(auto* child : children) {
+        for(auto* child: children) {
             assert(child && "task_group contains a null child");
             assert(child->kind == async_node::NodeKind::Task);
             assert((child->state == async_node::Finished || child->state == async_node::Cancelled ||

@@ -167,7 +167,8 @@ std::string dump_dot(const async_node& root) {
             break;
         }
         auto* p = get_parent(*node);
-        if(!p) break;
+        if(!p)
+            break;
         node = p;
     }
 

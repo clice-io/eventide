@@ -7,7 +7,7 @@
 
 namespace kota {
 
-inline const async_node* get_parent(const async_node& node) {
+const inline async_node* get_parent(const async_node& node) {
     using NK = async_node::NodeKind;
     switch(node.kind) {
         case NK::Task: return static_cast<const task_frame&>(node).get_parent();
@@ -21,7 +21,7 @@ inline const async_node* get_parent(const async_node& node) {
     return nullptr;
 }
 
-inline const sync_primitive* get_resource(const async_node& node) {
+const inline sync_primitive* get_resource(const async_node& node) {
     using NK = async_node::NodeKind;
     switch(node.kind) {
         case NK::MutexWaiter:
@@ -42,7 +42,8 @@ public:
         switch(node.kind) {
             case NK::Task: {
                 auto& task = static_cast<const task_frame&>(node);
-                if(!derived().visit_task(task)) return;
+                if(!derived().visit_task(task))
+                    return;
                 if(auto* child = task.get_child()) {
                     derived().visit_edge(&task, child);
                     walk_node(*child);
@@ -53,7 +54,8 @@ public:
             case NK::MutexWaiter:
             case NK::EventWaiter: {
                 auto& wn = static_cast<const wait_node&>(node);
-                if(!derived().visit_wait_node(wn)) return;
+                if(!derived().visit_wait_node(wn))
+                    return;
                 if(auto* res = wn.get_resource()) {
                     derived().visit_edge(&wn, res);
                     walk_sync(*res);
@@ -65,7 +67,8 @@ public:
             case NK::WhenAny:
             case NK::TaskGroup: {
                 auto& agg = static_cast<const aggregate_op&>(node);
-                if(!derived().visit_aggregate(agg)) return;
+                if(!derived().visit_aggregate(agg))
+                    return;
                 for(auto* child: agg.get_children()) {
                     if(child) {
                         derived().visit_edge(&agg, child);
@@ -87,7 +90,8 @@ public:
             return;
         }
 
-        if(!derived().visit_sync(resource)) return;
+        if(!derived().visit_sync(resource))
+            return;
         for(auto* w = resource.get_head(); w; w = w->get_next()) {
             derived().visit_edge(&resource, w);
             walk_node(*w);
@@ -99,15 +103,32 @@ public:
     }
 
 protected:
-    bool visit_task(const task_frame&) { return true; }
-    bool visit_wait_node(const wait_node&) { return true; }
-    bool visit_aggregate(const aggregate_op&) { return true; }
-    bool visit_io(const io_op&) { return true; }
-    bool visit_sync(const sync_primitive&) { return true; }
+    bool visit_task(const task_frame&) {
+        return true;
+    }
+
+    bool visit_wait_node(const wait_node&) {
+        return true;
+    }
+
+    bool visit_aggregate(const aggregate_op&) {
+        return true;
+    }
+
+    bool visit_io(const io_op&) {
+        return true;
+    }
+
+    bool visit_sync(const sync_primitive&) {
+        return true;
+    }
+
     void visit_edge(const void*, const void*) {}
 
 private:
-    Derived& derived() { return static_cast<Derived&>(*this); }
+    Derived& derived() {
+        return static_cast<Derived&>(*this);
+    }
 
     std::set<const void*> visited_;
 };

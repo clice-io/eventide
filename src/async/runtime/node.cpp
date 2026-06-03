@@ -170,8 +170,7 @@ void io_op::complete() noexcept {
 /// to Running and returns the coroutine handle (ready to resume).
 /// For transient nodes (wait_node, io_op), records the parent
 /// and returns noop_coroutine (resumed later by event/complete).
-std::coroutine_handle<> async_node::attach(async_node& parent_node,
-                                                      std::source_location loc) {
+std::coroutine_handle<> async_node::attach(async_node& parent_node, std::source_location loc) {
     this->location = loc;
     if(parent_node.kind == NodeKind::Task) {
         static_cast<task_frame*>(&parent_node)->child = this;
@@ -305,8 +304,8 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                     self->defer_cancel();
                     trigger_cancel = true;
                 }
-            } else if(self->kind == NodeKind::WhenAny && self->winner == aggregate_op::npos
-                      && self->deferred == aggregate_op::Deferred::None) {
+            } else if(self->kind == NodeKind::WhenAny && self->winner == aggregate_op::npos &&
+                      self->deferred == aggregate_op::Deferred::None) {
                 self->winner = self->find_child_index(child);
                 self->defer_resume();
                 trigger_cancel = true;
