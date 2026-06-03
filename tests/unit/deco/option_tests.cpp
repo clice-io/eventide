@@ -126,32 +126,30 @@ TEST_CASE(main_option_table_basic) {
         split2vec("-p 1234 -s script::profile --dest=114514 -- /usr/bin/clang++ --version"));
 
     EXPECT_TRUE(parsed.errors.empty());
-    ASSERT_EQ(parsed.args.size(), 5U);
+    ASSERT_EQ(parsed.args.size(), 4U);
 
     EXPECT_EQ(parsed.args[0].id, MAIN_OPT_UNKNOWN);
     EXPECT_EQ(parsed.args[0].spelling, "-p");
+    ASSERT_EQ(parsed.args[0].values.size(), 1U);
+    EXPECT_EQ(parsed.args[0].values[0], "1234");
     EXPECT_EQ(parsed.args[0].index, 0U);
 
-    EXPECT_EQ(parsed.args[1].id, MAIN_OPT_INPUT);
-    EXPECT_EQ(parsed.args[1].spelling, "1234");
-    EXPECT_EQ(parsed.args[1].index, 1U);
+    EXPECT_EQ(parsed.args[1].id, MAIN_OPT_SCRIPT);
+    ASSERT_EQ(parsed.args[1].values.size(), 1U);
+    EXPECT_EQ(parsed.args[1].values[0], "script::profile");
+    EXPECT_EQ(parsed.args[1].spelling, "-s");
+    EXPECT_EQ(parsed.args[1].index, 2U);
 
-    EXPECT_EQ(parsed.args[2].id, MAIN_OPT_SCRIPT);
-    ASSERT_EQ(parsed.args[2].values.size(), 1U);
-    EXPECT_EQ(parsed.args[2].values[0], "script::profile");
-    EXPECT_EQ(parsed.args[2].spelling, "-s");
-    EXPECT_EQ(parsed.args[2].index, 2U);
+    EXPECT_EQ(parsed.args[2].id, MAIN_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[2].spelling, "--dest=114514");
+    EXPECT_EQ(parsed.args[2].index, 4U);
 
-    EXPECT_EQ(parsed.args[3].id, MAIN_OPT_UNKNOWN);
-    EXPECT_EQ(parsed.args[3].spelling, "--dest=114514");
-    EXPECT_EQ(parsed.args[3].index, 4U);
-
-    EXPECT_EQ(parsed.args[4].id, MAIN_OPT_INPUT);
-    EXPECT_EQ(parsed.args[4].spelling, "--");
-    ASSERT_EQ(parsed.args[4].values.size(), 2U);
-    EXPECT_EQ(parsed.args[4].values[0], "/usr/bin/clang++");
-    EXPECT_EQ(parsed.args[4].values[1], "--version");
-    EXPECT_EQ(parsed.args[4].index, 5U);
+    EXPECT_EQ(parsed.args[3].id, MAIN_OPT_INPUT);
+    EXPECT_EQ(parsed.args[3].spelling, "--");
+    ASSERT_EQ(parsed.args[3].values.size(), 2U);
+    EXPECT_EQ(parsed.args[3].values[0], "/usr/bin/clang++");
+    EXPECT_EQ(parsed.args[3].values[1], "--version");
+    EXPECT_EQ(parsed.args[3].index, 5U);
 }
 
 TEST_CASE(alias_resolves_to_canonical) {
@@ -213,6 +211,55 @@ TEST_CASE(proxy_missing_value_error) {
     EXPECT_EQ(parsed.args.size(), 0U);
     ASSERT_EQ(parsed.errors.size(), 1U);
     EXPECT_TRUE(std::string_view(parsed.errors[0].message).contains("missing"));
+}
+
+TEST_CASE(unknown_consumes_until_known) {
+    auto table = make_proxy_opt_table();
+    auto parsed = parse_all(table, split2vec("--unknown-cmd xxx yyy -p 1234"));
+
+    EXPECT_TRUE(parsed.errors.empty());
+    ASSERT_EQ(parsed.args.size(), 2U);
+
+    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[0].spelling, "--unknown-cmd");
+    ASSERT_EQ(parsed.args[0].values.size(), 2U);
+    EXPECT_EQ(parsed.args[0].values[0], "xxx");
+    EXPECT_EQ(parsed.args[0].values[1], "yyy");
+
+    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_PARENT_ID);
+    ASSERT_EQ(parsed.args[1].values.size(), 1U);
+    EXPECT_EQ(parsed.args[1].values[0], "1234");
+}
+
+TEST_CASE(unknown_consumes_all_when_no_known_follows) {
+    auto table = make_proxy_opt_table();
+    auto parsed = parse_all(table, split2vec("--unknown xxx yyy"));
+
+    EXPECT_TRUE(parsed.errors.empty());
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[0].spelling, "--unknown");
+    ASSERT_EQ(parsed.args[0].values.size(), 2U);
+    EXPECT_EQ(parsed.args[0].values[0], "xxx");
+    EXPECT_EQ(parsed.args[0].values[1], "yyy");
+}
+
+TEST_CASE(consecutive_unknown_prefixed) {
+    auto table = make_proxy_opt_table();
+    auto parsed = parse_all(table, split2vec("--unknown1 --unknown2 -p 1234"));
+
+    EXPECT_TRUE(parsed.errors.empty());
+    ASSERT_EQ(parsed.args.size(), 2U);
+
+    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[0].spelling, "--unknown1");
+    ASSERT_EQ(parsed.args[0].values.size(), 1U);
+    EXPECT_EQ(parsed.args[0].values[0], "--unknown2");
+
+    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_PARENT_ID);
+    ASSERT_EQ(parsed.args[1].values.size(), 1U);
+    EXPECT_EQ(parsed.args[1].values[0], "1234");
 }
 
 };  // TEST_SUITE(option_parse_view)
