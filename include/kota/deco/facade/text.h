@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/deco/facade/config.h"
+#include "config.h"
 
 namespace kota::deco::cli::text {
 

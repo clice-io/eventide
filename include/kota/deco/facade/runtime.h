@@ -18,10 +18,10 @@
 #include <variant>
 #include <vector>
 
-#include "kota/deco/facade/backend.h"
-#include "kota/deco/facade/decl.h"
-#include "kota/deco/facade/descriptor.h"
-#include "kota/deco/facade/text.h"
+#include "backend.h"
+#include "decl.h"
+#include "descriptor.h"
+#include "text.h"
 #include "kota/support/functional.h"
 
 namespace kota::deco::util {

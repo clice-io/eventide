@@ -4,7 +4,7 @@
 #include <span>
 #include <string_view>
 
-#include "kota/deco/option/arg.h"
+#include "arg.h"
 
 namespace kota::option {
 

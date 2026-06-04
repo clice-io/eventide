@@ -10,8 +10,8 @@
 #include <utility>
 #include <vector>
 
-#include "kota/deco/facade/decl.h"
-#include "kota/deco/facade/ty.h"
+#include "decl.h"
+#include "ty.h"
 #include "kota/support/comptime.h"
 #include "kota/support/memory.h"
 #include "kota/support/type_traits.h"

@@ -24,22 +24,22 @@ enum class AcceptResult {
 };
 
 class ArgSpan {
-    const void* data_;
-    std::uint32_t size_;
-    std::string_view (*access_)(const void*, std::uint32_t);
+    const void* data;
+    std::uint32_t count;
+    std::string_view (*access)(const void*, std::uint32_t);
 
 public:
     ArgSpan(const void* data,
             std::uint32_t size,
             std::string_view (*access)(const void*, std::uint32_t)) :
-        data_(data), size_(size), access_(access) {}
+        data(data), count(size), access(access) {}
 
     std::string_view operator[](std::uint32_t i) const {
-        return access_(data_, i);
+        return access(data, i);
     }
 
     std::uint32_t size() const {
-        return size_;
+        return count;
     }
 };
 

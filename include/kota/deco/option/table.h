@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/deco/option/option.h"
+#include "option.h"
 
 namespace kota::option {
 
