@@ -70,7 +70,7 @@ struct OptTable {
              bool ignore_case = false,
              std::vector<std::string_view> prefixes_union = {});
 
-    OptionRef option(std::uint32_t opt_id) const;
+    std::optional<OptionRef> option(std::uint32_t opt_id) const;
 
     std::uint32_t find_option(std::string_view argument, std::uint32_t visibility = ~0U) const;
 };

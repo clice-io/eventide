@@ -134,7 +134,7 @@ void consume_unknown_values(const OptTable* table,
             bool found_known = false;
             for(auto* s = search_begin; s != search_end; ++s) {
                 if(match_opt(s, next, ignore_case)) {
-                    OptionRef opt(s, table);
+                    OptionRef opt(*s, *table);
                     if(!options.excludes(opt)) {
                         found_known = true;
                         break;
@@ -339,11 +339,11 @@ OptTable::OptTable(std::span<const Option> option_infos,
     this->prefix_chars.assign(seen_chars.begin(), seen_chars.end());
 }
 
-OptionRef OptTable::option(std::uint32_t opt_id) const {
+std::optional<OptionRef> OptTable::option(std::uint32_t opt_id) const {
     if(opt_id == 0)
-        return OptionRef(nullptr, nullptr);
+        return std::nullopt;
     assert((opt_id - 1) < static_cast<std::uint32_t>(this->option_infos.size()) && "Invalid ID.");
-    return OptionRef(&this->option_infos[opt_id - 1], this);
+    return OptionRef(this->option_infos[opt_id - 1], *this);
 }
 
 std::uint32_t OptTable::find_option(std::string_view argument, std::uint32_t vis) const {
@@ -418,7 +418,7 @@ int kota::option::parse_step(const OptTable& table,
             if(start == end)
                 break;
 
-            OptionRef opt(start, &table);
+            OptionRef opt(*start, table);
 
             if(options.excludes(opt))
                 continue;
@@ -448,7 +448,7 @@ int kota::option::parse_step(const OptTable& table,
             if(start == end)
                 break;
 
-            OptionRef opt(start, &table);
+            OptionRef opt(*start, table);
 
             if(options.excludes(opt))
                 continue;
@@ -554,7 +554,7 @@ int kota::option::parse_step_grouped(const OptTable& table,
         if(!arg_sz)
             continue;
 
-        OptionRef opt(it, &table);
+        OptionRef opt(*it, table);
 
         if(options.excludes(opt))
             continue;
@@ -575,7 +575,7 @@ int kota::option::parse_step_grouped(const OptTable& table,
     }
 
     if(fallback_opt) {
-        OptionRef opt(fallback_opt, &table);
+        OptionRef opt(*fallback_opt, table);
         if(str.size() > 2 && str[2] == '=') {
             out.clear();
             out.id = table.unknown_option_id;

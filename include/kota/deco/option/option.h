@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <ostream>
 #include <span>
 #include <string_view>
@@ -100,15 +101,11 @@ struct Option {
     }
 };
 
-/// Non-owning view into an Option within an OptTable. Provides methods that
-/// require table context, such as alias/group resolution and option matching.
+/// Non-owning view into an Option within an OptTable. Always valid — use
+/// std::optional<OptionRef> to represent a possibly-absent option.
 class OptionRef {
 public:
-    OptionRef(const Option* opt, const OptTable* table);
-
-    bool valid() const {
-        return this->opt != nullptr;
-    }
+    OptionRef(const Option& opt, const OptTable& table);
 
     std::uint32_t id() const;
     Kind kind() const;
@@ -116,11 +113,11 @@ public:
     /// Get the name of this option without any prefix.
     std::string_view name() const;
 
-    /// Get the group this option belongs to (invalid if none).
-    OptionRef group() const;
+    /// Get the group this option belongs to, if any.
+    std::optional<OptionRef> group() const;
 
-    /// Get the option this is an alias for (invalid if not an alias).
-    OptionRef alias() const;
+    /// Get the option this is an alias for, if any.
+    std::optional<OptionRef> alias() const;
 
     /// Get the alias arguments as a \0-separated list.
     const char* alias_args() const;
@@ -152,9 +149,8 @@ public:
 
     /// Return the final option this aliases (itself if not an alias).
     OptionRef unaliased_option() const {
-        OptionRef als = this->alias();
-        if(als.valid())
-            return als.unaliased_option();
+        if(auto als = this->alias())
+            return als->unaliased_option();
         return *this;
     }
 
@@ -170,8 +166,8 @@ public:
     void print(std::ostream& o, bool add_new_line) const;
 
 protected:
-    const Option* opt;
-    const OptTable* table;
+    const Option& opt;
+    const OptTable& table;
 };
 
 }  // namespace kota::option

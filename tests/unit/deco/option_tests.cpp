@@ -1,11 +1,11 @@
 #include <array>
 #include <expected>
-#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "test_util.h"
 #include "kota/deco/option.h"
 #include "kota/zest/zest.h"
 
@@ -13,34 +13,9 @@ namespace kota::option {
 namespace {
 
 using namespace std::literals::string_view_literals;
-
-std::vector<std::string> split2vec(std::string_view str) {
-    auto views = std::views::split(str, ' ') | std::views::transform([](auto&& rng) {
-                     return std::string(rng.begin(), rng.end());
-                 });
-    return std::vector<std::string>(views.begin(), views.end());
-}
-
-struct ParseCapture {
-    std::vector<std::string> argv;
-    std::vector<ParsedArg> args;
-    std::vector<ParseError> errors;
-};
-
-ParseCapture parse_all(const OptTable& table,
-                       std::vector<std::string> argv,
-                       ParseOptions options = {}) {
-    ParseCapture capture;
-    capture.argv = std::move(argv);
-    for(auto& result: parse(table, capture.argv, options)) {
-        if(result.has_value()) {
-            capture.args.push_back(*result);
-        } else {
-            capture.errors.push_back(result.error());
-        }
-    }
-    return capture;
-}
+using test::parse_all;
+using test::ParseCapture;
+using test::split2vec;
 
 enum MainOptionID {
     MAIN_OPT_INVALID = 0,
@@ -654,13 +629,13 @@ TEST_CASE(option_matches_and_render_style) {
 
     const auto member = table.option(MATCH_OPT_MEMBER);
     const auto alias = table.option(MATCH_OPT_ALIAS_MEMBER);
-    EXPECT_TRUE(member.matches(MATCH_OPT_GROUP));
-    EXPECT_TRUE(alias.matches(MATCH_OPT_GROUP));
-    EXPECT_EQ(alias.unaliased_option().id(), MATCH_OPT_MEMBER);
+    EXPECT_TRUE(member->matches(MATCH_OPT_GROUP));
+    EXPECT_TRUE(alias->matches(MATCH_OPT_GROUP));
+    EXPECT_EQ(alias->unaliased_option().id(), MATCH_OPT_MEMBER);
 
-    EXPECT_EQ(table.option(MATCH_OPT_JOINED).render_style(), RenderStyle::Joined);
-    EXPECT_EQ(table.option(MATCH_OPT_MEMBER).render_style(), RenderStyle::Separate);
-    EXPECT_EQ(table.option(MATCH_OPT_OVERRIDE_FLAG).render_style(), RenderStyle::Joined);
+    EXPECT_EQ(table.option(MATCH_OPT_JOINED)->render_style(), RenderStyle::Joined);
+    EXPECT_EQ(table.option(MATCH_OPT_MEMBER)->render_style(), RenderStyle::Separate);
+    EXPECT_EQ(table.option(MATCH_OPT_OVERRIDE_FLAG)->render_style(), RenderStyle::Joined);
 }
 
 TEST_CASE(flag_aliases_merge_values) {

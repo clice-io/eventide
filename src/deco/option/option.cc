@@ -7,86 +7,71 @@
 
 namespace kota::option {
 
-OptionRef::OptionRef(const Option* opt, const OptTable* table) : opt(opt), table(table) {
-    assert((!opt || !this->alias().valid() || !this->alias().alias().valid()) &&
-           "Multi-level aliases are not supported.");
+OptionRef::OptionRef(const Option& opt, const OptTable& table) : opt(opt), table(table) {
+    assert((!this->alias() || !this->alias()->alias()) && "Multi-level aliases are not supported.");
 
-    if(opt && this->alias_args()) {
-        assert(this->alias().valid() && "Only alias options can have alias args.");
+    if(this->alias_args()) {
+        assert(this->alias() && "Only alias options can have alias args.");
         assert(this->kind() == Kind::Flag && "Only Flag aliases can have alias args.");
-        assert(this->alias().kind() != Kind::Flag && "Cannot provide alias args to a flag option.");
+        assert(this->alias()->kind() != Kind::Flag &&
+               "Cannot provide alias args to a flag option.");
     }
 }
 
 std::uint32_t OptionRef::id() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->id;
+    return this->opt.id;
 }
 
 Kind OptionRef::kind() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->kind;
+    return this->opt.kind;
 }
 
 std::string_view OptionRef::name() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->name();
+    return this->opt.name();
 }
 
-OptionRef OptionRef::group() const {
-    assert(this->opt && "Must have a valid option!");
-    assert(this->table && "Must have a valid table!");
-    return this->table->option(this->opt->group_id);
+std::optional<OptionRef> OptionRef::group() const {
+    return this->table.option(this->opt.group_id);
 }
 
-OptionRef OptionRef::alias() const {
-    assert(this->opt && "Must have a valid option!");
-    assert(this->table && "Must have a valid table!");
-    return this->table->option(this->opt->alias_id);
+std::optional<OptionRef> OptionRef::alias() const {
+    return this->table.option(this->opt.alias_id);
 }
 
 const char* OptionRef::alias_args() const {
-    assert(this->opt && "Must have a valid option!");
-    assert((!this->opt->alias_args || this->opt->alias_args[0] != 0) &&
+    assert((!this->opt.alias_args || this->opt.alias_args[0] != 0) &&
            "AliasArgs should be either 0 or non-empty.");
-    return this->opt->alias_args;
+    return this->opt.alias_args;
 }
 
 std::string_view OptionRef::prefix() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->has_no_prefix() ? "" : this->opt->prefixes[0];
+    return this->opt.has_no_prefix() ? "" : this->opt.prefixes[0];
 }
 
 std::string_view OptionRef::prefixed_name() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->prefixed_name;
+    return this->opt.prefixed_name;
 }
 
 std::string_view OptionRef::help_text() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->help_text;
+    return this->opt.help_text;
 }
 
 std::string_view OptionRef::meta_var() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->meta_var;
+    return this->opt.meta_var;
 }
 
 std::uint32_t OptionRef::num_args() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->num_args;
+    return this->opt.num_args;
 }
 
 bool OptionRef::has_no_opt_as_input() const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->flags & RenderAsInput;
+    return this->opt.flags & RenderAsInput;
 }
 
 RenderStyle OptionRef::render_style() const {
-    assert(this->opt && "Must have a valid option!");
-    if(this->opt->flags & RenderJoined)
+    if(this->opt.flags & RenderJoined)
         return RenderStyle::Joined;
-    if(this->opt->flags & RenderSeparate)
+    if(this->opt.flags & RenderSeparate)
         return RenderStyle::Separate;
     switch(this->kind()) {
         case Kind::Group:
@@ -107,13 +92,11 @@ RenderStyle OptionRef::render_style() const {
 }
 
 bool OptionRef::has_flag(std::uint32_t val) const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->flags & val;
+    return this->opt.flags & val;
 }
 
 bool OptionRef::has_visibility_flag(std::uint32_t val) const {
-    assert(this->opt && "Must have a valid option!");
-    return this->opt->visibility & val;
+    return this->opt.visibility & val;
 }
 
 void OptionRef::print(std::ostream& o, bool add_new_line) const {
@@ -137,25 +120,23 @@ void OptionRef::print(std::ostream& o, bool add_new_line) const {
 #undef P
     }
 
-    if(!this->opt->has_no_prefix()) {
+    if(!this->opt.has_no_prefix()) {
         o << " Prefixes:[";
-        for(size_t i = 0, n = this->opt->prefixes.size(); i != n; ++i)
-            o << '"' << this->opt->prefixes[i] << (i == n - 1 ? "\"" : "\", ");
+        for(size_t i = 0, n = this->opt.prefixes.size(); i != n; ++i)
+            o << '"' << this->opt.prefixes[i] << (i == n - 1 ? "\"" : "\", ");
         o << ']';
     }
 
     o << " Name:\"" << this->name() << '"';
 
-    OptionRef g = this->group();
-    if(g.valid()) {
+    if(auto g = this->group()) {
         o << " Group:";
-        g.print(o, false);
+        g->print(o, false);
     }
 
-    OptionRef als = this->alias();
-    if(als.valid()) {
+    if(auto als = this->alias()) {
         o << " Alias:";
-        als.print(o, false);
+        als->print(o, false);
     }
 
     if(this->kind() == Kind::MultiArg)
@@ -168,18 +149,16 @@ void OptionRef::print(std::ostream& o, bool add_new_line) const {
 }
 
 bool OptionRef::matches(std::uint32_t opt_id) const {
-    OptionRef als = this->alias();
-    if(als.valid()) {
-        return als.matches(opt_id);
+    if(auto als = this->alias()) {
+        return als->matches(opt_id);
     }
 
     if(this->id() == opt_id) {
         return true;
     }
 
-    OptionRef g = this->group();
-    if(g.valid()) {
-        return g.matches(opt_id);
+    if(auto g = this->group()) {
+        return g->matches(opt_id);
     }
     return false;
 }
