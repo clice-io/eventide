@@ -228,10 +228,15 @@ end
 if has_config("deco") then
 	target("deco", function()
 		set_kind("$(kind)")
-		add_files("src/deco/*.cc")
+		add_files("src/deco/**.cc")
 		add_includedirs("include", { public = true })
 		add_rules("cl-flags")
-		add_headerfiles("include/(kota/deco/option.h)", "include/(kota/deco/deco.h)", "include/(kota/deco/detail/**.h)")
+		add_headerfiles(
+			"include/(kota/deco/option.h)",
+			"include/(kota/deco/deco.h)",
+			"include/(kota/deco/option/**.h)",
+			"include/(kota/deco/facade/**.h)"
+		)
 		add_deps("support")
 	end)
 end

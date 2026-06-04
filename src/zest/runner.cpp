@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "kota/deco/deco.h"
-#include "kota/deco/detail/text.h"
+#include "kota/deco/facade/text.h"
 #include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
 #include "kota/zest/runner/run.h"

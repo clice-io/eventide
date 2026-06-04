@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "kota/deco/option.h"
+#include "kota/deco/option/table.h"
 #include "kota/meta/struct.h"
 
 namespace kota::deco {

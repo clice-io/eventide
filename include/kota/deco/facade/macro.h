@@ -1,8 +1,8 @@
 #pragma once
 #include <type_traits>
 
-#include "./decl.h"
-#include "./trait.h"
+#include "kota/deco/facade/decl.h"
+#include "kota/deco/facade/trait.h"
 
 #define DECO_CONCAT_IMPL(a, b) a##b
 #define DECO_CONCAT(a, b) DECO_CONCAT_IMPL(a, b)

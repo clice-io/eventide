@@ -3,8 +3,8 @@ add_library(kota::deco::option ALIAS kota_deco_option)
 add_library(kota::option ALIAS kota_deco_option)
 
 target_sources(kota_deco_option PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/opt_table.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/option.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/option/table.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/option/option.cc"
 )
 
 target_include_directories(kota_deco_option PUBLIC
@@ -17,8 +17,8 @@ add_library(kota_deco STATIC)
 add_library(kota::deco ALIAS kota_deco)
 
 target_sources(kota_deco PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/runtime.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/text.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/facade/runtime.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/facade/text.cc"
 )
 
 target_include_directories(kota_deco PUBLIC

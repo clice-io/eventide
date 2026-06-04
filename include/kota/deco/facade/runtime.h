@@ -18,10 +18,10 @@
 #include <variant>
 #include <vector>
 
-#include "./backend.h"
-#include "./decl.h"
-#include "./descriptor.h"
-#include "./text.h"
+#include "kota/deco/facade/backend.h"
+#include "kota/deco/facade/decl.h"
+#include "kota/deco/facade/descriptor.h"
+#include "kota/deco/facade/text.h"
 #include "kota/support/functional.h"
 
 namespace kota::deco::util {
@@ -522,6 +522,7 @@ std::expected<Invocation<T>, ParseError>
                       const text::Renderer* formatter = nullptr) {
     const auto& storage = ::kota::deco::detail::build_storage<T>();
     backend::OptTable table = storage.make_opt_table();
+    backend::ParseOptions parse_options = storage.make_parse_options();
     Invocation<T> res{};
     ParseError err;
     std::span<std::string> current_argv = argv;
@@ -563,7 +564,7 @@ std::expected<Invocation<T>, ParseError>
             return true;
         };
 
-        for(auto& result: table.parse(current_argv)) {
+        for(auto& result: backend::parse(table, current_argv, parse_options)) {
             if(!result.has_value()) {
                 auto& parse_error = result.error();
                 auto error_msg =

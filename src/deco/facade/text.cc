@@ -1,10 +1,10 @@
-#include "kota/deco/detail/text.h"
+#include "kota/deco/facade/text.h"
 
 #include <algorithm>
 #include <format>
 #include <utility>
 
-#include "kota/deco/detail/config.h"
+#include "kota/deco/facade/config.h"
 
 namespace kota::deco::cli::text {
 namespace {

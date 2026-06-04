@@ -246,9 +246,10 @@ template <typename BuiltTy>
 std::expected<ParsedArgs, std::string> parse_with(const BuiltTy& built,
                                                   std::vector<std::string> argv) {
     auto table = built.make_opt_table();
+    auto opts = built.make_parse_options();
     ParsedArgs args;
     args.argv_storage = std::move(argv);
-    for(auto& result: table.parse(args.argv_storage)) {
+    for(auto& result: option::parse(table, args.argv_storage, opts)) {
         if(!result.has_value()) {
             return std::unexpected(std::string(result.error().message));
         }

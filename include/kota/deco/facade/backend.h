@@ -10,8 +10,8 @@
 #include <utility>
 #include <vector>
 
-#include "./decl.h"
-#include "./ty.h"
+#include "kota/deco/facade/decl.h"
+#include "kota/deco/facade/ty.h"
 #include "kota/support/comptime.h"
 #include "kota/support/memory.h"
 #include "kota/support/type_traits.h"
@@ -469,7 +469,7 @@ public:
     };
 
 private:
-    using info_item = backend::OptTableInfo;
+    using info_item = backend::Option;
     using resource_ty = kota::comptime::ComptimeMemoryResource<record>;
     using item_pool_type = kota::comptime::ComptimeVector<info_item, resource_ty, 0>;
     using id_map_type = kota::comptime::ComptimeVector<accessor_fn, resource_ty, 1>;
@@ -1290,12 +1290,15 @@ public:
     }
 
     auto make_opt_table() const& {
-        return backend::OptTable(option_infos(), false, {}, false)
-            .set_tablegen_mode(false)
-            .set_input_random_index(true)
-            .set_dash_dash_parsing(hasTrailingPack)
-            .set_dash_dash_as_single_pack(hasTrailingPack)
-            .build();
+        return backend::OptTable(option_infos());
+    }
+
+    auto make_parse_options() const& {
+        backend::ParseOptions opts;
+        opts.input_random_index = true;
+        opts.dash_dash_parsing = hasTrailingPack;
+        opts.dash_dash_as_single_pack = hasTrailingPack;
+        return opts;
     }
 
     auto make_opt_table() const&& = delete;
