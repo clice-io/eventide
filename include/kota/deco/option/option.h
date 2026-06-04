@@ -14,10 +14,10 @@ struct OptTable;
 /// Static definition of a command-line option. Constexpr-friendly POD used in
 /// compile-time option tables. Use the factory methods to construct entries.
 struct Option {
-    /// The set of accepted prefixes, e.g. {"-", "--"}.
+    /// The set of accepted prefixes, e.g. {"--", "-"}.
     std::span<const std::string_view> prefixes;
 
-    /// Option name with its first prefix, e.g. "--optimize".
+    /// Option name with its first prefix (prefixes[0]), e.g. "--optimize".
     std::string_view prefixed_name;
 
     /// Unique identifier (1-based index into the option table).

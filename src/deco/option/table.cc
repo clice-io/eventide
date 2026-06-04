@@ -323,6 +323,9 @@ OptTable::OptTable(std::span<const Option> option_infos,
         }
     }
 
+    assert(this->input_option_id && "OptTable requires an Input option.");
+    assert(this->unknown_option_id && "OptTable requires an Unknown option.");
+
     if(this->prefixes_union.empty()) {
         std::set<std::string_view> tmp;
         for(const auto& i: option_infos.subspan(this->first_searchable_index)) {
