@@ -72,7 +72,8 @@ struct OptTable {
 
     std::optional<OptionRef> option(std::uint32_t opt_id) const;
 
-    std::optional<OptionRef> find_option(std::string_view argument, std::uint32_t visibility = ~0U) const;
+    std::optional<OptionRef> find_option(std::string_view argument,
+                                         std::uint32_t visibility = ~0U) const;
 };
 
 int parse_step(const OptTable& table,

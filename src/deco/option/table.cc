@@ -268,10 +268,6 @@ AcceptResult accept_opt(const OptionRef& opt,
     return AcceptResult::Matched;
 }
 
-// ============================================================================
-// Shared helpers for parse_step, parse_step_grouped, and find_option.
-// ============================================================================
-
 struct SearchRange {
     const Option* begin;
     const Option* end;
@@ -297,7 +293,7 @@ struct ScanResult {
 /// first_match = true:  return immediately on first acceptance (tablegen / grouped).
 /// first_match = false: scan all options and return the longest accepted match.
 ///
-/// Also tracks fallback_flag: the first 2-char Flag candidate that didn't accept
+/// Also tracks fallback_flag: the last 2-char Flag candidate that didn't accept
 /// (used by parse_step_grouped for short-option group expansion).
 ScanResult scan_and_accept(const OptTable& table,
                            SearchRange range,
