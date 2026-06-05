@@ -1,6 +1,7 @@
 #include "kota/deco/option/table.h"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <cstring>
@@ -21,26 +22,6 @@ enum class AcceptResult {
     Matched,
     NoMatch,
     MissingValue,
-};
-
-class ArgSpan {
-    const void* data;
-    std::uint32_t count;
-    std::string_view (*access)(const void*, std::uint32_t);
-
-public:
-    ArgSpan(const void* data,
-            std::uint32_t size,
-            std::string_view (*access)(const void*, std::uint32_t)) :
-        data(data), count(size), access(access) {}
-
-    std::string_view operator[](std::uint32_t i) const {
-        return access(data, i);
-    }
-
-    std::uint32_t size() const {
-        return count;
-    }
 };
 
 std::string_view ltrim_all_of(std::string_view str, const std::vector<char>& prefixes) {
@@ -118,7 +99,7 @@ std::uint32_t match_opt(const Option* i, std::string_view str, bool ignore_case)
 }
 
 AcceptResult accept_internal(const OptionRef& opt,
-                             ArgSpan args,
+                             ArgsRef args,
                              std::string_view spelling,
                              std::uint32_t& index,
                              ParsedArg& out) {
@@ -226,7 +207,7 @@ AcceptResult accept_internal(const OptionRef& opt,
 }
 
 AcceptResult accept_opt(const OptionRef& opt,
-                        ArgSpan args,
+                        ArgsRef args,
                         std::string_view spelling,
                         bool grouped_short_option,
                         std::uint32_t& index,
@@ -273,8 +254,8 @@ struct SearchRange {
     const Option* end;
 };
 
-SearchRange search_range(const OptTable& table, const ParseOptions& options) {
-    auto offset = options.input_random_index ? 0U : table.first_searchable_index;
+SearchRange search_range(const OptTable& table) {
+    auto offset = table.search_includes_input ? 0U : table.first_searchable_index;
     return {
         table.option_infos.data() + offset,
         table.option_infos.data() + table.option_infos.size(),
@@ -297,14 +278,14 @@ struct ScanResult {
 /// (used by parse_step_grouped for short-option group expansion).
 ScanResult scan_and_accept(const OptTable& table,
                            SearchRange range,
-                           ArgSpan args,
+                           ArgsRef args,
                            std::uint32_t index,
                            bool first_match,
                            const ParseOptions& options) {
     auto* begin = range.begin;
     auto* end = range.end;
 
-    if(options.tablegen_mode) {
+    if(table.tablegen_mode) {
         auto name = ltrim_all_of(args[index], table.prefix_chars);
         begin = std::lower_bound(begin, end, name, OptNameLess());
     }
@@ -407,7 +388,7 @@ bool is_known_option(SearchRange range,
 
 void consume_unknown_values(const OptTable& table,
                             SearchRange range,
-                            ArgSpan args,
+                            ArgsRef args,
                             std::uint32_t& index,
                             ParsedArg& out,
                             const ParseOptions& options) {
@@ -422,91 +403,11 @@ void consume_unknown_values(const OptTable& table,
     }
 }
 
-}  // namespace
-
-OptTable::OptTable(std::span<const Option> option_infos,
-                   bool ignore_case,
-                   std::vector<std::string_view> prefixes_union) :
-    option_infos(option_infos), prefixes_union(std::move(prefixes_union)),
-    ignore_case(ignore_case) {
-    bool found_searchable = false;
-    for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(option_infos.size()); i != e; ++i) {
-        auto& info = option_infos[i];
-        if(info.kind == Kind::Input) {
-            assert(!this->input_option_id && "Cannot have multiple input options!");
-            this->input_option_id = info.id;
-        } else if(info.kind == Kind::Unknown) {
-            assert(!this->unknown_option_id && "Cannot have multiple unknown options!");
-            this->unknown_option_id = info.id;
-        } else if(info.kind != Kind::Group && !found_searchable) {
-            this->first_searchable_index = i;
-            found_searchable = true;
-        }
-    }
-
-    assert(this->unknown_option_id && "OptTable requires an Unknown option.");
-
-    if(this->prefixes_union.empty()) {
-        std::set<std::string_view> tmp;
-        for(const auto& i: option_infos.subspan(this->first_searchable_index)) {
-            for(auto prefix: i.prefixes)
-                tmp.insert(prefix);
-        }
-        this->prefixes_union = std::vector<std::string_view>(tmp.begin(), tmp.end());
-    }
-
-    std::set<char> seen_chars;
-    for(auto& prefix: this->prefixes_union) {
-        seen_chars.insert(prefix.begin(), prefix.end());
-    }
-    this->prefix_chars.assign(seen_chars.begin(), seen_chars.end());
-}
-
-std::optional<OptionRef> OptTable::option(std::uint32_t opt_id) const {
-    if(opt_id == 0)
-        return std::nullopt;
-    assert((opt_id - 1) < static_cast<std::uint32_t>(this->option_infos.size()) && "Invalid ID.");
-    return OptionRef(this->option_infos[opt_id - 1], *this);
-}
-
-std::optional<OptionRef> OptTable::find_option(std::string_view argument, std::uint32_t vis) const {
-    std::string arg_str(argument);
-    if(argument.ends_with("="))
-        arg_str += "placeholder";
-
-    std::string_view argv[] = {arg_str, "placeholder"};
-    auto access = [](const void* d, std::uint32_t i) -> std::string_view {
-        return static_cast<const std::string_view*>(d)[i];
-    };
-
-    ParseOptions opts;
-    opts.visibility = vis;
-    auto range = search_range(*this, opts);
-    auto scan = scan_and_accept(*this, range, ArgSpan(argv, 2, access), 0, false, opts);
-
-    if(scan.result == AcceptResult::Matched)
-        return this->option(scan.out.id);
-    return std::nullopt;
-}
-
-bool ParseOptions::excludes(const OptionRef& opt) const {
-    if(!opt.has_visibility_flag(visibility))
-        return true;
-    if(include_flags && !opt.has_flag(include_flags))
-        return true;
-    if(exclude_flags && opt.has_flag(exclude_flags))
-        return true;
-    return false;
-}
-
-int kota::option::parse_step(const OptTable& table,
-                             const void* data,
-                             std::uint32_t size,
-                             ArgAccessFn access_fn,
-                             std::uint32_t& index,
-                             ParsedArg& out,
-                             const ParseOptions& options) {
-    ArgSpan args(data, size, access_fn);
+int parse_step(const OptTable& table,
+               ArgsRef args,
+               std::uint32_t& index,
+               ParsedArg& out,
+               const ParseOptions& options) {
     std::uint32_t prev = index;
     auto str = args[index];
 
@@ -518,8 +419,8 @@ int kota::option::parse_step(const OptTable& table,
         return static_cast<int>(AcceptResult::Matched);
     }
 
-    auto range = search_range(table, options);
-    auto scan = scan_and_accept(table, range, args, index, options.tablegen_mode, options);
+    auto range = search_range(table);
+    auto scan = scan_and_accept(table, range, args, index, table.tablegen_mode, options);
 
     if(scan.result == AcceptResult::Matched) {
         index = scan.new_index;
@@ -553,15 +454,12 @@ int kota::option::parse_step(const OptTable& table,
     return static_cast<int>(AcceptResult::Matched);
 }
 
-int kota::option::parse_step_grouped(const OptTable& table,
-                                     const void* data,
-                                     std::uint32_t size,
-                                     ArgAccessFn access_fn,
-                                     std::uint32_t& index,
-                                     ParsedArg& out,
-                                     std::string& group_buf,
-                                     const ParseOptions& options) {
-    ArgSpan args(data, size, access_fn);
+int parse_step_grouped(const OptTable& table,
+                       ArgsRef args,
+                       std::uint32_t& index,
+                       ParsedArg& out,
+                       std::string& group_buf,
+                       const ParseOptions& options) {
     auto str = args[index];
 
     if(is_input(table, str)) {
@@ -573,7 +471,7 @@ int kota::option::parse_step_grouped(const OptTable& table,
         return static_cast<int>(AcceptResult::Matched);
     }
 
-    auto range = search_range(table, options);
+    auto range = search_range(table);
     std::uint32_t prev = index;
 
     auto scan = scan_and_accept(table, range, args, index, true, options);
@@ -643,12 +541,145 @@ int kota::option::parse_step_grouped(const OptTable& table,
     return static_cast<int>(AcceptResult::Matched);
 }
 
-ParseIter::ParseIter(const OptTable* table,
-                     const void* data,
-                     std::uint32_t size,
-                     ArgAccessFn access,
-                     ParseOptions options) :
-    table(table), data(data), count(size), access(access), options(options), done(false),
+}  // namespace
+
+OptTable::OptTable(std::span<const Option> option_infos,
+                   bool ignore_case,
+                   std::vector<std::string_view> prefixes_union) :
+    option_infos(option_infos), prefixes_union(std::move(prefixes_union)),
+    ignore_case(ignore_case) {
+    bool found_searchable = false;
+    for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(option_infos.size()); i != e; ++i) {
+        auto& info = option_infos[i];
+        if(info.kind == Kind::Input) {
+            assert(!this->input_option_id && "Cannot have multiple input options!");
+            this->input_option_id = info.id;
+        } else if(info.kind == Kind::Unknown) {
+            assert(!this->unknown_option_id && "Cannot have multiple unknown options!");
+            this->unknown_option_id = info.id;
+        } else if(info.kind != Kind::Group && !found_searchable) {
+            this->first_searchable_index = i;
+            found_searchable = true;
+        }
+    }
+
+    assert(this->unknown_option_id && "OptTable requires an Unknown option.");
+
+    if(this->prefixes_union.empty()) {
+        std::set<std::string_view> tmp;
+        for(const auto& i: option_infos.subspan(this->first_searchable_index)) {
+            for(auto prefix: i.prefixes)
+                tmp.insert(prefix);
+        }
+        this->prefixes_union = std::vector<std::string_view>(tmp.begin(), tmp.end());
+    }
+
+    std::set<char> seen_chars;
+    for(auto& prefix: this->prefixes_union) {
+        seen_chars.insert(prefix.begin(), prefix.end());
+    }
+    this->prefix_chars.assign(seen_chars.begin(), seen_chars.end());
+}
+
+std::optional<OptionRef> OptTable::option(std::uint32_t opt_id) const {
+    if(opt_id == 0)
+        return std::nullopt;
+    assert((opt_id - 1) < static_cast<std::uint32_t>(this->option_infos.size()) && "Invalid ID.");
+    return OptionRef(this->option_infos[opt_id - 1], *this);
+}
+
+std::optional<OptionRef> OptTable::find_option(std::string_view argument, std::uint32_t vis) const {
+    std::string arg_str(argument);
+    if(argument.ends_with("="))
+        arg_str += "placeholder";
+
+    std::array<std::string_view, 2> argv = {arg_str, "placeholder"};
+    ArgsRef args(argv);
+
+    ParseOptions opts;
+    opts.visibility = vis;
+    auto range = search_range(*this);
+    auto scan = scan_and_accept(*this, range, args, 0, false, opts);
+
+    if(scan.result == AcceptResult::Matched)
+        return this->option(scan.out.id);
+    return std::nullopt;
+}
+
+void OptTable::render(const ParsedArg& arg, kota::function_ref<void(std::string_view)> cb) const {
+    auto emit = [&](std::string_view sv) {
+        cb(sv);
+    };
+    auto opt = option(arg.id);
+
+    if(!opt) {
+        emit(arg.spelling);
+        for(auto& v: arg.values)
+            emit(v);
+        return;
+    }
+
+    auto kind = opt->kind();
+    if(kind == Kind::Input || kind == Kind::Unknown) {
+        emit(arg.spelling);
+        for(auto& v: arg.values)
+            emit(v);
+        return;
+    }
+
+    if(opt->has_no_opt_as_input()) {
+        for(auto& v: arg.values)
+            emit(v);
+        return;
+    }
+
+    auto target = opt->unaliased_option();
+    auto name = target.prefixed_name();
+
+    switch(opt->render_style()) {
+        case RenderStyle::Values:
+            for(auto& v: arg.values)
+                emit(v);
+            break;
+        case RenderStyle::Joined: {
+            std::string joined(name);
+            if(!arg.values.empty())
+                joined += arg.values[0];
+            emit(joined);
+            for(std::size_t i = 1; i < arg.values.size(); ++i)
+                emit(arg.values[i]);
+            break;
+        }
+        case RenderStyle::Separate:
+            emit(name);
+            for(auto& v: arg.values)
+                emit(v);
+            break;
+        case RenderStyle::CommaJoined: {
+            std::string token(name);
+            for(std::size_t i = 0; i < arg.values.size(); ++i) {
+                if(i > 0)
+                    token += ',';
+                token += arg.values[i];
+            }
+            emit(token);
+            break;
+        }
+    }
+}
+
+bool ParseOptions::excludes(const OptionRef& opt) const {
+    if(!opt.has_visibility_flag(visibility))
+        return true;
+    if(include_flags && !opt.has_flag(include_flags))
+        return true;
+    if(exclude_flags && opt.has_flag(exclude_flags))
+        return true;
+    return false;
+}
+
+ParseIter::ParseIter(const OptTable* table, ArgsRef args, ParseOptions options) :
+    table(table), args(args), options(options), done(false),
     is_grouped(options.grouped_short_options) {
     advance();
 }
@@ -656,8 +687,6 @@ ParseIter::ParseIter(const OptTable* table,
 void ParseIter::advance() {
     if(done)
         return;
-
-    ArgSpan args(data, count, access);
 
     while(index < args.size()) {
         auto str = args[index];
@@ -697,8 +726,7 @@ void ParseIter::advance() {
 
         if(is_grouped && !in_group) {
             ParsedArg out;
-            auto result =
-                parse_step_grouped(*table, data, count, access, index, out, group_buf, options);
+            auto result = parse_step_grouped(*table, args, index, out, group_buf, options);
             if(result == static_cast<int>(AcceptResult::Matched)) {
                 if(!group_buf.empty())
                     in_group = true;
@@ -712,19 +740,10 @@ void ParseIter::advance() {
             }
         } else if(is_grouped && in_group) {
             ParsedArg out;
-            auto buf_access = [](const void* d,
-                                 [[maybe_unused]] std::uint32_t i) -> std::string_view {
-                return *static_cast<const std::string*>(d);
-            };
+            std::array<std::string_view, 1> buf_arr = {group_buf};
             std::uint32_t buf_index = 0;
-            auto result = parse_step_grouped(*table,
-                                             &group_buf,
-                                             1,
-                                             buf_access,
-                                             buf_index,
-                                             out,
-                                             group_buf,
-                                             options);
+            auto result =
+                parse_step_grouped(*table, ArgsRef(buf_arr), buf_index, out, group_buf, options);
             out.index = index;
             if(result == static_cast<int>(AcceptResult::Matched)) {
                 if(group_buf.empty()) {
@@ -740,7 +759,7 @@ void ParseIter::advance() {
             continue;
         } else {
             ParsedArg out;
-            auto result = parse_step(*table, data, count, access, index, out, options);
+            auto result = parse_step(*table, args, index, out, options);
             if(result == static_cast<int>(AcceptResult::Matched)) {
                 out.next_index = index;
                 current = out;

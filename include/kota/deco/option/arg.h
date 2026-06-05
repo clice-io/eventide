@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "kota/support/small_vector.h"
@@ -136,5 +137,39 @@ constexpr inline auto pfx_dash_double = std::span<const std::string_view>(_pfx_d
 constexpr inline auto pfx_double = std::span<const std::string_view>(_pfx_double);
 constexpr inline auto pfx_all = std::span<const std::string_view>(_pfx_all);
 constexpr inline auto pfx_slash_dash = std::span<const std::string_view>(_pfx_slash_dash);
+
+/// Type-erased reference to a contiguous range of string-like arguments.
+/// Non-owning — the underlying range must outlive this object.
+class ArgsRef {
+public:
+    ArgsRef() = default;
+
+    ArgsRef(const void* data,
+            std::uint32_t size,
+            std::string_view (*access)(const void*, std::uint32_t)) :
+        data(data), count(size), access(access) {}
+
+    template <typename Range>
+        requires (!std::is_same_v<Range, ArgsRef>)
+    ArgsRef(const Range& range) :
+        data(range.data()), count(static_cast<std::uint32_t>(range.size())),
+        access([](const void* d, std::uint32_t i) -> std::string_view {
+            using Elem = typename Range::value_type;
+            return static_cast<const Elem*>(d)[i];
+        }) {}
+
+    std::string_view operator[](std::uint32_t i) const {
+        return access(data, i);
+    }
+
+    std::uint32_t size() const {
+        return count;
+    }
+
+private:
+    const void* data = nullptr;
+    std::uint32_t count = 0;
+    std::string_view (*access)(const void*, std::uint32_t) = nullptr;
+};
 
 }  // namespace kota::option

@@ -684,5 +684,150 @@ TEST_CASE(find_option_basic) {
 
 };  // TEST_SUITE(option_extended_coverage)
 
+TEST_SUITE(option_render) {
+
+auto collect(const OptTable& table, const ParsedArg& arg) {
+    std::vector<std::string> out;
+    auto cb = [&](std::string_view sv) {
+        out.push_back(std::string(sv));
+    };
+    table.render(arg, cb);
+    return out;
+}
+
+TEST_CASE(render_flag_separate) {
+    auto table = make_main_opt_table();
+    auto parsed = parse_all(table, split2vec("--help"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "--help");
+}
+
+TEST_CASE(render_alias_uses_canonical_name) {
+    auto table = make_main_opt_table();
+    auto parsed = parse_all(table, split2vec("-h"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_HELP);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "--help");
+}
+
+TEST_CASE(render_separate_option) {
+    auto table = make_main_opt_table();
+    auto opts = make_main_parse_options();
+    auto parsed = parse_all(table, split2vec("-s script.py"), opts);
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 2U);
+    EXPECT_EQ(rendered[0], "-s");
+    EXPECT_EQ(rendered[1], "script.py");
+}
+
+TEST_CASE(render_joined_option) {
+    auto table = make_kinds_opt_table();
+    auto parsed = parse_all(table, split2vec("-jabc"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "-jabc");
+}
+
+TEST_CASE(render_comma_joined_option) {
+    auto table = make_kinds_opt_table();
+    auto parsed = parse_all(table, split2vec("--list=a,b,c"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "--list=a,b,c");
+}
+
+TEST_CASE(render_multi_arg_option) {
+    auto table = make_kinds_opt_table();
+    auto parsed = parse_all(table, split2vec("--pair left right"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 3U);
+    EXPECT_EQ(rendered[0], "--pair");
+    EXPECT_EQ(rendered[1], "left");
+    EXPECT_EQ(rendered[2], "right");
+}
+
+TEST_CASE(render_joined_or_separate_as_joined) {
+    auto table = make_kinds_opt_table();
+    auto parsed = parse_all(table, split2vec("-o2"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 2U);
+    EXPECT_EQ(rendered[0], "-o");
+    EXPECT_EQ(rendered[1], "2");
+}
+
+TEST_CASE(render_joined_and_separate) {
+    auto table = make_kinds_opt_table();
+    auto parsed = parse_all(table, split2vec("-x4 tail"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 2U);
+    EXPECT_EQ(rendered[0], "-x4");
+    EXPECT_EQ(rendered[1], "tail");
+}
+
+TEST_CASE(render_input_preserves_spelling) {
+    auto table = make_main_opt_table();
+    auto opts = make_main_parse_options();
+    auto parsed = parse_all(table, split2vec("myfile.txt"), opts);
+    ASSERT_EQ(parsed.args.size(), 1U);
+    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_INPUT);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "myfile.txt");
+}
+
+TEST_CASE(render_unknown_preserves_spelling) {
+    auto table = make_main_opt_table();
+    auto opts = make_main_parse_options();
+    auto parsed = parse_all(table, split2vec("--unknown-flag"), opts);
+    ASSERT_EQ(parsed.args.size(), 1U);
+    EXPECT_EQ(parsed.args[0].id, MAIN_OPT_UNKNOWN);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "--unknown-flag");
+}
+
+TEST_CASE(render_alias_with_args) {
+    auto table = make_alias_opt_table();
+    auto parsed = parse_all(table, split2vec("--trap-defaults"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+    EXPECT_EQ(parsed.args[0].id, ALIAS_OPT_TRAP_EQ);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "--trap=all,undefined");
+}
+
+TEST_CASE(render_override_flag_uses_joined_style) {
+    auto table = make_match_opt_table();
+    auto parsed = parse_all(table, split2vec("-r"));
+    ASSERT_EQ(parsed.args.size(), 1U);
+
+    auto rendered = collect(table, parsed.args[0]);
+    ASSERT_EQ(rendered.size(), 1U);
+    EXPECT_EQ(rendered[0], "-r");
+}
+
+};  // TEST_SUITE(option_render)
+
 }  // namespace
 }  // namespace kota::option

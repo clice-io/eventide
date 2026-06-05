@@ -1290,12 +1290,13 @@ public:
     }
 
     auto make_opt_table() const& {
-        return backend::OptTable(option_infos());
+        auto table = backend::OptTable(option_infos());
+        table.search_includes_input = true;
+        return table;
     }
 
     auto make_parse_options() const& {
         backend::ParseOptions opts;
-        opts.input_random_index = true;
         opts.dash_dash_parsing = hasTrailingPack;
         opts.dash_dash_packing = hasTrailingPack;
         return opts;
