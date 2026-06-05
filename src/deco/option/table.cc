@@ -668,7 +668,7 @@ void ParseIter::advance() {
 
         if(!past_dash_dash && options.dash_dash_parsing && str == "--") {
             past_dash_dash = true;
-            if(options.dash_dash_as_single_pack) {
+            if(options.dash_dash_packing) {
                 ParsedArg out;
                 out.id = table->input_option_id;
                 out.spelling = "--";

@@ -1297,7 +1297,7 @@ public:
         backend::ParseOptions opts;
         opts.input_random_index = true;
         opts.dash_dash_parsing = hasTrailingPack;
-        opts.dash_dash_as_single_pack = hasTrailingPack;
+        opts.dash_dash_packing = hasTrailingPack;
         return opts;
     }
 

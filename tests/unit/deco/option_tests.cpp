@@ -42,7 +42,7 @@ OptTable make_main_opt_table() {
 ParseOptions make_main_parse_options() {
     ParseOptions opts;
     opts.dash_dash_parsing = true;
-    opts.dash_dash_as_single_pack = true;
+    opts.dash_dash_packing = true;
     return opts;
 }
 
@@ -74,7 +74,7 @@ OptTable make_proxy_opt_table() {
 ParseOptions make_proxy_parse_options() {
     ParseOptions opts;
     opts.dash_dash_parsing = true;
-    opts.dash_dash_as_single_pack = true;
+    opts.dash_dash_packing = true;
     opts.greedy_unknown = true;
     return opts;
 }

@@ -25,7 +25,7 @@ struct ParseOptions {
 
     /// When dash_dash_parsing is on, pack everything after "--" into a single
     /// ParsedArg whose spelling is "--" and values contain the rest of argv.
-    bool dash_dash_as_single_pack = false;
+    bool dash_dash_packing = false;
 
     /// Search from index 0 instead of first_searchable_index, so that Input
     /// and Unknown entries also participate in the prefix/name scan.
