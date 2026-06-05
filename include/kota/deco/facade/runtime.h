@@ -564,7 +564,7 @@ std::expected<Invocation<T>, ParseError>
             return true;
         };
 
-        for(auto& result: backend::parse(table, current_argv, parse_options)) {
+        for(auto& result: table.parse(current_argv, parse_options)) {
             if(!result.has_value()) {
                 auto& parse_error = result.error();
                 auto error_msg =

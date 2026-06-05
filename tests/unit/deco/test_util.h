@@ -28,7 +28,7 @@ inline ParseCapture parse_all(const OptTable& table,
                               ParseOptions options = {}) {
     ParseCapture capture;
     capture.argv = std::move(argv);
-    for(auto& result: parse(table, capture.argv, options)) {
+    for(auto& result: table.parse(capture.argv, options)) {
         if(result.has_value()) {
             capture.args.push_back(*result);
         } else {
@@ -82,7 +82,7 @@ std::expected<ParsedArgs, std::string> parse_with(const BuiltTy& built,
     auto opts = built.make_parse_options();
     ParsedArgs args;
     args.argv_storage = std::move(argv);
-    for(auto& result: parse(table, args.argv_storage, opts)) {
+    for(auto& result: table.parse(args.argv_storage, opts)) {
         if(!result.has_value()) {
             return std::unexpected(std::string(result.error().message));
         }

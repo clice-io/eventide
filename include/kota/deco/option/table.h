@@ -91,9 +91,13 @@ struct OptTable {
     /// option name (after alias resolution) and the option's render style.
     /// Invokes the callback once per rendered fragment.
     void render(const ParsedArg& arg, kota::function_ref<void(std::string_view)> cb) const;
+
+    template <typename Range>
+    auto parse(Range& argv, ParseOptions options = {}) const;
 };
 
-/// Yields ParsedArg views into the argv range; the range must outlive iteration.
+/// Input iterator that yields one ParsedArg (or ParseError) per advance.
+/// The argv range passed at construction must outlive iteration.
 class ParseIter {
 public:
     using iterator_concept = std::input_iterator_tag;
@@ -134,25 +138,40 @@ public:
 private:
     void advance();
 
+    /// The option table driving this parse.
     const OptTable* table = nullptr;
+
+    /// Type-erased view into the argv being parsed.
     ArgsRef args;
+
+    /// Next argv index to consume.
     std::uint32_t index = 0;
+
+    /// Per-parse configuration snapshot.
     ParseOptions options;
+
+    /// True once all argv elements have been consumed.
     bool done = true;
+
+    /// Most recently produced result (valid after each advance).
     value_type current;
+
+    /// Whether grouped-short-option mode is active for this parse.
     bool is_grouped = false;
+
+    /// Scratch buffer for expanding grouped short options (e.g. "-abc").
     std::string group_buf;
+
+    /// True while iterating inside an expanded group.
     bool in_group = false;
+
+    /// True after "--" has been seen (dash_dash_parsing mode).
     bool past_dash_dash = false;
 };
 
-inline auto parse(const OptTable& table, ArgsRef args, ParseOptions options = {}) {
-    return std::ranges::subrange(ParseIter(&table, args, options), ParseIter());
-}
-
 template <typename Range>
-auto parse(const OptTable& table, Range& argv, ParseOptions options = {}) {
-    return parse(table, ArgsRef(argv), options);
+auto OptTable::parse(Range& argv, ParseOptions options) const {
+    return std::ranges::subrange(ParseIter(this, ArgsRef(argv), options), ParseIter());
 }
 
 }  // namespace kota::option

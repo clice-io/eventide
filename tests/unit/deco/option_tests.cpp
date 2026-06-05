@@ -518,7 +518,7 @@ TEST_CASE(visibility_filter_affects_matching) {
     ParseCapture default_vis;
     ParseOptions default_opts;
     default_opts.visibility = DefaultVis;
-    for(auto& result: parse(table, argv, default_opts)) {
+    for(auto& result: table.parse(argv, default_opts)) {
         if(result.has_value())
             default_vis.args.push_back(*result);
         else
@@ -532,7 +532,7 @@ TEST_CASE(visibility_filter_affects_matching) {
     ParseCapture capture;
     ParseOptions internal_opts;
     internal_opts.visibility = kInternalVisibility;
-    for(auto& result: parse(table, argv, internal_opts)) {
+    for(auto& result: table.parse(argv, internal_opts)) {
         if(result.has_value())
             capture.args.push_back(*result);
         else
@@ -550,7 +550,7 @@ TEST_CASE(flag_filter_affects_matching) {
     ParseCapture include_capture;
     ParseOptions include_opts;
     include_opts.include_flags = kExperimentalFlag;
-    for(auto& result: parse(table, argv, include_opts)) {
+    for(auto& result: table.parse(argv, include_opts)) {
         if(result.has_value())
             include_capture.args.push_back(*result);
         else
@@ -564,7 +564,7 @@ TEST_CASE(flag_filter_affects_matching) {
     ParseCapture exclude_capture;
     ParseOptions exclude_opts;
     exclude_opts.exclude_flags = kExperimentalFlag;
-    for(auto& result: parse(table, argv, exclude_opts)) {
+    for(auto& result: table.parse(argv, exclude_opts)) {
         if(result.has_value())
             exclude_capture.args.push_back(*result);
         else
