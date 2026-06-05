@@ -93,10 +93,10 @@ struct OptNameLess {
     }
 };
 
-bool is_input(const OptTable* table, std::string_view arg) {
+bool is_input(const OptTable& table, std::string_view arg) {
     if(arg == "-")
         return true;
-    for(const auto& prefix: table->prefixes_union) {
+    for(const auto& prefix: table.prefixes_union) {
         if(arg.starts_with(prefix))
             return false;
     }
@@ -115,39 +115,6 @@ std::uint32_t match_opt(const Option* i, std::string_view str, bool ignore_case)
         }
     }
     return 0;
-}
-
-void consume_unknown_values(const OptTable* table,
-                            const Option* search_begin,
-                            const Option* search_end,
-                            bool ignore_case,
-                            ArgSpan args,
-                            std::uint32_t& index,
-                            ParsedArg& out,
-                            const ParseOptions& options) {
-    while(index < args.size()) {
-        auto next = args[index];
-        if(next.empty() || next == "--")
-            break;
-
-        if(!is_input(table, next)) {
-            bool found_known = false;
-            for(auto* s = search_begin; s != search_end; ++s) {
-                if(match_opt(s, next, ignore_case)) {
-                    OptionRef opt(*s, *table);
-                    if(!options.excludes(opt)) {
-                        found_known = true;
-                        break;
-                    }
-                }
-            }
-            if(found_known)
-                break;
-        }
-
-        out.add_value(next);
-        ++index;
-    }
 }
 
 AcceptResult accept_internal(const OptionRef& opt,
@@ -301,6 +268,164 @@ AcceptResult accept_opt(const OptionRef& opt,
     return AcceptResult::Matched;
 }
 
+// ============================================================================
+// Shared helpers for parse_step, parse_step_grouped, and find_option.
+// ============================================================================
+
+struct SearchRange {
+    const Option* begin;
+    const Option* end;
+};
+
+SearchRange search_range(const OptTable& table, const ParseOptions& options) {
+    auto offset = options.input_random_index ? 0U : table.first_searchable_index;
+    return {
+        table.option_infos.data() + offset,
+        table.option_infos.data() + table.option_infos.size(),
+    };
+}
+
+struct ScanResult {
+    AcceptResult result = AcceptResult::NoMatch;
+    ParsedArg out;
+    std::uint32_t new_index = 0;
+    const Option* fallback_flag = nullptr;
+};
+
+/// Scan [range.begin, range.end) for the best option that accepts args[index].
+///
+/// first_match = true:  return immediately on first acceptance (tablegen / grouped).
+/// first_match = false: scan all options and return the longest accepted match.
+///
+/// Also tracks fallback_flag: the first 2-char Flag candidate that didn't accept
+/// (used by parse_step_grouped for short-option group expansion).
+ScanResult scan_and_accept(const OptTable& table,
+                           SearchRange range,
+                           ArgSpan args,
+                           std::uint32_t index,
+                           bool first_match,
+                           const ParseOptions& options) {
+    auto* begin = range.begin;
+    auto* end = range.end;
+
+    if(options.tablegen_mode) {
+        auto name = ltrim_all_of(args[index], table.prefix_chars);
+        begin = std::lower_bound(begin, end, name, OptNameLess());
+    }
+
+    ScanResult result;
+    std::uint32_t best_match_size = 0;
+    std::uint32_t best_index = index;
+    std::uint32_t missing_match_size = 0;
+    std::uint32_t missing_index = index;
+
+    for(auto* it = begin; it != end; ++it) {
+        auto arg_sz = match_opt(it, args[index], table.ignore_case);
+        if(!arg_sz)
+            continue;
+
+        OptionRef opt(*it, table);
+        if(options.excludes(opt))
+            continue;
+
+        std::uint32_t try_index = index;
+        ParsedArg try_out;
+        auto a = accept_opt(opt, args, args[index].substr(0, arg_sz), false, try_index, try_out);
+
+        if(a == AcceptResult::Matched) {
+            if(first_match) {
+                result.result = AcceptResult::Matched;
+                result.out = try_out;
+                result.new_index = try_index;
+                return result;
+            }
+            if(best_match_size < arg_sz) {
+                result.out = try_out;
+                best_match_size = arg_sz;
+                best_index = try_index;
+            }
+            continue;
+        }
+
+        if(arg_sz == 2 && it->kind == Kind::Flag)
+            result.fallback_flag = it;
+
+        if(try_index != index) {
+            if(first_match) {
+                result.result = AcceptResult::MissingValue;
+                result.out.index = index;
+                result.new_index = try_index;
+                return result;
+            }
+            if(missing_match_size < arg_sz) {
+                missing_index = try_index;
+                missing_match_size = arg_sz;
+            }
+        }
+    }
+
+    if(best_match_size > 0) {
+        result.result = AcceptResult::Matched;
+        result.new_index = best_index;
+        return result;
+    }
+
+    if(missing_match_size != 0) {
+        result.result = AcceptResult::MissingValue;
+        result.out.index = index;
+        result.new_index = missing_index;
+    }
+
+    return result;
+}
+
+/// Check whether arg would be accepted as a known option in [range).
+/// Uses kind-aware matching: partial prefix matches only count for
+/// joined-style options (Joined, CommaJoined, JoinedOrSeparate, etc.).
+bool is_known_option(SearchRange range,
+                     std::string_view arg,
+                     const OptTable& table,
+                     const ParseOptions& options) {
+    for(auto* s = range.begin; s != range.end; ++s) {
+        auto arg_sz = match_opt(s, arg, table.ignore_case);
+        if(!arg_sz)
+            continue;
+
+        if(arg_sz != arg.size()) {
+            switch(s->kind) {
+                case Kind::Joined:
+                case Kind::CommaJoined:
+                case Kind::JoinedOrSeparate:
+                case Kind::JoinedAndSeparate:
+                case Kind::RemainingArgsJoined: break;
+                default: continue;
+            }
+        }
+
+        OptionRef opt(*s, table);
+        if(!options.excludes(opt))
+            return true;
+    }
+    return false;
+}
+
+void consume_unknown_values(const OptTable& table,
+                            SearchRange range,
+                            ArgSpan args,
+                            std::uint32_t& index,
+                            ParsedArg& out,
+                            const ParseOptions& options) {
+    while(index < args.size()) {
+        auto next = args[index];
+        if(next.empty() || next == "--")
+            break;
+        if(!is_input(table, next) && is_known_option(range, next, table, options))
+            break;
+        out.add_value(next);
+        ++index;
+    }
+}
+
 }  // namespace
 
 OptTable::OptTable(std::span<const Option> option_infos,
@@ -348,30 +473,24 @@ std::optional<OptionRef> OptTable::option(std::uint32_t opt_id) const {
     return OptionRef(this->option_infos[opt_id - 1], *this);
 }
 
-std::uint32_t OptTable::find_option(std::string_view argument, std::uint32_t vis) const {
+std::optional<OptionRef> OptTable::find_option(std::string_view argument, std::uint32_t vis) const {
     std::string arg_str(argument);
     if(argument.ends_with("="))
         arg_str += "placeholder";
 
-    std::vector<std::string> args = {arg_str, "placeholder"};
+    std::string_view argv[] = {arg_str, "placeholder"};
     auto access = [](const void* d, std::uint32_t i) -> std::string_view {
-        return static_cast<const std::string*>(d)[i];
+        return static_cast<const std::string_view*>(d)[i];
     };
-    std::uint32_t index = 0;
-    ParsedArg out;
 
     ParseOptions opts;
     opts.visibility = vis;
-    auto result = parse_step(*this,
-                             args.data(),
-                             static_cast<std::uint32_t>(args.size()),
-                             access,
-                             index,
-                             out,
-                             opts);
-    if(result == static_cast<int>(AcceptResult::Matched))
-        return out.id;
-    return 0;
+    auto range = search_range(*this, opts);
+    auto scan = scan_and_accept(*this, range, ArgSpan(argv, 2, access), 0, false, opts);
+
+    if(scan.result == AcceptResult::Matched)
+        return this->option(scan.out.id);
+    return std::nullopt;
 }
 
 bool ParseOptions::excludes(const OptionRef& opt) const {
@@ -395,7 +514,7 @@ int kota::option::parse_step(const OptTable& table,
     std::uint32_t prev = index;
     auto str = args[index];
 
-    if(is_input(&table, str)) {
+    if(is_input(table, str)) {
         out.clear();
         out.id = table.input_option_id;
         out.spelling = str;
@@ -403,92 +522,19 @@ int kota::option::parse_step(const OptTable& table,
         return static_cast<int>(AcceptResult::Matched);
     }
 
-    auto search_start = options.input_random_index ? 0U : table.first_searchable_index;
-    const auto* start = table.option_infos.data() + search_start;
-    const auto* end = table.option_infos.data() + table.option_infos.size();
-    auto name = ltrim_all_of(str, table.prefix_chars);
+    auto range = search_range(table, options);
+    auto scan = scan_and_accept(table, range, args, index, options.tablegen_mode, options);
 
-    start = (options.tablegen_mode) ? std::lower_bound(start, end, name, OptNameLess()) : start;
+    if(scan.result == AcceptResult::Matched) {
+        index = scan.new_index;
+        out = scan.out;
+        return static_cast<int>(AcceptResult::Matched);
+    }
 
-    if(options.tablegen_mode) {
-        for(; start != end; ++start) {
-            std::uint32_t arg_sz = 0;
-            for(; start != end; ++start) {
-                if(arg_sz = match_opt(start, str, table.ignore_case); arg_sz)
-                    break;
-            }
-            if(start == end)
-                break;
-
-            OptionRef opt(*start, table);
-
-            if(options.excludes(opt))
-                continue;
-
-            auto a = accept_opt(opt, args, args[prev].substr(0, arg_sz), false, index, out);
-            if(a == AcceptResult::Matched)
-                return static_cast<int>(AcceptResult::Matched);
-
-            if(prev != index) {
-                out.index = prev;
-                return static_cast<int>(AcceptResult::MissingValue);
-            }
-        }
-    } else {
-        ParsedArg best_out;
-        std::uint32_t best_match_size = 0;
-        std::uint32_t best_index = prev;
-        std::uint32_t missing_index = prev;
-        std::uint32_t missing_match_size = 0;
-
-        for(; start != end; ++start) {
-            std::uint32_t arg_sz = 0;
-            for(; start != end; ++start) {
-                if(arg_sz = match_opt(start, str, table.ignore_case); arg_sz)
-                    break;
-            }
-            if(start == end)
-                break;
-
-            OptionRef opt(*start, table);
-
-            if(options.excludes(opt))
-                continue;
-
-            std::uint32_t candidate_index = prev;
-            ParsedArg candidate_out;
-            auto a = accept_opt(opt,
-                                args,
-                                args[prev].substr(0, arg_sz),
-                                false,
-                                candidate_index,
-                                candidate_out);
-            if(a == AcceptResult::Matched) {
-                if(best_match_size < arg_sz) {
-                    best_out = candidate_out;
-                    best_match_size = arg_sz;
-                    best_index = candidate_index;
-                }
-                continue;
-            }
-
-            if(candidate_index != prev && missing_match_size < arg_sz) {
-                missing_index = candidate_index;
-                missing_match_size = arg_sz;
-            }
-        }
-
-        if(best_match_size > 0) {
-            index = best_index;
-            out = best_out;
-            return static_cast<int>(AcceptResult::Matched);
-        }
-
-        if(missing_match_size != 0) {
-            index = missing_index;
-            out.index = prev;
-            return static_cast<int>(AcceptResult::MissingValue);
-        }
+    if(scan.result == AcceptResult::MissingValue) {
+        index = scan.new_index;
+        out.index = prev;
+        return static_cast<int>(AcceptResult::MissingValue);
     }
 
     if(str[0] == '/') {
@@ -505,14 +551,7 @@ int kota::option::parse_step(const OptTable& table,
     out.index = index++;
 
     if(options.greedy_unknown && str != "--") {
-        consume_unknown_values(&table,
-                               table.option_infos.data() + search_start,
-                               table.option_infos.data() + table.option_infos.size(),
-                               table.ignore_case,
-                               args,
-                               index,
-                               out,
-                               options);
+        consume_unknown_values(table, range, args, index, out, options);
     }
 
     return static_cast<int>(AcceptResult::Matched);
@@ -529,7 +568,7 @@ int kota::option::parse_step_grouped(const OptTable& table,
     ArgSpan args(data, size, access_fn);
     auto str = args[index];
 
-    if(is_input(&table, str)) {
+    if(is_input(table, str)) {
         out.clear();
         out.id = table.input_option_id;
         out.spelling = str;
@@ -538,46 +577,26 @@ int kota::option::parse_step_grouped(const OptTable& table,
         return static_cast<int>(AcceptResult::Matched);
     }
 
-    auto search_start = options.input_random_index ? 0U : table.first_searchable_index;
-    const auto* end_ptr = table.option_infos.data() + table.option_infos.size();
-    auto name = ltrim_all_of(str, table.prefix_chars);
-    const auto* start_ptr = (options.tablegen_mode)
-                                ? std::lower_bound(table.option_infos.data() + search_start,
-                                                   end_ptr,
-                                                   name,
-                                                   OptNameLess())
-                                : table.option_infos.data() + search_start;
-
-    const Option* fallback_opt = nullptr;
+    auto range = search_range(table, options);
     std::uint32_t prev = index;
 
-    for(auto* it = start_ptr; it != end_ptr; ++it) {
-        std::uint32_t arg_sz = match_opt(it, str, table.ignore_case);
-        if(!arg_sz)
-            continue;
+    auto scan = scan_and_accept(table, range, args, index, true, options);
 
-        OptionRef opt(*it, table);
-
-        if(options.excludes(opt))
-            continue;
-
-        auto a = accept_opt(opt, args, str.substr(0, arg_sz), false, index, out);
-        if(a == AcceptResult::Matched) {
-            group_buf.clear();
-            return static_cast<int>(AcceptResult::Matched);
-        }
-
-        if(arg_sz == 2 && opt.kind() == Kind::Flag)
-            fallback_opt = it;
-
-        if(prev != index) {
-            out.index = prev;
-            return static_cast<int>(AcceptResult::MissingValue);
-        }
+    if(scan.result == AcceptResult::Matched) {
+        index = scan.new_index;
+        out = scan.out;
+        group_buf.clear();
+        return static_cast<int>(AcceptResult::Matched);
     }
 
-    if(fallback_opt) {
-        OptionRef opt(*fallback_opt, table);
+    if(scan.result == AcceptResult::MissingValue) {
+        index = scan.new_index;
+        out.index = prev;
+        return static_cast<int>(AcceptResult::MissingValue);
+    }
+
+    if(scan.fallback_flag) {
+        OptionRef opt(*scan.fallback_flag, table);
         if(str.size() > 2 && str[2] == '=') {
             out.clear();
             out.id = table.unknown_option_id;
@@ -622,14 +641,7 @@ int kota::option::parse_step_grouped(const OptTable& table,
     group_buf.clear();
 
     if(options.greedy_unknown && str != "--") {
-        consume_unknown_values(&table,
-                               table.option_infos.data() + search_start,
-                               table.option_infos.data() + table.option_infos.size(),
-                               table.ignore_case,
-                               args,
-                               index,
-                               out,
-                               options);
+        consume_unknown_values(table, range, args, index, out, options);
     }
 
     return static_cast<int>(AcceptResult::Matched);

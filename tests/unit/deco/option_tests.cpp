@@ -235,6 +235,24 @@ TEST_CASE(consecutive_unknown_prefixed) {
     EXPECT_EQ(parsed.args[1].values[0], "1234");
 }
 
+TEST_CASE(unknown_prefix_match_not_treated_as_boundary) {
+    auto table = make_proxy_opt_table();
+    auto opts = make_proxy_parse_options();
+    auto parsed = parse_all(table, split2vec("--unknown --execute-thing -p 1234"), opts);
+
+    EXPECT_TRUE(parsed.errors.empty());
+    ASSERT_EQ(parsed.args.size(), 2U);
+
+    EXPECT_EQ(parsed.args[0].id, PROXY_OPT_UNKNOWN);
+    EXPECT_EQ(parsed.args[0].spelling, "--unknown");
+    ASSERT_EQ(parsed.args[0].values.size(), 1U);
+    EXPECT_EQ(parsed.args[0].values[0], "--execute-thing");
+
+    EXPECT_EQ(parsed.args[1].id, PROXY_OPT_PARENT_ID);
+    ASSERT_EQ(parsed.args[1].values.size(), 1U);
+    EXPECT_EQ(parsed.args[1].values[0], "1234");
+}
+
 };  // TEST_SUITE(option_parse_view)
 
 enum GroupedOptionID {
@@ -658,10 +676,10 @@ TEST_CASE(flag_aliases_merge_values) {
 TEST_CASE(find_option_basic) {
     auto table = make_main_opt_table();
 
-    EXPECT_EQ(table.find_option("--help"), MAIN_OPT_HELP);
-    EXPECT_EQ(table.find_option("-h"), MAIN_OPT_HELP);
-    EXPECT_EQ(table.find_option("-s"), MAIN_OPT_SCRIPT);
-    EXPECT_EQ(table.find_option("--nonexistent"), MAIN_OPT_UNKNOWN);
+    EXPECT_EQ(table.find_option("--help")->id(), MAIN_OPT_HELP);
+    EXPECT_EQ(table.find_option("-h")->id(), MAIN_OPT_HELP);
+    EXPECT_EQ(table.find_option("-s")->id(), MAIN_OPT_SCRIPT);
+    EXPECT_TRUE(!table.find_option("--nonexistent"));
 }
 
 };  // TEST_SUITE(option_extended_coverage)
