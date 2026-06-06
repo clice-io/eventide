@@ -38,8 +38,11 @@ namespace kota {
 // Thread safety: `closed` is atomic and may be read/written from any thread.
 // All other fields are only accessed from the event-loop thread except during
 // platform callbacks (macOS dispatch queue, Windows worker thread), which
-// only read `root_path`, `recursive`, and `loop` (all immutable after create)
-// and call post_change()/post_changes() to marshal events to the loop thread.
+// read `root_path`, `recursive` (immutable after create) and call
+// post_change()/post_changes() → notifier.send() (thread-safe) to marshal
+// events to the loop thread. stop_platform() must fully synchronize with
+// all platform callbacks before returning, so that stop() can safely
+// destroy the notifier afterwards.
 struct fs_event_base {
     event_loop* loop;
     relay notifier;
@@ -372,6 +375,10 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
         }
 
         if(dispatch_queue) {
+            // After invalidation, an already-dispatched callback may still be
+            // running on the queue. Synchronously drain it so that stop() can
+            // safely destroy the notifier without racing with send().
+            dispatch_sync_f(dispatch_queue, nullptr, +[](void*) {});
             dispatch_release(dispatch_queue);
             dispatch_queue = nullptr;
         }

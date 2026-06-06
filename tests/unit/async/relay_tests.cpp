@@ -89,8 +89,8 @@ TEST_CASE(relay_multiple_send) {
 }
 
 TEST_CASE(relay_send_with_noop) {
-    // Sending a no-op callback should just release the loop hold
-    // without crashing.
+    // Sending a no-op callback and then destroying the relay should
+    // release the loop hold without crashing.
     auto r = loop.create_relay();
 
     std::thread worker([&, r = std::move(r)]() mutable { r.send([] {}); });
