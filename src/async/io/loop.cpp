@@ -54,16 +54,19 @@ static void release_relay(struct relay::self* p) {
 static void on_relay(uv_async_t* handle) {
     auto* p = static_cast<struct relay::self*>(handle->data);
     std::vector<function<void()>> batch;
-    bool should_close;
     {
         std::lock_guard lock(p->mutex);
         batch = std::move(p->queue);
-        should_close = p->closed;
     }
     for(auto& cb: batch) {
         cb();
     }
-    if(should_close) {
+    bool should_close;
+    {
+        std::lock_guard lock(p->mutex);
+        should_close = p->closed;
+    }
+    if(should_close && !uv::is_closing(*handle)) {
         uv::close(*handle,
                   [](uv_handle_t* h) { release_relay(static_cast<struct relay::self*>(h->data)); });
     }
@@ -116,11 +119,6 @@ void relay::send(function<void()> callback) {
     uv::async_send(self->async);
 }
 
-void relay::unref() noexcept {
-    if(self) {
-        uv::unref(self->async);
-    }
-}
 
 relay event_loop::create_relay() {
     auto* p = new struct relay::self();

@@ -106,7 +106,6 @@ TEST_CASE(relay_concurrent_send) {
 
     auto t = [&]() -> task<> {
         auto r = loop.create_relay();
-        r.unref();
         std::vector<std::thread> threads;
         for(int i = 0; i < N; ++i) {
             threads.emplace_back([&r, &counter]() {
@@ -130,20 +129,15 @@ TEST_CASE(relay_concurrent_send) {
 TEST_CASE(relay_stress_cross_thread) {
     int counter = 0;
 
-    auto t = [&]() -> task<> {
-        auto r = loop.create_relay();
-        std::thread worker([&, r = std::move(r)]() mutable {
-            for(int i = 0; i < 100; ++i) {
-                r.send([&] { counter++; });
-            }
-        });
-        worker.detach();
-        co_await sleep(200, loop);
-        loop.stop();
-    };
+    auto r = loop.create_relay();
+    std::thread worker([&, r = std::move(r)]() mutable {
+        for(int i = 0; i < 100; ++i) {
+            r.send([&] { counter++; });
+        }
+    });
 
-    auto task = t();
-    schedule_all(task);
+    loop.run();
+    worker.join();
     EXPECT_EQ(counter, 100);
 }
 
@@ -180,6 +174,79 @@ TEST_CASE(relay_callback_stops_loop) {
     loop.run();
     worker.join();
     EXPECT_TRUE(stopped);
+}
+
+TEST_CASE(relay_fifo_order) {
+    std::vector<int> order;
+
+    auto t = [&]() -> task<> {
+        auto r = loop.create_relay();
+        for(int i = 0; i < 5; ++i) {
+            r.send([&, i] { order.push_back(i); });
+        }
+        co_await sleep(50, loop);
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(order, (std::vector<int>{0, 1, 2, 3, 4}));
+}
+
+TEST_CASE(relay_pending_callbacks_delivered_after_destroy) {
+    int counter = 0;
+
+    auto t = [&]() -> task<> {
+        {
+            auto r = loop.create_relay();
+            r.send([&] { counter++; });
+            r.send([&] { counter++; });
+            // relay destroyed here; pending callbacks should still be delivered
+        }
+        co_await sleep(50, loop);
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(counter, 2);
+}
+
+TEST_CASE(relay_send_during_drain) {
+    int counter = 0;
+    relay* shared = nullptr;
+
+    auto t = [&]() -> task<> {
+        auto r = loop.create_relay();
+        shared = &r;
+        r.send([&] {
+            counter++;
+            shared->send([&] { counter++; });
+        });
+        co_await sleep(50, loop);
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(counter, 2);
+}
+
+TEST_CASE(relay_move_assign_closes_old) {
+    int old_counter = 0;
+    int new_counter = 0;
+
+    auto t = [&]() -> task<> {
+        auto r = loop.create_relay();
+        r.send([&] { old_counter++; });
+
+        // Move-assign overwrites r; old relay's pending callback should still run.
+        r = loop.create_relay();
+        r.send([&] { new_counter++; });
+        co_await sleep(50, loop);
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(old_counter, 1);
+    EXPECT_EQ(new_counter, 1);
 }
 
 };  // TEST_SUITE(event_loop_relay)

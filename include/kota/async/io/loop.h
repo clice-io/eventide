@@ -19,8 +19,8 @@ class task;
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
 /// Creating a relay keeps the event loop alive until the relay is
-/// destroyed or unref'd. send() can be called multiple times from any
-/// thread; each callback is executed on the loop thread.
+/// destroyed. send() can be called multiple times from any thread;
+/// each callback is executed on the loop thread.
 ///
 /// Usage (one-shot):
 ///   auto relay = loop.create_relay();
@@ -32,6 +32,7 @@ class task;
 ///   relay notify = loop.create_relay();
 ///   // from any thread, repeatedly:
 ///   notify.send([&] { drain_buffer(); });
+///   // destroy the relay (or let it go out of scope) to release the loop hold.
 ///
 /// Ownership:
 ///   The relay object is single-owner and non-copyable. send() is
@@ -58,15 +59,11 @@ public:
 
     /// Posts a callback to the event loop.
     ///
-    /// Thread-safe. Can be called multiple times. Each callback is
-    /// executed on the loop thread in the order it was posted, subject
-    /// to uv_async coalescing across loop iterations.
+    /// Thread-safe. Can be called multiple times. Callbacks are executed
+    /// on the loop thread in FIFO enqueue order. Concurrent producers
+    /// are serialized by a mutex, so cross-thread ordering follows
+    /// mutex acquisition order.
     void send(function<void()> callback);
-
-    /// Unrefs the underlying handle so the relay no longer prevents the
-    /// event loop from exiting. The relay remains usable for send().
-    /// NOT thread-safe: must be called on the loop thread.
-    void unref() noexcept;
 
     /// Opaque implementation detail. Defined in loop.cpp.
     struct self;
@@ -119,7 +116,7 @@ public:
     /// Internally uses uv_async_t to wake up the loop.
     void post(function<void()> callback);
 
-    /// Creates a relay that keeps this event loop alive until used or destroyed.
+    /// Creates a relay that keeps this event loop alive until destroyed.
     ///
     /// NOT thread-safe: must be called on the loop thread. The returned relay
     /// object can then be moved to another thread or captured in a system API
