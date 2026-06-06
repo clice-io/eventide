@@ -15,6 +15,7 @@
 
 namespace kota {
 
+class event_loop;
 class sync_primitive;
 
 /// Type-erased base for all coroutine-related nodes in the task tree.
@@ -25,6 +26,10 @@ class sync_primitive;
 class async_node {
 public:
     enum class NodeKind : std::uint8_t {
+        /// Root node wrapping a scheduled awaitable. Stores tree-wide state
+        /// (event_loop*, future allocator). One per scheduled coroutine tree.
+        Root,
+
         Task,
 
         /// Wait queue entries — wait_node subclasses.
@@ -68,8 +73,10 @@ public:
     std::source_location location;
 
     bool is_task_frame() const noexcept {
-        return kind == NodeKind::Task;
+        return kind == NodeKind::Root || kind == NodeKind::Task;
     }
+
+    event_loop* find_loop() const noexcept;
 
     bool is_wait_node() const noexcept {
         return NodeKind::MutexWaiter <= kind && kind <= NodeKind::EventWaiter;
@@ -109,8 +116,6 @@ public:
 
     std::coroutine_handle<> on_child_complete(async_node& child);
 
-    static void resume_and_drain(std::coroutine_handle<> handle);
-
 protected:
     explicit async_node(NodeKind k) : kind(k) {}
 
@@ -122,7 +127,7 @@ class task_frame : public async_node {
 protected:
     friend class async_node;
 
-    explicit task_frame() : async_node(NodeKind::Task) {}
+    explicit task_frame(NodeKind k = NodeKind::Task) : async_node(k) {}
 
 public:
     bool root = false;
@@ -404,9 +409,6 @@ protected:
         for(auto* child: children) {
             assert(child && "aggregate contains a null child");
             child->resume();
-            if(is_settled() || deferred != Deferred::None) {
-                break;
-            }
         }
 
         if(phase == Phase::Arming) {
@@ -442,5 +444,29 @@ public:
         return parent;
     }
 };
+
+/// Root node for a scheduled coroutine tree. Stores the event_loop that
+/// owns this tree so that descendants can find it via find_loop().
+class root_frame : public task_frame {
+protected:
+    friend class async_node;
+
+    root_frame() : task_frame(NodeKind::Root) {}
+
+public:
+    event_loop* loop = nullptr;
+};
+
+/// Dispatch helpers. If a loop is available, enqueues for resumption
+/// on the next idle tick. Otherwise falls back to a direct resume.
+/// Null/noop handles are ignored.
+void dispatch(event_loop* loop, std::coroutine_handle<> handle);
+void dispatch(event_loop* loop, async_node* node);
+
+/// Defers a coroutine frame destroy until the current dispatch batch
+/// completes. Returns true if the destroy was deferred (caller must NOT
+/// call h.destroy()). Returns false if no dispatch is active (caller
+/// must destroy normally).
+bool defer_frame_destroy(std::coroutine_handle<> h) noexcept;
 
 }  // namespace kota

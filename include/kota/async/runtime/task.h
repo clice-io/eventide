@@ -486,7 +486,9 @@ public:
     task& operator=(task&& other) noexcept {
         if(this != &other) {
             if(h) {
-                h.destroy();
+                if(!defer_frame_destroy(h)) {
+                    h.destroy();
+                }
             }
             h = other.h;
             other.h = nullptr;
@@ -496,7 +498,9 @@ public:
 
     ~task() {
         if(h) {
-            h.destroy();
+            if(!defer_frame_destroy(h)) {
+                h.destroy();
+            }
         }
     }
 

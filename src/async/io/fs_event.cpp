@@ -65,6 +65,8 @@ struct fs_event_base {
     }
 
     void post_change(std::weak_ptr<fs_event_base> weak, fs_event::change c) {
+        if(closed.load(std::memory_order_acquire))
+            return;
         notifier.send([weak = std::move(weak), c = std::move(c)]() mutable {
             if(auto s = weak.lock()) {
                 s->push_event(std::move(c));
@@ -73,6 +75,8 @@ struct fs_event_base {
     }
 
     void post_changes(std::weak_ptr<fs_event_base> weak, std::vector<fs_event::change> changes) {
+        if(closed.load(std::memory_order_acquire))
+            return;
         notifier.send([weak = std::move(weak), changes = std::move(changes)]() mutable {
             if(auto s = weak.lock()) {
                 for(auto& c: changes) {
@@ -871,6 +875,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     s->notifier = loop.create_relay();
     s->debounce_timer = timer::create(loop);
+    s->notify = loop.create_relay();
 
     auto init_err = s->init_platform(s);
     if(init_err) {

@@ -78,9 +78,6 @@ struct process_await : uv::await_op<process_await> {
     }
 
     process::wait_result await_resume() noexcept {
-        if(self) {
-            self->disarm();
-        }
         return result;
     }
 };

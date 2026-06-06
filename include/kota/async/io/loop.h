@@ -1,10 +1,13 @@
 #pragma once
 
+#include <coroutine>
 #include <memory>
 #include <source_location>
 #include <tuple>
+#include <type_traits>
 
 #include "kota/support/functional.h"
+#include "kota/async/runtime/root.h"
 
 struct uv_loop_s;
 using uv_loop_t = uv_loop_s;
@@ -130,18 +133,32 @@ public:
     /// release handles tied to this loop.
     void on_destroy(function<void()> callback);
 
-    /// Schedules a task for execution on this event loop.
-    /// If the task is passed by rvalue (temporary), the loop takes ownership
-    /// (sets root=true). The task will be destroyed after it completes.
-    template <typename Task>
-    void schedule(Task&& task, std::source_location location = std::source_location::current()) {
-        auto& promise = task.h.promise();
-        if constexpr(std::is_rvalue_reference_v<Task&&>) {
-            promise.root = true;
-            task.release();
-        }
+    /// Enqueues a node or handle for resumption on the next idle tick.
+    /// Never resumes directly — always defers to the event loop.
+    void dispatch(async_node* node);
+    void dispatch(std::coroutine_handle<> handle);
 
-        schedule(static_cast<async_node&>(promise), location);
+    /// Schedules a task for execution on this event loop.
+    /// The task retains its handle so the caller can read the result after run().
+    template <typename T, typename E, typename C>
+    void schedule(task<T, E, C>& task,
+                  std::source_location location = std::source_location::current()) {
+        auto root = detail::make_root_ref(task.h.promise());
+        root.h.promise().loop = this;
+        schedule(static_cast<async_node&>(root.h.promise()), location);
+        root.release();
+    }
+
+    /// Schedules any rvalue awaitable for execution on this event loop.
+    /// A root coroutine wraps the awaitable, taking ownership of it.
+    /// The root is destroyed automatically when the awaitable completes.
+    template <detail::awaitable A>
+    void schedule(A&& awaitable, std::source_location location = std::source_location::current())
+        requires std::is_rvalue_reference_v<A&&> {
+        auto root = detail::make_root(std::forward<A>(awaitable));
+        root.h.promise().loop = this;
+        schedule(static_cast<async_node&>(root.h.promise()), location);
+        root.release();
     }
 
 private:

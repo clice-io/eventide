@@ -38,7 +38,10 @@ public:
             assert((child->state == async_node::Finished || child->state == async_node::Cancelled ||
                     child->state == async_node::Failed) &&
                    "task_group destroyed before all children completed; co_await join() first");
-            static_cast<task_frame*>(child)->handle().destroy();
+            auto handle = static_cast<task_frame*>(child)->handle();
+            if(!defer_frame_destroy(handle)) {
+                handle.destroy();
+            }
         }
     }
 
@@ -60,8 +63,8 @@ public:
         children.push_back(node);
         error_handlers.push_back(&extract_error<T, E>);
 
-        auto handle = node->attach(*this, std::source_location::current());
-        async_node::resume_and_drain(handle);
+        node->attach(*this, std::source_location::current());
+        node->resume();
         return true;
     }
 
@@ -74,8 +77,9 @@ public:
 
         if(completed == total && parent) {
             phase = Phase::Settled;
-            auto handle = flush_deferred();
-            async_node::resume_and_drain(handle);
+            auto* loop = find_loop();
+            auto next = flush_deferred();
+            dispatch(loop, next);
         }
     }
 

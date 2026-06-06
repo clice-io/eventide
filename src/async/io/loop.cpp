@@ -12,6 +12,11 @@
 
 namespace kota {
 
+struct dispatch_item {
+    async_node* node = nullptr;
+    std::coroutine_handle<> handle;
+};
+
 struct relay::Self {
     uv_async_t async = {};
     std::mutex mutex;
@@ -23,8 +28,11 @@ struct event_loop::Self : relay::Self {
     uv_loop_t loop = {};
     uv_idle_t idle = {};
     bool idle_running = false;
-    std::deque<async_node*> tasks;
+    std::deque<dispatch_item> tasks;
     std::vector<function<void()>> destroy_callbacks;
+
+    bool processing = false;
+    std::vector<std::coroutine_handle<>> pending_destroys;
 };
 
 static void on_relay(uv_async_t* handle) {
@@ -83,7 +91,7 @@ relay event_loop::create_relay() {
 static thread_local event_loop* current_loop = nullptr;
 
 event_loop& event_loop::current() {
-    assert(current_loop && "event_loop::current() called outside a running loop");
+    assert(current_loop && "no event loop running on this thread");
     return *current_loop;
 }
 
@@ -95,10 +103,20 @@ void each(uv_idle_t* idle) {
         return;
     }
 
-    /// Resume may create new tasks, we want to run them in the next iteration.
+    self->processing = true;
     auto all = std::move(self->tasks);
-    for(auto& task: all) {
-        task->resume();
+    for(auto& item: all) {
+        if(item.node) {
+            item.node->resume();
+        } else if(item.handle && item.handle != std::noop_coroutine()) {
+            item.handle.resume();
+        }
+    }
+    self->processing = false;
+
+    auto destroys = std::move(self->pending_destroys);
+    for(auto h: destroys) {
+        h.destroy();
     }
 }
 
@@ -117,7 +135,7 @@ void event_loop::schedule(async_node& frame, std::source_location loc) {
         loop->idle_running = true;
         uv::idle_start(loop->idle, each);
     }
-    loop->tasks.push_back(&frame);
+    loop->tasks.push_back({&frame, {}});
 }
 
 void event_loop::on_destroy(function<void()> callback) {
@@ -141,6 +159,9 @@ event_loop::event_loop() : self(new Self()) {
 }
 
 event_loop::~event_loop() {
+    auto previous = current_loop;
+    current_loop = this;
+
     constexpr static auto cleanup = +[](uv_handle_t* h, void* arg) {
         auto* self = static_cast<event_loop::Self*>(arg);
         if(!uv::is_closing(*h)) {
@@ -178,6 +199,8 @@ event_loop::~event_loop() {
             uv::run(loop, UV_RUN_ONCE);
         }
     }
+
+    current_loop = previous;
 }
 
 event_loop::operator uv_loop_t&() noexcept {
@@ -198,6 +221,36 @@ int event_loop::run() {
 
 void event_loop::stop() {
     uv::stop(self->loop);
+}
+
+void event_loop::dispatch(async_node* node) {
+    assert(node && "dispatch called with null node");
+    if(!self->idle_running) {
+        self->idle_running = true;
+        uv::idle_start(self->idle, each);
+    }
+    self->tasks.push_back({node, {}});
+}
+
+void event_loop::dispatch(std::coroutine_handle<> handle) {
+    if(!handle || handle == std::noop_coroutine()) {
+        return;
+    }
+    if(!self->idle_running) {
+        self->idle_running = true;
+        uv::idle_start(self->idle, each);
+    }
+    self->tasks.push_back({nullptr, handle});
+}
+
+bool defer_frame_destroy(std::coroutine_handle<> h) noexcept {
+    if(!current_loop)
+        return false;
+    auto* s = (*current_loop).operator->();
+    if(!s->processing)
+        return false;
+    s->pending_destroys.push_back(h);
+    return true;
 }
 
 }  // namespace kota

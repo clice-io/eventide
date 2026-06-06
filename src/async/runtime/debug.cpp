@@ -10,6 +10,7 @@ namespace kota {
 
 static std::string_view async_kind_name(async_node::NodeKind k) {
     switch(k) {
+        case async_node::NodeKind::Root: return "Root";
         case async_node::NodeKind::Task: return "Task";
         case async_node::NodeKind::MutexWaiter: return "MutexWaiter";
         case async_node::NodeKind::EventWaiter: return "EventWaiter";

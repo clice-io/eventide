@@ -10,6 +10,7 @@ namespace kota {
 const inline async_node* get_parent(const async_node& node) {
     using NK = async_node::NodeKind;
     switch(node.kind) {
+        case NK::Root:
         case NK::Task: return static_cast<const task_frame&>(node).get_parent();
         case NK::MutexWaiter:
         case NK::EventWaiter: return static_cast<const wait_node&>(node).get_parent();
@@ -40,6 +41,7 @@ public:
 
         using NK = async_node::NodeKind;
         switch(node.kind) {
+            case NK::Root:
             case NK::Task: {
                 auto& task = static_cast<const task_frame&>(node);
                 if(!derived().visit_task(task))

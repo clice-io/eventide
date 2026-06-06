@@ -57,13 +57,14 @@ protected:
 
     bool resume_waiter(wait_node& link) noexcept {
         auto* awaiting = link.parent;
+        auto* loop = awaiting->find_loop();
         link.parent = nullptr;
         assert(awaiting && "resume_waiter: waiter has no parent");
         if(awaiting->is_cancelled()) {
             return false;
         }
         awaiting->clear_child();
-        awaiting->resume();
+        dispatch(loop, awaiting);
         return true;
     }
 

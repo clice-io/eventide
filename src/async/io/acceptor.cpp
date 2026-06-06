@@ -89,9 +89,6 @@ struct accept_await : uv::await_op<accept_await<Stream>> {
     }
 
     result<Stream> await_resume() noexcept {
-        if(self) {
-            self->disarm();
-        }
         return std::move(outcome);
     }
 };

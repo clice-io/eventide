@@ -26,15 +26,11 @@ TEST_CASE(task_await) {
         co_return res + res1;
     };
 
-// Visual Studio issue:
-// https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
-#if !KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     {
         event_loop loop;
         loop.schedule(foo());
         loop.run();
     }
-#endif
 
     {
         auto [res] = run(foo());

@@ -39,6 +39,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     using await_base = uv::await_op<stream_read_await>;
     // Stream self used to register reader waiter and store error status.
     stream::Self* self;
+    error saved_error;
 
     explicit stream_read_await(stream::Self* self) : self(self) {}
 
@@ -76,10 +77,11 @@ struct stream_read_await : uv::await_op<stream_read_await> {
             uv::read_stop(*stream);
             s->active_read_mode = stream::Self::read_mode::none;
             if(s->reader.has_waiter()) {
-                auto* reader = s->reader.waiter;
+                auto* reader = static_cast<stream_read_await*>(s->reader.waiter);
                 s->reader.mark_cancelled_if(nread);
                 s->reader.disarm();
                 s->error_code = err;
+                reader->saved_error = err;
                 reader->complete();
             }
             return;
@@ -88,9 +90,10 @@ struct stream_read_await : uv::await_op<stream_read_await> {
         s->buffer.advance_write(static_cast<size_t>(nread));
 
         if(s->reader.has_waiter()) {
-            auto* reader = s->reader.waiter;
+            auto* reader = static_cast<stream_read_await*>(s->reader.waiter);
             s->reader.disarm();
             s->error_code = {};
+            reader->saved_error = {};
             reader->complete();
         }
     }
@@ -113,6 +116,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
         // was active, switch callbacks by stopping that watcher first.
         if(auto err = ensure_reading(self, stream::Self::read_mode::buffered, on_alloc, on_read)) {
             self->error_code = err;
+            saved_error = err;
             return waiting;
         }
         self->reader.arm(*this);
@@ -120,7 +124,7 @@ struct stream_read_await : uv::await_op<stream_read_await> {
     }
 
     error await_resume() noexcept {
-        return self->error_code;
+        return saved_error;
     }
 };
 
@@ -222,9 +226,6 @@ struct stream_read_some_await : uv::await_op<stream_read_some_await> {
     }
 
     result<std::size_t> await_resume() noexcept {
-        if(self) {
-            self->reader.disarm();
-        }
         return std::move(out);
     }
 };
@@ -297,9 +298,6 @@ struct stream_write_await : uv::await_op<stream_write_await> {
     }
 
     error await_resume() noexcept {
-        if(self) {
-            self->writer.disarm();
-        }
         return this->error_code;
     }
 };
@@ -418,16 +416,13 @@ void stream::stop() {
         auto* reader = self->reader.waiter;
         self->reader.disarm();
 
-        // For buffered reads (stream_read_await), await_resume() returns
-        // self->error_code, so setting it here is sufficient.
         self->error_code = error::operation_aborted;
 
-        // For direct reads (stream_read_some_await), await_resume() returns
-        // aw->out instead of self->error_code. Propagate the error there too
-        // so the caller observes operation_aborted rather than a default error.
         if(mode == Self::read_mode::direct) {
             static_cast<stream_read_some_await*>(reader)->out =
                 outcome_error(error::operation_aborted);
+        } else {
+            static_cast<stream_read_await*>(reader)->saved_error = error::operation_aborted;
         }
 
         reader->complete();

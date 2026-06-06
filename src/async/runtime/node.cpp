@@ -2,41 +2,34 @@
 
 #include <cassert>
 #include <utility>
-#include <vector>
 
 #include "../libuv.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/runtime/sync.h"
+#include "kota/async/runtime/walk.h"
 
 namespace kota {
 
-namespace {
-
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
-#endif
-
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-void drain_pending_destroys() {
-    while(!pending_frame_destroys.empty()) {
-        auto queued = std::move(pending_frame_destroys);
-        pending_frame_destroys.clear();
-        for(auto handle: queued) {
-            assert(handle && "pending destroy queue contains a null handle");
-            handle.destroy();
-        }
+void dispatch(event_loop* loop, std::coroutine_handle<> handle) {
+    if(!handle || handle == std::noop_coroutine()) {
+        return;
+    }
+    if(loop) {
+        loop->dispatch(handle);
+    } else {
+        handle.resume();
     }
 }
-#endif
 
-}  // namespace
-
-void async_node::resume_and_drain(std::coroutine_handle<> handle) {
-    assert(handle && "resume_and_drain called with null handle");
-    handle.resume();
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    drain_pending_destroys();
-#endif
+void dispatch(event_loop* loop, async_node* node) {
+    if(!node) {
+        return;
+    }
+    if(loop) {
+        loop->dispatch(node);
+    } else {
+        node->resume();
+    }
 }
 
 void async_node::intercept_cancel() noexcept {
@@ -76,8 +69,17 @@ std::coroutine_handle<> aggregate_op::flush_deferred() noexcept {
 }
 
 void async_node::clear_child() noexcept {
-    assert(kind == NodeKind::Task && "clear_child requires a task node");
+    assert(is_task_frame() && "clear_child requires a task node");
     static_cast<task_frame*>(this)->set_child(nullptr);
+}
+
+event_loop* async_node::find_loop() const noexcept {
+    for(auto* n = this; n; n = get_parent(*n)) {
+        if(n->kind == NodeKind::Root) {
+            return static_cast<const root_frame*>(n)->loop;
+        }
+    }
+    return nullptr;
 }
 
 /// Recursively cancels this node and all of its descendants.
@@ -89,19 +91,22 @@ void async_node::cancel() {
     state = Cancelled;
 
     switch(kind) {
+        case NodeKind::Root:
         case NodeKind::Task: {
             auto* self = static_cast<task_frame*>(this);
             if(self->child) {
                 self->child->cancel();
-            } else if(self->parent) {
+            } else {
+                auto* loop = find_loop();
                 auto next = self->finalize();
-                async_node::resume_and_drain(next);
+                dispatch(loop, next);
             }
             break;
         }
         case NodeKind::MutexWaiter:
         case NodeKind::EventWaiter: {
             auto* self = static_cast<wait_node*>(this);
+            auto* loop = self->find_loop();
             if(auto* res = self->resource) {
                 res->remove(self);
             }
@@ -109,7 +114,7 @@ void async_node::cancel() {
             self->parent = nullptr;
             assert(p && "wait_node cancelled without a parent");
             auto next = p->on_child_complete(*self);
-            async_node::resume_and_drain(next);
+            dispatch(loop, next);
             break;
         }
 
@@ -126,8 +131,9 @@ void async_node::cancel() {
 
             if(self->is_settled() || self->completed == self->total) {
                 self->phase = aggregate_op::Phase::Settled;
+                auto* loop = self->find_loop();
                 auto next = self->flush_deferred();
-                async_node::resume_and_drain(next);
+                dispatch(loop, next);
             }
             break;
         }
@@ -141,14 +147,15 @@ void async_node::cancel() {
     }
 }
 
-/// Resumes a standard task's coroutine, unless it has been cancelled.
+/// Resumes a task's coroutine, or finalizes it if already cancelled/failed.
 void async_node::resume() {
     if(is_task_frame()) {
-        if(!is_cancelled() && !is_failed()) {
+        if(is_cancelled() || is_failed()) {
+            auto* loop = find_loop();
+            auto next = finalize();
+            dispatch(loop, next);
+        } else {
             static_cast<task_frame*>(this)->handle().resume();
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-            drain_pending_destroys();
-#endif
         }
     }
 }
@@ -160,10 +167,11 @@ void io_op::complete() noexcept {
         state = Finished;
     }
     auto* p = parent;
+    auto* loop = find_loop();
     parent = nullptr;
     assert(p && "io_op completed without a linked parent");
     auto next = p->on_child_complete(*this);
-    async_node::resume_and_drain(next);
+    dispatch(loop, next);
 }
 
 /// Wires this node as a child of `parent_node`. For Task nodes, sets state
@@ -172,11 +180,12 @@ void io_op::complete() noexcept {
 /// and returns noop_coroutine (resumed later by event/complete).
 std::coroutine_handle<> async_node::attach(async_node& parent_node, std::source_location loc) {
     this->location = loc;
-    if(parent_node.kind == NodeKind::Task) {
+    if(parent_node.is_task_frame()) {
         static_cast<task_frame*>(&parent_node)->child = this;
     }
 
     switch(this->kind) {
+        case NodeKind::Root:
         case NodeKind::Task: {
             auto self = static_cast<task_frame*>(this);
             self->state = Running;
@@ -205,23 +214,26 @@ std::coroutine_handle<> async_node::attach(async_node& parent_node, std::source_
 
 /// Called when a task reaches final_suspend (Finished, Cancelled, or Failed).
 /// For root tasks with no parent, destroys the coroutine frame.
-/// Otherwise, notifies the parent via on_child_complete.
+/// Otherwise, notifies the parent via on_child_complete and clears the
+/// parent link so that a subsequent finalize (e.g. from a deferred
+/// dispatch after cancellation) is a safe no-op.
 std::coroutine_handle<> async_node::finalize() {
     switch(kind) {
+        case NodeKind::Root:
         case NodeKind::Task: {
             auto self = static_cast<task_frame*>(this);
             if(!self->parent) {
                 if(self->root) {
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-                    pending_frame_destroys.push_back(self->handle());
-#else
-                    self->handle().destroy();
-#endif
+                    if(!defer_frame_destroy(self->handle())) {
+                        self->handle().destroy();
+                    }
                 }
                 return std::noop_coroutine();
             }
 
-            return self->parent->on_child_complete(*self);
+            auto* p = self->parent;
+            self->parent = nullptr;
+            return p->on_child_complete(*self);
         }
 
         case NodeKind::MutexWaiter:
@@ -248,6 +260,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
     assert(&child != this && "invalid parameter!");
 
     switch(kind) {
+        case NodeKind::Root:
         case NodeKind::Task: {
             auto self = static_cast<task_frame*>(this);
 

@@ -329,7 +329,8 @@ TEST_CASE(wait_sync_primitive) {
     };
 
     auto blocked = worker();
-    blocked->resume();
+    loop.schedule(blocked);
+    loop.run();
 
     auto waiting_dot = dump_dot(blocked);
     EXPECT_NE(waiting_dot.find("Task"), std::string::npos);

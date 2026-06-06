@@ -50,6 +50,7 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
 
     // Watcher self that owns waiter/pending counters.
     SelfT* self;
+    bool ready = false;
 
     explicit basic_tick_await(SelfT* watcher) : self(watcher) {}
 
@@ -83,8 +84,9 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
         }
     }
 
-    bool await_ready() const noexcept {
-        return self && self->pending > 0;
+    bool await_ready() noexcept {
+        ready = self && self->pending > 0;
+        return ready;
     }
 
     std::coroutine_handle<>
@@ -98,11 +100,8 @@ struct basic_tick_await : uv::await_op<basic_tick_await<SelfT, HandleT>> {
     }
 
     void await_resume() noexcept {
-        if(self && self->pending > 0) {
+        if(ready) {
             self->pending -= 1;
-        }
-
-        if(self) {
             self->waiter = nullptr;
         }
     }
@@ -119,6 +118,7 @@ struct signal_await : uv::await_op<signal_await> {
 
     // Signal watcher self that owns waiter/active pointers.
     signal::Self* self;
+    bool ready = false;
     // Result slot returned by await_resume().
     error result{};
 
@@ -151,8 +151,9 @@ struct signal_await : uv::await_op<signal_await> {
         }
     }
 
-    bool await_ready() const noexcept {
-        return self && self->pending > 0;
+    bool await_ready() noexcept {
+        ready = self && self->pending > 0;
+        return ready;
     }
 
     std::coroutine_handle<>
@@ -167,11 +168,8 @@ struct signal_await : uv::await_op<signal_await> {
     }
 
     error await_resume() noexcept {
-        if(self && self->pending > 0) {
+        if(ready) {
             self->pending -= 1;
-        }
-
-        if(self) {
             self->waiter = nullptr;
             self->active = nullptr;
         }

@@ -190,9 +190,6 @@ struct udp_recv_await : uv::await_op<udp_recv_await> {
     }
 
     result<udp::recv_result> await_resume() noexcept {
-        if(self) {
-            self->recv.disarm();
-        }
         return std::move(outcome);
     }
 };
@@ -279,9 +276,6 @@ struct udp_send_await : uv::await_op<udp_send_await> {
     }
 
     error await_resume() noexcept {
-        if(self) {
-            self->send.disarm();
-        }
         return result;
     }
 };

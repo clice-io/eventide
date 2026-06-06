@@ -12,27 +12,10 @@
 #define KOTA_COMPILER_MSVC_VERSION 0
 #endif
 
-// Visual Studio issue:
-// https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
-//
-// Reported fixed in VS 2026 toolset v145, still reproducible in v143.
-// We treat _MSC_VER < 1950 as affected.
-#if KOTA_COMPILER_MSVC && (KOTA_COMPILER_MSVC_VERSION < 1950) &&                                   \
-    (defined(_CRT_USE_ADDRESS_SANITIZER) || defined(__SANITIZE_ADDRESS__))
-#define KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 1
-#else
-#define KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 0
-#endif
-
-// [[msvc::no_unique_address]] corrupts coroutine frame layout under MSVC ASAN.
-// Even without ASAN, MSVC miscompiles the layout of classes that use this
-// attribute when those classes are stored inside a coroutine frame (local
-// variables, not just promise types). Only safe on types that never live in
-// a coroutine frame — e.g. outcome<>, which is embedded in the promise itself.
+// Prefer [[msvc::no_unique_address]] on MSVC, [[no_unique_address]] elsewhere.
 // See: https://developercommunity.visualstudio.com/t/msvc::no_unique_address-nonconforman/10504173
-//      https://developercommunity.visualstudio.com/t/c20-coroutine-memory-corruption/1683791
 #if defined(__has_cpp_attribute)
-#if __has_cpp_attribute(msvc::no_unique_address) && !KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if __has_cpp_attribute(msvc::no_unique_address)
 #define KOTA_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #elif __has_cpp_attribute(no_unique_address)
 #define KOTA_NO_UNIQUE_ADDRESS [[no_unique_address]]
