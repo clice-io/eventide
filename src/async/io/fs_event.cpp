@@ -875,7 +875,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
 
     s->notifier = loop.create_relay();
     s->debounce_timer = timer::create(loop);
-    s->notify = loop.create_relay();
+    s->notifier = loop.create_relay();
 
     auto init_err = s->init_platform(s);
     if(init_err) {
