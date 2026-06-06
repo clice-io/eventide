@@ -112,12 +112,14 @@ void each(uv_idle_t* idle) {
             item.handle.resume();
         }
     }
-    self->processing = false;
 
-    auto destroys = std::move(self->pending_destroys);
-    for(auto h: destroys) {
-        h.destroy();
+    while(!self->pending_destroys.empty()) {
+        auto destroys = std::move(self->pending_destroys);
+        for(auto h: destroys) {
+            h.destroy();
+        }
     }
+    self->processing = false;
 }
 
 void event_loop::schedule(async_node& frame, std::source_location loc) {
