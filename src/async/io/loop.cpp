@@ -40,7 +40,16 @@ struct relay::self {
     std::mutex mutex;
     std::vector<function<void()>> queue;
     bool closed = false;
+    // Prevents the close callback from deleting this struct while a
+    // concurrent uv_async_send is still accessing the uv_async_t handle.
+    std::atomic<int> refs{1};
 };
+
+static void release_relay(struct relay::self* p) {
+    if(p->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        delete p;
+    }
+}
 
 static void on_relay(uv_async_t* handle) {
     auto* p = static_cast<struct relay::self*>(handle->data);
@@ -56,7 +65,7 @@ static void on_relay(uv_async_t* handle) {
     }
     if(should_close) {
         uv::close(*handle,
-                  [](uv_handle_t* h) { delete static_cast<struct relay::self*>(h->data); });
+                  [](uv_handle_t* h) { release_relay(static_cast<struct relay::self*>(h->data)); });
     }
 }
 
@@ -72,7 +81,9 @@ relay& relay::operator=(relay&& other) noexcept {
                 std::lock_guard lock(old->mutex);
                 old->closed = true;
             }
+            old->refs.fetch_add(1, std::memory_order_relaxed);
             uv::async_send(old->async);
+            release_relay(old);
         }
     }
     return *this;
@@ -84,7 +95,9 @@ relay::~relay() {
             std::lock_guard lock(self->mutex);
             self->closed = true;
         }
+        self->refs.fetch_add(1, std::memory_order_relaxed);
         uv::async_send(self->async);
+        release_relay(self);
         self = nullptr;
     }
 }
