@@ -109,13 +109,6 @@ public:
 
     void stop();
 
-    /// Posts a callback to be executed on this event loop's thread.
-    ///
-    /// Thread-safe: can be called from any thread. The callback will be
-    /// invoked on the event loop thread during a subsequent iteration.
-    /// Internally uses uv_async_t to wake up the loop.
-    void post(function<void()> callback);
-
     /// Creates a relay that keeps this event loop alive until destroyed.
     ///
     /// NOT thread-safe: must be called on the loop thread. The returned relay

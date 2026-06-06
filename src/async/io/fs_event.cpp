@@ -42,6 +42,7 @@ namespace kota {
 // and call post_change()/post_changes() to marshal events to the loop thread.
 struct fs_event_base {
     event_loop* loop;
+    relay notifier;
     timer debounce_timer;
     event has_events{false};
     // Accessed only on the event-loop thread; guarded by debounce_timer.
@@ -61,7 +62,7 @@ struct fs_event_base {
     }
 
     void post_change(std::weak_ptr<fs_event_base> weak, fs_event::change c) {
-        loop->post([weak = std::move(weak), c = std::move(c)]() mutable {
+        notifier.send([weak = std::move(weak), c = std::move(c)]() mutable {
             if(auto s = weak.lock()) {
                 s->push_event(std::move(c));
             }
@@ -69,7 +70,7 @@ struct fs_event_base {
     }
 
     void post_changes(std::weak_ptr<fs_event_base> weak, std::vector<fs_event::change> changes) {
-        loop->post([weak = std::move(weak), changes = std::move(changes)]() mutable {
+        notifier.send([weak = std::move(weak), changes = std::move(changes)]() mutable {
             if(auto s = weak.lock()) {
                 for(auto& c: changes) {
                     s->push_event(std::move(c));
@@ -860,6 +861,7 @@ result<fs_event> fs_event::create(std::string_view path, options opts, event_loo
     std::replace(s->root_path.begin(), s->root_path.end(), '\\', '/');
 #endif
 
+    s->notifier = loop.create_relay();
     s->debounce_timer = timer::create(loop);
 
     auto init_err = s->init_platform(s);
@@ -949,6 +951,7 @@ void fs_event::stop() {
     self->debounce_timer.start(std::chrono::milliseconds{0});
 
     self->stop_platform();
+    self->notifier = relay{};
 }
 
 }  // namespace kota

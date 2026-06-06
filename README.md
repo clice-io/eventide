@@ -20,7 +20,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `co_await cancel()` explicitly transitions a task to cancelled.
   - `.catch_cancel()` converts cancellation into an explicit `outcome` channel.
   - `.or_fail()` short-circuits error propagation without resuming at the await site.
-- Single-threaded libuv-backed `event_loop`; `run(tasks...)` helper; thread-safe `post()` / `relay` for hopping onto a loop from another thread.
+- Single-threaded libuv-backed `event_loop`; `run(tasks...)` helper; thread-safe `relay` for hopping onto a loop from another thread.
 - Network and IPC I/O:
   - stream base abstraction
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
