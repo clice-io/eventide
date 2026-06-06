@@ -16,30 +16,38 @@ class async_node;
 template <typename T = void, typename E = void, typename C = void>
 class task;
 
-/// A one-shot relay for posting a callback to an event loop from an
-/// external context (e.g. a system async API callback).
+/// A thread-safe relay for posting callbacks to an event loop.
 ///
-/// Unlike event_loop::post(), creating a relay keeps the event loop alive
-/// until the relay is used or destroyed. This is useful when you call a
-/// system async API and need the loop to stay running until the API's
-/// callback fires.
+/// Creating a relay keeps the event loop alive until the relay is
+/// destroyed or unref'd. send() can be called multiple times from any
+/// thread; each callback is executed on the loop thread.
 ///
-/// Usage:
-///   auto relay = loop.create_relay();   // keeps loop alive
+/// Usage (one-shot):
+///   auto relay = loop.create_relay();
 ///   some_system_async_api([relay = std::move(relay)](auto result) mutable {
-///       relay.send([result] { /* handle result on loop thread */ });
+///       relay.send([result] { /* runs on loop thread */ });
 ///   });
+///
+/// Usage (recurring):
+///   relay notify = loop.create_relay();
+///   // from any thread, repeatedly:
+///   notify.send([&] { drain_buffer(); });
+///
+/// Ownership:
+///   The relay object is single-owner and non-copyable. send() is
+///   thread-safe with respect to other send() calls, but the relay
+///   must not be destroyed while any send() call is in progress.
 ///
 /// Thread safety:
 ///   - Construction (create_relay) is NOT thread-safe; call it on the
 ///     loop thread before handing the relay off.
-///   - send() can be called from any thread, but must be called at most
-///     once. Concurrent calls to send() are undefined behavior.
-///   - After send(), the relay releases its hold on the loop.
-///   - If the relay is destroyed without calling send(), it also
-///     releases its hold on the loop.
+///   - send() is thread-safe and can be called multiple times.
+///   - Destroying the relay releases the loop hold. Pending callbacks
+///     that were already enqueued are still delivered.
 class relay {
 public:
+    relay() noexcept = default;
+
     relay(const relay&) = delete;
     relay& operator=(const relay&) = delete;
 
@@ -48,12 +56,17 @@ public:
 
     ~relay();
 
-    /// Posts a callback to the event loop and releases the loop hold.
+    /// Posts a callback to the event loop.
     ///
-    /// Can be called from any thread. Only the first call takes effect;
-    /// subsequent calls from the same thread are safe no-ops.
-    /// Concurrent calls from multiple threads are undefined behavior.
+    /// Thread-safe. Can be called multiple times. Each callback is
+    /// executed on the loop thread in the order it was posted, subject
+    /// to uv_async coalescing across loop iterations.
     void send(function<void()> callback);
+
+    /// Unrefs the underlying handle so the relay no longer prevents the
+    /// event loop from exiting. The relay remains usable for send().
+    /// NOT thread-safe: must be called on the loop thread.
+    void unref() noexcept;
 
     /// Opaque implementation detail. Defined in loop.cpp.
     struct self;
@@ -63,7 +76,7 @@ private:
 
     explicit relay(self* p) noexcept;
 
-    self* self;
+    self* self = nullptr;
 };
 
 /// Runs an event loop backed by libuv.

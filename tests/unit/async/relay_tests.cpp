@@ -1,4 +1,6 @@
+#include <atomic>
 #include <thread>
+#include <vector>
 
 #include "loop_fixture.h"
 #include "kota/zest/zest.h"
@@ -70,17 +72,20 @@ TEST_CASE(relay_move_semantics) {
     EXPECT_TRUE(called);
 }
 
-TEST_CASE(relay_duplicate_send) {
-    // Only the first send() should take effect; subsequent calls are no-ops.
+TEST_CASE(relay_multiple_send) {
     int counter = 0;
 
-    auto r = loop.create_relay();
-    r.send([&] { counter++; });
-    r.send([&] { counter++; });
-    r.send([&] { counter++; });
+    auto t = [&]() -> task<> {
+        auto r = loop.create_relay();
+        r.send([&] { counter++; });
+        r.send([&] { counter++; });
+        r.send([&] { counter++; });
+        co_await sleep(50, loop);
+    };
 
-    loop.run();
-    EXPECT_EQ(counter, 1);
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(counter, 3);
 }
 
 TEST_CASE(relay_send_with_noop) {
@@ -92,6 +97,89 @@ TEST_CASE(relay_send_with_noop) {
 
     loop.run();
     worker.join();
+}
+
+TEST_CASE(relay_concurrent_send) {
+    constexpr int N = 4;
+    constexpr int M = 25;
+    std::atomic<int> counter{0};
+
+    auto t = [&]() -> task<> {
+        auto r = loop.create_relay();
+        r.unref();
+        std::vector<std::thread> threads;
+        for(int i = 0; i < N; ++i) {
+            threads.emplace_back([&r, &counter]() {
+                for(int j = 0; j < M; ++j) {
+                    r.send([&] { counter.fetch_add(1, std::memory_order_relaxed); });
+                }
+            });
+        }
+        for(auto& th: threads) {
+            th.join();
+        }
+        // All threads joined; callbacks are enqueued. Sleep to let them drain.
+        co_await sleep(200, loop);
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(counter.load(), N * M);
+}
+
+TEST_CASE(relay_stress_cross_thread) {
+    int counter = 0;
+
+    auto t = [&]() -> task<> {
+        auto r = loop.create_relay();
+        std::thread worker([&, r = std::move(r)]() mutable {
+            for(int i = 0; i < 100; ++i) {
+                r.send([&] { counter++; });
+            }
+        });
+        worker.detach();
+        co_await sleep(200, loop);
+        loop.stop();
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_EQ(counter, 100);
+}
+
+TEST_CASE(relay_send_after_move) {
+    bool called = false;
+
+    auto t = [&]() -> task<> {
+        auto r1 = loop.create_relay();
+        auto r2 = std::move(r1);
+
+        // r1 is moved-from (self == nullptr), send should be a safe no-op.
+        r1.send([&] { called = true; });
+
+        // Ensure the loop can still exit cleanly by destroying r2.
+        co_return;
+    };
+
+    auto task = t();
+    schedule_all(task);
+    EXPECT_TRUE(!called);
+}
+
+TEST_CASE(relay_callback_stops_loop) {
+    bool stopped = false;
+
+    auto r = loop.create_relay();
+    std::thread worker([&, r = std::move(r)]() mutable {
+        r.send([&] {
+            stopped = true;
+            loop.stop();
+        });
+    });
+
+    loop.run();
+    worker.join();
+    EXPECT_TRUE(stopped);
 }
 
 };  // TEST_SUITE(event_loop_relay)

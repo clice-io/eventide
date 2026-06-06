@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cassert>
 #include <deque>
+#include <mutex>
 #include <vector>
 
 #include "../libuv.h"
@@ -36,18 +37,27 @@ struct event_loop::self {
 
 struct relay::self {
     uv_async_t async = {};
-    bool has_callback = false;
-    function<void()> callback{+[] {}};
+    std::mutex mutex;
+    std::vector<function<void()>> queue;
+    bool closed = false;
 };
 
 static void on_relay(uv_async_t* handle) {
     auto* p = static_cast<struct relay::self*>(handle->data);
-    if(p->has_callback) {
-        p->callback();
+    std::vector<function<void()>> batch;
+    bool should_close;
+    {
+        std::lock_guard lock(p->mutex);
+        batch = std::move(p->queue);
+        should_close = p->closed;
     }
-    // Close the handle, releasing the loop hold. The close callback
-    // frees the impl once libuv is done with the handle.
-    uv::close(*handle, [](uv_handle_t* h) { delete static_cast<struct relay::self*>(h->data); });
+    for(auto& cb: batch) {
+        cb();
+    }
+    if(should_close) {
+        uv::close(*handle,
+                  [](uv_handle_t* h) { delete static_cast<struct relay::self*>(h->data); });
+    }
 }
 
 relay::relay(struct relay::self* p) noexcept : self(p) {}
@@ -58,9 +68,11 @@ relay& relay::operator=(relay&& other) noexcept {
     if(this != &other) {
         auto* old = std::exchange(self, std::exchange(other.self, nullptr));
         if(old) {
-            // Release the old handle by triggering an empty send.
-            relay tmp(old);
-            tmp.send([] {});
+            {
+                std::lock_guard lock(old->mutex);
+                old->closed = true;
+            }
+            uv::async_send(old->async);
         }
     }
     return *this;
@@ -68,28 +80,39 @@ relay& relay::operator=(relay&& other) noexcept {
 
 relay::~relay() {
     if(self) {
-        // The relay was never sent; close the handle to release the loop hold.
-        self->has_callback = false;
+        {
+            std::lock_guard lock(self->mutex);
+            self->closed = true;
+        }
         uv::async_send(self->async);
         self = nullptr;
     }
 }
 
 void relay::send(function<void()> callback) {
-    auto* p = std::exchange(self, nullptr);
-    if(!p) {
-        return;  // Already sent or moved-from.
+    if(!self) {
+        return;
     }
-    p->has_callback = true;
-    p->callback = std::move(callback);
-    uv::async_send(p->async);
+    {
+        std::lock_guard lock(self->mutex);
+        if(self->closed) {
+            return;
+        }
+        self->queue.push_back(std::move(callback));
+    }
+    uv::async_send(self->async);
+}
+
+void relay::unref() noexcept {
+    if(self) {
+        uv::unref(self->async);
+    }
 }
 
 relay event_loop::create_relay() {
     auto* p = new struct relay::self();
     uv::async_init(self->loop, p->async, on_relay);
     p->async.data = p;
-    // The async handle is ref'd by default, keeping the loop alive.
     return relay(p);
 }
 
