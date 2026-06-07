@@ -61,10 +61,9 @@ protected:
 
     /// Processes the waiters that were already queued when this call began.
     ///
-    /// The callback is allowed to synchronously resume user code, so it may
-    /// mutate the same wait queue re-entrantly. Using a generation snapshot
-    /// keeps the walk stable without stashing sibling waiter pointers that may
-    /// become dangling before the next iteration.
+    /// The callback may detach waiters and enqueue deferred resumes. Using a
+    /// generation snapshot keeps the walk stable without stashing sibling
+    /// waiter pointers that may become dangling before the next iteration.
     template <typename Fn>
     void drain_waiter_snapshot(Fn&& fn) {
         const auto snapshot = begin_waiter_snapshot();
@@ -109,7 +108,10 @@ public:
 
     struct lock_awaiter : wait_node {
         explicit lock_awaiter(mutex& owner) :
-            wait_node(async_node::NodeKind::MutexWaiter), owner(&owner) {}
+            wait_node(async_node::NodeKind::MutexWaiter), owner(&owner) {
+            abandon_context = &owner;
+            abandon = &abandon_grant;
+        }
 
         bool await_ready() noexcept {
             return owner->try_lock();
@@ -123,9 +125,18 @@ public:
             return attach(h.promise(), location);
         }
 
-        void await_resume() noexcept {}
+        void await_resume() noexcept {
+            abandon_context = nullptr;
+            abandon = nullptr;
+        }
 
     private:
+        static void abandon_grant(void* context) noexcept {
+            if(auto* owner = static_cast<mutex*>(context)) {
+                owner->unlock();
+            }
+        }
+
         mutex* owner = nullptr;
     };
 
@@ -173,7 +184,10 @@ public:
         /// cancel/attach/finalize logic, so a dedicated
         /// SemaphoreWaiter kind is unnecessary.
         explicit acquire_awaiter(semaphore& owner) :
-            wait_node(async_node::NodeKind::EventWaiter), owner(&owner) {}
+            wait_node(async_node::NodeKind::EventWaiter), owner(&owner) {
+            abandon_context = &owner;
+            abandon = &abandon_grant;
+        }
 
         bool await_ready() noexcept {
             return owner->try_acquire();
@@ -187,9 +201,18 @@ public:
             return attach(h.promise(), location);
         }
 
-        void await_resume() noexcept {}
+        void await_resume() noexcept {
+            abandon_context = nullptr;
+            abandon = nullptr;
+        }
 
     private:
+        static void abandon_grant(void* context) noexcept {
+            if(auto* owner = static_cast<semaphore*>(context)) {
+                owner->release();
+            }
+        }
+
         semaphore* owner = nullptr;
     };
 
@@ -208,13 +231,17 @@ public:
     void release(std::ptrdiff_t n = 1) {
         assert(n >= 0 && "semaphore::release count must be non-negative");
         for(std::ptrdiff_t i = 0; i < n; ++i) {
+            bool transferred = false;
             if(has_waiters()) {
                 while(auto* waiter = pop_waiter()) {
                     if(resume_waiter(*waiter)) {
+                        transferred = true;
                         break;
                     }
                 }
-            } else {
+            }
+
+            if(!transferred) {
                 count += 1;
             }
         }
@@ -283,9 +310,8 @@ public:
 
     /// Interrupts the current wait queue without changing the signaled state.
     void interrupt() noexcept {
-        // cancel_waiter() resumes user code synchronously. New waits may be
-        // linked before we return, but they belong to a newer generation and
-        // are excluded by drain_waiter_snapshot().
+        // New waits linked while processing this interrupt belong to a newer
+        // generation and are excluded by drain_waiter_snapshot().
         drain_waiter_snapshot([this](wait_node& waiter) { cancel_waiter(waiter); });
     }
 

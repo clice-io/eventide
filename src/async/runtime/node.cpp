@@ -1,6 +1,8 @@
 #include "kota/async/runtime/node.h"
 
+#include <algorithm>
 #include <cassert>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -31,12 +33,60 @@ void drain_pending_destroys() {
 
 }  // namespace
 
+task_frame::~task_frame() {
+    for(auto& state: deferred_resumes) {
+        if(state) {
+            state->abandon_grant();
+            state->node = nullptr;
+        }
+    }
+}
+
+std::shared_ptr<deferred_resume_state> task_frame::defer_resume(wait_node* grant) {
+    auto state = std::make_shared<deferred_resume_state>();
+    state->node = this;
+    if(grant) {
+        state->grant = grant->take_deferred_grant();
+    }
+    deferred_resumes.push_back(state);
+    return state;
+}
+
+void task_frame::clear_deferred_resume(
+    const std::shared_ptr<deferred_resume_state>& state) noexcept {
+    if(!state) {
+        return;
+    }
+
+    auto it = std::find(deferred_resumes.begin(), deferred_resumes.end(), state);
+    if(it != deferred_resumes.end()) {
+        deferred_resumes.erase(it);
+    }
+    state->node = nullptr;
+    state->grant.clear();
+}
+
 void async_node::resume_and_drain(std::coroutine_handle<> handle) {
+    static thread_local bool draining = false;
+
     assert(handle && "resume_and_drain called with null handle");
+    const bool outermost = !draining;
+    if(outermost) {
+        draining = true;
+    }
+
     handle.resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     drain_pending_destroys();
 #endif
+
+    if(outermost && event_loop::has_current()) {
+        event_loop::current().drain_deferred();
+    }
+
+    if(outermost) {
+        draining = false;
+    }
 }
 
 void async_node::intercept_cancel() noexcept {

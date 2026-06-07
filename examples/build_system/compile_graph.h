@@ -84,11 +84,11 @@ private:
 
         unit.compiling = true;
         unit.completion = std::make_unique<event>();
+        auto token = unit.source->token();
 
         // Compile dependencies first, each cancellable via this unit's token
         for(auto& dep_name: unit.dependencies) {
-            auto dep_result =
-                co_await with_token(compile_impl(dep_name, loop), unit.source->token());
+            auto dep_result = co_await with_token(compile_impl(dep_name, loop), token);
             if(!dep_result.has_value() || !*dep_result) {
                 unit.compiling = false;
                 unit.completion->set();
@@ -102,7 +102,7 @@ private:
             co_return true;
         };
 
-        auto result = co_await with_token(work(), unit.source->token());
+        auto result = co_await with_token(work(), token);
         if(!result.has_value()) {
             unit.compiling = false;
             unit.completion->set();

@@ -51,11 +51,15 @@ bool sync_primitive::resume_waiter(wait_node& link) noexcept {
     auto* awaiting = link.parent;
     link.parent = nullptr;
     assert(awaiting && "resume_waiter: waiter has no parent");
-    if(awaiting->is_cancelled()) {
+    if(awaiting->is_cancelled() || !event_loop::has_current()) {
         return false;
     }
     link.state = async_node::Finished;
-    event_loop::current().defer_resume(*awaiting);
+    assert(awaiting->is_task_frame() && "sync waiter parent must be a task");
+    [[maybe_unused]] auto next = awaiting->on_child_complete(link);
+    assert(next.address() == static_cast<task_frame*>(awaiting)->handle().address() &&
+           "sync waiter completion must resume its parent task");
+    event_loop::current().defer_resume(*awaiting, link.abandon ? &link : nullptr);
     return true;
 }
 
@@ -63,11 +67,15 @@ bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
     auto* awaiting = link.parent;
     link.parent = nullptr;
     assert(awaiting && "cancel_waiter: waiter has no parent");
-    if(awaiting->is_cancelled()) {
+    if(awaiting->is_cancelled() || !event_loop::has_current()) {
         return false;
     }
     link.state = async_node::Cancelled;
     link.policy = static_cast<async_node::Policy>(link.policy | async_node::InterceptCancel);
+    assert(awaiting->is_task_frame() && "sync waiter parent must be a task");
+    [[maybe_unused]] auto next = awaiting->on_child_complete(link);
+    assert(next.address() == static_cast<task_frame*>(awaiting)->handle().address() &&
+           "sync waiter cancellation must resume its parent task");
     event_loop::current().defer_resume(*awaiting);
     return true;
 }
