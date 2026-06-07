@@ -54,20 +54,20 @@ std::coroutine_handle<> aggregate_op::flush_deferred() noexcept {
     parent = nullptr;
     auto completion = deferred;
     deferred = Deferred::None;
-    p->clear_child();
-
     switch(completion) {
-        case Deferred::Resume: return p->handle();
+        case Deferred::Resume: p->set_child(p); return p->handle();
 
         case Deferred::Cancel:
             if(policy & InterceptCancel) {
                 state = Cancelled;
+                p->set_child(p);
                 return p->handle();
             }
+            p->set_child(nullptr);
             p->state = Cancelled;
             return p->finalize();
 
-        case Deferred::Error: return p->handle();
+        case Deferred::Error: p->set_child(p); return p->handle();
 
         case Deferred::None: break;
     }
@@ -91,6 +91,16 @@ void async_node::cancel() {
     switch(kind) {
         case NodeKind::Task: {
             auto* self = static_cast<task_frame*>(this);
+            if(self->child == self) {
+                // FIXME: sentinel workaround for sync-primitive reentrancy.
+                // Sync primitives (event/semaphore/mutex/cv) resume waiters
+                // inline, which can reenter cancel() on a task whose frame is
+                // still on the call stack.  The sentinel prevents finalize()
+                // from running here; final_suspend handles it instead.
+                // A future refactor should eliminate inline resume entirely
+                // (trampoline or deferred dispatch) so this guard is unnecessary.
+                break;
+            }
             if(self->child) {
                 self->child->cancel();
             } else if(self->parent) {
@@ -145,7 +155,9 @@ void async_node::cancel() {
 void async_node::resume() {
     if(is_task_frame()) {
         if(!is_cancelled() && !is_failed()) {
-            static_cast<task_frame*>(this)->handle().resume();
+            auto* f = static_cast<task_frame*>(this);
+            f->set_child(f);
+            f->handle().resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
             drain_pending_destroys();
 #endif
@@ -253,18 +265,16 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
 
             if(child.state == Cancelled) {
                 if(child.policy & InterceptCancel) {
-                    self->child = nullptr;
+                    self->set_child(self);
                     return self->handle();
                 }
 
-                self->child = nullptr;
+                self->set_child(nullptr);
                 self->state = Cancelled;
                 return self->finalize();
             }
 
-            self->child = nullptr;
-            // If the child task has an error hook (set by or_fail_task_await),
-            // let the hook handle error propagation instead of resuming normally.
+            self->set_child(self);
             if(child.state == Failed && child.kind == NodeKind::Task) {
                 auto* child_task = static_cast<task_frame*>(&child);
                 if(auto propagate = child_task->get_error_hook()) {

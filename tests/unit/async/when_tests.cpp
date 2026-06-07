@@ -958,6 +958,196 @@ TEST_CASE(any_parent_cancel_propagates_to_children) {
     EXPECT_EQ(child2_done, 0);
 }
 
+// b resumes from sleep, then synchronously triggers a's completion via ev.set().
+// a completes → when_any records winner → cancel_siblings → cancels b.
+// b->child is nullptr (between co_awaits), so cancel finalizes b reentrantly.
+// when_any settles → parent resumes → when_any destroyed → b's frame destroyed.
+// But b's coroutine is still on the call stack → use-after-free.
+TEST_CASE(any_reentrant_child_resume_uaf) {
+    event ev;
+
+    auto a = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await sleep(1);
+        ev.set();
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+}
+
+// Semaphore variant: b releases a semaphore that a is waiting on.
+// Same reentrancy pattern as the event test above.
+TEST_CASE(any_reentrant_semaphore_release) {
+    semaphore sem;
+
+    auto a = [&]() -> task<int> {
+        co_await sem.acquire();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await sleep(1);
+        sem.release();
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+}
+
+// Mutex variant: a holds a lock, b waits for it.  a unlocks inline,
+// which resumes b.  b completes → when_any cancels a while a is still
+// executing (between unlock and co_return).
+TEST_CASE(any_reentrant_mutex_unlock) {
+    mutex m;
+
+    auto a = [&]() -> task<int> {
+        co_await m.lock();
+        co_await sleep(1);
+        m.unlock();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await m.lock();
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 1U);
+    EXPECT_EQ(std::get<1>(*winner), 2);
+}
+
+// Condition variable variant: a waits on a cv, b notifies it.
+TEST_CASE(any_reentrant_cv_notify) {
+    mutex m;
+    condition_variable cv;
+
+    auto a = [&]() -> task<int> {
+        co_await m.lock();
+        co_await cv.wait(m);
+        m.unlock();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await sleep(1);
+        cv.notify_one();
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+}
+
+// cancellation_token variant: src.cancel() fires an internal event that
+// resumes the token's wait task inline, triggering reentrancy.
+TEST_CASE(any_reentrant_cancellation_token) {
+    cancellation_source src;
+
+    auto slow = [&]() -> task<int> {
+        co_await sleep(1000);
+        co_return 1;
+    };
+
+    auto canceler = [&]() -> task<int> {
+        co_await sleep(1);
+        src.cancel();
+        co_return 2;
+    };
+
+    auto guarded = with_token(slow(), src.token());
+    auto cancel_task = canceler();
+    run(guarded, cancel_task);
+
+    EXPECT_FALSE(guarded.value().has_value());
+}
+
+// when_all variant: reentrancy during when_all should not cause issues either.
+TEST_CASE(all_reentrant_event_set) {
+    event ev;
+    int a_done = 0;
+    int b_done = 0;
+
+    auto a = [&]() -> task<> {
+        co_await ev.wait();
+        a_done = 1;
+    };
+
+    auto b = [&]() -> task<> {
+        co_await sleep(1);
+        ev.set();
+        b_done = 1;
+    };
+
+    auto combined = [&]() -> task<> {
+        co_await when_all(a(), b());
+    };
+
+    run(combined());
+    EXPECT_EQ(a_done, 1);
+    EXPECT_EQ(b_done, 1);
+}
+
+// Multiple waiters on the same event, all inside when_any.
+TEST_CASE(any_reentrant_event_multiple_waiters) {
+    event ev;
+
+    auto a = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 2;
+    };
+
+    auto c = [&]() -> task<int> {
+        co_await sleep(1);
+        ev.set();
+        co_return 3;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int, int>> {
+        co_return co_await when_any(a(), b(), c());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+}
+
 };  // TEST_SUITE(when_cancellation)
 
 // ============================================================================
