@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <expected>
 #include <functional>
@@ -12,6 +13,12 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "kota/deco/deco.h"
 #include "kota/zest/assert/trace.h"
@@ -32,6 +39,65 @@ constexpr std::string_view green = "\033[32m";
 constexpr std::string_view yellow = "\033[33m";
 constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
+
+/// RAII guard that redirects stdout to a temporary file, then reads it back as a string.
+/// Used in JSON mode to prevent test assertion diagnostics from polluting the JSON output.
+class StdoutCapture {
+public:
+    StdoutCapture() {
+        std::fflush(stdout);
+        saved_fd_ = ::dup(fileno(stdout));
+        tmp_ = std::tmpfile();
+        if(tmp_ && saved_fd_ >= 0) {
+            ::dup2(fileno(tmp_), fileno(stdout));
+            active_ = true;
+        }
+    }
+
+    ~StdoutCapture() {
+        if(active_) {
+            restore();
+        }
+        if(saved_fd_ >= 0) {
+            ::close(saved_fd_);
+        }
+        if(tmp_) {
+            std::fclose(tmp_);
+        }
+    }
+
+    StdoutCapture(const StdoutCapture&) = delete;
+    StdoutCapture& operator=(const StdoutCapture&) = delete;
+
+    /// Restore stdout and return whatever was captured.
+    std::string finish() {
+        if(!active_) {
+            return {};
+        }
+        std::fflush(stdout);
+        ::dup2(saved_fd_, fileno(stdout));
+        active_ = false;
+
+        std::fseek(tmp_, 0, SEEK_END);
+        auto size = std::ftell(tmp_);
+        std::fseek(tmp_, 0, SEEK_SET);
+
+        std::string buf(static_cast<std::size_t>(size), '\0');
+        std::fread(buf.data(), 1, buf.size(), tmp_);
+        return buf;
+    }
+
+private:
+    void restore() {
+        std::fflush(stdout);
+        ::dup2(saved_fd_, fileno(stdout));
+        active_ = false;
+    }
+
+    int saved_fd_ = -1;
+    std::FILE* tmp_ = nullptr;
+    bool active_ = false;
+};
 
 struct CliOptions {
     kota::zest::Options zest;
@@ -429,13 +495,30 @@ int Runner::run_tests(Options options) {
     summary.suites = static_cast<std::uint32_t>(active_suites.size());
     summary.tests = static_cast<std::uint32_t>(runnable.size());
 
-    auto run_single = [&](const RunnableTest& test, bool show_run_line) -> TestResult {
+    auto run_single =
+        [&](const RunnableTest& test, bool show_run_line, bool capture_stdout) -> TestResult {
         if(show_run_line && !json_output && verbose) {
             std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
         }
 
         using namespace std::chrono;
         auto begin = system_clock::now();
+
+        if(capture_stdout) {
+            StdoutCapture capture;
+            auto state = test.test();
+            auto captured = capture.finish();
+            auto end = system_clock::now();
+            return TestResult{
+                .display_name = test.display_name,
+                .path = test.path,
+                .line = test.line,
+                .state = state,
+                .duration = duration_cast<milliseconds>(end - begin),
+                .output = std::move(captured),
+            };
+        }
+
         auto state = test.test();
         auto end = system_clock::now();
 
@@ -451,6 +534,7 @@ int Runner::run_tests(Options options) {
 
     auto record_result = [&](const TestResult& result) {
         const bool failed = is_failure(result.state);
+        const bool skipped = result.state == TestState::Skipped;
         if(!json_output) {
             if(failed && !result.output.empty()) {
                 std::println("{}", result.output);
@@ -461,6 +545,10 @@ int Runner::run_tests(Options options) {
             summary.failed += 1;
             summary.failed_tests.push_back(
                 FailedTest{result.display_name, result.path, result.line});
+        } else if(skipped) {
+            // Runtime skip: move this test from the "ran" count into the "skipped" count.
+            summary.tests -= 1;
+            summary.skipped += 1;
         }
     };
 
@@ -490,31 +578,47 @@ int Runner::run_tests(Options options) {
 
         std::atomic<std::size_t> next_task{0};
 
-        auto worker = [&]() {
-            while(true) {
-                auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
-                if(idx >= parallel_indices.size()) {
-                    break;
+        // In JSON mode, redirect stdout for the entire parallel + serial batch so
+        // assertion diagnostics do not pollute the JSON output.  A single capture
+        // guard is safe here because only the fd-level redirect needs to be global;
+        // each thread writes to the same temporary file (writes are atomic for
+        // small sizes on POSIX, and ordering doesn't matter since we discard the
+        // captured text).
+        auto run_batch = [&]() {
+            auto worker = [&]() {
+                while(true) {
+                    auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
+                    if(idx >= parallel_indices.size()) {
+                        break;
+                    }
+                    auto i = parallel_indices[idx];
+                    results[i] = run_single(runnable[i], false, false);
                 }
-                auto i = parallel_indices[idx];
-                results[i] = run_single(runnable[i], false);
+            };
+
+            {
+                std::vector<std::thread> pool;
+                pool.reserve(num_workers);
+                for(unsigned w = 0; w < num_workers; ++w) {
+                    pool.emplace_back(worker);
+                }
+                for(auto& t: pool) {
+                    t.join();
+                }
+            }
+
+            // Run serial tests sequentially after the parallel batch.
+            for(auto i: serial_indices) {
+                results[i] = run_single(runnable[i], false, false);
             }
         };
 
-        {
-            std::vector<std::thread> pool;
-            pool.reserve(num_workers);
-            for(unsigned w = 0; w < num_workers; ++w) {
-                pool.emplace_back(worker);
-            }
-            for(auto& t: pool) {
-                t.join();
-            }
-        }
-
-        // Run serial tests sequentially after the parallel batch.
-        for(auto i: serial_indices) {
-            results[i] = run_single(runnable[i], false);
+        if(json_output) {
+            StdoutCapture capture;
+            run_batch();
+            capture.finish();  // discard captured output
+        } else {
+            run_batch();
         }
 
         summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
@@ -525,7 +629,7 @@ int Runner::run_tests(Options options) {
         }
     } else {
         for(std::size_t i = 0; i < runnable.size(); ++i) {
-            results[i] = run_single(runnable[i], true);
+            results[i] = run_single(runnable[i], true, json_output);
             record_result(results[i]);
             summary.duration += results[i].duration;
         }
@@ -533,7 +637,7 @@ int Runner::run_tests(Options options) {
 
     if(*options.cleanup_snapshots) {
         auto removed = cleanup_unused_snapshots();
-        if(removed > 0) {
+        if(removed > 0 && !json_output) {
             std::println("[snapshot] cleaned up {} orphaned file{}",
                          removed,
                          removed == 1 ? "" : "s");
