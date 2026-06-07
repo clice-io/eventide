@@ -1148,6 +1148,165 @@ TEST_CASE(any_reentrant_event_multiple_waiters) {
     EXPECT_EQ(std::get<0>(*winner), 1);
 }
 
+// Repro: a looping task that gets cancelled reentrantly should stop at the
+// next co_await, not loop forever.  b loops calling ev.set() each iteration;
+// a waits on ev and completes, triggering when_any cancel on b mid-loop.
+// If the Cancelled state is lost, b runs all 100 iterations.
+TEST_CASE(any_reentrant_cancel_stops_looping_task) {
+    event ev;
+    int loop_count = 0;
+
+    auto a = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        for(int i = 0; i < 100; ++i) {
+            co_await sleep(1);
+            loop_count = i + 1;
+            ev.set();
+        }
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_LT(loop_count, 10);
+}
+
+// Semaphore variant: b loops releasing a semaphore each iteration.
+// a acquires and completes, when_any cancels b mid-loop.
+TEST_CASE(any_reentrant_cancel_stops_looping_task_semaphore) {
+    semaphore sem;
+    int loop_count = 0;
+
+    auto a = [&]() -> task<int> {
+        co_await sem.acquire();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        for(int i = 0; i < 100; ++i) {
+            co_await sleep(1);
+            loop_count = i + 1;
+            sem.release();
+        }
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_LT(loop_count, 10);
+}
+
+// when_all variant: b loops and triggers a's completion via event.
+// Both should complete; b's cancel should terminate its loop.
+TEST_CASE(all_reentrant_cancel_stops_looping_task_on_error) {
+    event ev;
+    int loop_count = 0;
+
+    auto a = [&]() -> task<int, error> {
+        co_await ev.wait();
+        co_await fail(error::connection_refused);
+    };
+
+    auto b = [&]() -> task<int, error> {
+        for(int i = 0; i < 100; ++i) {
+            co_await sleep(1);
+            loop_count = i + 1;
+            ev.set();
+        }
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::tuple<int, int>, error> {
+        co_return co_await when_all(a(), b());
+    };
+
+    auto [result] = run(combined());
+    EXPECT_TRUE(result.has_value());
+    EXPECT_TRUE(result->has_error());
+    EXPECT_LT(loop_count, 10);
+}
+
+// Multiple co_await points after the cancel trigger: the cancelled task does
+// several co_awaits in a row before looping, all should finalize promptly.
+TEST_CASE(any_reentrant_cancel_stops_after_multiple_awaits) {
+    event ev;
+    int step = 0;
+
+    auto a = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        co_await sleep(1);
+        ev.set();
+        step = 1;
+        co_await sleep(1);
+        step = 2;
+        co_await sleep(1);
+        step = 3;
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(step, 1);
+}
+
+// Condition variable loop: b repeatedly notifies cv; a waits and completes.
+TEST_CASE(any_reentrant_cancel_stops_looping_task_cv) {
+    mutex m;
+    condition_variable cv;
+    int loop_count = 0;
+
+    auto a = [&]() -> task<int> {
+        co_await m.lock();
+        co_await cv.wait(m);
+        m.unlock();
+        co_return 1;
+    };
+
+    auto b = [&]() -> task<int> {
+        for(int i = 0; i < 100; ++i) {
+            co_await sleep(1);
+            loop_count = i + 1;
+            cv.notify_one();
+        }
+        co_return 2;
+    };
+
+    auto combined = [&]() -> task<std::variant<int, int>> {
+        co_return co_await when_any(a(), b());
+    };
+
+    auto [winner] = run(combined());
+    EXPECT_TRUE(winner.has_value());
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_LT(loop_count, 10);
+}
+
 };  // TEST_SUITE(when_cancellation)
 
 // ============================================================================

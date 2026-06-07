@@ -274,6 +274,16 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                 return self->finalize();
             }
 
+            // FIXME: this state (parent Cancelled, child not) should not exist.
+            // It arises because the sentinel in cancel() breaks the propagation
+            // chain: the task continues running and spawns new children that are
+            // unaware of the cancellation.  Eliminating inline resume from sync
+            // primitives removes this case entirely.
+            if(self->state == Cancelled) {
+                self->set_child(nullptr);
+                return self->finalize();
+            }
+
             self->set_child(self);
             if(child.state == Failed && child.kind == NodeKind::Task) {
                 auto* child_task = static_cast<task_frame*>(&child);
