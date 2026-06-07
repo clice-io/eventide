@@ -54,23 +54,23 @@ class StdoutCapture {
 public:
     StdoutCapture() {
         std::fflush(stdout);
-        saved_fd_ = kota_dup(kota_fileno(stdout));
-        tmp_ = std::tmpfile();
-        if(tmp_ && saved_fd_ >= 0) {
-            kota_dup2(kota_fileno(tmp_), kota_fileno(stdout));
-            active_ = true;
+        saved_fd = kota_dup(kota_fileno(stdout));
+        tmp = std::tmpfile();
+        if(tmp && saved_fd >= 0) {
+            kota_dup2(kota_fileno(tmp), kota_fileno(stdout));
+            active = true;
         }
     }
 
     ~StdoutCapture() {
-        if(active_) {
+        if(active) {
             restore();
         }
-        if(saved_fd_ >= 0) {
-            kota_close(saved_fd_);
+        if(saved_fd >= 0) {
+            kota_close(saved_fd);
         }
-        if(tmp_) {
-            std::fclose(tmp_);
+        if(tmp) {
+            std::fclose(tmp);
         }
     }
 
@@ -79,32 +79,32 @@ public:
 
     /// Restore stdout and return whatever was captured.
     std::string finish() {
-        if(!active_) {
+        if(!active) {
             return {};
         }
         std::fflush(stdout);
-        kota_dup2(saved_fd_, kota_fileno(stdout));
-        active_ = false;
+        kota_dup2(saved_fd, kota_fileno(stdout));
+        active = false;
 
-        std::fseek(tmp_, 0, SEEK_END);
-        auto size = std::ftell(tmp_);
-        std::fseek(tmp_, 0, SEEK_SET);
+        std::fseek(tmp, 0, SEEK_END);
+        auto size = std::ftell(tmp);
+        std::fseek(tmp, 0, SEEK_SET);
 
         std::string buf(static_cast<std::size_t>(size), '\0');
-        std::fread(buf.data(), 1, buf.size(), tmp_);
+        std::fread(buf.data(), 1, buf.size(), tmp);
         return buf;
     }
 
 private:
     void restore() {
         std::fflush(stdout);
-        kota_dup2(saved_fd_, kota_fileno(stdout));
-        active_ = false;
+        kota_dup2(saved_fd, kota_fileno(stdout));
+        active = false;
     }
 
-    int saved_fd_ = -1;
-    std::FILE* tmp_ = nullptr;
-    bool active_ = false;
+    int saved_fd = -1;
+    std::FILE* tmp = nullptr;
+    bool active = false;
 };
 
 struct CliOptions {
