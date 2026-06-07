@@ -249,6 +249,24 @@ TEST_CASE(relay_move_assign_closes_old) {
     EXPECT_EQ(new_counter, 1);
 }
 
+TEST_CASE(relay_multiple_keep_alive) {
+    // Two relays: destroying one should not release the loop hold while the
+    // other is still alive.
+    bool called = false;
+
+    auto r1 = loop.create_relay();
+    auto r2 = loop.create_relay();
+
+    // Destroy r1 immediately; r2 alone should still keep the loop alive.
+    r1 = relay{};
+
+    std::thread worker([&, r = std::move(r2)]() mutable { r.send([&] { called = true; }); });
+
+    loop.run();
+    worker.join();
+    EXPECT_TRUE(called);
+}
+
 };  // TEST_SUITE(event_loop_relay)
 
 }  // namespace

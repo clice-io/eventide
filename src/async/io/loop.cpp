@@ -155,6 +155,9 @@ event_loop::~event_loop() {
         }
     };
 
+    assert(self->count.load(std::memory_order_acquire) == 0 &&
+           "event_loop destroyed with live relays");
+
     {
         std::lock_guard lock(self->mutex);
         self->queue.clear();

@@ -19,8 +19,10 @@ class task;
 /// A thread-safe relay for posting callbacks to an event loop.
 ///
 /// Creating a relay keeps the event loop alive until the relay is
-/// destroyed. send() can be called multiple times from any thread;
-/// each callback is executed on the loop thread.
+/// destroyed.
+///
+/// A default-constructed or moved-from relay is inert: send() is a
+/// safe no-op, and destruction has no effect.
 ///
 /// Usage (one-shot):
 ///   auto relay = loop.create_relay();
@@ -38,6 +40,10 @@ class task;
 ///   The relay object is single-owner and non-copyable. send() is
 ///   thread-safe with respect to other send() calls, but the relay
 ///   must not be destroyed while any send() call is in progress.
+///
+/// Lifetime:
+///   The event_loop must outlive all relays created from it. Using a
+///   relay after its event_loop is destroyed is undefined behavior.
 ///
 /// Thread safety:
 ///   - Construction (create_relay) is NOT thread-safe; call it on the
