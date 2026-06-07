@@ -34,36 +34,36 @@ void drain_pending_destroys() {
 }  // namespace
 
 task_frame::~task_frame() {
-    for(auto& state: deferred_resumes) {
-        if(state) {
-            state->abandon_grant();
-            state->node = nullptr;
+    for(auto& resume_state: deferred_resumes) {
+        if(resume_state) {
+            resume_state->abandon_grant();
+            resume_state->node = nullptr;
         }
     }
 }
 
 std::shared_ptr<deferred_resume_state> task_frame::defer_resume(wait_node* grant) {
-    auto state = std::make_shared<deferred_resume_state>();
-    state->node = this;
+    auto resume_state = std::make_shared<deferred_resume_state>();
+    resume_state->node = this;
     if(grant) {
-        state->grant = grant->take_deferred_grant();
+        resume_state->grant = grant->take_deferred_grant();
     }
-    deferred_resumes.push_back(state);
-    return state;
+    deferred_resumes.push_back(resume_state);
+    return resume_state;
 }
 
 void task_frame::clear_deferred_resume(
-    const std::shared_ptr<deferred_resume_state>& state) noexcept {
-    if(!state) {
+    const std::shared_ptr<deferred_resume_state>& resume_state) noexcept {
+    if(!resume_state) {
         return;
     }
 
-    auto it = std::find(deferred_resumes.begin(), deferred_resumes.end(), state);
+    auto it = std::find(deferred_resumes.begin(), deferred_resumes.end(), resume_state);
     if(it != deferred_resumes.end()) {
         deferred_resumes.erase(it);
     }
-    state->node = nullptr;
-    state->grant.clear();
+    resume_state->node = nullptr;
+    resume_state->grant.clear();
 }
 
 void async_node::resume_and_drain(std::coroutine_handle<> handle) {
