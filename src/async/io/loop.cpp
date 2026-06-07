@@ -104,7 +104,6 @@ void relay::send(function<void()> callback) {
     uv::async_send(self->async);
 }
 
-
 relay event_loop::create_relay() {
     auto* p = new struct relay::self();
     uv::async_init(self->loop, p->async, on_relay);
@@ -151,7 +150,6 @@ void event_loop::schedule(async_node& frame, std::source_location loc) {
     }
     loop->tasks.push_back(&frame);
 }
-
 
 void event_loop::on_destroy(function<void()> callback) {
     self->destroy_callbacks.push_back(std::move(callback));
