@@ -16,8 +16,16 @@
 
 #ifdef _WIN32
 #include <io.h>
+#define kota_dup _dup
+#define kota_dup2 _dup2
+#define kota_close _close
+#define kota_fileno _fileno
 #else
 #include <unistd.h>
+#define kota_dup ::dup
+#define kota_dup2 ::dup2
+#define kota_close ::close
+#define kota_fileno ::fileno
 #endif
 
 #include "kota/deco/deco.h"
@@ -46,10 +54,10 @@ class StdoutCapture {
 public:
     StdoutCapture() {
         std::fflush(stdout);
-        saved_fd_ = ::dup(fileno(stdout));
+        saved_fd_ = kota_dup(kota_fileno(stdout));
         tmp_ = std::tmpfile();
         if(tmp_ && saved_fd_ >= 0) {
-            ::dup2(fileno(tmp_), fileno(stdout));
+            kota_dup2(kota_fileno(tmp_), kota_fileno(stdout));
             active_ = true;
         }
     }
@@ -59,7 +67,7 @@ public:
             restore();
         }
         if(saved_fd_ >= 0) {
-            ::close(saved_fd_);
+            kota_close(saved_fd_);
         }
         if(tmp_) {
             std::fclose(tmp_);
@@ -75,7 +83,7 @@ public:
             return {};
         }
         std::fflush(stdout);
-        ::dup2(saved_fd_, fileno(stdout));
+        kota_dup2(saved_fd_, kota_fileno(stdout));
         active_ = false;
 
         std::fseek(tmp_, 0, SEEK_END);
@@ -90,7 +98,7 @@ public:
 private:
     void restore() {
         std::fflush(stdout);
-        ::dup2(saved_fd_, fileno(stdout));
+        kota_dup2(saved_fd_, kota_fileno(stdout));
         active_ = false;
     }
 
