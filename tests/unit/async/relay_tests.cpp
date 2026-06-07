@@ -229,7 +229,7 @@ TEST_CASE(relay_send_during_drain) {
     EXPECT_EQ(counter, 2);
 }
 
-TEST_CASE(relay_move_assign_closes_old) {
+TEST_CASE(relay_move_assign_releases_old) {
     int old_counter = 0;
     int new_counter = 0;
 
