@@ -26,16 +26,18 @@ TEST_CASE(relay_keeps_loop_alive) {
 
 TEST_CASE(relay_cross_thread_send) {
     int value = 0;
+    std::thread worker;
 
     auto t = [&]() -> task<> {
         auto r = loop.create_relay();
-        std::thread([&, r = std::move(r)]() mutable { r.send([&] { value = 42; }); }).detach();
+        worker = std::thread([&, r = std::move(r)]() mutable { r.send([&] { value = 42; }); });
         co_await sleep(100, loop);
         loop.stop();
     };
 
     auto task = t();
     schedule_all(task);
+    worker.join();
     EXPECT_EQ(value, 42);
 }
 
