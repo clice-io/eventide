@@ -12,14 +12,14 @@
 
 namespace kota {
 
-struct relay::self {
+struct relay::Self {
     uv_async_t async = {};
     std::mutex mutex;
     std::vector<function<void()>> queue;
     std::atomic<int> count{0};
 };
 
-struct event_loop::self : relay::self {
+struct event_loop::Self : relay::Self {
     uv_loop_t loop = {};
     uv_idle_t idle = {};
     bool idle_running = false;
@@ -28,7 +28,7 @@ struct event_loop::self : relay::self {
 };
 
 static void on_relay(uv_async_t* handle) {
-    auto* self = static_cast<struct event_loop::self*>(handle->data);
+    auto* self = static_cast<event_loop::Self*>(handle->data);
     std::vector<function<void()>> batch;
     {
         std::lock_guard lock(self->mutex);
@@ -42,7 +42,7 @@ static void on_relay(uv_async_t* handle) {
     }
 }
 
-relay::relay(struct relay::self* p) noexcept : self(p) {}
+relay::relay(relay::Self* p) noexcept : self(p) {}
 
 relay::relay(relay&& other) noexcept : self(std::exchange(other.self, nullptr)) {}
 
@@ -88,7 +88,7 @@ event_loop& event_loop::current() {
 }
 
 void each(uv_idle_t* idle) {
-    auto self = static_cast<struct event_loop::self*>(idle->data);
+    auto self = static_cast<event_loop::Self*>(idle->data);
     if(self->idle_running && self->tasks.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
@@ -124,7 +124,7 @@ void event_loop::on_destroy(function<void()> callback) {
     self->destroy_callbacks.push_back(std::move(callback));
 }
 
-event_loop::event_loop() : self(new struct self()) {
+event_loop::event_loop() : self(new Self()) {
     auto& loop = self->loop;
     if(auto err = uv::loop_init(loop)) {
         abort();
@@ -142,7 +142,7 @@ event_loop::event_loop() : self(new struct self()) {
 
 event_loop::~event_loop() {
     constexpr static auto cleanup = +[](uv_handle_t* h, void* arg) {
-        auto* self = static_cast<struct event_loop::self*>(arg);
+        auto* self = static_cast<event_loop::Self*>(arg);
         if(!uv::is_closing(*h)) {
             auto* idle = uv::as_handle(self->idle);
             auto* async = uv::as_handle(self->async);

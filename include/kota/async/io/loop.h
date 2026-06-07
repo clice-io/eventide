@@ -73,14 +73,14 @@ public:
     void send(function<void()> callback);
 
     /// Opaque implementation detail. Defined in loop.cpp.
-    struct self;
+    struct Self;
 
 private:
     friend class event_loop;
 
-    explicit relay(self* p) noexcept;
+    explicit relay(Self* p) noexcept;
 
-    self* self = nullptr;
+    Self* self = nullptr;
 };
 
 /// Runs an event loop backed by libuv.
@@ -98,10 +98,10 @@ public:
     static event_loop& current();
 
     /// Opaque implementation detail. Defined in loop.cpp.
-    struct self;
+    struct Self;
 
     /// Internal accessor for the implementation struct.
-    self* operator->() {
+    Self* operator->() {
         return self.get();
     }
 
@@ -147,7 +147,7 @@ public:
 private:
     void schedule(async_node& frame, std::source_location location);
 
-    std::unique_ptr<self> self;
+    std::unique_ptr<Self> self;
 };
 
 /// Convenience: creates a loop, schedules all tasks, runs to completion,
