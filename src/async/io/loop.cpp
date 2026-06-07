@@ -12,7 +12,14 @@
 
 namespace kota {
 
-struct event_loop::self {
+struct relay::self {
+    uv_async_t async = {};
+    std::mutex mutex;
+    std::vector<function<void()>> queue;
+    std::atomic<int> count{0};
+};
+
+struct event_loop::self : relay::self {
     uv_loop_t loop = {};
     uv_idle_t idle = {};
     bool idle_running = false;
@@ -20,37 +27,18 @@ struct event_loop::self {
     std::vector<function<void()>> destroy_callbacks;
 };
 
-struct relay::self {
-    uv_async_t async = {};
-    std::mutex mutex;
-    std::vector<function<void()>> queue;
-    bool closed = false;
-    // Prevents the close callback from deleting this struct while a
-    // concurrent uv_async_send is still accessing the uv_async_t handle.
-    std::atomic<int> refs{1};
-};
-
-static void release_relay(struct relay::self* p) {
-    if(p->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-        delete p;
-    }
-}
-
 static void on_relay(uv_async_t* handle) {
-    auto* p = static_cast<struct relay::self*>(handle->data);
+    auto* self = static_cast<struct event_loop::self*>(handle->data);
     std::vector<function<void()>> batch;
-    bool should_close;
     {
-        std::lock_guard lock(p->mutex);
-        batch = std::move(p->queue);
-        should_close = p->closed;
+        std::lock_guard lock(self->mutex);
+        batch = std::move(self->queue);
     }
     for(auto& cb: batch) {
         cb();
     }
-    if(should_close && !uv::is_closing(*handle)) {
-        uv::close(*handle,
-                  [](uv_handle_t* h) { release_relay(static_cast<struct relay::self*>(h->data)); });
+    if(self->count.load(std::memory_order_acquire) == 0) {
+        uv::unref(*handle);
     }
 }
 
@@ -62,13 +50,8 @@ relay& relay::operator=(relay&& other) noexcept {
     if(this != &other) {
         auto* old = std::exchange(self, std::exchange(other.self, nullptr));
         if(old) {
-            old->refs.fetch_add(1, std::memory_order_relaxed);
-            {
-                std::lock_guard lock(old->mutex);
-                old->closed = true;
-            }
+            old->count.fetch_sub(1, std::memory_order_release);
             uv::async_send(old->async);
-            release_relay(old);
         }
     }
     return *this;
@@ -76,14 +59,8 @@ relay& relay::operator=(relay&& other) noexcept {
 
 relay::~relay() {
     if(self) {
-        self->refs.fetch_add(1, std::memory_order_relaxed);
-        {
-            std::lock_guard lock(self->mutex);
-            self->closed = true;
-        }
+        self->count.fetch_sub(1, std::memory_order_release);
         uv::async_send(self->async);
-        release_relay(self);
-        self = nullptr;
     }
 }
 
@@ -92,18 +69,15 @@ void relay::send(function<void()> callback) {
         return;
     }
     std::lock_guard lock(self->mutex);
-    if(self->closed) {
-        return;
-    }
     self->queue.push_back(std::move(callback));
     uv::async_send(self->async);
 }
 
 relay event_loop::create_relay() {
-    auto* p = new struct relay::self();
-    uv::async_init(self->loop, p->async, on_relay);
-    p->async.data = p;
-    return relay(p);
+    if(self->count.fetch_add(1, std::memory_order_relaxed) == 0) {
+        uv::ref(self->async);
+    }
+    return relay(self.get());
 }
 
 static thread_local event_loop* current_loop = nullptr;
@@ -159,6 +133,11 @@ event_loop::event_loop() : self(new struct self()) {
     auto& idle = self->idle;
     uv::idle_init(loop, idle);
     idle.data = self.get();
+
+    auto& async = self->async;
+    uv::async_init(loop, async, on_relay);
+    async.data = self.get();
+    uv::unref(async);
 }
 
 event_loop::~event_loop() {
@@ -166,7 +145,8 @@ event_loop::~event_loop() {
         auto* self = static_cast<struct event_loop::self*>(arg);
         if(!uv::is_closing(*h)) {
             auto* idle = uv::as_handle(self->idle);
-            if(h == idle) {
+            auto* async = uv::as_handle(self->async);
+            if(h == idle || h == async) {
                 uv::close(*h, nullptr);
                 return;
             }
@@ -174,6 +154,11 @@ event_loop::~event_loop() {
             uv::close(*h, [](uv_handle_t* handle) { uv::loop_close_fallback::mark(handle); });
         }
     };
+
+    {
+        std::lock_guard lock(self->mutex);
+        self->queue.clear();
+    }
 
     auto callbacks = std::move(self->destroy_callbacks);
     for(auto& callback: callbacks) {
