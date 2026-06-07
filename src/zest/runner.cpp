@@ -16,16 +16,8 @@
 
 #ifdef _WIN32
 #include <io.h>
-#define kota_dup _dup
-#define kota_dup2 _dup2
-#define kota_close _close
-#define kota_fileno _fileno
 #else
 #include <unistd.h>
-#define kota_dup ::dup
-#define kota_dup2 ::dup2
-#define kota_close ::close
-#define kota_fileno ::fileno
 #endif
 
 #include "kota/deco/deco.h"
@@ -42,6 +34,40 @@
 
 namespace {
 
+#ifdef _WIN32
+inline int portable_dup(int fd) {
+    return _dup(fd);
+}
+
+inline int portable_dup2(int fd1, int fd2) {
+    return _dup2(fd1, fd2);
+}
+
+inline int portable_close(int fd) {
+    return _close(fd);
+}
+
+inline int portable_fileno(std::FILE* f) {
+    return _fileno(f);
+}
+#else
+inline int portable_dup(int fd) {
+    return ::dup(fd);
+}
+
+inline int portable_dup2(int fd1, int fd2) {
+    return ::dup2(fd1, fd2);
+}
+
+inline int portable_close(int fd) {
+    return ::close(fd);
+}
+
+inline int portable_fileno(std::FILE* f) {
+    return ::fileno(f);
+}
+#endif
+
 constexpr std::string_view wildcard_pattern = "*";
 constexpr std::string_view green = "\033[32m";
 constexpr std::string_view yellow = "\033[33m";
@@ -54,10 +80,10 @@ class StdoutCapture {
 public:
     StdoutCapture() {
         std::fflush(stdout);
-        saved_fd = kota_dup(kota_fileno(stdout));
+        saved_fd = portable_dup(portable_fileno(stdout));
         tmp = std::tmpfile();
         if(tmp && saved_fd >= 0) {
-            kota_dup2(kota_fileno(tmp), kota_fileno(stdout));
+            portable_dup2(portable_fileno(tmp), portable_fileno(stdout));
             active = true;
         }
     }
@@ -67,7 +93,7 @@ public:
             restore();
         }
         if(saved_fd >= 0) {
-            kota_close(saved_fd);
+            portable_close(saved_fd);
         }
         if(tmp) {
             std::fclose(tmp);
@@ -83,7 +109,7 @@ public:
             return {};
         }
         std::fflush(stdout);
-        kota_dup2(saved_fd, kota_fileno(stdout));
+        portable_dup2(saved_fd, portable_fileno(stdout));
         active = false;
 
         std::fseek(tmp, 0, SEEK_END);
@@ -98,7 +124,7 @@ public:
 private:
     void restore() {
         std::fflush(stdout);
-        kota_dup2(saved_fd, kota_fileno(stdout));
+        portable_dup2(saved_fd, portable_fileno(stdout));
         active = false;
     }
 
@@ -276,6 +302,7 @@ struct JsonTestEntry {
     std::string status;
     std::uint64_t duration_ms = 0;
     kota::meta::skip_if_none<std::string> failure;
+    kota::meta::skip_if_empty<std::string> output;
 };
 
 struct JsonTestSummary {
@@ -311,11 +338,13 @@ void print_json_summary(const RunSummary& summary, const std::vector<TestResult>
             .status = std::string(state_string(r.state)),
             .duration_ms = static_cast<std::uint64_t>(r.duration.count()),
             .failure = std::nullopt,
+            .output = {},
         };
         entry.test_case = std::string(name);
 
         if(is_failure(r.state)) {
             entry.failure = std::format("at {}:{}", r.path, r.line);
+            entry.output = r.output;
         }
 
         output.tests.push_back(std::move(entry));
@@ -425,6 +454,46 @@ int Runner::run_tests(Options options) {
     auto grouped_suites = group_suites(suites);
 
     if(*options.list_tests) {
+        const bool json_list = *options.output_format == OutputFormat::Json;
+
+#ifdef KOTA_ZEST_HAS_JSON
+        if(json_list) {
+            struct ListEntry {
+                std::string suite;
+                kota::meta::rename<std::string, "case"> test_case;
+            };
+
+            std::vector<ListEntry> entries;
+            for(const auto& [suite_name, test_cases]: grouped_suites) {
+                if(!matches_suite_filter(suite_name, patterns)) {
+                    continue;
+                }
+                for(const auto& test_case: test_cases) {
+                    if(!matches_test_filter(suite_name, test_case.name, patterns)) {
+                        continue;
+                    }
+                    ListEntry entry{.suite = std::string(suite_name), .test_case = {}};
+                    entry.test_case = std::string(test_case.name);
+                    entries.push_back(std::move(entry));
+                }
+            }
+
+            auto json = kota::codec::json::to_json(entries);
+            if(json.has_value()) {
+                auto pretty = kota::codec::json::prettify(*json);
+                std::print("{}\n", pretty.has_value() ? *pretty : *json);
+            }
+            return 0;
+        }
+#else
+        if(json_list) {
+            std::println(
+                stderr,
+                "Error: --output-format=json requires the kota::codec::json library " "(build with KOTA_CODEC_ENABLE_SIMDJSON=ON)");
+            return 1;
+        }
+#endif
+
         for(const auto& [suite_name, test_cases]: grouped_suites) {
             if(!matches_suite_filter(suite_name, patterns)) {
                 continue;
@@ -442,6 +511,15 @@ int Runner::run_tests(Options options) {
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
     const bool verbose = *options.verbose;
     const bool json_output = *options.output_format == OutputFormat::Json;
+
+#ifndef KOTA_ZEST_HAS_JSON
+    if(json_output) {
+        std::println(
+            stderr,
+            "Error: --output-format=json requires the kota::codec::json library " "(build with KOTA_CODEC_ENABLE_SIMDJSON=ON)");
+        return 1;
+    }
+#endif
 
     RunSummary summary;
 
@@ -462,6 +540,7 @@ int Runner::run_tests(Options options) {
     };
 
     std::vector<RunnableTest> runnable;
+    std::vector<TestResult> skipped_results;
     std::unordered_set<std::string> active_suites;
 
     for(auto& [suite_name, test_cases]: grouped_suites) {
@@ -478,6 +557,14 @@ int Runner::run_tests(Options options) {
 
             if(focus_mode && !test_case.attrs.focus) {
                 summary.skipped += 1;
+                skipped_results.push_back(TestResult{
+                    .display_name = display_name,
+                    .path = test_case.path,
+                    .line = test_case.line,
+                    .state = kota::zest::TestState::Skipped,
+                    .duration = std::chrono::milliseconds{0},
+                    .output = {},
+                });
                 continue;
             }
 
@@ -486,6 +573,14 @@ int Runner::run_tests(Options options) {
                     std::println("{}[ SKIPPED  ] {}{}", yellow, display_name, clear);
                 }
                 summary.skipped += 1;
+                skipped_results.push_back(TestResult{
+                    .display_name = display_name,
+                    .path = test_case.path,
+                    .line = test_case.line,
+                    .state = kota::zest::TestState::Skipped,
+                    .duration = std::chrono::milliseconds{0},
+                    .output = {},
+                });
                 continue;
             }
 
@@ -643,6 +738,11 @@ int Runner::run_tests(Options options) {
         }
     }
 
+    // Append compile-time skipped tests so they appear in the JSON tests[] array.
+    results.insert(results.end(),
+                   std::make_move_iterator(skipped_results.begin()),
+                   std::make_move_iterator(skipped_results.end()));
+
     if(*options.cleanup_snapshots) {
         auto removed = cleanup_unused_snapshots();
         if(removed > 0 && !json_output) {
@@ -655,11 +755,6 @@ int Runner::run_tests(Options options) {
     if(json_output) {
 #ifdef KOTA_ZEST_HAS_JSON
         print_json_summary(summary, results);
-#else
-        std::println(
-            stderr,
-            "Error: --output-format=json requires the kota::codec::json library " "(build with KOTA_CODEC_ENABLE_SIMDJSON=ON)");
-        return 1;
 #endif
     } else {
         print_summary(summary);
