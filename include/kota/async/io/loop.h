@@ -50,7 +50,8 @@ class task;
 ///     loop thread before handing the relay off.
 ///   - send() is thread-safe and can be called multiple times.
 ///   - Destroying the relay releases the loop hold. Pending callbacks
-///     that were already enqueued are still delivered.
+///     that were already enqueued are still delivered, unless the
+///     event_loop itself is being destroyed (which clears the queue).
 class relay {
 public:
     relay() noexcept = default;

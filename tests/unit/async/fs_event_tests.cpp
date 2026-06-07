@@ -489,6 +489,37 @@ TEST_CASE(file_filter_dir_mode_no_filter) {
     EXPECT_EQ(*result, 1);
 }
 
+TEST_CASE(watcher_keeps_loop_alive) {
+    // A live watcher should keep the loop alive via its relay.
+    // After stop(), the loop hold is released and run() returns.
+    auto dir_template = (std::filesystem::temp_directory_path() / "kotatsu-fe-XXXXXX").string();
+
+    auto t = [&]() -> task<int, error> {
+        auto dir = co_await fs::mkdtemp(dir_template, loop).or_fail();
+        auto watcher = fs_event::create(dir, fs_event::options{}, loop);
+        if(!watcher.has_value())
+            co_await fail(watcher.error());
+
+        // Schedule a delayed stop; loop.run() must NOT exit before it fires.
+        auto stopper = [&]() -> task<void, error> {
+            co_await sleep(200, loop);
+            watcher->stop();
+        };
+        auto stop_task = stopper();
+        loop.schedule(stop_task);
+
+        co_await sleep(300, loop);
+        co_await fs::rmdir(dir, loop).or_fail();
+        co_return 1;
+    };
+
+    auto task = t();
+    schedule_all(task);
+    auto result = task.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 1);
+}
+
 };  // TEST_SUITE(fs_event_io)
 
 }  // namespace kota

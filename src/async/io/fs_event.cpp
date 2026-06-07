@@ -337,6 +337,7 @@ struct fs_event::Self : fs_event_base, std::enable_shared_from_this<Self> {
             return error(rc);
         }
 
+        // The notifier relay keeps the loop alive, not this poll handle.
         uv_unref(reinterpret_cast<uv_handle_t*>(&poll_handle));
         return error{};
     }
