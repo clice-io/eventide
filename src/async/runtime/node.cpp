@@ -55,19 +55,19 @@ std::coroutine_handle<> aggregate_op::flush_deferred() noexcept {
     auto completion = deferred;
     deferred = Deferred::None;
     switch(completion) {
-        case Deferred::Resume: p->set_child(p); return p->handle();
+        case Deferred::Resume: p->set_child(nullptr); return p->handle();
 
         case Deferred::Cancel:
             if(policy & InterceptCancel) {
                 state = Cancelled;
-                p->set_child(p);
+                p->set_child(nullptr);
                 return p->handle();
             }
             p->set_child(nullptr);
             p->state = Cancelled;
             return p->finalize();
 
-        case Deferred::Error: p->set_child(p); return p->handle();
+        case Deferred::Error: p->set_child(nullptr); return p->handle();
 
         case Deferred::None: break;
     }
@@ -91,16 +91,6 @@ void async_node::cancel() {
     switch(kind) {
         case NodeKind::Task: {
             auto* self = static_cast<task_frame*>(this);
-            if(self->child == self) {
-                // FIXME: sentinel workaround for sync-primitive reentrancy.
-                // Sync primitives (event/semaphore/mutex/cv) resume waiters
-                // inline, which can reenter cancel() on a task whose frame is
-                // still on the call stack.  The sentinel prevents finalize()
-                // from running here; final_suspend handles it instead.
-                // A future refactor should eliminate inline resume entirely
-                // (trampoline or deferred dispatch) so this guard is unnecessary.
-                break;
-            }
             if(self->child) {
                 self->child->cancel();
             } else if(self->parent) {
@@ -151,17 +141,25 @@ void async_node::cancel() {
     }
 }
 
-/// Resumes a standard task's coroutine, unless it has been cancelled.
+/// Resumes a task's coroutine, or finalizes it if already cancelled/failed.
+///
+/// The cancel/fail path handles the case where a sync primitive deferred
+/// this resume and cancellation arrived before the idle tick fired.
 void async_node::resume() {
     if(is_task_frame()) {
-        if(!is_cancelled() && !is_failed()) {
-            auto* f = static_cast<task_frame*>(this);
-            f->set_child(f);
-            f->handle().resume();
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-            drain_pending_destroys();
-#endif
+        auto* f = static_cast<task_frame*>(this);
+        if(is_cancelled() || is_failed()) {
+            f->set_child(nullptr);
+            if(f->get_parent()) {
+                auto next = f->finalize();
+                resume_and_drain(next);
+            }
+            return;
         }
+        f->handle().resume();
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+        drain_pending_destroys();
+#endif
     }
 }
 
@@ -265,7 +263,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
 
             if(child.state == Cancelled) {
                 if(child.policy & InterceptCancel) {
-                    self->set_child(self);
+                    self->set_child(nullptr);
                     return self->handle();
                 }
 
@@ -274,17 +272,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                 return self->finalize();
             }
 
-            // FIXME: this state (parent Cancelled, child not) should not exist.
-            // It arises because the sentinel in cancel() breaks the propagation
-            // chain: the task continues running and spawns new children that are
-            // unaware of the cancellation.  Eliminating inline resume from sync
-            // primitives removes this case entirely.
-            if(self->state == Cancelled) {
-                self->set_child(nullptr);
-                return self->finalize();
-            }
-
-            self->set_child(self);
+            self->set_child(nullptr);
             if(child.state == Failed && child.kind == NodeKind::Task) {
                 auto* child_task = static_cast<task_frame*>(&child);
                 if(auto propagate = child_task->get_error_hook()) {

@@ -55,17 +55,7 @@ protected:
         return head && head->generation == snapshot;
     }
 
-    bool resume_waiter(wait_node& link) noexcept {
-        auto* awaiting = link.parent;
-        link.parent = nullptr;
-        assert(awaiting && "resume_waiter: waiter has no parent");
-        if(awaiting->is_cancelled()) {
-            return false;
-        }
-        awaiting->clear_child();
-        awaiting->resume();
-        return true;
-    }
+    bool resume_waiter(wait_node& link) noexcept;
 
     bool cancel_waiter(wait_node& link) noexcept;
 

@@ -2,6 +2,8 @@
 
 #include <cassert>
 
+#include "kota/async/io/loop.h"
+
 namespace kota {
 
 void sync_primitive::insert(wait_node* link) {
@@ -45,6 +47,18 @@ void sync_primitive::remove(wait_node* link) {
     link->resource = nullptr;
 }
 
+bool sync_primitive::resume_waiter(wait_node& link) noexcept {
+    auto* awaiting = link.parent;
+    link.parent = nullptr;
+    assert(awaiting && "resume_waiter: waiter has no parent");
+    if(awaiting->is_cancelled()) {
+        return false;
+    }
+    link.state = async_node::Finished;
+    event_loop::current().defer_resume(*awaiting);
+    return true;
+}
+
 bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
     auto* awaiting = link.parent;
     link.parent = nullptr;
@@ -52,11 +66,9 @@ bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
     if(awaiting->is_cancelled()) {
         return false;
     }
-
     link.state = async_node::Cancelled;
     link.policy = static_cast<async_node::Policy>(link.policy | async_node::InterceptCancel);
-    auto next = awaiting->on_child_complete(link);
-    async_node::resume_and_drain(next);
+    event_loop::current().defer_resume(*awaiting);
     return true;
 }
 

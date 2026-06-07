@@ -958,12 +958,10 @@ TEST_CASE(any_parent_cancel_propagates_to_children) {
     EXPECT_EQ(child2_done, 0);
 }
 
-// b resumes from sleep, then synchronously triggers a's completion via ev.set().
-// a completes → when_any records winner → cancel_siblings → cancels b.
-// b->child is nullptr (between co_awaits), so cancel finalizes b reentrantly.
-// when_any settles → parent resumes → when_any destroyed → b's frame destroyed.
-// But b's coroutine is still on the call stack → use-after-free.
-TEST_CASE(any_reentrant_child_resume_uaf) {
+// b resumes from sleep, calls ev.set() (deferred resume for a), then co_returns.
+// b completes first — with deferred resume, the signaler finishes before the
+// waiter runs.
+TEST_CASE(any_deferred_sync_resume_signaler_wins) {
     event ev;
 
     auto a = [&]() -> task<int> {
@@ -983,13 +981,12 @@ TEST_CASE(any_reentrant_child_resume_uaf) {
 
     auto [winner] = run(combined());
     EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_EQ(winner->index(), 1U);
+    EXPECT_EQ(std::get<1>(*winner), 2);
 }
 
-// Semaphore variant: b releases a semaphore that a is waiting on.
-// Same reentrancy pattern as the event test above.
-TEST_CASE(any_reentrant_semaphore_release) {
+// Semaphore variant: b releases, then completes before a resumes.
+TEST_CASE(any_deferred_semaphore_release) {
     semaphore sem;
 
     auto a = [&]() -> task<int> {
@@ -1009,14 +1006,13 @@ TEST_CASE(any_reentrant_semaphore_release) {
 
     auto [winner] = run(combined());
     EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_EQ(winner->index(), 1U);
+    EXPECT_EQ(std::get<1>(*winner), 2);
 }
 
-// Mutex variant: a holds a lock, b waits for it.  a unlocks inline,
-// which resumes b.  b completes → when_any cancels a while a is still
-// executing (between unlock and co_return).
-TEST_CASE(any_reentrant_mutex_unlock) {
+// Mutex variant: a unlocks (defers b's resume), then co_returns.
+// a completes first since b's resume is deferred.
+TEST_CASE(any_deferred_mutex_unlock) {
     mutex m;
 
     auto a = [&]() -> task<int> {
@@ -1037,12 +1033,12 @@ TEST_CASE(any_reentrant_mutex_unlock) {
 
     auto [winner] = run(combined());
     EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 1U);
-    EXPECT_EQ(std::get<1>(*winner), 2);
+    EXPECT_EQ(winner->index(), 0U);
+    EXPECT_EQ(std::get<0>(*winner), 1);
 }
 
-// Condition variable variant: a waits on a cv, b notifies it.
-TEST_CASE(any_reentrant_cv_notify) {
+// CV variant: b notifies (defers a's resume), then co_returns. b wins.
+TEST_CASE(any_deferred_cv_notify) {
     mutex m;
     condition_variable cv;
 
@@ -1065,8 +1061,8 @@ TEST_CASE(any_reentrant_cv_notify) {
 
     auto [winner] = run(combined());
     EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_EQ(winner->index(), 1U);
+    EXPECT_EQ(std::get<1>(*winner), 2);
 }
 
 // cancellation_token variant: src.cancel() fires an internal event that
@@ -1118,8 +1114,8 @@ TEST_CASE(all_reentrant_event_set) {
     EXPECT_EQ(b_done, 1);
 }
 
-// Multiple waiters on the same event, all inside when_any.
-TEST_CASE(any_reentrant_event_multiple_waiters) {
+// Multiple waiters: c sets event (defers a, b), then co_returns. c wins.
+TEST_CASE(any_deferred_event_multiple_waiters) {
     event ev;
 
     auto a = [&]() -> task<int> {
@@ -1144,8 +1140,8 @@ TEST_CASE(any_reentrant_event_multiple_waiters) {
 
     auto [winner] = run(combined());
     EXPECT_TRUE(winner.has_value());
-    EXPECT_EQ(winner->index(), 0U);
-    EXPECT_EQ(std::get<0>(*winner), 1);
+    EXPECT_EQ(winner->index(), 2U);
+    EXPECT_EQ(std::get<2>(*winner), 3);
 }
 
 // Repro: a looping task that gets cancelled reentrantly should stop at the

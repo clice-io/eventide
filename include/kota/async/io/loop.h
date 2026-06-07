@@ -144,6 +144,13 @@ public:
         schedule(static_cast<async_node&>(promise), location);
     }
 
+    /// Queues a node for resumption on the next idle tick.
+    ///
+    /// Unlike schedule(), this does not check or modify the node's state.
+    /// Used by sync primitives to defer waiter resumes instead of resuming
+    /// inline (which would cause reentrancy).
+    void defer_resume(async_node& node);
+
 private:
     void schedule(async_node& frame, std::source_location location);
 

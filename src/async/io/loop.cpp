@@ -120,6 +120,15 @@ void event_loop::schedule(async_node& frame, std::source_location loc) {
     loop->tasks.push_back(&frame);
 }
 
+void event_loop::defer_resume(async_node& node) {
+    auto& loop = *this;
+    if(!loop->idle_running && loop->tasks.empty()) {
+        loop->idle_running = true;
+        uv::idle_start(loop->idle, each);
+    }
+    loop->tasks.push_back(&node);
+}
+
 void event_loop::on_destroy(function<void()> callback) {
     self->destroy_callbacks.push_back(std::move(callback));
 }
