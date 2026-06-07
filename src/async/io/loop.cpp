@@ -62,11 +62,11 @@ relay& relay::operator=(relay&& other) noexcept {
     if(this != &other) {
         auto* old = std::exchange(self, std::exchange(other.self, nullptr));
         if(old) {
+            old->refs.fetch_add(1, std::memory_order_relaxed);
             {
                 std::lock_guard lock(old->mutex);
                 old->closed = true;
             }
-            old->refs.fetch_add(1, std::memory_order_relaxed);
             uv::async_send(old->async);
             release_relay(old);
         }
@@ -76,11 +76,11 @@ relay& relay::operator=(relay&& other) noexcept {
 
 relay::~relay() {
     if(self) {
+        self->refs.fetch_add(1, std::memory_order_relaxed);
         {
             std::lock_guard lock(self->mutex);
             self->closed = true;
         }
-        self->refs.fetch_add(1, std::memory_order_relaxed);
         uv::async_send(self->async);
         release_relay(self);
         self = nullptr;
@@ -91,13 +91,11 @@ void relay::send(function<void()> callback) {
     if(!self) {
         return;
     }
-    {
-        std::lock_guard lock(self->mutex);
-        if(self->closed) {
-            return;
-        }
-        self->queue.push_back(std::move(callback));
+    std::lock_guard lock(self->mutex);
+    if(self->closed) {
+        return;
     }
+    self->queue.push_back(std::move(callback));
     uv::async_send(self->async);
 }
 
