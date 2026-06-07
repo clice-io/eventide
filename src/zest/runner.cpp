@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
 #include <functional>
@@ -19,6 +19,11 @@
 #include "kota/zest/runner/run.h"
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
+
+#ifdef KOTA_ZEST_HAS_JSON
+#include "kota/meta/annotation.h"
+#include "kota/codec/json/json.h"
+#endif
 
 namespace {
 
@@ -179,6 +184,80 @@ void print_run_result(std::string_view display_name,
     }
 }
 
+auto state_string(kota::zest::TestState state) -> std::string_view {
+    switch(state) {
+        case kota::zest::TestState::Passed: return "passed";
+        case kota::zest::TestState::Skipped: return "skipped";
+        case kota::zest::TestState::Failed: return "failed";
+        case kota::zest::TestState::Fatal: return "fatal";
+    }
+    return "unknown";
+}
+
+#ifdef KOTA_ZEST_HAS_JSON
+
+struct JsonTestEntry {
+    std::string suite;
+    kota::meta::rename<std::string, "case"> test_case;
+    std::string status;
+    std::uint64_t duration_ms = 0;
+    kota::meta::skip_if_none<std::string> failure;
+};
+
+struct JsonTestSummary {
+    std::uint64_t total = 0;
+    std::uint64_t passed = 0;
+    std::uint64_t failed = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t duration_ms = 0;
+    std::vector<JsonTestEntry> tests;
+};
+
+void print_json_summary(const RunSummary& summary, const std::vector<TestResult>& results) {
+    const auto passed = summary.tests - summary.failed;
+
+    JsonTestSummary output{
+        .total = passed + summary.failed + summary.skipped,
+        .passed = passed,
+        .failed = summary.failed,
+        .skipped = summary.skipped,
+        .duration_ms = static_cast<std::uint64_t>(summary.duration.count()),
+        .tests = {},
+    };
+
+    output.tests.reserve(results.size());
+    for(const auto& r: results) {
+        auto dot = r.display_name.find('.');
+        auto suite = dot != std::string::npos ? r.display_name.substr(0, dot) : r.display_name;
+        auto name = dot != std::string::npos ? r.display_name.substr(dot + 1) : std::string{};
+
+        JsonTestEntry entry{
+            .suite = std::string(suite),
+            .test_case = {},
+            .status = std::string(state_string(r.state)),
+            .duration_ms = static_cast<std::uint64_t>(r.duration.count()),
+            .failure = std::nullopt,
+        };
+        entry.test_case = std::string(name);
+
+        if(is_failure(r.state)) {
+            entry.failure = std::format("at {}:{}", r.path, r.line);
+        }
+
+        output.tests.push_back(std::move(entry));
+    }
+
+    auto json = kota::codec::json::to_json(output);
+    if(json.has_value()) {
+        auto pretty = kota::codec::json::prettify(*json);
+        std::print("{}\n", pretty.has_value() ? *pretty : *json);
+    } else {
+        std::println(stderr, "Error: failed to serialize JSON summary: {}", json.error().message);
+    }
+}
+
+#endif  // KOTA_ZEST_HAS_JSON
+
 void print_summary(const RunSummary& summary) {
     std::println("{}[----------] Global test environment tear-down. {}", green, clear);
     std::println("{}[==========] {} tests from {} test suites ran. ({} ms total){}",
@@ -287,14 +366,16 @@ int Runner::run_tests(Options options) {
     }
 
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
-
     const bool verbose = *options.verbose;
+    const bool json_output = *options.output_format == OutputFormat::Json;
 
     RunSummary summary;
 
-    std::println("{}[----------] Global test environment set-up.{}", green, clear);
-    if(focus_mode) {
-        std::println("{}[  FOCUS   ] Running in focus-only mode.{}", yellow, clear);
+    if(!json_output) {
+        std::println("{}[----------] Global test environment set-up.{}", green, clear);
+        if(focus_mode) {
+            std::println("{}[  FOCUS   ] Running in focus-only mode.{}", yellow, clear);
+        }
     }
 
     // Collect all runnable test cases.
@@ -327,7 +408,7 @@ int Runner::run_tests(Options options) {
             }
 
             if(test_case.attrs.skip) {
-                if(verbose) {
+                if(!json_output && verbose) {
                     std::println("{}[ SKIPPED  ] {}{}", yellow, display_name, clear);
                 }
                 summary.skipped += 1;
@@ -349,7 +430,7 @@ int Runner::run_tests(Options options) {
     summary.tests = static_cast<std::uint32_t>(runnable.size());
 
     auto run_single = [&](const RunnableTest& test, bool show_run_line) -> TestResult {
-        if(show_run_line && verbose) {
+        if(show_run_line && !json_output && verbose) {
             std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
         }
 
@@ -370,10 +451,12 @@ int Runner::run_tests(Options options) {
 
     auto record_result = [&](const TestResult& result) {
         const bool failed = is_failure(result.state);
-        if(failed && !result.output.empty()) {
-            std::println("{}", result.output);
+        if(!json_output) {
+            if(failed && !result.output.empty()) {
+                std::println("{}", result.output);
+            }
+            print_run_result(result.display_name, failed, result.duration, verbose);
         }
-        print_run_result(result.display_name, failed, result.duration, verbose);
         if(failed) {
             summary.failed += 1;
             summary.failed_tests.push_back(
@@ -457,7 +540,18 @@ int Runner::run_tests(Options options) {
         }
     }
 
-    print_summary(summary);
+    if(json_output) {
+#ifdef KOTA_ZEST_HAS_JSON
+        print_json_summary(summary, results);
+#else
+        std::println(
+            stderr,
+            "Error: --output-format=json requires the kota::codec::json library " "(build with KOTA_CODEC_ENABLE_SIMDJSON=ON)");
+        return 1;
+#endif
+    } else {
+        print_summary(summary);
+    }
     return summary.failed != 0;
 }
 

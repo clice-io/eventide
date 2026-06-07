@@ -62,4 +62,9 @@ target_link_libraries(kota_zest PUBLIC
     kota::support
 )
 
+if(TARGET kota::codec::json)
+    target_link_libraries(kota_zest PUBLIC kota::codec::json)
+    target_compile_definitions(kota_zest PUBLIC KOTA_ZEST_HAS_JSON=1)
+endif()
+
 kota_apply_project_options(kota_zest)
