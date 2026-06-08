@@ -70,19 +70,19 @@ std::coroutine_handle<> aggregate_op::flush_deferred() noexcept {
     auto completion = deferred;
     deferred = Deferred::None;
     switch(completion) {
-        case Deferred::Resume: p->set_child(nullptr); return p->handle();
+        case Deferred::Resume: p->set_child(p); return p->handle();
 
         case Deferred::Cancel:
             if(policy & InterceptCancel) {
                 state = Cancelled;
-                p->set_child(nullptr);
+                p->set_child(p);
                 return p->handle();
             }
             p->set_child(nullptr);
             p->state = Cancelled;
             return p->finalize();
 
-        case Deferred::Error: p->set_child(nullptr); return p->handle();
+        case Deferred::Error: p->set_child(p); return p->handle();
 
         case Deferred::None: break;
     }
@@ -106,6 +106,9 @@ void async_node::cancel() {
     switch(kind) {
         case NodeKind::Task: {
             auto* self = static_cast<task_frame*>(this);
+            if(self->child == self) {
+                break;
+            }
             if(self->child) {
                 self->child->cancel();
             } else if(self->parent) {
@@ -184,7 +187,7 @@ void async_node::resume() {
             }
             return;
         }
-        f->set_child(nullptr);
+        f->set_child(f);
         f->handle().resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
         drain_pending_destroys();
@@ -292,7 +295,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
 
             if(child.state == Cancelled) {
                 if(child.policy & InterceptCancel) {
-                    self->set_child(nullptr);
+                    self->set_child(self);
                     return self->handle();
                 }
 
@@ -301,7 +304,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                 return self->finalize();
             }
 
-            self->set_child(nullptr);
+            self->set_child(self);
             if(child.state == Failed && child.kind == NodeKind::Task) {
                 auto* child_task = static_cast<task_frame*>(&child);
                 if(auto propagate = child_task->get_error_hook()) {

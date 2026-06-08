@@ -2789,6 +2789,38 @@ TEST_CASE(cancel_while_join_suspended_with_exception) {
 }
 #endif
 
+// A child task calls group.cancel() while running on the call stack.
+// Without the child==self sentinel in cancel(), this causes double-finalize:
+// cancel() finalizes the running child immediately (child==nullptr, parent!=nullptr),
+// then when the coroutine reaches final_suspend, transition_await calls finalize() again.
+TEST_CASE(cancel_from_running_child) {
+    int slow_done = 0;
+    task_group<>* group_ptr = nullptr;
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(1, loop);
+        group_ptr->cancel();
+    };
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(100, loop);
+        slow_done += 1;
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<> group(loop);
+        group_ptr = &group;
+        group.spawn(canceler());
+        group.spawn(slow());
+        co_await group.join();
+    };
+
+    auto t = driver();
+    schedule_all(t);
+    EXPECT_TRUE(t->is_finished());
+    EXPECT_EQ(slow_done, 0);
+}
+
 };  // TEST_SUITE(task_group)
 
 }  // namespace kota
