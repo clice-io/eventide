@@ -1,8 +1,6 @@
 #include "kota/async/runtime/node.h"
 
-#include <algorithm>
 #include <cassert>
-#include <memory>
 #include <utility>
 #include <vector>
 
@@ -32,39 +30,6 @@ void drain_pending_destroys() {
 #endif
 
 }  // namespace
-
-task_frame::~task_frame() {
-    for(auto& resume_state: deferred_resumes) {
-        if(resume_state) {
-            resume_state->abandon_grant();
-            resume_state->node = nullptr;
-        }
-    }
-}
-
-std::shared_ptr<deferred_resume_state> task_frame::defer_resume(wait_node* grant) {
-    auto resume_state = std::make_shared<deferred_resume_state>();
-    resume_state->node = this;
-    if(grant) {
-        resume_state->grant = grant->take_deferred_grant();
-    }
-    deferred_resumes.push_back(resume_state);
-    return resume_state;
-}
-
-void task_frame::clear_deferred_resume(
-    const std::shared_ptr<deferred_resume_state>& resume_state) noexcept {
-    if(!resume_state) {
-        return;
-    }
-
-    auto it = std::find(deferred_resumes.begin(), deferred_resumes.end(), resume_state);
-    if(it != deferred_resumes.end()) {
-        deferred_resumes.erase(it);
-    }
-    resume_state->node = nullptr;
-    resume_state->grant.clear();
-}
 
 void async_node::resume_and_drain(std::coroutine_handle<> handle) {
     static thread_local bool draining = false;
@@ -194,11 +159,24 @@ void async_node::cancel() {
 /// Resumes a task's coroutine, or finalizes it if already cancelled/failed.
 ///
 /// The cancel/fail path handles the case where a sync primitive deferred
-/// this resume and cancellation arrived before the idle tick fired.
+/// this resume and cancellation arrived before the deferred tick fired.
+/// If the child wait_node was resolved by resume_waiter (state == Finished),
+/// its grant (e.g. a mutex lock) is abandoned before finalization.
 void async_node::resume() {
     if(is_task_frame()) {
         auto* f = static_cast<task_frame*>(this);
         if(is_cancelled() || is_failed()) {
+            auto* ch = f->child;
+            if(ch && ch->is_wait_node() && ch->is_finished()) {
+                auto* wn = static_cast<wait_node*>(ch);
+                if(wn->abandon) {
+                    auto fn = wn->abandon;
+                    auto ctx = wn->abandon_context;
+                    wn->abandon = nullptr;
+                    wn->abandon_context = nullptr;
+                    fn(ctx);
+                }
+            }
             f->set_child(nullptr);
             if(f->get_parent()) {
                 auto next = f->finalize();

@@ -8,51 +8,14 @@
 #include <cstdlib>
 #include <exception>
 #include <limits>
-#include <memory>
 #include <source_location>
-#include <utility>
 #include <vector>
 
 #include "kota/support/config.h"
 
 namespace kota {
 
-class async_node;
 class sync_primitive;
-class wait_node;
-
-struct deferred_resume_grant {
-    using abandon_fn = void (*)(void*) noexcept;
-
-    void* context = nullptr;
-    abandon_fn abandon = nullptr;
-
-    explicit operator bool() const noexcept {
-        return abandon != nullptr;
-    }
-
-    void clear() noexcept {
-        context = nullptr;
-        abandon = nullptr;
-    }
-
-    void abandon_if_present() noexcept {
-        if(abandon) {
-            auto fn = std::exchange(abandon, nullptr);
-            auto ctx = std::exchange(context, nullptr);
-            fn(ctx);
-        }
-    }
-};
-
-struct deferred_resume_state {
-    async_node* node = nullptr;
-    deferred_resume_grant grant;
-
-    void abandon_grant() noexcept {
-        grant.abandon_if_present();
-    }
-};
 
 /// Type-erased base for all coroutine-related nodes in the task tree.
 ///
@@ -162,8 +125,6 @@ protected:
     explicit task_frame() : async_node(NodeKind::Task) {}
 
 public:
-    ~task_frame();
-
     bool root = false;
 
     /// Optional hook invoked when a child task fails, allowing the parent to
@@ -195,10 +156,6 @@ public:
         error_hook_fn = nullptr;
     }
 
-    std::shared_ptr<deferred_resume_state> defer_resume(wait_node* grant);
-
-    void clear_deferred_resume(const std::shared_ptr<deferred_resume_state>& state) noexcept;
-
     const async_node* get_parent() const noexcept {
         return parent;
     }
@@ -226,14 +183,11 @@ private:
     async_node* child = nullptr;
 
     error_hook error_hook_fn = nullptr;
-
-    std::vector<std::shared_ptr<deferred_resume_state>> deferred_resumes;
 };
 
 class wait_node : public async_node {
 public:
     friend class async_node;
-    friend class event_loop;
     friend class sync_primitive;
 
     explicit wait_node(NodeKind k) : async_node(k) {}
@@ -250,17 +204,8 @@ public:
         return next;
     }
 
-    void abandon_deferred_resume() noexcept {
-        auto grant = take_deferred_grant();
-        grant.abandon_if_present();
-    }
-
-    deferred_resume_grant take_deferred_grant() noexcept {
-        return {std::exchange(abandon_context, nullptr), std::exchange(abandon, nullptr)};
-    }
-
 protected:
-    using abandon_fn = deferred_resume_grant::abandon_fn;
+    using abandon_fn = void (*)(void*) noexcept;
 
     /// The sync_primitive this waiter is queued on (nullptr if not queued).
     sync_primitive* resource = nullptr;

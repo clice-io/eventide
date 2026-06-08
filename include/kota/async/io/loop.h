@@ -12,7 +12,6 @@ using uv_loop_t = uv_loop_s;
 namespace kota {
 
 class async_node;
-class wait_node;
 
 template <typename T = void, typename E = void, typename C = void>
 class task;
@@ -153,7 +152,7 @@ public:
     /// Unlike schedule(), this does not check or modify the node's state.
     /// Used by sync primitives to defer waiter resumes instead of resuming
     /// inline (which would cause reentrancy).
-    void defer_resume(async_node& node, wait_node* grant = nullptr);
+    void defer_resume(async_node& node);
 
     /// Drains all deferred resumes. The runtime calls this after the outermost
     /// coroutine resume returns; a check handle is kept as a fallback so queued

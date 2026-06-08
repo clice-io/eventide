@@ -3,7 +3,6 @@
 #include <atomic>
 #include <cassert>
 #include <deque>
-#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -27,7 +26,7 @@ struct event_loop::Self : relay::Self {
     bool idle_running = false;
     bool check_running = false;
     std::deque<async_node*> tasks;
-    std::deque<std::shared_ptr<deferred_resume_state>> deferred;
+    std::deque<async_node*> deferred;
     std::vector<function<void()>> destroy_callbacks;
 };
 
@@ -131,26 +130,8 @@ void event_loop::schedule(async_node& frame, std::source_location loc) {
 static void drain_deferred_queue(event_loop::Self* self) {
     while(!self->deferred.empty()) {
         auto batch = std::move(self->deferred);
-        for(auto& state: batch) {
-            if(!state || !state->node) {
-                continue;
-            }
-
-            auto* node = state->node;
-            assert(node->is_task_frame() && "deferred resume requires a task frame");
-
-            if(state->grant && (node->is_cancelled() || node->is_failed())) {
-                state->abandon_grant();
-            } else {
-                state->grant.clear();
-            }
-
+        for(auto* node : batch) {
             node->resume();
-
-            if(auto* live = state->node) {
-                assert(live->is_task_frame() && "deferred resume owner must remain a task frame");
-                static_cast<task_frame*>(live)->clear_deferred_resume(state);
-            }
         }
     }
 }
@@ -165,9 +146,8 @@ static void on_check(uv_check_t* handle) {
     }
 }
 
-void event_loop::defer_resume(async_node& node, wait_node* grant) {
-    assert(node.is_task_frame() && "defer_resume requires a task frame");
-    self->deferred.push_back(static_cast<task_frame&>(node).defer_resume(grant));
+void event_loop::defer_resume(async_node& node) {
+    self->deferred.push_back(&node);
     if(!self->check_running) {
         self->check_running = true;
         uv::ref(self->check);
