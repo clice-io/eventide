@@ -192,6 +192,10 @@ if has_config("ztest") then
 		add_rules("cl-flags")
 		add_deps("support", "deco")
 		add_packages("cpptrace", { public = true })
+		if has_config("codec") and has_config("codec_simdjson") then
+			add_deps("codec_json")
+			add_defines("KOTA_ZEST_HAS_JSON=1")
+		end
 	end)
 end
 
