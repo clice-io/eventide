@@ -130,7 +130,7 @@ void event_loop::schedule(async_node& frame, std::source_location loc) {
 static void drain_deferred_queue(event_loop::Self* self) {
     while(!self->deferred.empty()) {
         auto batch = std::move(self->deferred);
-        for(auto* node : batch) {
+        for(auto* node: batch) {
             node->resume();
         }
     }
