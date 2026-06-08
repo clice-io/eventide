@@ -50,7 +50,8 @@ void sync_primitive::remove(wait_node* link) {
 bool sync_primitive::resume_waiter(wait_node& link) noexcept {
     auto* awaiting = link.parent;
     assert(awaiting && "resume_waiter: waiter has no parent");
-    if(awaiting->is_cancelled() || !event_loop::has_current()) {
+    assert(event_loop::has_current() && "resume_waiter: no event loop on this thread");
+    if(awaiting->is_cancelled()) {
         link.parent = nullptr;
         return false;
     }
@@ -62,7 +63,8 @@ bool sync_primitive::resume_waiter(wait_node& link) noexcept {
 bool sync_primitive::cancel_waiter(wait_node& link) noexcept {
     auto* awaiting = link.parent;
     assert(awaiting && "cancel_waiter: waiter has no parent");
-    if(awaiting->is_cancelled() || !event_loop::has_current()) {
+    assert(event_loop::has_current() && "cancel_waiter: no event loop on this thread");
+    if(awaiting->is_cancelled()) {
         link.parent = nullptr;
         return false;
     }

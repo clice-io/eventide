@@ -184,6 +184,7 @@ void async_node::resume() {
             }
             return;
         }
+        f->set_child(nullptr);
         f->handle().resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
         drain_pending_destroys();
