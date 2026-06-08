@@ -479,10 +479,12 @@ int Runner::run_tests(Options options) {
             }
 
             auto json = kota::codec::json::to_json(entries);
-            if(json.has_value()) {
-                auto pretty = kota::codec::json::prettify(*json);
-                std::print("{}\n", pretty.has_value() ? *pretty : *json);
+            if(!json.has_value()) {
+                std::println(stderr, "Error: failed to serialize test list to JSON");
+                return 1;
             }
+            auto pretty = kota::codec::json::prettify(*json);
+            std::print("{}\n", pretty.has_value() ? *pretty : *json);
             return 0;
         }
 #else

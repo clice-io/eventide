@@ -165,7 +165,7 @@ TEST_CASE(list_tests_text) {
 TEST_CASE(list_tests_with_filter) {
     auto exe = self_exe_path();
     auto result =
-        run_command(exe + " --list-tests --test-filter=zest_check.binary_equal* 2>/dev/null");
+        run_command(exe + " --list-tests '--test-filter=zest_check.binary_equal*' 2>/dev/null");
     EXPECT_EQ(result.exit_code, 0);
     EXPECT_TRUE(contains(result.text, "zest_check.binary_equal_expected_and_expected"));
     EXPECT_FALSE(contains(result.text, "zest_check.binary_ordering"));
