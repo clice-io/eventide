@@ -29,10 +29,15 @@ TEST_CASE(relay_cross_thread_send) {
     std::thread worker;
 
     auto t = [&]() -> task<> {
+        event done;
         auto r = loop.create_relay();
-        worker = std::thread([&, r = std::move(r)]() mutable { r.send([&] { value = 42; }); });
-        co_await sleep(100, loop);
-        loop.stop();
+        worker = std::thread([&, r = std::move(r)]() mutable {
+            r.send([&] {
+                value = 42;
+                done.set();
+            });
+        });
+        co_await done.wait();
     };
 
     auto task = t();
@@ -78,11 +83,15 @@ TEST_CASE(relay_multiple_send) {
     int counter = 0;
 
     auto t = [&]() -> task<> {
+        event done;
         auto r = loop.create_relay();
         r.send([&] { counter++; });
         r.send([&] { counter++; });
-        r.send([&] { counter++; });
-        co_await sleep(50, loop);
+        r.send([&] {
+            counter++;
+            done.set();
+        });
+        co_await done.wait();
     };
 
     auto task = t();
@@ -107,20 +116,24 @@ TEST_CASE(relay_concurrent_send) {
     std::atomic<int> counter{0};
 
     auto t = [&]() -> task<> {
+        event done;
         auto r = loop.create_relay();
         std::vector<std::thread> threads;
         for(int i = 0; i < N; ++i) {
-            threads.emplace_back([&r, &counter]() {
+            threads.emplace_back([&r, &counter, &done, N, M]() {
                 for(int j = 0; j < M; ++j) {
-                    r.send([&] { counter.fetch_add(1, std::memory_order_relaxed); });
+                    r.send([&] {
+                        if(counter.fetch_add(1, std::memory_order_relaxed) == N * M - 1) {
+                            done.set();
+                        }
+                    });
                 }
             });
         }
         for(auto& th: threads) {
             th.join();
         }
-        // All threads joined; callbacks are enqueued. Sleep to let them drain.
-        co_await sleep(200, loop);
+        co_await done.wait();
     };
 
     auto task = t();
@@ -182,11 +195,17 @@ TEST_CASE(relay_fifo_order) {
     std::vector<int> order;
 
     auto t = [&]() -> task<> {
+        event done;
         auto r = loop.create_relay();
         for(int i = 0; i < 5; ++i) {
-            r.send([&, i] { order.push_back(i); });
+            r.send([&, i] {
+                order.push_back(i);
+                if(i == 4) {
+                    done.set();
+                }
+            });
         }
-        co_await sleep(50, loop);
+        co_await done.wait();
     };
 
     auto task = t();
@@ -198,13 +217,17 @@ TEST_CASE(relay_pending_callbacks_delivered_after_destroy) {
     int counter = 0;
 
     auto t = [&]() -> task<> {
+        event done;
         {
             auto r = loop.create_relay();
             r.send([&] { counter++; });
-            r.send([&] { counter++; });
+            r.send([&] {
+                counter++;
+                done.set();
+            });
             // relay destroyed here; pending callbacks should still be delivered
         }
-        co_await sleep(50, loop);
+        co_await done.wait();
     };
 
     auto task = t();
@@ -217,13 +240,17 @@ TEST_CASE(relay_send_during_drain) {
     relay* shared = nullptr;
 
     auto t = [&]() -> task<> {
+        event done;
         auto r = loop.create_relay();
         shared = &r;
         r.send([&] {
             counter++;
-            shared->send([&] { counter++; });
+            shared->send([&] {
+                counter++;
+                done.set();
+            });
         });
-        co_await sleep(50, loop);
+        co_await done.wait();
     };
 
     auto task = t();
@@ -236,13 +263,17 @@ TEST_CASE(relay_move_assign_releases_old) {
     int new_counter = 0;
 
     auto t = [&]() -> task<> {
+        event done;
         auto r = loop.create_relay();
         r.send([&] { old_counter++; });
 
         // Move-assign overwrites r; old relay's pending callback should still run.
         r = loop.create_relay();
-        r.send([&] { new_counter++; });
-        co_await sleep(50, loop);
+        r.send([&] {
+            new_counter++;
+            done.set();
+        });
+        co_await done.wait();
     };
 
     auto task = t();

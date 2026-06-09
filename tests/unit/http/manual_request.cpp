@@ -4,6 +4,8 @@
 
 TEST_SUITE(http_manual_request) {
 
+TEST_SUITE_ATTRS(skip = true);
+
 TEST_CASE(get_request) {
     using namespace kota;
     event_loop loop;
@@ -13,7 +15,6 @@ TEST_CASE(get_request) {
     loop.run();
     auto result = request.result();
     ASSERT_TRUE(result.has_value());
-    std::println("{}", result->text());
     EXPECT_EQ(result->status, 200);
 };
 
