@@ -120,7 +120,7 @@ TEST_CASE(relay_concurrent_send) {
         auto r = loop.create_relay();
         std::vector<std::thread> threads;
         for(int i = 0; i < N; ++i) {
-            threads.emplace_back([&r, &counter, &done, N, M]() {
+            threads.emplace_back([&]() {
                 for(int j = 0; j < M; ++j) {
                     r.send([&] {
                         if(counter.fetch_add(1, std::memory_order_relaxed) == N * M - 1) {
