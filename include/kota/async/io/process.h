@@ -4,11 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "kota/support/small_vector.h"
 #include "kota/async/io/stream.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
-#include "kota/support/small_vector.h"
 
 namespace kota {
 
