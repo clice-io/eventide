@@ -33,6 +33,9 @@ struct Options {
     DecoFlag(help = "print all test results, not just failures"; required = false)
     verbose = false;
 
+    DecoFlag(help = "list all registered test cases and exit"; required = false)
+    list_tests = false;
+
     DecoFlag(help = "run test cases in parallel"; required = false)
     parallel = false;
 

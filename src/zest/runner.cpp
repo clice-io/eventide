@@ -31,6 +31,9 @@ constexpr std::string_view clear = "\033[0m";
 struct CliOptions {
     kota::zest::Options zest;
 
+    DecoFlag(help = "display this help and exit"; required = false; names = {"--help", "-h"})
+    help = false;
+
     DecoInput(meta_var = "<PATTERN>"; help = "positional fallback for test name filter";
               required = false)
     <std::string> test_filter_input;
@@ -215,14 +218,22 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<CliOptions> command(command_overview);
     command.render_with(renderer);
+    command.after<&CliOptions::help>([](auto& step) {
+        step.print_usage();
+        return step.stop();
+    });
 
-    auto parsed = kota::deco::cli::parse<CliOptions>(args, renderer);
+    auto parsed = command.invoke(args);
     if(!parsed.has_value()) {
         std::println(stderr, "Error parsing options: {}", parsed.error().message);
         std::exit(1);
     }
 
     auto& cli = parsed->options;
+    if(cli.help.has_value() && *cli.help) {
+        return 0;
+    }
+
     if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
         std::println(stderr, "Error: cannot use both positional filter and --test-filter");
         std::exit(1);
@@ -259,6 +270,22 @@ int Runner::run_tests(Options options) {
     }
     auto patterns = std::move(*patterns_result);
     auto grouped_suites = group_suites(suites);
+
+    if(*options.list_tests) {
+        for(const auto& [suite_name, test_cases]: grouped_suites) {
+            if(!matches_suite_filter(suite_name, patterns)) {
+                continue;
+            }
+            for(const auto& test_case: test_cases) {
+                if(!matches_test_filter(suite_name, test_case.name, patterns)) {
+                    continue;
+                }
+                std::println("{}", make_display_name(suite_name, test_case.name));
+            }
+        }
+        return 0;
+    }
+
     const bool focus_mode = has_focused_tests(grouped_suites, patterns);
 
     const bool verbose = *options.verbose;
