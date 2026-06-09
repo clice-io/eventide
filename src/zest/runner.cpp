@@ -19,7 +19,6 @@
 #include "kota/zest/runner/run.h"
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
-
 #include "kota/async/io/loop.h"
 #include "kota/async/io/stream.h"
 
@@ -502,10 +501,9 @@ int Runner::run_tests(Options options) {
 
         if(!parallel_indices.empty()) {
             if(options.program.empty()) {
-                std::println(
-                    "{}[  ERROR ] parallel execution requires the runner program path{}",
-                    red,
-                    clear);
+                std::println("{}[  ERROR ] parallel execution requires the runner program path{}",
+                             red,
+                             clear);
                 return 1;
             }
 
