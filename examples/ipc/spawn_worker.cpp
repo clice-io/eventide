@@ -178,8 +178,8 @@ int run_parent(std::string self_path) {
             return 1;
         }
 
-        auto transport = std::make_unique<ipc::StreamTransport>(std::move(spawned->stdout_pipe),
-                                                                std::move(spawned->stdin_pipe));
+        auto transport = std::make_unique<ipc::StreamTransport>(std::move(spawned->pipes[1]),
+                                                                std::move(spawned->pipes[0]));
         auto peer = std::make_unique<ipc::JsonPeer>(loop, std::move(transport));
 
         peer->on_notification("worker/log", [](const WorkerLog& params) {

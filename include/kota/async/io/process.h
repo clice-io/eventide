@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -9,6 +8,7 @@
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
 #include "kota/async/vocab/owned.h"
+#include "kota/support/small_vector.h"
 
 namespace kota {
 
@@ -106,8 +106,8 @@ public:
         /// Process creation options (platform-specific options may be ignored).
         creation_options creation;
 
-        /// Stdio config for stdin/stdout/stderr.
-        std::array<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};
+        /// Stdio config indexed by file descriptor (0=stdin, 1=stdout, 2=stderr, 3+=extra).
+        small_vector<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};
     };
 
     using wait_result = result<exit_status>;
@@ -137,11 +137,9 @@ private:
 struct process::spawn_result {
     process proc;
 
-    pipe stdin_pipe;
-
-    pipe stdout_pipe;
-
-    pipe stderr_pipe;
+    /// Pipes indexed by file descriptor (0=stdin, 1=stdout, 2=stderr, 3+=extra).
+    /// Only entries configured as pipe in options are valid; others are default-constructed.
+    small_vector<pipe, 4> pipes;
 };
 
 }  // namespace kota

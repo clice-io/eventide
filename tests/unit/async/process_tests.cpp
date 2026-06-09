@@ -100,7 +100,7 @@ TEST_CASE(spawn_pipe_stdout) {
     ASSERT_TRUE(spawn_res.has_value());
 
     auto capture_stdout = [&]() -> task<void> {
-        auto stdout_out = co_await spawn_res->stdout_pipe.read();
+        auto stdout_out = co_await spawn_res->pipes[1].read();
         auto status = co_await spawn_res->proc.wait();
 
         EXPECT_TRUE(status.has_value());
@@ -140,12 +140,12 @@ TEST_CASE(spawn_pipe_stdio) {
 
     auto write_stdin_capture_stdout = [&]() -> task<void> {
         std::span<const char> data(payload.data(), payload.size());
-        auto write_err = co_await spawn_res->stdin_pipe.write(data);
+        auto write_err = co_await spawn_res->pipes[0].write(data);
         EXPECT_FALSE(write_err.has_error());
 
-        spawn_res->stdin_pipe = pipe{};
+        spawn_res->pipes[0] = pipe{};
 
-        auto stdout_out = co_await spawn_res->stdout_pipe.read();
+        auto stdout_out = co_await spawn_res->pipes[1].read();
         auto status = co_await spawn_res->proc.wait();
 
         EXPECT_TRUE(stdout_out.has_value());
@@ -189,8 +189,8 @@ TEST_CASE(spawn_pipe_stderr) {
     ASSERT_TRUE(spawn_res.has_value());
 
     auto capture_stdout_stderr = [&]() -> task<void> {
-        auto stdout_out = co_await spawn_res->stdout_pipe.read();
-        auto stderr_out = co_await spawn_res->stderr_pipe.read();
+        auto stdout_out = co_await spawn_res->pipes[1].read();
+        auto stderr_out = co_await spawn_res->pipes[2].read();
         auto status = co_await spawn_res->proc.wait();
 
         EXPECT_TRUE(status.has_value());
@@ -227,7 +227,7 @@ TEST_CASE(spawn_pipe_stdout_read_chunk_twice) {
     auto spawn_res = process::spawn(opts, loop);
     ASSERT_TRUE(spawn_res.has_value());
 
-    auto reader = read_two_chunks(std::move(spawn_res->stdout_pipe));
+    auto reader = read_two_chunks(std::move(spawn_res->pipes[1]));
     schedule_all(reader);
 
     auto [first, second] = reader.result();
@@ -299,7 +299,7 @@ TEST_CASE(process_stat_child) {
     EXPECT_GT(pid, 0);
 
     auto verify = [&]() -> task<void> {
-        auto data = co_await spawn_res->stdout_pipe.read();
+        auto data = co_await spawn_res->pipes[1].read();
         EXPECT_TRUE(data.has_value());
 
         auto stat = sys::process(pid);
@@ -307,7 +307,7 @@ TEST_CASE(process_stat_child) {
         EXPECT_EQ(stat->pid, pid);
         EXPECT_GT(stat->rss, std::size_t{0});
 
-        { auto drop = std::move(spawn_res->stdin_pipe); }
+        { auto drop = std::move(spawn_res->pipes[0]); }
         co_await spawn_res->proc.wait();
         event_loop::current().stop();
     };
