@@ -97,11 +97,7 @@
     DECO_OPTION_STRUCT_NAME(id)
 
 #define DECO_DECLARE_OPTION_TYPED(option_base_ty, cfg_base_ty, using_block, ...)                   \
-    DECO_DECLARE_OPTION_TYPED_IMPL(__LINE__,                                                       \
-                                   option_base_ty,                                                 \
-                                   cfg_base_ty,                                                    \
-                                   using_block,                                                    \
-                                   __VA_ARGS__)
+    DECO_DECLARE_OPTION_TYPED_IMPL(__LINE__, option_base_ty, cfg_base_ty, using_block, __VA_ARGS__)
 
 #define DECO_DECLARE_ALIAS_IMPL(id, cfg_base_ty, using_block, ...)                                 \
     struct DECO_ALIAS_STRUCT_NAME(id) {                                                            \
