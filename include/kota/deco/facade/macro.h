@@ -71,11 +71,11 @@
     } DECO_CFG_NAME(id);
 
 #define DECO_CFG(...)                                                                              \
-    DECO_CONFIG_IMPL(__COUNTER__, kota::deco::decl::ConfigFields::Type::Next, __VA_ARGS__)
+    DECO_CONFIG_IMPL(__LINE__, kota::deco::decl::ConfigFields::Type::Next, __VA_ARGS__)
 #define DECO_CFG_START(...)                                                                        \
-    DECO_CONFIG_IMPL(__COUNTER__, kota::deco::decl::ConfigFields::Type::Start, __VA_ARGS__)
+    DECO_CONFIG_IMPL(__LINE__, kota::deco::decl::ConfigFields::Type::Start, __VA_ARGS__)
 #define DECO_CFG_END(...)                                                                          \
-    DECO_CONFIG_IMPL(__COUNTER__, kota::deco::decl::ConfigFields::Type::End, __VA_ARGS__)
+    DECO_CONFIG_IMPL(__LINE__, kota::deco::decl::ConfigFields::Type::End, __VA_ARGS__)
 
 #define DECO_DECLARE_OPTION_TYPED_IMPL(id, option_base_ty, cfg_base_ty, using_block, ...)          \
     struct DECO_OPTION_STRUCT_NAME(id) : public option_base_ty {                                   \
@@ -97,7 +97,7 @@
     DECO_OPTION_STRUCT_NAME(id)
 
 #define DECO_DECLARE_OPTION_TYPED(option_base_ty, cfg_base_ty, using_block, ...)                   \
-    DECO_DECLARE_OPTION_TYPED_IMPL(__COUNTER__,                                                    \
+    DECO_DECLARE_OPTION_TYPED_IMPL(__LINE__,                                                       \
                                    option_base_ty,                                                 \
                                    cfg_base_ty,                                                    \
                                    using_block,                                                    \
@@ -115,7 +115,7 @@
     DECO_ALIAS_STRUCT_NAME(id)
 
 #define DECO_DECLARE_ALIAS(cfg_base_ty, using_block, ...)                                          \
-    DECO_DECLARE_ALIAS_IMPL(__COUNTER__, cfg_base_ty, using_block, __VA_ARGS__)
+    DECO_DECLARE_ALIAS_IMPL(__LINE__, cfg_base_ty, using_block, __VA_ARGS__)
 
 #define DECO_DECLARE_OPTION_TEMPLATE_IMPL(id,                                                      \
                                           res_concept,                                             \
@@ -152,7 +152,7 @@
                                      cfg_base_ty,                                                  \
                                      using_block,                                                  \
                                      ...)                                                          \
-    DECO_DECLARE_OPTION_TEMPLATE_IMPL(__COUNTER__,                                                 \
+    DECO_DECLARE_OPTION_TEMPLATE_IMPL(__LINE__,                                                    \
                                       res_concept,                                                 \
                                       default_res_type,                                            \
                                       option_base_tpl,                                             \
