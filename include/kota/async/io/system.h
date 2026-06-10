@@ -138,6 +138,9 @@ result<std::string> home_directory();
 /// Query the system temporary directory.
 result<std::string> temp_directory();
 
+/// Query the absolute path of the current executable.
+result<std::string> exe_path();
+
 /// Get the scheduling priority of a process.
 /// Returns a nice value (-20..19) on Unix, or a UV_PRIORITY_* constant on
 /// Windows.  The returned value may not exactly match a prior set_priority()

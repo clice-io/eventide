@@ -45,13 +45,15 @@ struct Options {
     DecoFlag(help = "run tests in parallel across worker processes"; required = false)
     parallel = false;
 
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<N>";
+                 help = "worker processes for --parallel (0 = all available cores)";
+                 required = false)
+    <unsigned> parallel_workers = 0;
+
     DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<DIR>";
                  help = "directory for snapshot files";
                  required = false)
     <std::string> snapshot_dir = "";
-
-    // Worker subprocess needs this to re-spawn itself.
-    std::string program;
 };
 
 /// Parse CLI arguments and run all registered tests.
@@ -67,6 +69,12 @@ int run_cli(int argc,
             std::string_view command_overview = "unitest [options] Run unit tests");
 
 /// Run all registered tests with explicit configuration.
+///
+/// Note on `parallel`: parallel mode re-executes the current binary with an
+/// internal `--zest-worker=<token>` flag to host worker processes, so the
+/// binary's entry point must route command-line arguments through run_cli().
+/// Embedders that parse arguments themselves and call run_tests() directly
+/// must forward unmodified argv to run_cli() first for parallel mode to work.
 int run_tests(Options options);
 
 }  // namespace kota::zest

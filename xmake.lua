@@ -18,6 +18,10 @@ if has_config("ztest") and not has_config("deco") then
 	raise("ztest requires deco")
 end
 
+if has_config("ztest") and not has_config("async") then
+	raise("ztest requires async")
+end
+
 if has_config("http") and not has_config("async") then
 	raise("http requires async")
 end
@@ -190,7 +194,7 @@ if has_config("ztest") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/zest/**)")
 		add_rules("cl-flags")
-		add_deps("support", "deco")
+		add_deps("support", "deco", "async")
 		add_packages("cpptrace", { public = true })
 	end)
 end
