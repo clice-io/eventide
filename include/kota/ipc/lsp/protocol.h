@@ -10,7 +10,7 @@ namespace kota::ipc::protocol {
 using ChangeAnnotationIdentifier = string;
 
 /// The glob pattern to watch relative to the base path. Glob patterns can have the following syntax:
-/// - `*` to match one or more characters in a path segment
+/// - `*` to match zero or more characters in a path segment
 /// - `?` to match on one character in a path segment
 /// - `**` to match any number of path segments, including none
 /// - `{}` to group conditions (e.g. `**​/*.{ts,js}` matches all TypeScript and JavaScript files)
@@ -29,7 +29,7 @@ using RegularExpressionEngineKind = string;
 ///
 /// @since 3.18.0
 /// supportsCustomValues: false
-enum class ApplyKind : std::uint8_t {
+enum class ApplyKind : uinteger {
     /// The value from the individual item (if provided and not `null`) will be
     /// used instead of the default.
     Replace = 1,
@@ -46,6 +46,10 @@ enum class ApplyKind : std::uint8_t {
 struct CodeActionKind : std::string {
     using std::string::string;
     using std::string::operator=;
+
+    CodeActionKind() = default;
+
+    CodeActionKind(std::string_view value) : std::string(value) {}
 
     /// Empty kind.
     constexpr inline static std::string_view empty = "";
@@ -87,7 +91,6 @@ struct CodeActionKind : std::string {
     /// - ...
     ///
     /// @since 3.18.0
-    /// @proposed
     constexpr inline static std::string_view refactor_move = "refactor.move";
 
     /// Base kind for refactoring rewrite actions: 'refactor.rewrite'
@@ -129,7 +132,7 @@ struct CodeActionKind : std::string {
 ///
 /// @since 3.18.0 - proposed
 /// supportsCustomValues: false
-enum class CodeActionTag : std::uint8_t {
+enum class CodeActionTag : uinteger {
     /// Marks the code action as LLM-generated.
     LlmGenerated = 1
 };
@@ -138,7 +141,7 @@ enum class CodeActionTag : std::uint8_t {
 ///
 /// @since 3.17.0
 /// supportsCustomValues: false
-enum class CodeActionTriggerKind : std::uint8_t {
+enum class CodeActionTriggerKind : uinteger {
     /// Code actions were explicitly requested by the user or by an extension.
     Invoked = 1,
 
@@ -151,7 +154,7 @@ enum class CodeActionTriggerKind : std::uint8_t {
 
 /// The kind of a completion entry.
 /// supportsCustomValues: false
-enum class CompletionItemKind : std::uint8_t {
+enum class CompletionItemKind : uinteger {
     Text = 1,
     Method = 2,
     Function = 3,
@@ -184,14 +187,14 @@ enum class CompletionItemKind : std::uint8_t {
 ///
 /// @since 3.15.0
 /// supportsCustomValues: false
-enum class CompletionItemTag : std::uint8_t {
+enum class CompletionItemTag : uinteger {
     /// Render a completion as obsolete, usually using a strike-out.
     Deprecated = 1
 };
 
 /// How a completion was triggered
 /// supportsCustomValues: false
-enum class CompletionTriggerKind : std::uint8_t {
+enum class CompletionTriggerKind : uinteger {
     /// Completion was triggered by typing an identifier (24x7 code
     /// complete), manual invocation (e.g Ctrl+Space) or via API.
     Invoked = 1,
@@ -206,7 +209,7 @@ enum class CompletionTriggerKind : std::uint8_t {
 
 /// The diagnostic's severity.
 /// supportsCustomValues: false
-enum class DiagnosticSeverity : std::uint8_t {
+enum class DiagnosticSeverity : uinteger {
     /// Reports an error.
     Error = 1,
 
@@ -224,7 +227,7 @@ enum class DiagnosticSeverity : std::uint8_t {
 ///
 /// @since 3.15.0
 /// supportsCustomValues: false
-enum class DiagnosticTag : std::uint8_t {
+enum class DiagnosticTag : uinteger {
     /// Unused or unnecessary code.
     ///
     /// Clients are allowed to render diagnostics with this tag faded out instead of having
@@ -241,19 +244,26 @@ enum class DiagnosticTag : std::uint8_t {
 ///
 /// @since 3.17.0
 /// supportsCustomValues: false
-enum class DocumentDiagnosticReportKind : std::uint8_t {
+struct DocumentDiagnosticReportKind : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    DocumentDiagnosticReportKind() = default;
+
+    DocumentDiagnosticReportKind(std::string_view value) : std::string(value) {}
+
     /// A diagnostic report with a full
     /// set of problems.
-    Full,
+    constexpr inline static std::string_view full = "full";
 
     /// A report indicating that the last
     /// returned report is still accurate.
-    Unchanged
+    constexpr inline static std::string_view unchanged = "unchanged";
 };
 
 /// A document highlight kind.
 /// supportsCustomValues: false
-enum class DocumentHighlightKind : std::uint8_t {
+enum class DocumentHighlightKind : uinteger {
     /// A textual occurrence.
     Text = 1,
 
@@ -281,28 +291,35 @@ enum class ErrorCodes : integer {
 };
 
 /// supportsCustomValues: false
-enum class FailureHandlingKind : std::uint8_t {
+struct FailureHandlingKind : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    FailureHandlingKind() = default;
+
+    FailureHandlingKind(std::string_view value) : std::string(value) {}
+
     /// Applying the workspace change is simply aborted if one of the changes provided
     /// fails. All operations executed before the failing operation stay executed.
-    Abort,
+    constexpr inline static std::string_view abort = "abort";
 
     /// All operations are executed transactional. That means they either all
     /// succeed or no changes at all are applied to the workspace.
-    Transactional,
+    constexpr inline static std::string_view transactional = "transactional";
 
     /// If the workspace edit contains only textual file changes they are executed transactional.
     /// If resource changes (create, rename or delete file) are part of the change the failure
     /// handling strategy is abort.
-    TextOnlyTransactional,
+    constexpr inline static std::string_view text_only_transactional = "textOnlyTransactional";
 
     /// The client tries to undo the operations already executed. But there is no
     /// guarantee that this is succeeding.
-    Undo
+    constexpr inline static std::string_view undo = "undo";
 };
 
 /// The file event type
 /// supportsCustomValues: false
-enum class FileChangeType : std::uint8_t {
+enum class FileChangeType : uinteger {
     /// The file got created.
     Created = 1,
 
@@ -318,12 +335,19 @@ enum class FileChangeType : std::uint8_t {
 ///
 /// @since 3.16.0
 /// supportsCustomValues: false
-enum class FileOperationPatternKind : std::uint8_t {
+struct FileOperationPatternKind : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    FileOperationPatternKind() = default;
+
+    FileOperationPatternKind(std::string_view value) : std::string(value) {}
+
     /// The pattern matches a file only.
-    File,
+    constexpr inline static std::string_view file = "file";
 
     /// The pattern matches a folder only.
-    Folder
+    constexpr inline static std::string_view folder = "folder";
 };
 
 /// A set of predefined range kinds.
@@ -331,6 +355,10 @@ enum class FileOperationPatternKind : std::uint8_t {
 struct FoldingRangeKind : std::string {
     using std::string::string;
     using std::string::operator=;
+
+    FoldingRangeKind() = default;
+
+    FoldingRangeKind(std::string_view value) : std::string(value) {}
 
     /// Folding range for a comment
     constexpr inline static std::string_view comment = "comment";
@@ -346,7 +374,7 @@ struct FoldingRangeKind : std::string {
 ///
 /// @since 3.17.0
 /// supportsCustomValues: false
-enum class InlayHintKind : std::uint8_t {
+enum class InlayHintKind : uinteger {
     /// An inlay hint that for a type annotation.
     Type = 1,
 
@@ -357,9 +385,8 @@ enum class InlayHintKind : std::uint8_t {
 /// Describes how an {@link InlineCompletionItemProvider inline completion provider} was triggered.
 ///
 /// @since 3.18.0
-/// @proposed
 /// supportsCustomValues: false
-enum class InlineCompletionTriggerKind : std::uint8_t {
+enum class InlineCompletionTriggerKind : uinteger {
     /// Completion was triggered explicitly by a user gesture.
     Invoked = 1,
 
@@ -370,7 +397,7 @@ enum class InlineCompletionTriggerKind : std::uint8_t {
 /// Defines whether the insert text in a completion item should be interpreted as
 /// plain text or a snippet.
 /// supportsCustomValues: false
-enum class InsertTextFormat : std::uint8_t {
+enum class InsertTextFormat : uinteger {
     /// The primary text to be inserted is treated as a plain string.
     PlainText = 1,
 
@@ -390,7 +417,7 @@ enum class InsertTextFormat : std::uint8_t {
 ///
 /// @since 3.16.0
 /// supportsCustomValues: false
-enum class InsertTextMode : std::uint8_t {
+enum class InsertTextMode : uinteger {
     /// The insertion or replace strings is taken as it is. If the
     /// value is multi line the lines below the cursor will be
     /// inserted using the indentation defined in the string value.
@@ -447,6 +474,10 @@ struct LanguageKind : std::string {
     using std::string::string;
     using std::string::operator=;
 
+    LanguageKind() = default;
+
+    LanguageKind(std::string_view value) : std::string(value) {}
+
     constexpr inline static std::string_view abap = "abap";
     constexpr inline static std::string_view windows_bat = "bat";
     constexpr inline static std::string_view bib_te_x = "bibtex";
@@ -458,11 +489,9 @@ struct LanguageKind : std::string {
     constexpr inline static std::string_view css = "css";
 
     /// @since 3.18.0
-    /// @proposed
     constexpr inline static std::string_view d = "d";
 
     /// @since 3.18.0
-    /// @proposed
     constexpr inline static std::string_view delphi = "pascal";
 
     constexpr inline static std::string_view diff = "diff";
@@ -472,7 +501,7 @@ struct LanguageKind : std::string {
     constexpr inline static std::string_view erlang = "erlang";
     constexpr inline static std::string_view f_sharp = "fsharp";
     constexpr inline static std::string_view git_commit = "git-commit";
-    constexpr inline static std::string_view git_rebase = "rebase";
+    constexpr inline static std::string_view git_rebase = "git-rebase";
     constexpr inline static std::string_view go = "go";
     constexpr inline static std::string_view groovy = "groovy";
     constexpr inline static std::string_view handlebars = "handlebars";
@@ -492,12 +521,12 @@ struct LanguageKind : std::string {
     constexpr inline static std::string_view objective_cpp = "objective-cpp";
 
     /// @since 3.18.0
-    /// @proposed
     constexpr inline static std::string_view pascal = "pascal";
 
     constexpr inline static std::string_view perl = "perl";
     constexpr inline static std::string_view perl6 = "perl6";
     constexpr inline static std::string_view php = "php";
+    constexpr inline static std::string_view plaintext = "plaintext";
     constexpr inline static std::string_view powershell = "powershell";
     constexpr inline static std::string_view pug = "jade";
     constexpr inline static std::string_view python = "python";
@@ -527,17 +556,24 @@ struct LanguageKind : std::string {
 /// Please note that `MarkupKinds` must not start with a `$`. This kinds
 /// are reserved for internal usage.
 /// supportsCustomValues: false
-enum class MarkupKind : std::uint8_t {
+struct MarkupKind : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    MarkupKind() = default;
+
+    MarkupKind(std::string_view value) : std::string(value) {}
+
     /// Plain text is supported as a content format
-    Plaintext,
+    constexpr inline static std::string_view plain_text = "plaintext";
 
     /// Markdown is supported as a content format
-    Markdown
+    constexpr inline static std::string_view markdown = "markdown";
 };
 
 /// The message type
 /// supportsCustomValues: false
-enum class MessageType : std::uint8_t {
+enum class MessageType : uinteger {
     /// An error message.
     Error = 1,
 
@@ -553,7 +589,6 @@ enum class MessageType : std::uint8_t {
     /// A debug message.
     ///
     /// @since 3.18.0
-    /// @proposed
     Debug = 5
 };
 
@@ -561,23 +596,30 @@ enum class MessageType : std::uint8_t {
 ///
 /// @since 3.16.0
 /// supportsCustomValues: false
-enum class MonikerKind : std::uint8_t {
+struct MonikerKind : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    MonikerKind() = default;
+
+    MonikerKind(std::string_view value) : std::string(value) {}
+
     /// The moniker represent a symbol that is imported into a project
-    Import,
+    constexpr inline static std::string_view import = "import";
 
     /// The moniker represents a symbol that is exported from a project
-    Export,
+    constexpr inline static std::string_view export_ = "export";
 
     /// The moniker represents a symbol that is local to a project (e.g. a local
     /// variable of a function, a class not visible outside the project, ...)
-    Local
+    constexpr inline static std::string_view local = "local";
 };
 
 /// A notebook cell kind.
 ///
 /// @since 3.17.0
 /// supportsCustomValues: false
-enum class NotebookCellKind : std::uint8_t {
+enum class NotebookCellKind : uinteger {
     /// A markup-cell is formatted source that is used for display.
     Markup = 1,
 
@@ -592,6 +634,10 @@ enum class NotebookCellKind : std::uint8_t {
 struct PositionEncodingKind : std::string {
     using std::string::string;
     using std::string::operator=;
+
+    PositionEncodingKind() = default;
+
+    PositionEncodingKind(std::string_view value) : std::string(value) {}
 
     /// Character offsets count UTF-8 code units (e.g. bytes).
     constexpr inline static std::string_view utf8 = "utf-8";
@@ -611,22 +657,29 @@ struct PositionEncodingKind : std::string {
 };
 
 /// supportsCustomValues: false
-enum class PrepareSupportDefaultBehavior : std::uint8_t {
+enum class PrepareSupportDefaultBehavior : uinteger {
     /// The client's default behavior is to select the identifier
     /// according the to language's syntax rule.
     Identifier = 1
 };
 
 /// supportsCustomValues: false
-enum class ResourceOperationKind : std::uint8_t {
+struct ResourceOperationKind : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    ResourceOperationKind() = default;
+
+    ResourceOperationKind(std::string_view value) : std::string(value) {}
+
     /// Supports creating new files and folders.
-    Create,
+    constexpr inline static std::string_view create = "create";
 
     /// Supports renaming existing files and folders.
-    Rename,
+    constexpr inline static std::string_view rename = "rename";
 
     /// Supports deleting existing files and folders.
-    Delete
+    constexpr inline static std::string_view delete_ = "delete";
 };
 
 /// A set of predefined token modifiers. This set is not fixed
@@ -638,6 +691,10 @@ enum class ResourceOperationKind : std::uint8_t {
 struct SemanticTokenModifiers : std::string {
     using std::string::string;
     using std::string::operator=;
+
+    SemanticTokenModifiers() = default;
+
+    SemanticTokenModifiers(std::string_view value) : std::string(value) {}
 
     constexpr inline static std::string_view declaration = "declaration";
     constexpr inline static std::string_view definition = "definition";
@@ -660,6 +717,10 @@ struct SemanticTokenModifiers : std::string {
 struct SemanticTokenTypes : std::string {
     using std::string::string;
     using std::string::operator=;
+
+    SemanticTokenTypes() = default;
+
+    SemanticTokenTypes(std::string_view value) : std::string(value) {}
 
     constexpr inline static std::string_view namespace_ = "namespace";
 
@@ -699,7 +760,7 @@ struct SemanticTokenTypes : std::string {
 ///
 /// @since 3.15.0
 /// supportsCustomValues: false
-enum class SignatureHelpTriggerKind : std::uint8_t {
+enum class SignatureHelpTriggerKind : uinteger {
     /// Signature help was invoked manually by the user or by a command.
     Invoked = 1,
 
@@ -712,7 +773,7 @@ enum class SignatureHelpTriggerKind : std::uint8_t {
 
 /// A symbol kind.
 /// supportsCustomValues: false
-enum class SymbolKind : std::uint8_t {
+enum class SymbolKind : uinteger {
     File = 1,
     Module = 2,
     Namespace = 3,
@@ -745,14 +806,14 @@ enum class SymbolKind : std::uint8_t {
 ///
 /// @since 3.16
 /// supportsCustomValues: false
-enum class SymbolTag : std::uint8_t {
+enum class SymbolTag : uinteger {
     /// Render a symbol as obsolete, usually using a strike-out.
     Deprecated = 1
 };
 
 /// Represents reasons why a text document is saved.
 /// supportsCustomValues: false
-enum class TextDocumentSaveReason : std::uint8_t {
+enum class TextDocumentSaveReason : uinteger {
     /// Manually triggered, e.g. by the user pressing save, by starting debugging,
     /// or by an API call.
     Manual = 1,
@@ -767,7 +828,7 @@ enum class TextDocumentSaveReason : std::uint8_t {
 /// Defines how the host (editor) should sync
 /// document changes to the language server.
 /// supportsCustomValues: false
-enum class TextDocumentSyncKind : std::uint8_t {
+enum class TextDocumentSyncKind : uinteger {
     /// Documents should not be synced at all.
     None = 0,
 
@@ -782,41 +843,62 @@ enum class TextDocumentSyncKind : std::uint8_t {
 };
 
 /// supportsCustomValues: false
-enum class TokenFormat : std::uint8_t {
-    Relative
+struct TokenFormat : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    TokenFormat() = default;
+
+    TokenFormat(std::string_view value) : std::string(value) {}
+
+    constexpr inline static std::string_view relative = "relative";
 };
 
 /// supportsCustomValues: false
-enum class TraceValue : std::uint8_t {
+struct TraceValue : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    TraceValue() = default;
+
+    TraceValue(std::string_view value) : std::string(value) {}
+
     /// Turn tracing off.
-    Off,
+    constexpr inline static std::string_view off = "off";
 
     /// Trace messages only.
-    Messages,
+    constexpr inline static std::string_view messages = "messages";
 
     /// Verbose message tracing.
-    Verbose
+    constexpr inline static std::string_view verbose = "verbose";
 };
 
 /// Moniker uniqueness level to define scope of the moniker.
 ///
 /// @since 3.16.0
 /// supportsCustomValues: false
-enum class UniquenessLevel : std::uint8_t {
+struct UniquenessLevel : std::string {
+    using std::string::string;
+    using std::string::operator=;
+
+    UniquenessLevel() = default;
+
+    UniquenessLevel(std::string_view value) : std::string(value) {}
+
     /// The moniker is only unique inside a document
-    Document,
+    constexpr inline static std::string_view document = "document";
 
     /// The moniker is unique inside a project for which a dump got created
-    Project,
+    constexpr inline static std::string_view project = "project";
 
     /// The moniker is unique inside the group to which a project belongs
-    Group,
+    constexpr inline static std::string_view group = "group";
 
     /// The moniker is unique inside the moniker scheme.
-    Scheme,
+    constexpr inline static std::string_view scheme = "scheme";
 
     /// The moniker is globally unique
-    Global
+    constexpr inline static std::string_view global = "global";
 };
 
 /// supportsCustomValues: true
@@ -1036,7 +1118,6 @@ struct Command {
     /// An optional tooltip.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional<string> tooltip = {};
 
     /// The identifier of the actual command handler.
@@ -1299,7 +1380,6 @@ struct DocumentRangeFormattingClientCapabilities {
     /// Whether the client supports formatting multiple ranges at once.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool ranges_support = {};
 };
 
@@ -1311,7 +1391,6 @@ struct DocumentRangeFormattingOptions {
     /// Whether the server supports formatting multiple ranges at once.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool ranges_support = {};
 };
 
@@ -1434,7 +1513,6 @@ struct FoldingRangeOptions {
 /// Client workspace capabilities specific to folding ranges
 ///
 /// @since 3.18.0
-/// @proposed
 struct FoldingRangeWorkspaceClientCapabilities {
     /// Whether the client implementation supports a refresh request sent from the
     /// server to the client.
@@ -1445,7 +1523,6 @@ struct FoldingRangeWorkspaceClientCapabilities {
     /// change that requires such a calculation.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool refresh_support = {};
 };
 
@@ -1540,7 +1617,6 @@ struct InlayHintWorkspaceClientCapabilities {
 /// Client capabilities specific to inline completions.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionClientCapabilities {
     /// Whether implementation supports dynamic registration for inline completion providers.
     optional_bool dynamic_registration = {};
@@ -1549,7 +1625,6 @@ struct InlineCompletionClientCapabilities {
 /// Inline completion options used during static registration.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionOptions {
     /// Schema field: workDoneProgress. (Inherited from [WorkDoneProgressOptions])
     optional_bool work_done_progress = {};
@@ -1973,7 +2048,6 @@ struct StaticRegistrationOptions {
 /// `${name:default value}`.
 ///
 /// @since 3.18.0
-/// @proposed
 struct StringValue {
     /// The kind of string value.
     string kind;
@@ -1991,7 +2065,6 @@ struct TextDocumentContentChangeWholeDocument {
 /// Client capabilities for a text document content provider.
 ///
 /// @since 3.18.0
-/// @proposed
 struct TextDocumentContentClientCapabilities {
     /// Text document content provider supports dynamic registration.
     optional_bool dynamic_registration = {};
@@ -2000,7 +2073,6 @@ struct TextDocumentContentClientCapabilities {
 /// Text document content provider options.
 ///
 /// @since 3.18.0
-/// @proposed
 struct TextDocumentContentOptions {
     /// The schemes for which the server provides content.
     std::vector<string> schemes;
@@ -2009,7 +2081,6 @@ struct TextDocumentContentOptions {
 /// Parameters for the `workspace/textDocumentContent` request.
 ///
 /// @since 3.18.0
-/// @proposed
 struct TextDocumentContentParams {
     /// The uri of the text document.
     DocumentUri uri;
@@ -2018,7 +2089,6 @@ struct TextDocumentContentParams {
 /// Parameters for the `workspace/textDocumentContent/refresh` request.
 ///
 /// @since 3.18.0
-/// @proposed
 struct TextDocumentContentRefreshParams {
     /// The uri of the text document to refresh.
     DocumentUri uri;
@@ -2027,7 +2097,6 @@ struct TextDocumentContentRefreshParams {
 /// Result of the `workspace/textDocumentContent` request.
 ///
 /// @since 3.18.0
-/// @proposed
 struct TextDocumentContentResult {
     /// The text content of the text document. Please note, that the content of
     /// any subsequent open notifications for the text document might differ
@@ -2203,7 +2272,6 @@ struct WorkDoneProgressReport {
 /// Additional data about a workspace edit.
 ///
 /// @since 3.18.0
-/// @proposed
 struct WorkspaceEditMetadata {
     /// Signal to the editor that this edit is a refactoring.
     optional_bool is_refactoring = {};
@@ -2439,7 +2507,7 @@ struct UnchangedDocumentDiagnosticReport {
     /// no changes to the last result. A server can
     /// only return `unchanged` if result ids are
     /// provided.
-    enum_string<DocumentDiagnosticReportKind> kind = DocumentDiagnosticReportKind::Unchanged;
+    DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::unchanged;
 
     /// A result id which will be sent on the next
     /// diagnostic request for the same document.
@@ -2454,7 +2522,7 @@ struct WorkspaceUnchangedDocumentDiagnosticReport {
     /// no changes to the last result. A server can
     /// only return `unchanged` if result ids are
     /// provided. (Inherited from [UnchangedDocumentDiagnosticReport])
-    enum_string<DocumentDiagnosticReportKind> kind = DocumentDiagnosticReportKind::Unchanged;
+    DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::unchanged;
 
     /// A result id which will be sent on the next
     /// diagnostic request for the same document. (Inherited from [UnchangedDocumentDiagnosticReport])
@@ -2545,7 +2613,7 @@ struct HoverClientCapabilities {
 
     /// Client supports the following content formats for the content
     /// property. The order describes the preferred format of the client.
-    optional<std::vector<enum_string<MarkupKind>>> content_format = {};
+    optional<std::vector<MarkupKind>> content_format = {};
 };
 
 /// A `MarkupContent` literal represents a string value which content is interpreted base on its
@@ -2572,7 +2640,7 @@ struct HoverClientCapabilities {
 /// remove HTML from the markdown to avoid script execution.
 struct MarkupContent {
     /// The type of the Markup
-    enum_string<MarkupKind> kind;
+    MarkupKind kind;
 
     /// The content itself
     string value;
@@ -2665,7 +2733,7 @@ struct ClientSymbolTagOptions {
 
 struct SetTraceParams {
     /// Schema field: value.
-    enum_string<TraceValue> value;
+    TraceValue value;
 };
 
 /// Moniker definition to match LSIF 0.5 moniker definition.
@@ -2680,10 +2748,10 @@ struct Moniker {
     string identifier;
 
     /// The scope in which the moniker is unique
-    enum_string<UniquenessLevel> unique;
+    UniquenessLevel unique;
 
     /// The moniker kind if known.
-    optional<enum_string<MonikerKind>> kind = {};
+    optional<MonikerKind> kind = {};
 };
 
 struct WorkspaceEditClientCapabilities {
@@ -2694,13 +2762,13 @@ struct WorkspaceEditClientCapabilities {
     /// support 'create', 'rename' and 'delete' files and folders.
     ///
     /// @since 3.13.0
-    optional<std::vector<enum_string<ResourceOperationKind>>> resource_operations = {};
+    optional<std::vector<ResourceOperationKind>> resource_operations = {};
 
     /// The failure handling strategy of a client if applying the workspace edit
     /// fails.
     ///
     /// @since 3.13.0
-    optional<enum_string<FailureHandlingKind>> failure_handling = {};
+    optional<FailureHandlingKind> failure_handling = {};
 
     /// Whether the client normalizes line endings to the client specific
     /// setting.
@@ -2720,13 +2788,11 @@ struct WorkspaceEditClientCapabilities {
     /// Whether the client supports `WorkspaceEditMetadata` in `WorkspaceEdit`s.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool metadata_support = {};
 
     /// Whether the client supports snippets as text edits.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool snippet_edit_support = {};
 };
 
@@ -2775,7 +2841,7 @@ struct ShowMessageRequestClientCapabilities {
 struct ClientSignatureInformationOptions {
     /// Client supports the following content formats for the documentation
     /// property. The order describes the preferred format of the client.
-    optional<std::vector<enum_string<MarkupKind>>> documentation_format = {};
+    optional<std::vector<MarkupKind>> documentation_format = {};
 
     /// Client capabilities specific to parameter information.
     optional<ClientSignatureParameterInformationOptions> parameter_information = {};
@@ -2791,14 +2857,12 @@ struct ClientSignatureInformationOptions {
     /// indicate that no parameter should be active.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool no_active_parameter_support = {};
 };
 
 /// Documentation for a class of code actions.
 ///
 /// @since 3.18.0
-/// @proposed
 struct CodeActionKindDocumentation {
     /// The kind of the code action being documented.
     ///
@@ -2827,7 +2891,7 @@ struct CreateFile {
     optional<ChangeAnnotationIdentifier> annotation_id = {};
 
     /// A create
-    enum_string<ResourceOperationKind> kind = ResourceOperationKind::Create;
+    ResourceOperationKind kind = ResourceOperationKind::create;
 
     /// The resource to create.
     DocumentUri uri;
@@ -2844,7 +2908,7 @@ struct DeleteFile {
     optional<ChangeAnnotationIdentifier> annotation_id = {};
 
     /// A delete
-    enum_string<ResourceOperationKind> kind = ResourceOperationKind::Delete;
+    ResourceOperationKind kind = ResourceOperationKind::delete_;
 
     /// The file to delete.
     DocumentUri uri;
@@ -2902,7 +2966,7 @@ struct DeleteFilesParams {
 /// @since 3.16.0
 struct FileOperationPattern {
     /// The glob pattern to match. Glob patterns can have the following syntax:
-    /// - `*` to match one or more characters in a path segment
+    /// - `*` to match zero or more characters in a path segment
     /// - `?` to match on one character in a path segment
     /// - `**` to match any number of path segments, including none
     /// - `{}` to group sub patterns into an OR expression. (e.g. `**​/*.{ts,js}` matches all TypeScript and JavaScript files)
@@ -2913,7 +2977,7 @@ struct FileOperationPattern {
     /// Whether to match files or folders with this pattern.
     ///
     /// Matches both if undefined.
-    optional<enum_string<FileOperationPatternKind>> matches = {};
+    optional<FileOperationPatternKind> matches = {};
 
     /// Additional options used during matching.
     optional<FileOperationPatternOptions> options = {};
@@ -3004,7 +3068,7 @@ struct RenameFile {
     optional<ChangeAnnotationIdentifier> annotation_id = {};
 
     /// A rename
-    enum_string<ResourceOperationKind> kind = ResourceOperationKind::Rename;
+    ResourceOperationKind kind = ResourceOperationKind::rename;
 
     /// The old (existing) location.
     DocumentUri old_uri;
@@ -3108,7 +3172,6 @@ struct CompletionOptions {
 /// Text document content provider registration options.
 ///
 /// @since 3.18.0
-/// @proposed
 struct TextDocumentContentRegistrationOptions {
     flatten<TextDocumentContentOptions> text_document_content_options;
 
@@ -3453,6 +3516,11 @@ struct DiagnosticClientCapabilities {
 
     /// Whether the clients supports related documents for document diagnostic pulls.
     optional_bool related_document_support = {};
+
+    /// Whether the client supports `MarkupContent` in diagnostic messages.
+    ///
+    /// @since 3.18.0
+    optional_bool markup_message_support = {};
 };
 
 /// General diagnostics capabilities for pull and push model.
@@ -3558,7 +3626,7 @@ struct ClientCompletionItemOptions {
 
     /// Client supports the following content formats for the documentation
     /// property. The order describes the preferred format of the client.
-    optional<std::vector<enum_string<MarkupKind>>> documentation_format = {};
+    optional<std::vector<MarkupKind>> documentation_format = {};
 
     /// Client supports the deprecated property on a completion item.
     optional_bool deprecated_support = {};
@@ -3701,7 +3769,7 @@ struct SemanticTokensClientCapabilities {
     std::vector<string> token_modifiers;
 
     /// The token formats the clients supports.
-    std::vector<enum_string<TokenFormat>> formats;
+    std::vector<TokenFormat> formats;
 
     /// Whether the client supports tokens that can overlap each other.
     optional_bool overlapping_token_support = {};
@@ -3796,7 +3864,6 @@ struct CodeActionOptions {
     /// At most one documentation entry should be shown per provider.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional<std::vector<CodeActionKindDocumentation>> documentation = {};
 
     /// The server provides support to resolve additional
@@ -3999,7 +4066,6 @@ struct DocumentRangeFormattingParams {
 /// The parameters of a {@link DocumentRangesFormattingRequest}.
 ///
 /// @since 3.18.0
-/// @proposed
 struct DocumentRangesFormattingParams {
     /// An optional token that a server can use to report work done progress. (Inherited from [WorkDoneProgressParams])
     optional<ProgressToken> work_done_token = {};
@@ -4090,7 +4156,6 @@ struct InlayHintParams {
 /// An inline completion item represents a text snippet that is proposed inline to complete text that is being typed.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionItem {
     /// The text to replace the range with. Must be set.
     variant<string, StringValue> insert_text;
@@ -4115,21 +4180,27 @@ struct InlineValueContext {
     Range stopped_location;
 };
 
-/// Provide an inline value through an expression evaluation.
-/// If only a range is specified, the expression will be extracted from the underlying document.
-/// An optional expression can be used to override the extracted expression.
+/// To compute an inline value through an expression evaluation.
+///
+/// If only a range is specified, the expression should be
+/// extracted from the underlying document.
+///
+/// An optional expression could be evaluated instead of
+/// the extracted expression.
 ///
 /// @since 3.17.0
 struct InlineValueEvaluatableExpression {
     /// The document range for which the inline value applies.
-    /// The range is used to extract the evaluatable expression from the underlying document.
+    ///
+    /// The range could be used to extract the evaluatable expression
+    /// from the underlying document.
     Range range;
 
-    /// If specified the expression overrides the extracted expression.
+    /// If specified the expression could be evaluated instead.
     optional<string> expression = {};
 };
 
-/// Provide inline value as text.
+/// Returns inline value information as the complete text to be shown.
 ///
 /// @since 3.17.0
 struct InlineValueText {
@@ -4140,14 +4211,20 @@ struct InlineValueText {
     string text;
 };
 
-/// Provide inline value through a variable lookup.
-/// If only a range is specified, the variable name will be extracted from the underlying document.
-/// An optional variable name can be used to override the extracted name.
+/// To compute inline value through a variable lookup.
+///
+/// If only a range is specified, the variable name should
+/// be extracted from the underlying document.
+///
+/// An optional variable name could be used to lookup instead
+/// of the extracted name.
 ///
 /// @since 3.17.0
 struct InlineValueVariableLookup {
     /// The document range for which the inline value applies.
-    /// The range is used to extract the variable name from the underlying document.
+    ///
+    /// The range could be used to extract the variable name
+    /// from the underlying document.
     Range range;
 
     /// If specified the name of the variable to look up.
@@ -4229,7 +4306,6 @@ struct PrepareRenamePlaceholder {
 /// Describes the currently selected completion item.
 ///
 /// @since 3.18.0
-/// @proposed
 struct SelectedCompletionInfo {
     /// The range that will be replaced if this completion item is accepted.
     Range range;
@@ -4289,7 +4365,6 @@ struct ShowDocumentParams {
 /// An interactive text edit.
 ///
 /// @since 3.18.0
-/// @proposed
 struct SnippetTextEdit {
     /// The range of the text document to be manipulated.
     Range range;
@@ -4542,7 +4617,6 @@ struct CodeActionClientCapabilities {
     /// code actions.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_bool documentation_support = {};
 
     /// Client supports the tag property on a code action. Clients
@@ -4561,7 +4635,7 @@ struct CompletionClientCapabilities {
     /// capabilities.
     optional<ClientCompletionItemOptions> completion_item = {};
 
-    /// Schema field: completionItemKind.
+    /// The client supports the following completion item kinds.
     optional<ClientCompletionItemOptionsKind> completion_item_kind = {};
 
     /// Defines how the client handles whitespace and indentation
@@ -4681,13 +4755,11 @@ struct WorkspaceClientCapabilities {
     /// Capabilities specific to the folding range requests scoped to the workspace.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional<FoldingRangeWorkspaceClientCapabilities> folding_range = {};
 
     /// Capabilities specific to the `workspace/textDocumentContent` request.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional<TextDocumentContentClientCapabilities> text_document_content = {};
 };
 
@@ -4819,7 +4891,6 @@ struct CompletionItemDefaults {
 /// Represents a collection of {@link InlineCompletionItem inline completion items} to be presented in the editor.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionList {
     /// The inline completion items
     std::vector<InlineCompletionItem> items;
@@ -4835,10 +4906,10 @@ struct InlineValueParams {
     /// The text document.
     TextDocumentIdentifier text_document;
 
-    /// The document range for which inline values should be computed.
+    /// The document range for which inline values information will be returned.
     Range range;
 
-    /// Additional information about the context in which inline values were
+    /// Additional information about the context in which inline values information was
     /// requested.
     InlineValueContext context;
 };
@@ -4999,7 +5070,6 @@ using PrepareRenameResult = variant<Range, PrepareRenamePlaceholder, PrepareRena
 /// Provides information about the context in which an inline completion was requested.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionContext {
     /// Describes how the inline completion was triggered.
     InlineCompletionTriggerKind trigger_kind;
@@ -5447,7 +5517,6 @@ struct TextDocumentClientCapabilities {
     /// Client capabilities specific to inline completions.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional<InlineCompletionClientCapabilities> inline_completion = {};
 };
 
@@ -5485,6 +5554,9 @@ struct SignatureHelp {
     /// In future version of the protocol this property might become
     /// mandatory (but still nullable) to better express the active parameter if
     /// the active signature does have any.
+    ///
+    /// Since version 3.16.0 the `SignatureInformation` itself provides a
+    /// `activeParameter` property and it should be used instead of this one.
     optional<nullable<uinteger>> active_parameter = {};
 };
 
@@ -5536,8 +5608,11 @@ struct Diagnostic {
     /// appears in the user interface.
     optional<string> source = {};
 
-    /// The diagnostic's message. It usually appears in the user interface
-    string message;
+    /// The diagnostic's message. It usually appears in the user interface.
+    ///
+    /// @since 3.18.0 - support for MarkupContent. This is guarded by the client
+    /// capability `textDocument.diagnostic.markupMessageSupport`.
+    variant<string, MarkupContent> message;
 
     /// Additional metadata about the diagnostic.
     ///
@@ -5607,7 +5682,6 @@ struct InlayHint {
 /// A parameter literal used in inline completion requests.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionParams {
     flatten<TextDocumentPositionParams> text_document_position_params;
 
@@ -5754,7 +5828,7 @@ using NotebookDocumentFilter = variant<NotebookDocumentFilterNotebookType, Noteb
 /// its resource, or a glob-pattern that is applied to the {@link TextDocument.fileName path}.
 ///
 /// Glob patterns can have the following syntax:
-/// - `*` to match one or more characters in a path segment
+/// - `*` to match zero or more characters in a path segment
 /// - `?` to match on one character in a path segment
 /// - `**` to match any number of path segments, including none
 /// - `{}` to group sub patterns into an OR expression. (e.g. `**​/*.{ts,js}` matches all TypeScript and JavaScript files)
@@ -5834,7 +5908,6 @@ struct WorkspaceOptions {
     /// The server supports the `workspace/textDocumentContent` request.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_variant<TextDocumentContentOptions, TextDocumentContentRegistrationOptions> text_document_content = {};
 };
 
@@ -5865,7 +5938,7 @@ struct CodeActionContext {
 /// @since 3.17.0
 struct FullDocumentDiagnosticReport {
     /// A full document diagnostic report.
-    enum_string<DocumentDiagnosticReportKind> kind = DocumentDiagnosticReportKind::Full;
+    DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::full;
 
     /// An optional result id. If provided it will
     /// be sent on the next diagnostic request for the
@@ -5895,7 +5968,7 @@ struct PublishDiagnosticsParams {
 /// @since 3.17.0
 struct WorkspaceFullDocumentDiagnosticReport {
     /// A full document diagnostic report. (Inherited from [FullDocumentDiagnosticReport])
-    enum_string<DocumentDiagnosticReportKind> kind = DocumentDiagnosticReportKind::Full;
+    DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::full;
 
     /// An optional result id. If provided it will
     /// be sent on the next diagnostic request for the
@@ -5942,7 +6015,6 @@ struct ApplyWorkspaceEditParams {
     /// Additional data about the edit.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional<WorkspaceEditMetadata> metadata = {};
 };
 
@@ -6095,7 +6167,7 @@ struct Lsp_InitializeParams {
     optional<LSPAny> initialization_options = {};
 
     /// The initial trace setting. If omitted trace is disabled ('off').
-    optional<enum_string<TraceValue>> trace = {};
+    optional<TraceValue> trace = {};
 };
 
 /// Parameters for a {@link SignatureHelpRequest}.
@@ -6140,7 +6212,7 @@ struct DocumentDiagnosticReportPartialResult {
 /// @since 3.17.0
 struct RelatedFullDocumentDiagnosticReport {
     /// A full document diagnostic report. (Inherited from [FullDocumentDiagnosticReport])
-    enum_string<DocumentDiagnosticReportKind> kind = DocumentDiagnosticReportKind::Full;
+    DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::full;
 
     /// An optional result id. If provided it will
     /// be sent on the next diagnostic request for the
@@ -6168,7 +6240,7 @@ struct RelatedUnchangedDocumentDiagnosticReport {
     /// no changes to the last result. A server can
     /// only return `unchanged` if result ids are
     /// provided. (Inherited from [UnchangedDocumentDiagnosticReport])
-    enum_string<DocumentDiagnosticReportKind> kind = DocumentDiagnosticReportKind::Unchanged;
+    DocumentDiagnosticReportKind kind = DocumentDiagnosticReportKind::unchanged;
 
     /// A result id which will be sent on the next
     /// diagnostic request for the same document. (Inherited from [UnchangedDocumentDiagnosticReport])
@@ -6465,7 +6537,6 @@ struct InlayHintRegistrationOptions {
 /// Inline completion options used during static or dynamic registration.
 ///
 /// @since 3.18.0
-/// @proposed
 struct InlineCompletionRegistrationOptions {
     flatten<InlineCompletionOptions> inline_completion_options;
 
@@ -6700,7 +6771,6 @@ struct ServerCapabilities {
     /// Inline completion options used during static registration.
     ///
     /// @since 3.18.0
-    /// @proposed
     optional_variant<boolean, InlineCompletionOptions> inline_completion_provider = {};
 
     /// Workspace specific server capabilities.

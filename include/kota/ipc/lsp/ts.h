@@ -38,9 +38,6 @@ using optional_variant = optional<variant<Ts...>>;
 /// For multiple inherit.
 using meta::flatten;
 
-/// For closed string enum.
-using meta::enum_string;
-
 /// For empty object literal.
 struct LspEmptyObject {};
 

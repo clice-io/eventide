@@ -100,7 +100,7 @@ int main() {
         co_return proto::Hover{
             .contents =
                 proto::MarkupContent{
-                                     .kind = proto::MarkupKind::Markdown,
+                                     .kind = proto::MarkupKind::markdown,
                                      .value = "stub hover",
                                      },
         };

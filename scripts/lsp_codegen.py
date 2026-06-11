@@ -434,26 +434,6 @@ def topological_order(
     return ordered
 
 
-def smallest_unsigned_type(max_value: int) -> str:
-    if max_value <= 0xFF:
-        return "std::uint8_t"
-    if max_value <= 0xFFFF:
-        return "std::uint16_t"
-    if max_value <= 0xFFFFFFFF:
-        return "std::uint32_t"
-    return "std::uint64_t"
-
-
-def smallest_signed_type(min_value: int, max_value: int) -> str:
-    if min_value >= -(1 << 7) and max_value <= (1 << 7) - 1:
-        return "std::int8_t"
-    if min_value >= -(1 << 15) and max_value <= (1 << 15) - 1:
-        return "std::int16_t"
-    if min_value >= -(1 << 31) and max_value <= (1 << 31) - 1:
-        return "std::int32_t"
-    return "std::int64_t"
-
-
 def method_to_type_name(method: str, suffix: str) -> str:
     parts = [part for part in re.split(r"[^0-9A-Za-z]+", method) if part]
     if parts:
@@ -529,11 +509,6 @@ class TypeRenderer:
                     ref_name, sanitize_type_identifier(ref_name, fallback="Type")
                 )
                 return f"std::shared_ptr<{cpp_name}>"
-            if ref_name in self.closed_string_enum_names:
-                enum_cpp = self.name_map.get(
-                    ref_name, sanitize_type_identifier(ref_name, fallback="Type")
-                )
-                return f"enum_string<{enum_cpp}>"
             return self.name_map.get(
                 ref_name, sanitize_type_identifier(ref_name, fallback="Type")
             )
@@ -591,10 +566,9 @@ class TypeRenderer:
             literal_value = str(type_expr.get("value", ""))
             owner_enum = self.closed_string_literal_owner.get(literal_value)
             if owner_enum:
-                enum_cpp = self.name_map.get(
+                return self.name_map.get(
                     owner_enum, sanitize_type_identifier(owner_enum, fallback="Type")
                 )
-                return f"enum_string<{enum_cpp}>"
             return "string"
 
         if kind == "integerLiteral":
@@ -662,18 +636,10 @@ class Generator:
         self.closed_string_enum_literal_members: dict[str, dict[str, str]] = {}
         for enum_name in self.renderer.closed_string_enum_names:
             enum_def = model.enumerations[enum_name]
-            used_member_names: Counter[str] = Counter()
             value_to_member: dict[str, str] = {}
             for index, value in enumerate(enum_def.values):
-                base_member_name = enum_member_upper_camel(
-                    str(value.value), fallback=f"Value{index + 1}"
-                )
-                dedupe_index = used_member_names[base_member_name]
-                used_member_names[base_member_name] += 1
-                member_name = (
-                    base_member_name
-                    if dedupe_index == 0
-                    else f"{base_member_name}{dedupe_index + 1}"
+                member_name, _ = sanitize_identifier(
+                    camel_to_snake(value.name), fallback=f"value_{index}"
                 )
                 value_to_member[str(value.value)] = member_name
             self.closed_string_enum_literal_members[enum_name] = value_to_member
@@ -1114,15 +1080,9 @@ class Generator:
         append_doc(lines, indent="", comments=comments)
 
         if base_name in {"integer", "uinteger"}:
-            underlying = base_name
-            if not enum_def.supports_custom_values:
-                values = [v.value for v in enum_def.values if isinstance(v.value, int)]
-                if values:
-                    if base_name == "integer":
-                        underlying = smallest_signed_type(min(values), max(values))
-                    else:
-                        underlying = smallest_unsigned_type(max(values))
-            lines.append(f"enum class {enum_cpp} : {underlying} {{")
+            # Keep the wire-format width so out-of-range values from newer
+            # clients survive decoding instead of failing the whole message.
+            lines.append(f"enum class {enum_cpp} : {base_name} {{")
             used_member_names: Counter[str] = Counter()
             value_comments_list = [
                 build_doc_lines(value.doc) for value in enum_def.values
@@ -1150,59 +1110,40 @@ class Generator:
             return "\n".join(lines)
 
         if base_name == "string":
-            if enum_def.supports_custom_values:
-                lines.append(f"struct {enum_cpp} : std::string {{")
-                lines.append("    using std::string::string;")
-                lines.append("    using std::string::operator=;")
+            lines.append(f"struct {enum_cpp} : std::string {{")
+            lines.append("    using std::string::string;")
+            lines.append("    using std::string::operator=;")
+            lines.append("")
+            lines.append(f"    {enum_cpp}() = default;")
+            lines.append("")
+            # Implicit so the string_view constants below copy-initialize the
+            # wrapper directly (std::string's string_view constructor is explicit).
+            lines.append(
+                f"    {enum_cpp}(std::string_view value) : std::string(value) {{}}"
+            )
 
-                if enum_def.values:
-                    lines.append("")
-
-                value_comments_list = [
-                    build_doc_lines(value.doc) for value in enum_def.values
-                ]
-                for index, value in enumerate(enum_def.values):
-                    value_comments = value_comments_list[index]
-                    append_doc(lines, indent="    ", comments=value_comments)
-                    member_name, _ = sanitize_identifier(
-                        camel_to_snake(value.name), fallback=f"value_{index}"
-                    )
-                    escaped = json.dumps(str(value.value))
-                    lines.append(
-                        f"    constexpr inline static std::string_view {member_name} = {escaped};"
-                    )
-                    if index + 1 < len(enum_def.values) and (
-                        value_comments or value_comments_list[index + 1]
-                    ):
-                        lines.append("")
-
-                lines.append("};")
-                return "\n".join(lines)
-
-            max_value = max(len(enum_def.values) - 1, 0)
-            underlying = smallest_unsigned_type(max_value)
-            lines.append(f"enum class {enum_cpp} : {underlying} {{")
-            used_member_names: Counter[str] = Counter()
+            if enum_def.values:
+                lines.append("")
 
             value_comments_list = [
                 build_doc_lines(value.doc) for value in enum_def.values
             ]
+            used_member_names: set[str] = set()
             for index, value in enumerate(enum_def.values):
                 value_comments = value_comments_list[index]
                 append_doc(lines, indent="    ", comments=value_comments)
-
-                base_member_name = enum_member_upper_camel(
-                    str(value.value), fallback=f"Value{index + 1}"
+                member_name, _ = sanitize_identifier(
+                    camel_to_snake(value.name), fallback=f"value_{index}"
                 )
-                dedupe_index = used_member_names[base_member_name]
-                used_member_names[base_member_name] += 1
-                member_name = (
-                    base_member_name
-                    if dedupe_index == 0
-                    else f"{base_member_name}{dedupe_index + 1}"
+                if member_name in used_member_names:
+                    raise ValueError(
+                        f"duplicate constant `{member_name}` in enumeration {enum_def.name}"
+                    )
+                used_member_names.add(member_name)
+                escaped = json.dumps(str(value.value))
+                lines.append(
+                    f"    constexpr inline static std::string_view {member_name} = {escaped};"
                 )
-                comma = "," if index + 1 < len(enum_def.values) else ""
-                lines.append(f"    {member_name}{comma}")
                 if index + 1 < len(enum_def.values) and (
                     value_comments or value_comments_list[index + 1]
                 ):
