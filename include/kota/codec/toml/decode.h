@@ -343,10 +343,16 @@ struct ValueReader {
         return true;  // nothing to consume in a DOM backend
     }
 
+    /// Backend hook used by data-driven struct decoding: fail an unknown field
+    /// with the offending value node's source location attached.
+    bool fail_unknown_field(std::string_view key) {
+        auto err = rich_error::unknown_field(key);
+        attach_location(err);
+        return scoped_context<rich_error>::fail(std::move(err));
+    }
+
 private:
-    bool fail_type(std::string_view expected) {
-        auto got = detail::node_type_name(node);
-        auto err = rich_error::invalid_type(expected, got);
+    void attach_location(rich_error& err) {
         if(node) {
             auto src = node->source();
             if(src.begin.line != 0) {
@@ -357,21 +363,18 @@ private:
                 });
             }
         }
+    }
+
+    bool fail_type(std::string_view expected) {
+        auto got = detail::node_type_name(node);
+        auto err = rich_error::invalid_type(expected, got);
+        attach_location(err);
         return scoped_context<rich_error>::fail(std::move(err));
     }
 
     bool fail_with_location(std::string msg) {
         rich_error err(std::move(msg));
-        if(node) {
-            auto src = node->source();
-            if(src.begin.line != 0) {
-                err.set_location({
-                    static_cast<std::size_t>(src.begin.line),
-                    static_cast<std::size_t>(src.begin.column),
-                    0,
-                });
-            }
-        }
+        attach_location(err);
         return scoped_context<rich_error>::fail(std::move(err));
     }
 };
@@ -395,7 +398,16 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
 #else
     auto parsed = ::toml::parse(text);
     if(!parsed) {
-        rich_error err(std::string("TOML parse error"));
+        const auto& e = parsed.error();
+        rich_error err(std::string("TOML parse error: ") + std::string(e.description()));
+        auto src = e.source();
+        if(src.begin.line != 0) {
+            err.set_location({
+                static_cast<std::size_t>(src.begin.line),
+                static_cast<std::size_t>(src.begin.column),
+                0,
+            });
+        }
         return std::unexpected(std::move(err));
     }
     return std::move(parsed).table();

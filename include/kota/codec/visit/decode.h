@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -265,8 +266,16 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
 
         if(!matched) {
             if constexpr(Config::deny_unknown_fields || schema::deny_unknown) {
-                return scoped_context<typename Vis::error_type>::fail(
-                    rich_error::unknown_field(key));
+                // Prefer the backend hook so DOM backends (e.g. TOML) can attach
+                // the offending node's source location to the error.
+                if constexpr(requires {
+                                 { reader.fail_unknown_field(key) } -> std::same_as<bool>;
+                             }) {
+                    return reader.fail_unknown_field(key);
+                } else {
+                    return scoped_context<typename Vis::error_type>::fail(
+                        rich_error::unknown_field(key));
+                }
             } else {
                 return reader.visit_skip();
             }
