@@ -7,7 +7,6 @@
 #include <span>
 #include <string>
 #include <type_traits>
-#include <vector>
 
 #include "kota/support/numeric.h"
 #include "kota/codec/bincode/type.h"
@@ -175,18 +174,6 @@ struct reader {
         return body(*this);
     }
 
-    bool peek_null() {
-        if(pos >= data.size()) {
-            return false;
-        }
-        auto byte = std::to_integer<uint8_t>(data[pos]);
-        if(byte == 0x00) {
-            return true;  // null tag — leave it for visit_null() to consume
-        }
-        ++pos;  // consume the 0x01 "some" tag so reader is positioned at the inner value
-        return false;
-    }
-
     bool visit_null() {
         KOTA_CODEC_TRY(check_remaining(1));
         read_u8();  // consume the 0x00 tag
@@ -266,7 +253,7 @@ bool map_access::visit_entry(KF&& key_reader, VF&& value_reader) {
     return true;
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, bincode::error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
@@ -280,25 +267,14 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
     return {};
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::uint8_t> data, T& out) -> std::expected<void, bincode::error> {
     return from_bytes<Config>(
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(data.data()), data.size()),
         out);
 }
 
-template <typename Config = default_config<>, typename T>
-auto from_bytes(const std::vector<std::byte>& data, T& out) -> std::expected<void, bincode::error> {
-    return from_bytes<Config>(std::span<const std::byte>(data.data(), data.size()), out);
-}
-
-template <typename Config = default_config<>, typename T>
-auto from_bytes(const std::vector<std::uint8_t>& data, T& out)
-    -> std::expected<void, bincode::error> {
-    return from_bytes<Config>(std::span<const std::uint8_t>(data.data(), data.size()), out);
-}
-
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::byte> data) -> std::expected<T, bincode::error> {
     T value{};
@@ -309,7 +285,7 @@ auto from_bytes(std::span<const std::byte> data) -> std::expected<T, bincode::er
     return value;
 }
 
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, bincode::error> {
     T value{};
@@ -318,18 +294,6 @@ auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, bincode:
         return std::unexpected(result.error());
     }
     return value;
-}
-
-template <typename T, typename Config = default_config<>>
-    requires std::default_initializable<T>
-auto from_bytes(const std::vector<std::byte>& data) -> std::expected<T, bincode::error> {
-    return from_bytes<T, Config>(std::span<const std::byte>(data.data(), data.size()));
-}
-
-template <typename T, typename Config = default_config<>>
-    requires std::default_initializable<T>
-auto from_bytes(const std::vector<std::uint8_t>& data) -> std::expected<T, bincode::error> {
-    return from_bytes<T, Config>(std::span<const std::uint8_t>(data.data(), data.size()));
 }
 
 }  // namespace kota::codec::bincode

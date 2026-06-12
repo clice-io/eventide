@@ -6,7 +6,6 @@
 #include <expected>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 
 #include "kota/support/numeric.h"
@@ -127,8 +126,6 @@ private:
     constexpr static std::uintptr_t tag = 1;
 };
 
-struct Reader;
-
 struct StrReader {
     std::string_view str;
     using error_type = rich_error;
@@ -164,21 +161,6 @@ struct StrReader {
             return scoped_context<rich_error>::fail(rich_error("number out of range"));
         }
         return true;
-    }
-};
-
-struct StructReader {
-    ondemand::Object obj;
-    const char* buf_base = nullptr;
-    std::size_t buf_size = 0;
-    using error_type = rich_error;
-
-    template <typename Callback>
-    bool visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb);
-
-    template <typename Callback>
-    bool find_field(std::string_view name, Callback&& cb) {
-        return visit_field(0, name, std::forward<Callback>(cb));
     }
 };
 
@@ -377,35 +359,28 @@ struct Reader {
         if(r.error())
             return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
         auto& obj = r.value_unsafe();
-
-        if constexpr(std::is_invocable_v<Callback, std::string_view, Reader&>) {
-            bool ok = true;
-            for(auto field_result: obj) {
-                if(field_result.error()) {
-                    ok = fail_located(
-                        rich_error(std::string(simdjson::error_message(field_result.error()))));
-                    break;
-                }
-                auto field = std::move(field_result).value_unsafe();
-                auto key = field.unescaped_key();
-                if(key.error()) {
-                    ok =
-                        fail_located(rich_error(std::string(simdjson::error_message(key.error()))));
-                    break;
-                }
-                auto fv = std::move(field).value();
-                Reader sub{fv, buf_base, buf_size};
-                if(!cb(key.value_unsafe(), sub)) {
-                    ok = false;
-                    break;
-                }
+        bool ok = true;
+        for(auto field_result: obj) {
+            if(field_result.error()) {
+                ok = fail_located(
+                    rich_error(std::string(simdjson::error_message(field_result.error()))));
+                break;
             }
-            obj.reset();
-            return ok;
-        } else {
-            StructReader sr{std::move(obj), buf_base, buf_size};
-            return cb(sr);
+            auto field = std::move(field_result).value_unsafe();
+            auto key = field.unescaped_key();
+            if(key.error()) {
+                ok = fail_located(rich_error(std::string(simdjson::error_message(key.error()))));
+                break;
+            }
+            auto fv = std::move(field).value();
+            Reader sub{fv, buf_base, buf_size};
+            if(!cb(key.value_unsafe(), sub)) {
+                ok = false;
+                break;
+            }
         }
+        obj.reset();
+        return ok;
     }
 
     template <typename Callback>
@@ -468,17 +443,6 @@ struct Reader {
     }
 };
 
-template <typename Callback>
-bool StructReader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
-    ondemand::Value field_val;
-    auto ec = obj.find_field_unordered(name).get(field_val);
-    if(ec != success) {
-        return scoped_context<rich_error>::fail(rich_error::missing_field(name));
-    }
-    Reader sub{field_val, buf_base, buf_size};
-    return cb(sub);
-}
-
 /// Attempt to decode using `fn`. On failure, restore the full simdjson parser state.
 ///
 /// simdjson's json_iterator holds: token cursor position (into the pre-built structural
@@ -506,7 +470,7 @@ bool Reader::try_read(F&& fn) {
     return false;
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error> {
     padded_string padded(json);
     ondemand::Parser parser;
@@ -527,7 +491,7 @@ auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error>
     return {};
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
     requires std::default_initializable<T>
 auto from_json(std::string_view json) -> std::expected<T, rich_error> {
     T value{};

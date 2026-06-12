@@ -136,7 +136,7 @@ struct writer {
     }
 };
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::error> {
     rich_error err;
     scoped_context<rich_error> guard(err);

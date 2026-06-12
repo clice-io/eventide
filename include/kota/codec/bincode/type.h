@@ -1,12 +1,7 @@
 #pragma once
 
-#include <bit>
-#include <cstddef>
 #include <cstdint>
-#include <ranges>
 #include <string_view>
-#include <type_traits>
-#include <vector>
 
 #include "kota/codec/visit/context.h"
 
@@ -35,7 +30,7 @@ constexpr std::string_view error_message(error_kind error) {
         case error_kind::UnsupportedOperation: return "unsupported operation";
     }
 
-    return "invalid_state";
+    return "unknown error";
 }
 
 using error = rich_error;
