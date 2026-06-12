@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -38,24 +37,8 @@ using verifier_t = ::flatbuffers::Verifier;
 
 enum class object_error_code : std::uint8_t {
     None = 0,
-    InvalidState,
-    UnsupportedType,
-    TypeMismatch,
-    NumberOutOfRange,
     TooManyFields,
 };
-
-constexpr std::string_view error_message(object_error_code code) {
-    switch(code) {
-        case object_error_code::None: return "none";
-        case object_error_code::InvalidState: return "invalid state";
-        case object_error_code::UnsupportedType: return "unsupported type";
-        case object_error_code::TypeMismatch: return "type mismatch";
-        case object_error_code::NumberOutOfRange: return "number out of range";
-        case object_error_code::TooManyFields: return "too many fields";
-    }
-    return "invalid state";
-}
 
 template <typename T>
 using object_result_t = std::expected<T, object_error_code>;
@@ -84,9 +67,7 @@ inline auto variant_payload_voffset(std::size_t index) -> object_result_t<voffse
 
 namespace schema_detail {
 
-using codec::detail::remove_annotation_t;
 using codec::detail::remove_optional_t;
-using codec::detail::clean_t;
 
 template <typename T>
 constexpr bool is_scalar_field_v =

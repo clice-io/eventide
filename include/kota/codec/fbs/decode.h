@@ -105,14 +105,6 @@ struct ScalarReader {
         return true;
     }
 
-    bool peek_null() {
-        return false;
-    }
-
-    bool visit_null() {
-        return true;
-    }
-
     template <typename U, typename Body>
     bool visit_struct(U& out, Body&&) {
         if constexpr(std::is_same_v<std::remove_const_t<U>, T>) {
@@ -141,14 +133,6 @@ struct StringReader {
         }
         return true;
     }
-
-    bool peek_null() {
-        return false;
-    }
-
-    bool visit_null() {
-        return true;
-    }
 };
 
 struct TableFieldReader {
@@ -163,10 +147,6 @@ struct TableFieldReader {
 
     template <typename F>
     bool visit_element(F&& reader);
-
-    bool has_element() {
-        return true;
-    }
 };
 
 template <typename E>
@@ -354,7 +334,6 @@ bool TableFieldReader::visit_element(F&& reader) {
     return reader(fr);
 }
 
-template <typename T, typename Config>
 struct RootReader : FieldReader {
     RootReader(const Table* root) : FieldReader{root, detail::first_field} {}
 
@@ -506,7 +485,7 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 
 }  // namespace decode_detail
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_flatbuffer(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
     if(buf.empty()) {
         return std::unexpected(rich_error("empty buffer"));
@@ -532,30 +511,21 @@ auto from_flatbuffer(std::span<const std::byte> buf, T& out) -> std::expected<vo
     rich_error err;
     scoped_context<rich_error> guard(err);
 
-    decode_detail::RootReader<T, default_config<Config>> vis(root);
+    decode_detail::RootReader vis(root);
     if(!decode_value<default_config<Config>>(vis, out)) {
         return std::unexpected(std::move(err));
     }
     return {};
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_flatbuffer(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
-    if(buf.empty()) {
-        return std::unexpected(rich_error("empty buffer"));
-    }
     auto bytes =
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(buf.data()), buf.size());
     return from_flatbuffer<Config>(bytes, out);
 }
 
-template <typename Config = default_config<>, typename T>
-auto from_flatbuffer(const std::vector<std::uint8_t>& buf, T& out)
-    -> std::expected<void, rich_error> {
-    return from_flatbuffer<Config>(std::span<const std::uint8_t>(buf.data(), buf.size()), out);
-}
-
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
     T value{};
@@ -566,7 +536,7 @@ auto from_flatbuffer(std::span<const std::uint8_t> buf) -> std::expected<T, rich
     return value;
 }
 
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
     T value{};
@@ -575,12 +545,6 @@ auto from_flatbuffer(std::span<const std::byte> buf) -> std::expected<T, rich_er
         return std::unexpected(result.error());
     }
     return value;
-}
-
-template <typename T, typename Config = default_config<>>
-    requires std::default_initializable<T>
-auto from_flatbuffer(const std::vector<std::uint8_t>& buf) -> std::expected<T, rich_error> {
-    return from_flatbuffer<T, Config>(std::span<const std::uint8_t>(buf.data(), buf.size()));
 }
 
 }  // namespace kota::codec::fbs

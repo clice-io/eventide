@@ -207,7 +207,7 @@ bool map_writer::visit_entry(KF&& key_fn, VF&& value_fn) {
     return true;
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto to_content(const T& value) -> std::expected<dyn::Value, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);

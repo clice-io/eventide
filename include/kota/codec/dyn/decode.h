@@ -16,10 +16,6 @@
 
 namespace kota::codec::dyn {
 
-struct value_reader;
-struct str_reader;
-struct object_struct_reader;
-
 struct str_reader {
     std::string_view str;
     using error_type = rich_error;
@@ -68,17 +64,6 @@ struct str_reader {
         }
         return true;
     }
-};
-
-struct object_struct_reader {
-    const Object* obj;
-    using error_type = rich_error;
-
-    template <typename Callback>
-    bool find_field(std::string_view name, Callback&& cb);
-
-    template <typename Callback>
-    bool visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb);
 };
 
 struct value_reader {
@@ -241,16 +226,11 @@ struct value_reader {
         if(!obj) {
             return fail_type("object");
         }
-        if constexpr(std::is_invocable_v<Callback, std::string_view, value_reader&>) {
-            for(const auto& [k, v]: *obj) {
-                value_reader sub{&v};
-                KOTA_CODEC_TRY(cb(std::string_view(k), sub));
-            }
-            return true;
-        } else {
-            object_struct_reader sr{obj};
-            return cb(sr);
+        for(const auto& [k, v]: *obj) {
+            value_reader sub{&v};
+            KOTA_CODEC_TRY(cb(std::string_view(k), sub));
         }
+        return true;
     }
 
     template <typename Callback>
@@ -309,24 +289,7 @@ private:
     }
 };
 
-template <typename Callback>
-bool object_struct_reader::find_field(std::string_view name, Callback&& cb) {
-    const Value* v = obj->find(name);
-    if(!v) {
-        return scoped_context<rich_error>::fail(rich_error::missing_field(name));
-    }
-    value_reader sub{v};
-    return cb(sub);
-}
-
-template <typename Callback>
-bool object_struct_reader::visit_field(std::size_t /*index*/,
-                                       std::string_view name,
-                                       Callback&& cb) {
-    return find_field(name, std::forward<Callback>(cb));
-}
-
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_content(const Value& value, T& out) -> std::expected<void, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
@@ -337,7 +300,7 @@ auto from_content(const Value& value, T& out) -> std::expected<void, rich_error>
     return {};
 }
 
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_content(const Value& value) -> std::expected<T, rich_error> {
     T out{};

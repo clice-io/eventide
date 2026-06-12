@@ -84,9 +84,6 @@ auto select_root_node(const Table& tbl) -> const Node* {
 
 }  // namespace detail
 
-struct ValueReader;
-struct StrReader;
-
 struct StrReader {
     std::string_view str;
     using error_type = rich_error;
@@ -135,17 +132,6 @@ struct StrReader {
         }
         return true;
     }
-};
-
-struct TableStructReader {
-    const Table* tbl;
-    using error_type = rich_error;
-
-    template <typename Callback>
-    bool find_field(std::string_view name, Callback&& cb);
-
-    template <typename Callback>
-    bool visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb);
 };
 
 struct ValueReader {
@@ -297,16 +283,11 @@ struct ValueReader {
         if(!tbl) {
             return fail_type("table");
         }
-        if constexpr(std::is_invocable_v<Callback, std::string_view, ValueReader&>) {
-            for(const auto& [k, v]: *tbl) {
-                ValueReader sub{&v};
-                KOTA_CODEC_TRY(cb(std::string_view(k), sub));
-            }
-            return true;
-        } else {
-            TableStructReader sr{tbl};
-            return cb(sr);
+        for(const auto& [k, v]: *tbl) {
+            ValueReader sub{&v};
+            KOTA_CODEC_TRY(cb(std::string_view(k), sub));
         }
+        return true;
     }
 
     template <typename Callback>
@@ -395,21 +376,6 @@ private:
     }
 };
 
-template <typename Callback>
-bool TableStructReader::find_field(std::string_view name, Callback&& cb) {
-    auto it = tbl->find(name);
-    if(it == tbl->cend()) {
-        return scoped_context<rich_error>::fail(rich_error::missing_field(name));
-    }
-    ValueReader sub{&it->second};
-    return cb(sub);
-}
-
-template <typename Callback>
-bool TableStructReader::visit_field(std::size_t /*index*/, std::string_view name, Callback&& cb) {
-    return find_field(name, std::forward<Callback>(cb));
-}
-
 inline auto parse_table(std::string_view text) -> std::expected<Table, rich_error> {
 #if TOML_EXCEPTIONS
     try {
@@ -436,7 +402,7 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
 #endif
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_error> {
     auto table = parse_table(toml_str);
     if(!table) {
@@ -457,7 +423,7 @@ auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_er
     return {};
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto from_toml_table(const Table& tbl, T& out) -> std::expected<void, rich_error> {
     using V = std::remove_const_t<T>;
     const auto* root = detail::select_root_node<V>(tbl);

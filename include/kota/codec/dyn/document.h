@@ -138,8 +138,6 @@ public:
     void assign(std::string_view key, Value value);
     std::size_t remove(std::string_view key);
 
-    [[nodiscard]] Value& back_value();
-
     [[nodiscard]] iterator begin() noexcept;
     [[nodiscard]] iterator end() noexcept;
     [[nodiscard]] const_iterator begin() const noexcept;
@@ -502,15 +500,6 @@ public:
         assert(ptr != nullptr);
     }
 
-    void assert_kind([[maybe_unused]] ValueKind expected) const {
-        assert_valid();
-        assert(ptr->kind() == expected);
-    }
-
-    [[nodiscard]] const Value* unwrap() const noexcept {
-        return ptr;
-    }
-
 private:
     friend class Value;
 
@@ -757,11 +746,6 @@ inline std::size_t Object::remove(std::string_view key) {
         invalidate_index();
     }
     return removed;
-}
-
-inline Value& Object::back_value() {
-    assert(!entries.empty());
-    return entries.back().second;
 }
 
 inline auto Object::begin() noexcept -> iterator {

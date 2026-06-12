@@ -1002,7 +1002,7 @@ bool root_visitor::visit_variant(std::size_t index, Body&& body) {
 
 }  // namespace encode_detail
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto to_flatbuffer(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::vector<std::uint8_t>, rich_error> {
     rich_error err;

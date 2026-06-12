@@ -229,7 +229,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return value_fn(vw);
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     using V = T;
     constexpr auto kind = meta::kind_of<V>();

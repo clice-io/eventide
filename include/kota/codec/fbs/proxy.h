@@ -56,18 +56,6 @@ public:
         return table != nullptr && table->GetOptionalFieldOffset(sid) != 0;
     }
 
-    auto any_field_present() const -> bool {
-        if(table == nullptr) {
-            return false;
-        }
-        const auto* vtable = table->GetVTable();
-        if(vtable == nullptr) {
-            return false;
-        }
-        const auto vtable_size = ::flatbuffers::ReadScalar<voffset_t>(vtable);
-        return vtable_size > static_cast<voffset_t>(4);
-    }
-
     template <typename T>
     auto get_scalar(slot_id sid) const -> T {
         return table->GetField<T>(sid, T{});
@@ -81,8 +69,6 @@ private:
     const Table* table = nullptr;
 };
 
-using codec::detail::remove_annotation_t;
-using codec::detail::remove_optional_t;
 using codec::detail::clean_t;
 
 template <typename T>
