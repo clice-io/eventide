@@ -357,8 +357,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                 // external cancel may later cause the aggregate to settle
                 // as Cancelled. await_resume needs a valid first_cancel_child
                 // to extract the cancellation value.
-                if(aggregate_catches_cancel &&
-                   self->first_cancel_child == aggregate_op::npos) {
+                if(aggregate_catches_cancel && self->first_cancel_child == aggregate_op::npos) {
                     self->first_cancel_child = self->find_child_index(child);
                 }
                 if(self->deferred == aggregate_op::Deferred::None) {

@@ -1324,10 +1324,9 @@ TEST_CASE(all_sync_child_with_token_external_cancel) {
     };
 
     auto combined = [&]() -> task<> {
-        auto result = co_await when_all(
-            with_token(request(), source.token()),
-            with_token(request(), source.token()),
-            driver());
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        driver());
 
         (void)result;
     };
@@ -1364,10 +1363,9 @@ TEST_CASE(all_sync_child_with_token_cancel_before_event) {
     };
 
     auto combined = [&]() -> task<> {
-        auto result = co_await when_all(
-            with_token(request(), source.token()),
-            with_token(request(), source.token()),
-            driver());
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        driver());
 
         got_cancel = result.is_cancelled();
     };
@@ -1410,10 +1408,9 @@ TEST_CASE(all_sync_driver_fires_cancel_then_event) {
     };
 
     auto combined = [&]() -> task<> {
-        auto result = co_await when_all(
-            with_token(request(), source.token()),
-            with_token(request(), source.token()),
-            driver());
+        auto result = co_await when_all(with_token(request(), source.token()),
+                                        with_token(request(), source.token()),
+                                        driver());
 
         got_cancel = result.is_cancelled();
     };
@@ -1463,10 +1460,9 @@ TEST_CASE(sync_driver_event_fires_cancel_cascade) {
     };
 
     auto combined = [&]() -> task<> {
-        auto result = co_await when_all(
-            with_token(request_b(), source.token()),
-            with_token(request_a(), source.token()),
-            driver());
+        auto result = co_await when_all(with_token(request_b(), source.token()),
+                                        with_token(request_a(), source.token()),
+                                        driver());
         got_cancel = result.is_cancelled();
     };
 
