@@ -1303,6 +1303,185 @@ TEST_CASE(any_reentrant_cancel_stops_looping_task_cv) {
     EXPECT_LT(loop_count, 10);
 }
 
+// Repro: when_all with a synchronously-completing child, two with_token
+// children waiting on the same event, and an external cancel arriving after
+// the event fires.  The sync child completes during the arm phase, and the
+// external cancel arrives while the inner when_any (inside with_token) has
+// already latched a Resume from its winning child.  async_node::cancel()
+// overwrites deferred to Cancel via defer_cancel(), but first_cancel_child
+// was never recorded — await_resume would index out of bounds.
+TEST_CASE(all_sync_child_with_token_external_cancel) {
+    event ev;
+    cancellation_source source;
+
+    auto request = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 42;
+    };
+
+    auto driver = []() -> task<> {
+        co_return;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto result = co_await when_all(
+            with_token(request(), source.token()),
+            with_token(request(), source.token()),
+            driver());
+
+        (void)result;
+    };
+
+    auto trigger = [&]() -> task<> {
+        co_await sleep(1);
+        ev.set();
+        co_await sleep(1);
+        source.cancel();
+    };
+
+    auto main_task = combined();
+    auto trigger_task = trigger();
+    run(main_task, trigger_task);
+    EXPECT_TRUE(main_task->is_finished());
+}
+
+// Same scenario as above but the token fires BEFORE the event, so
+// with_token's inner when_any is cancelled while still waiting for
+// the request.  This exercises first_cancel_child being set from the
+// cancelled token.wait() child even when deferred was already None.
+TEST_CASE(all_sync_child_with_token_cancel_before_event) {
+    event ev;
+    cancellation_source source;
+    bool got_cancel = false;
+
+    auto request = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 42;
+    };
+
+    auto driver = []() -> task<> {
+        co_return;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto result = co_await when_all(
+            with_token(request(), source.token()),
+            with_token(request(), source.token()),
+            driver());
+
+        got_cancel = result.is_cancelled();
+    };
+
+    auto trigger = [&]() -> task<> {
+        co_await sleep(1);
+        source.cancel();
+    };
+
+    auto main_task = combined();
+    auto trigger_task = trigger();
+    run(main_task, trigger_task);
+    EXPECT_TRUE(main_task->is_finished());
+    EXPECT_TRUE(got_cancel);
+}
+
+// Minimal trigger for the first_cancel_child bookkeeping bug:
+// The driver fires the cancellation token AND the shared event during the
+// arm phase (source.cancel() first, then ev.set()).  Because the token's
+// internal event.set() is called before the shared event's set(), the
+// token-side deferred resumes appear before the event-side resumes in the
+// deferred queue.  Processing the token resumes first makes the inner
+// when_any (inside with_token) latch Deferred::Cancel.  Then when the
+// event-side resumes arrive, the second cancelled child must still update
+// first_cancel_child — otherwise tuple_visit_at_return hits index npos.
+TEST_CASE(all_sync_driver_fires_cancel_then_event) {
+    event ev;
+    cancellation_source source;
+    bool got_cancel = false;
+
+    auto request = [&]() -> task<int> {
+        co_await ev.wait();
+        co_return 42;
+    };
+
+    auto driver = [&]() -> task<> {
+        source.cancel();
+        ev.set();
+        co_return;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto result = co_await when_all(
+            with_token(request(), source.token()),
+            with_token(request(), source.token()),
+            driver());
+
+        got_cancel = result.is_cancelled();
+    };
+
+    auto main_task = combined();
+    run(main_task);
+    EXPECT_TRUE(main_task->is_finished());
+    EXPECT_TRUE(got_cancel);
+}
+
+// Core repro for the first_cancel_child corruption bug.
+//
+// Trigger chain:
+//   1. Event fires → request_A completes and calls source.cancel()
+//   2. Inner when_any_A: winner = 0, deferred = Resume, cancel_siblings
+//   3. cancel_siblings cancels token_wait_A; the EventWaiter on the token's
+//      event was already Finished (from source.cancel()'s event.set()), so
+//      cancel is a no-op.  But resume_and_drain drains the token-side deferred
+//      resumes, which includes token_event_wait_B.
+//   4. token_event_wait_B → token_wait_B → Cancelled → inner when_any_B:
+//      Cancel → with_token_B Cancelled → outer when_all cancel_siblings →
+//      cancel with_token_A → inner when_any_A cancel() → defer_cancel()
+//      overwrites Resume → first_cancel_child was never set → CRASH.
+//
+// The sync driver completing during arm is essential: it means the outer
+// when_all has completed == 1 before the event fires, so after with_token_B
+// cancels, the outer when_all can cancel with_token_A.
+TEST_CASE(sync_driver_event_fires_cancel_cascade) {
+    event ev;
+    event pending;
+    cancellation_source source;
+    bool got_cancel = false;
+
+    auto request_a = [&]() -> task<int> {
+        co_await ev.wait();
+        source.cancel();
+        co_return 42;
+    };
+
+    auto request_b = [&]() -> task<int> {
+        co_await pending.wait();
+        co_return 99;
+    };
+
+    auto driver = []() -> task<> {
+        co_return;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto result = co_await when_all(
+            with_token(request_b(), source.token()),
+            with_token(request_a(), source.token()),
+            driver());
+        got_cancel = result.is_cancelled();
+    };
+
+    auto trigger = [&]() -> task<> {
+        co_await sleep(1);
+        ev.set();
+    };
+
+    auto main_task = combined();
+    auto trigger_task = trigger();
+    run(main_task, trigger_task);
+    EXPECT_TRUE(main_task->is_finished());
+    EXPECT_TRUE(got_cancel);
+}
+
 };  // TEST_SUITE(when_cancellation)
 
 // ============================================================================

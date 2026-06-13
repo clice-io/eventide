@@ -71,6 +71,8 @@ public:
 
         if constexpr(!std::is_void_v<cancel_type>) {
             if(this->state == async_node::Cancelled) {
+                assert(first_cancel_child != aggregate_op::npos &&
+                       "InterceptCancel aggregate cancelled with no attributed child");
                 auto cancel = detail::tuple_visit_at_return<cancel_type>(
                     first_cancel_child,
                     tasks,
@@ -201,6 +203,8 @@ public:
 
         if constexpr(!std::is_void_v<cancel_type>) {
             if(this->state == async_node::Cancelled) {
+                assert(first_cancel_child != aggregate_op::npos &&
+                       "InterceptCancel aggregate cancelled with no attributed child");
                 auto result = detail::take_result(tasks[first_cancel_child]);
                 assert(result.is_cancelled());
                 return result_type(outcome_cancel(std::move(result).cancellation()));

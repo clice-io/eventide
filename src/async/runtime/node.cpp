@@ -136,7 +136,21 @@ void async_node::cancel() {
         case NodeKind::TaskGroup: {
             auto* self = static_cast<aggregate_op*>(this);
             self->cancel_siblings();
-            self->defer_cancel();
+
+            // When InterceptCancel is set, state == Cancelled is sufficient
+            // to signal external cancel — await_resume checks state, and
+            // children completing through on_child_complete will record
+            // first_cancel_child. Calling defer_cancel() here would overwrite
+            // an existing deferred (e.g. Resume from a winner) and create a
+            // Cancel outcome with no child attribution (first_cancel_child
+            // == npos).
+            //
+            // Without InterceptCancel, defer_cancel() IS needed: the Cancel
+            // path in flush_deferred propagates the cancel upward via
+            // finalize, which won't happen on the Resume path.
+            if(!(self->policy & InterceptCancel)) {
+                self->defer_cancel();
+            }
 
             if(self->is_deferring()) {
                 break;
@@ -337,10 +351,17 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                     trigger_cancel = true;
                 }
             } else if(cancelled) {
+                // Record first_cancel_child independently of the deferred
+                // guard: a cancelled child can arrive after a winner has
+                // already set deferred = Resume (e.g. in when_any), and an
+                // external cancel may later cause the aggregate to settle
+                // as Cancelled. await_resume needs a valid first_cancel_child
+                // to extract the cancellation value.
+                if(aggregate_catches_cancel &&
+                   self->first_cancel_child == aggregate_op::npos) {
+                    self->first_cancel_child = self->find_child_index(child);
+                }
                 if(self->deferred == aggregate_op::Deferred::None) {
-                    if(aggregate_catches_cancel) {
-                        self->first_cancel_child = self->find_child_index(child);
-                    }
                     self->defer_cancel();
                     trigger_cancel = true;
                 }
