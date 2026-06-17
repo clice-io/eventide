@@ -48,6 +48,8 @@ add_library(kota::zest ALIAS kota_zest)
 target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/capture.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/report.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
 )

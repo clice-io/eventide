@@ -1,11 +1,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <expected>
 #include <functional>
+#include <optional>
 #include <print>
 #include <string>
 #include <string_view>
@@ -14,14 +13,9 @@
 #include <unordered_set>
 #include <vector>
 
-#ifdef _WIN32
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
-
+#include "capture.h"
+#include "report.h"
 #include "kota/deco/deco.h"
-#include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
 #include "kota/zest/runner/run.h"
 #include "kota/zest/snapshot/snapshot.h"
@@ -34,104 +28,13 @@
 
 namespace {
 
-#ifdef _WIN32
-inline int portable_dup(int fd) {
-    return _dup(fd);
-}
-
-inline int portable_dup2(int fd1, int fd2) {
-    return _dup2(fd1, fd2);
-}
-
-inline int portable_close(int fd) {
-    return _close(fd);
-}
-
-inline int portable_fileno(std::FILE* f) {
-    return _fileno(f);
-}
-#else
-inline int portable_dup(int fd) {
-    return ::dup(fd);
-}
-
-inline int portable_dup2(int fd1, int fd2) {
-    return ::dup2(fd1, fd2);
-}
-
-inline int portable_close(int fd) {
-    return ::close(fd);
-}
-
-inline int portable_fileno(std::FILE* f) {
-    return ::fileno(f);
-}
-#endif
+using namespace kota::zest;
 
 constexpr std::string_view wildcard_pattern = "*";
 constexpr std::string_view green = "\033[32m";
 constexpr std::string_view yellow = "\033[33m";
 constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
-
-/// RAII guard that redirects stdout to a temporary file, then reads it back as a string.
-/// Used in JSON mode to prevent test assertion diagnostics from polluting the JSON output.
-class StdoutCapture {
-public:
-    StdoutCapture() {
-        std::fflush(stdout);
-        saved_fd = portable_dup(portable_fileno(stdout));
-        tmp = std::tmpfile();
-        if(tmp && saved_fd >= 0) {
-            portable_dup2(portable_fileno(tmp), portable_fileno(stdout));
-            active = true;
-        }
-    }
-
-    ~StdoutCapture() {
-        if(active) {
-            restore();
-        }
-        if(saved_fd >= 0) {
-            portable_close(saved_fd);
-        }
-        if(tmp) {
-            std::fclose(tmp);
-        }
-    }
-
-    StdoutCapture(const StdoutCapture&) = delete;
-    StdoutCapture& operator=(const StdoutCapture&) = delete;
-
-    /// Restore stdout and return whatever was captured.
-    std::string finish() {
-        if(!active) {
-            return {};
-        }
-        std::fflush(stdout);
-        portable_dup2(saved_fd, portable_fileno(stdout));
-        active = false;
-
-        std::fseek(tmp, 0, SEEK_END);
-        auto size = std::ftell(tmp);
-        std::fseek(tmp, 0, SEEK_SET);
-
-        std::string buf(static_cast<std::size_t>(size), '\0');
-        std::fread(buf.data(), 1, buf.size(), tmp);
-        return buf;
-    }
-
-private:
-    void restore() {
-        std::fflush(stdout);
-        portable_dup2(saved_fd, portable_fileno(stdout));
-        active = false;
-    }
-
-    int saved_fd = -1;
-    std::FILE* tmp = nullptr;
-    bool active = false;
-};
 
 struct CliOptions {
     kota::zest::Options zest;
@@ -148,32 +51,6 @@ struct FilterPatternSet {
     kota::GlobPattern suite;
     kota::GlobPattern display;
 };
-
-struct FailedTest {
-    std::string name;
-    std::string path;
-    std::size_t line;
-};
-
-struct RunSummary {
-    std::uint32_t tests = 0;
-    std::uint32_t suites = 0;
-    std::uint32_t failed = 0;
-    std::uint32_t skipped = 0;
-    std::chrono::milliseconds duration{0};
-    std::vector<FailedTest> failed_tests;
-};
-
-struct TestResult {
-    std::string display_name;
-    std::string path;
-    std::size_t line;
-    kota::zest::TestState state;
-    std::chrono::milliseconds duration;
-    std::string output;
-};
-
-using SuiteMap = std::unordered_map<std::string, std::vector<kota::zest::TestCase>>;
 
 auto make_display_name(std::string_view suite_name, std::string_view test_name) -> std::string {
     return std::format("{}.{}", suite_name, test_name);
@@ -225,7 +102,9 @@ auto resolve_filter_patterns(std::string_view filter)
     };
 }
 
-auto group_suites(const std::vector<kota::zest::TestSuite>& suites) -> SuiteMap {
+using SuiteMap = std::unordered_map<std::string, std::vector<TestCase>>;
+
+auto group_suites(const std::vector<TestSuite>& suites) -> SuiteMap {
     SuiteMap grouped_suites;
     for(const auto& suite: suites) {
         auto& target = grouped_suites[suite.name];
@@ -264,131 +143,6 @@ bool has_focused_tests(const SuiteMap& grouped_suites, const FilterPatternSet& p
         }
     }
     return false;
-}
-
-bool is_failure(kota::zest::TestState state) {
-    return state == kota::zest::TestState::Failed || state == kota::zest::TestState::Fatal;
-}
-
-void print_run_result(std::string_view display_name,
-                      bool failed,
-                      std::chrono::milliseconds duration,
-                      bool verbose) {
-    if(failed || verbose) {
-        std::println("{0}[   {1} ] {2} ({3} ms){4}",
-                     failed ? red : green,
-                     failed ? "FAILED" : "    OK",
-                     display_name,
-                     duration.count(),
-                     clear);
-    }
-}
-
-auto state_string(kota::zest::TestState state) -> std::string_view {
-    switch(state) {
-        case kota::zest::TestState::Passed: return "passed";
-        case kota::zest::TestState::Skipped: return "skipped";
-        case kota::zest::TestState::Failed: return "failed";
-        case kota::zest::TestState::Fatal: return "fatal";
-    }
-    return "unknown";
-}
-
-#ifdef KOTA_ZEST_HAS_JSON
-
-struct JsonTestEntry {
-    std::string suite;
-    kota::meta::rename<std::string, "case"> test_case;
-    std::string status;
-    std::uint64_t duration_ms = 0;
-    kota::meta::skip_if_none<std::string> failure;
-    kota::meta::skip_if_empty<std::string> output;
-};
-
-struct JsonTestSummary {
-    std::uint64_t total = 0;
-    std::uint64_t passed = 0;
-    std::uint64_t failed = 0;
-    std::uint64_t skipped = 0;
-    std::uint64_t duration_ms = 0;
-    std::vector<JsonTestEntry> tests;
-};
-
-void print_json_summary(const RunSummary& summary, const std::vector<TestResult>& results) {
-    const auto passed = summary.tests - summary.failed;
-
-    JsonTestSummary output{
-        .total = passed + summary.failed + summary.skipped,
-        .passed = passed,
-        .failed = summary.failed,
-        .skipped = summary.skipped,
-        .duration_ms = static_cast<std::uint64_t>(summary.duration.count()),
-        .tests = {},
-    };
-
-    output.tests.reserve(results.size());
-    for(const auto& r: results) {
-        auto dot = r.display_name.find('.');
-        auto suite = dot != std::string::npos ? r.display_name.substr(0, dot) : r.display_name;
-        auto name = dot != std::string::npos ? r.display_name.substr(dot + 1) : std::string{};
-
-        JsonTestEntry entry{
-            .suite = std::string(suite),
-            .test_case = {},
-            .status = std::string(state_string(r.state)),
-            .duration_ms = static_cast<std::uint64_t>(r.duration.count()),
-            .failure = std::nullopt,
-            .output = {},
-        };
-        entry.test_case = std::string(name);
-
-        if(is_failure(r.state)) {
-            entry.failure = std::format("at {}:{}", r.path, r.line);
-            entry.output = r.output;
-        }
-
-        output.tests.push_back(std::move(entry));
-    }
-
-    auto json = kota::codec::json::to_json(output);
-    if(json.has_value()) {
-        auto pretty = kota::codec::json::prettify(*json);
-        std::print("{}\n", pretty.has_value() ? *pretty : *json);
-    } else {
-        std::println(stderr, "Error: failed to serialize JSON summary: {}", json.error().message);
-    }
-}
-
-#endif  // KOTA_ZEST_HAS_JSON
-
-void print_summary(const RunSummary& summary) {
-    std::println("{}[----------] Global test environment tear-down. {}", green, clear);
-    std::println("{}[==========] {} tests from {} test suites ran. ({} ms total){}",
-                 green,
-                 summary.tests,
-                 summary.suites,
-                 summary.duration.count(),
-                 clear);
-
-    const auto passed = summary.tests - summary.failed;
-    if(passed > 0) {
-        std::println("{}[  PASSED  ] {} tests.{}", green, passed, clear);
-    }
-    if(summary.skipped > 0) {
-        std::println("{}[  SKIPPED ] {} tests.{}", yellow, summary.skipped, clear);
-    }
-    if(summary.failed > 0) {
-        std::println("{}[  FAILED  ] {} tests, listed below:{}", red, summary.failed, clear);
-        for(const auto& failed: summary.failed_tests) {
-            std::println("{}[  FAILED  ] {}{}", red, failed.name, clear);
-            std::println("             at {}:{}", failed.path, failed.line);
-        }
-        std::println("{}{} FAILED TEST{}{}",
-                     red,
-                     summary.failed,
-                     summary.failed == 1 ? "" : "S",
-                     clear);
-    }
 }
 
 }  // namespace
@@ -532,7 +286,6 @@ int Runner::run_tests(Options options) {
         }
     }
 
-    // Collect all runnable test cases.
     struct RunnableTest {
         std::string display_name;
         std::string path;
@@ -563,9 +316,10 @@ int Runner::run_tests(Options options) {
                     .display_name = display_name,
                     .path = test_case.path,
                     .line = test_case.line,
-                    .state = kota::zest::TestState::Skipped,
+                    .state = TestState::Skipped,
                     .duration = std::chrono::milliseconds{0},
-                    .output = {},
+                    .captured_stdout = {},
+                    .captured_stderr = {},
                 });
                 continue;
             }
@@ -579,9 +333,10 @@ int Runner::run_tests(Options options) {
                     .display_name = display_name,
                     .path = test_case.path,
                     .line = test_case.line,
-                    .state = kota::zest::TestState::Skipped,
+                    .state = TestState::Skipped,
                     .duration = std::chrono::milliseconds{0},
-                    .output = {},
+                    .captured_stdout = {},
+                    .captured_stderr = {},
                 });
                 continue;
             }
@@ -601,31 +356,22 @@ int Runner::run_tests(Options options) {
     summary.tests = static_cast<std::uint32_t>(runnable.size());
 
     auto run_single =
-        [&](const RunnableTest& test, bool show_run_line, bool capture_stdout) -> TestResult {
+        [&](const RunnableTest& test, bool show_run_line, bool capture) -> TestResult {
         if(show_run_line && !json_output && verbose) {
             std::println("{}[ RUN      ] {}{}", green, test.display_name, clear);
         }
 
         using namespace std::chrono;
-        auto begin = system_clock::now();
-
-        if(capture_stdout) {
-            StdoutCapture capture;
-            auto state = test.test();
-            auto captured = capture.finish();
-            auto end = system_clock::now();
-            return TestResult{
-                .display_name = test.display_name,
-                .path = test.path,
-                .line = test.line,
-                .state = state,
-                .duration = duration_cast<milliseconds>(end - begin),
-                .output = std::move(captured),
-            };
+        std::optional<OutputCapture> guard;
+        if(capture) {
+            guard.emplace();
         }
 
+        auto begin = system_clock::now();
         auto state = test.test();
         auto end = system_clock::now();
+
+        auto captured = guard ? guard->finish() : CapturedOutput{};
 
         return TestResult{
             .display_name = test.display_name,
@@ -633,38 +379,31 @@ int Runner::run_tests(Options options) {
             .line = test.line,
             .state = state,
             .duration = duration_cast<milliseconds>(end - begin),
-            .output = {},
+            .captured_stdout = std::move(captured.out),
+            .captured_stderr = std::move(captured.err),
         };
     };
 
     auto record_result = [&](const TestResult& result) {
-        const bool failed = is_failure(result.state);
-        const bool skipped = result.state == TestState::Skipped;
         if(!json_output) {
-            if(failed && !result.output.empty()) {
-                std::println("{}", result.output);
-            }
-            print_run_result(result.display_name, failed, result.duration, verbose);
+            print_text_result(result, verbose);
         }
-        if(failed) {
+        if(is_failure(result.state)) {
             summary.failed += 1;
             summary.failed_tests.push_back(
                 FailedTest{result.display_name, result.path, result.line});
-        } else if(skipped) {
-            // Runtime skip: move this test from the "ran" count into the "skipped" count.
+        } else if(result.state == TestState::Skipped) {
             summary.tests -= 1;
             summary.skipped += 1;
         }
     };
 
-    // Execute tests.
     std::vector<TestResult> results(runnable.size());
 
     if(*options.parallel) {
         using namespace std::chrono;
         auto wall_begin = system_clock::now();
 
-        // Partition: parallel-safe tests first, serial tests after.
         std::vector<std::size_t> parallel_indices;
         std::vector<std::size_t> serial_indices;
         for(std::size_t i = 0; i < runnable.size(); ++i) {
@@ -675,7 +414,6 @@ int Runner::run_tests(Options options) {
             }
         }
 
-        // Run parallel-safe tests across the thread pool.
         const unsigned pw = *options.parallel_workers;
         const auto num_workers = std::min(
             static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
@@ -683,12 +421,6 @@ int Runner::run_tests(Options options) {
 
         std::atomic<std::size_t> next_task{0};
 
-        // In JSON mode, redirect stdout for the entire parallel + serial batch so
-        // assertion diagnostics do not pollute the JSON output.  A single capture
-        // guard is safe here because only the fd-level redirect needs to be global;
-        // each thread writes to the same temporary file (writes are atomic for
-        // small sizes on POSIX, and ordering doesn't matter since we discard the
-        // captured text).
         auto run_batch = [&]() {
             auto worker = [&]() {
                 while(true) {
@@ -712,23 +444,21 @@ int Runner::run_tests(Options options) {
                 }
             }
 
-            // Run serial tests sequentially after the parallel batch.
             for(auto i: serial_indices) {
                 results[i] = run_single(runnable[i], false, false);
             }
         };
 
         if(json_output) {
-            StdoutCapture capture;
+            OutputCapture capture;
             run_batch();
-            capture.finish();  // discard captured output
+            capture.finish();
         } else {
             run_batch();
         }
 
         summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
 
-        // Print all results in original order.
         for(const auto& result: results) {
             record_result(result);
         }
@@ -740,7 +470,6 @@ int Runner::run_tests(Options options) {
         }
     }
 
-    // Append compile-time skipped tests so they appear in the JSON tests[] array.
     results.insert(results.end(),
                    std::make_move_iterator(skipped_results.begin()),
                    std::make_move_iterator(skipped_results.end()));
@@ -755,11 +484,9 @@ int Runner::run_tests(Options options) {
     }
 
     if(json_output) {
-#ifdef KOTA_ZEST_HAS_JSON
-        print_json_summary(summary, results);
-#endif
+        print_json_report(summary, results);
     } else {
-        print_summary(summary);
+        print_text_summary(summary);
     }
     return summary.failed != 0;
 }
