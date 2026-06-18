@@ -392,9 +392,6 @@ int Runner::run_tests(Options options) {
             summary.failed += 1;
             summary.failed_tests.push_back(
                 FailedTest{result.display_name, result.path, result.line});
-        } else if(result.state == TestState::Skipped) {
-            summary.tests -= 1;
-            summary.skipped += 1;
         }
     };
 
@@ -484,7 +481,9 @@ int Runner::run_tests(Options options) {
     }
 
     if(json_output) {
-        print_json_report(summary, results);
+        if(!print_json_report(summary, results)) {
+            return 1;
+        }
     } else {
         print_text_summary(summary);
     }

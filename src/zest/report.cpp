@@ -113,7 +113,7 @@ struct JsonTestSummary {
 
 }  // namespace
 
-void print_json_report(const RunSummary& summary, std::span<const TestResult> results) {
+bool print_json_report(const RunSummary& summary, std::span<const TestResult> results) {
     const auto passed = summary.tests - summary.failed;
 
     JsonTestSummary output{
@@ -155,17 +155,19 @@ void print_json_report(const RunSummary& summary, std::span<const TestResult> re
     if(json.has_value()) {
         auto pretty = kota::codec::json::prettify(*json);
         std::print("{}\n", pretty.has_value() ? *pretty : *json);
-    } else {
-        std::println(stderr, "Error: failed to serialize JSON summary: {}", json.error().message);
+        return true;
     }
+    std::println(stderr, "Error: failed to serialize JSON summary: {}", json.error().message);
+    return false;
 }
 
 #else
 
-void print_json_report(const RunSummary&, std::span<const TestResult>) {
+bool print_json_report(const RunSummary&, std::span<const TestResult>) {
     std::println(
         stderr,
         "Error: --output-format=json requires the kota::codec::json library " "(build with KOTA_CODEC_ENABLE_SIMDJSON=ON)");
+    return false;
 }
 
 #endif  // KOTA_ZEST_HAS_JSON

@@ -53,13 +53,12 @@ OutputCapture::OutputCapture() {
     saved_err = portable_dup(portable_fileno(stderr));
     tmp_out = std::tmpfile();
     tmp_err = std::tmpfile();
-    if(tmp_out && saved_out >= 0) {
-        portable_dup2(portable_fileno(tmp_out), portable_fileno(stdout));
+    if(saved_out < 0 || saved_err < 0 || !tmp_out || !tmp_err) {
+        return;
     }
-    if(tmp_err && saved_err >= 0) {
-        portable_dup2(portable_fileno(tmp_err), portable_fileno(stderr));
-    }
-    active = (tmp_out && tmp_err && saved_out >= 0 && saved_err >= 0);
+    portable_dup2(portable_fileno(tmp_out), portable_fileno(stdout));
+    portable_dup2(portable_fileno(tmp_err), portable_fileno(stderr));
+    active = true;
 }
 
 OutputCapture::~OutputCapture() {
@@ -99,6 +98,9 @@ void OutputCapture::restore() {
 std::string OutputCapture::read_tmp(std::FILE* f) {
     std::fseek(f, 0, SEEK_END);
     auto size = std::ftell(f);
+    if(size <= 0) {
+        return {};
+    }
     std::fseek(f, 0, SEEK_SET);
     std::string buf(static_cast<std::size_t>(size), '\0');
     std::fread(buf.data(), 1, buf.size(), f);

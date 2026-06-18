@@ -42,6 +42,6 @@ bool is_failure(TestState state);
 void print_text_result(const TestResult& result, bool verbose);
 void print_text_summary(const RunSummary& summary);
 
-void print_json_report(const RunSummary& summary, std::span<const TestResult> results);
+bool print_json_report(const RunSummary& summary, std::span<const TestResult> results);
 
 }  // namespace kota::zest

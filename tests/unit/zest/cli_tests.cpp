@@ -240,9 +240,70 @@ TEST_CASE(json_output_counts_consistent) {
     EXPECT_EQ(cnt_total, test_entries);
 }
 
+TEST_CASE(json_output_captures_stdout) {
+    auto exe = self_exe_path();
+    auto result = run_command(
+        exe +
+        " --output-format=json --test-filter=zest_capture_fixture.prints_to_stdout 2>/dev/null");
+    EXPECT_EQ(result.exit_code, 0);
+    EXPECT_TRUE(contains(result.text, "\"stdout\""));
+    EXPECT_TRUE(contains(result.text, "hello from stdout"));
+}
+
+TEST_CASE(json_output_captures_stderr) {
+    auto exe = self_exe_path();
+    auto result = run_command(
+        exe +
+        " --output-format=json --test-filter=zest_capture_fixture.prints_to_stderr 2>/dev/null");
+    EXPECT_EQ(result.exit_code, 0);
+    EXPECT_TRUE(contains(result.text, "\"stderr\""));
+    EXPECT_TRUE(contains(result.text, "hello from stderr"));
+}
+
+TEST_CASE(json_output_captures_both) {
+    auto exe = self_exe_path();
+    auto result = run_command(
+        exe +
+        " --output-format=json --test-filter=zest_capture_fixture.prints_to_both 2>/dev/null");
+    EXPECT_EQ(result.exit_code, 0);
+    EXPECT_TRUE(contains(result.text, "\"stdout\""));
+    EXPECT_TRUE(contains(result.text, "\"stderr\""));
+    EXPECT_TRUE(contains(result.text, "stdout line"));
+    EXPECT_TRUE(contains(result.text, "stderr line"));
+}
+
+TEST_CASE(json_output_omits_empty_capture) {
+    auto exe = self_exe_path();
+    auto result = run_command(
+        exe +
+        " --output-format=json --test-filter=zest_capture_fixture.prints_nothing 2>/dev/null");
+    EXPECT_EQ(result.exit_code, 0);
+    EXPECT_FALSE(contains(result.text, "\"stdout\""));
+    EXPECT_FALSE(contains(result.text, "\"stderr\""));
+}
+
 #endif  // !_WIN32
 
 };  // TEST_SUITE(zest_cli)
+
+TEST_SUITE(zest_capture_fixture) {
+
+TEST_CASE(prints_to_stdout) {
+    std::printf("hello from stdout\n");
+}
+
+TEST_CASE(prints_to_stderr) {
+    std::fprintf(stderr, "hello from stderr\n");
+}
+
+TEST_CASE(prints_to_both) {
+    std::printf("stdout line\n");
+    std::fprintf(stderr, "stderr line\n");
+}
+
+TEST_CASE(prints_nothing) {}
+
+};  // TEST_SUITE(zest_capture_fixture)
 
 }  // namespace
 
