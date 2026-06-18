@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -26,44 +26,40 @@ enum class PositionEncoding : std::uint8_t {
 /// Unknown values fall back to `PositionEncoding::UTF16`.
 PositionEncoding parse_position_encoding(std::string_view encoding);
 
-/// Converts between byte offsets and LSP line/character positions for one text snapshot.
-class PositionMapper {
-public:
-    /// Builds an index for `content` using the given position encoding.
-    PositionMapper(std::string_view content, PositionEncoding encoding);
+/// Scans `content` for newlines and returns byte offsets of each line start.
+std::vector<std::uint32_t> build_line_starts(std::string_view content);
 
-    /// Returns the zero-based line containing `offset`.
-    std::uint32_t line_of(std::uint32_t offset) const;
-
-    /// Returns the byte offset of the start of `line`.
-    std::uint32_t line_start(std::uint32_t line) const;
-
-    /// Returns the byte offset one past the line content (excluding '\n').
-    std::uint32_t line_end_exclusive(std::uint32_t line) const;
-
-    /// Converts a byte column on `line` to an LSP character column in current encoding.
-    std::uint32_t character(std::uint32_t line, std::uint32_t byte_column) const;
-
-    /// Measures the encoded character length of a byte range on `line`.
-    std::uint32_t length(std::uint32_t line,
-                         std::uint32_t begin_byte_column,
-                         std::uint32_t end_byte_column) const;
-
-    /// Converts a byte offset to LSP `Position{line, character}`.
-    /// Returns `std::nullopt` when the offset is out of range.
-    std::optional<protocol::Position> to_position(std::uint32_t offset) const;
-
-    /// Converts LSP position to byte offset in the original text.
-    /// Returns `std::nullopt` when the position is out of range.
-    std::optional<std::uint32_t> to_offset(protocol::Position position) const;
-
-    /// Measures `text` length in the current position encoding.
-    std::uint32_t measure(std::string_view text) const;
-
-private:
-    std::string_view content;
-    PositionEncoding encoding;
-    std::vector<std::uint32_t> line_starts;
+/// Byte range of a single line within the content.
+struct LineBounds {
+    /// Zero-based line number.
+    std::uint32_t line;
+    /// Byte offset of the first character on this line.
+    std::uint32_t start;
+    /// Byte offset one past the last content character (excluding '\n').
+    std::uint32_t end;
 };
+
+/// Returns the line number and byte range `[start, end)` for the line containing `offset`.
+/// `end` points one past the last content byte (excluding the '\n').
+LineBounds line_bounds(std::span<const std::uint32_t> line_starts,
+                       std::uint32_t bound,
+                       std::uint32_t offset);
+
+/// Returns `text` length in the given position encoding.
+std::uint32_t encoded_length(std::string_view text, PositionEncoding encoding);
+
+/// Converts a byte offset to LSP `Position{line, character}`.
+/// Returns `std::nullopt` when the offset is out of range.
+std::optional<protocol::Position> to_position(std::string_view content,
+                                              std::span<const std::uint32_t> line_starts,
+                                              PositionEncoding encoding,
+                                              std::uint32_t offset);
+
+/// Converts LSP position to byte offset in the original text.
+/// Returns `std::nullopt` when the position is out of range.
+std::optional<std::uint32_t> to_offset(std::string_view content,
+                                       std::span<const std::uint32_t> line_starts,
+                                       PositionEncoding encoding,
+                                       protocol::Position position);
 
 }  // namespace kota::ipc::lsp

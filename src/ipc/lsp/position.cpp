@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <optional>
 #include <utility>
 
 namespace {
@@ -166,91 +165,71 @@ PositionEncoding parse_position_encoding(std::string_view encoding) {
     return PositionEncoding::UTF16;
 }
 
-PositionMapper::PositionMapper(std::string_view content, PositionEncoding encoding) :
-    content(content), encoding(encoding) {
-    line_starts.push_back(0);
+std::vector<std::uint32_t> build_line_starts(std::string_view content) {
+    std::vector<std::uint32_t> starts;
+    starts.push_back(0);
     for(std::uint32_t i = 0; i < content.size(); ++i) {
         if(content[i] == '\n') {
-            line_starts.push_back(i + 1);
+            starts.push_back(i + 1);
         }
     }
+    return starts;
 }
 
-std::uint32_t PositionMapper::line_of(std::uint32_t offset) const {
-    assert(offset <= content.size() && "offset out of range");
+LineBounds line_bounds(std::span<const std::uint32_t> line_starts,
+                       std::uint32_t bound,
+                       std::uint32_t offset) {
+    assert(!line_starts.empty() && "line_starts must not be empty");
     auto it = std::upper_bound(line_starts.begin(), line_starts.end(), offset);
-    if(it == line_starts.begin()) {
-        return 0;
+    auto line = (it == line_starts.begin())
+                    ? std::uint32_t{0}
+                    : static_cast<std::uint32_t>((it - line_starts.begin()) - 1);
+    auto start = line_starts[line];
+    std::uint32_t end;
+    if(line + 1 < line_starts.size()) [[likely]] {
+        end = line_starts[line + 1] - 1;
+    } else {
+        end = bound;
     }
-    return static_cast<std::uint32_t>((it - line_starts.begin()) - 1);
+    return {line, start, end};
 }
 
-std::uint32_t PositionMapper::line_start(std::uint32_t line) const {
-    assert(line < line_starts.size() && "line out of range");
-    return line_starts[line];
-}
-
-std::uint32_t PositionMapper::line_end_exclusive(std::uint32_t line) const {
-    assert(line < line_starts.size() && "line out of range");
-    if(line + 1 < line_starts.size()) {
-        return line_starts[line + 1] - 1;
-    }
-    return static_cast<std::uint32_t>(content.size());
-}
-
-std::uint32_t PositionMapper::measure(std::string_view text) const {
+std::uint32_t encoded_length(std::string_view text, PositionEncoding encoding) {
     if(encoding == PositionEncoding::UTF8) {
         return static_cast<std::uint32_t>(text.size());
     }
 
     std::uint32_t units = 0;
-    for(std::size_t index = 0; index < text.size();) {
-        auto [utf8, utf16] = next_codepoint_sizes(text, index);
-        index += utf8;
+    for(std::size_t i = 0; i < text.size();) {
+        auto [utf8, utf16] = next_codepoint_sizes(text, i);
+        i += utf8;
         units += (encoding == PositionEncoding::UTF16) ? utf16 : 1;
     }
     return units;
 }
 
-std::uint32_t PositionMapper::character(std::uint32_t line, std::uint32_t byte_column) const {
-    auto start = line_start(line);
-    [[maybe_unused]] auto end = line_end_exclusive(line);
-    assert(start + byte_column <= end && "byte column out of range");
-    return measure(content.substr(start, byte_column));
-}
-
-std::uint32_t PositionMapper::length(std::uint32_t line,
-                                     std::uint32_t begin_byte_column,
-                                     std::uint32_t end_byte_column) const {
-    auto start = line_start(line);
-    [[maybe_unused]] auto end = line_end_exclusive(line);
-    assert(start + begin_byte_column <= end && "begin byte column out of range");
-    assert(start + end_byte_column <= end && "end byte column out of range");
-
-    if(end_byte_column <= begin_byte_column) {
-        return 0;
-    }
-
-    auto size = end_byte_column - begin_byte_column;
-    return measure(content.substr(start + begin_byte_column, size));
-}
-
-std::optional<protocol::Position> PositionMapper::to_position(std::uint32_t offset) const {
+std::optional<protocol::Position> to_position(std::string_view content,
+                                              std::span<const std::uint32_t> line_starts,
+                                              PositionEncoding encoding,
+                                              std::uint32_t offset) {
     if(offset > content.size()) [[unlikely]] {
         return std::nullopt;
     }
-    auto line = line_of(offset);
-    auto column = offset - line_start(line);
-    if(line_start(line) + column > line_end_exclusive(line)) [[unlikely]] {
+    auto bounds = line_bounds(line_starts, static_cast<std::uint32_t>(content.size()), offset);
+    auto column = offset - bounds.start;
+    if(bounds.start + column > bounds.end) [[unlikely]] {
         return std::nullopt;
     }
     return protocol::Position{
-        .line = line,
-        .character = character(line, column),
+        .line = bounds.line,
+        .character = encoded_length(content.substr(bounds.start, column), encoding),
     };
 }
 
-std::optional<std::uint32_t> PositionMapper::to_offset(protocol::Position position) const {
+std::optional<std::uint32_t> to_offset(std::string_view content,
+                                       std::span<const std::uint32_t> line_starts,
+                                       PositionEncoding encoding,
+                                       protocol::Position position) {
     auto line = position.line;
     auto target = position.character;
 
@@ -258,8 +237,13 @@ std::optional<std::uint32_t> PositionMapper::to_offset(protocol::Position positi
         return std::nullopt;
     }
 
-    auto begin = line_start(line);
-    auto end = line_end_exclusive(line);
+    auto begin = line_starts[line];
+    std::uint32_t end;
+    if(line + 1 < line_starts.size()) [[likely]] {
+        end = line_starts[line + 1] - 1;
+    } else {
+        end = static_cast<std::uint32_t>(content.size());
+    }
 
     if(target == 0) {
         return begin;
@@ -274,15 +258,15 @@ std::optional<std::uint32_t> PositionMapper::to_offset(protocol::Position positi
 
     std::uint32_t offset = begin;
     auto text = content.substr(begin, end - begin);
-    for(std::size_t index = 0; index < text.size();) {
-        auto [utf8, utf16] = next_codepoint_sizes(text, index);
+    for(std::size_t i = 0; i < text.size();) {
+        auto [utf8, utf16] = next_codepoint_sizes(text, i);
         auto step = (encoding == PositionEncoding::UTF16) ? utf16 : 1;
         if(target < step) [[unlikely]] {
             return std::nullopt;
         }
         target -= step;
         offset += utf8;
-        index += utf8;
+        i += utf8;
         if(target == 0) {
             return offset;
         }
