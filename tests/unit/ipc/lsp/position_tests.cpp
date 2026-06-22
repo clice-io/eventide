@@ -8,21 +8,11 @@ namespace {
 
 TEST_SUITE(language_position) {
 
-TEST_CASE(parse_encoding_values) {
-    EXPECT_EQ(parse_position_encoding(protocol::PositionEncodingKind::utf8),
-              PositionEncoding::UTF8);
-    EXPECT_EQ(parse_position_encoding(protocol::PositionEncodingKind::utf16),
-              PositionEncoding::UTF16);
-    EXPECT_EQ(parse_position_encoding(protocol::PositionEncodingKind::utf32),
-              PositionEncoding::UTF32);
-    EXPECT_EQ(parse_position_encoding("unknown-encoding"), PositionEncoding::UTF16);
-}
-
 TEST_CASE(utf16_column_counts) {
     std::string_view content = "a\xe4\xbd\xa0" "b\n";
-    auto starts = build_line_starts(content);
+    LineMap map(content, {}, PositionEncoding::UTF16);
 
-    auto position = to_position(content, starts, PositionEncoding::UTF16, 4);
+    auto position = map.to_position(4);
     ASSERT_TRUE(position.has_value());
     ASSERT_EQ(position->line, 0U);
     ASSERT_EQ(position->character, 2U);
@@ -31,13 +21,13 @@ TEST_CASE(utf16_column_counts) {
 TEST_CASE(round_trip_offsets) {
     std::string_view content = "a\xe4\xbd\xa0" "b\nx\xf0\x9f\x99\x82" "y";
     constexpr std::uint32_t offsets[] = {0, 1, 4, 5, 6, 7, 11, 12};
-    auto starts = build_line_starts(content);
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, {}, encoding);
         for(auto offset: offsets) {
-            auto position = to_position(content, starts, encoding, offset);
+            auto position = map.to_position(offset);
             ASSERT_TRUE(position.has_value());
-            auto mapped = to_offset(content, starts, encoding, *position);
+            auto mapped = map.to_offset(*position);
             ASSERT_TRUE(mapped.has_value());
             ASSERT_EQ(*mapped, offset);
         }
@@ -46,7 +36,6 @@ TEST_CASE(round_trip_offsets) {
 
 TEST_CASE(position_offset_values) {
     std::string_view content = "a\xe4\xbd\xa0\xf0\x9f\x99\x82" "b\nx";
-    auto starts = build_line_starts(content);
 
     struct Sample {
         std::uint32_t offset;
@@ -67,27 +56,30 @@ TEST_CASE(position_offset_values) {
     };
 
     for(const auto& sample: samples) {
-        auto p8 = to_position(content, starts, PositionEncoding::UTF8, sample.offset);
+        LineMap map8(content, {}, PositionEncoding::UTF8);
+        auto p8 = map8.to_position(sample.offset);
         ASSERT_TRUE(p8.has_value());
         EXPECT_EQ(p8->line, sample.line);
         EXPECT_EQ(p8->character, sample.utf8_character);
-        auto o8 = to_offset(content, starts, PositionEncoding::UTF8, *p8);
+        auto o8 = map8.to_offset(*p8);
         ASSERT_TRUE(o8.has_value());
         EXPECT_EQ(*o8, sample.offset);
 
-        auto p16 = to_position(content, starts, PositionEncoding::UTF16, sample.offset);
+        LineMap map16(content, {}, PositionEncoding::UTF16);
+        auto p16 = map16.to_position(sample.offset);
         ASSERT_TRUE(p16.has_value());
         EXPECT_EQ(p16->line, sample.line);
         EXPECT_EQ(p16->character, sample.utf16_character);
-        auto o16 = to_offset(content, starts, PositionEncoding::UTF16, *p16);
+        auto o16 = map16.to_offset(*p16);
         ASSERT_TRUE(o16.has_value());
         EXPECT_EQ(*o16, sample.offset);
 
-        auto p32 = to_position(content, starts, PositionEncoding::UTF32, sample.offset);
+        LineMap map32(content, {}, PositionEncoding::UTF32);
+        auto p32 = map32.to_position(sample.offset);
         ASSERT_TRUE(p32.has_value());
         EXPECT_EQ(p32->line, sample.line);
         EXPECT_EQ(p32->character, sample.utf32_character);
-        auto o32 = to_offset(content, starts, PositionEncoding::UTF32, *p32);
+        auto o32 = map32.to_offset(*p32);
         ASSERT_TRUE(o32.has_value());
         EXPECT_EQ(*o32, sample.offset);
     }
@@ -95,26 +87,25 @@ TEST_CASE(position_offset_values) {
 
 TEST_CASE(line_bounds_values) {
     std::string_view content = "ab\n\ncd";
-    auto starts = build_line_starts(content);
-    auto size = static_cast<std::uint32_t>(content.size());
+    LineMap map(content);
 
-    auto b0 = line_bounds(starts, size, 0);
+    auto b0 = map.line_bounds(0);
     EXPECT_EQ(b0.line, 0U);
     EXPECT_EQ(b0.start, 0U);
     EXPECT_EQ(b0.end, 2U);
 
-    auto b1 = line_bounds(starts, size, 3);
+    auto b1 = map.line_bounds(3);
     EXPECT_EQ(b1.line, 1U);
     EXPECT_EQ(b1.start, 3U);
     EXPECT_EQ(b1.end, 3U);
 
-    auto b2 = line_bounds(starts, size, 4);
+    auto b2 = map.line_bounds(4);
     EXPECT_EQ(b2.line, 2U);
     EXPECT_EQ(b2.start, 4U);
     EXPECT_EQ(b2.end, 6U);
 
-    EXPECT_EQ(line_bounds(starts, size, 2).line, 0U);
-    EXPECT_EQ(line_bounds(starts, size, 6).line, 2U);
+    EXPECT_EQ(map.line_bounds(2).line, 0U);
+    EXPECT_EQ(map.line_bounds(6).line, 2U);
 }
 
 TEST_CASE(measure_units_encoding) {
@@ -128,13 +119,13 @@ TEST_CASE(measure_units_encoding) {
 TEST_CASE(roundtrip_multiline_boundaries) {
     std::string_view content = "a\xe4\xbd\xa0\n\xf0\x9f\x99\x82" "b";
     constexpr std::uint32_t boundaries[] = {0, 1, 4, 5, 9, 10};
-    auto starts = build_line_starts(content);
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+        LineMap map(content, {}, encoding);
         for(auto offset: boundaries) {
-            auto position = to_position(content, starts, encoding, offset);
+            auto position = map.to_position(offset);
             ASSERT_TRUE(position.has_value());
-            auto mapped = to_offset(content, starts, encoding, *position);
+            auto mapped = map.to_offset(*position);
             ASSERT_TRUE(mapped.has_value());
             ASSERT_EQ(*mapped, offset);
         }
@@ -166,13 +157,13 @@ TEST_CASE(invalid_continuation_progress) {
 
 TEST_CASE(invalid_position_stability) {
     auto expect_stable = [&](std::string_view content) {
-        auto starts = build_line_starts(content);
         for(auto encoding:
             {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
+            LineMap map(content, {}, encoding);
             for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
-                auto position = to_position(content, starts, encoding, offset);
+                auto position = map.to_position(offset);
                 ASSERT_TRUE(position.has_value());
-                auto mapped_offset = to_offset(content, starts, encoding, *position);
+                auto mapped_offset = map.to_offset(*position);
                 ASSERT_TRUE(mapped_offset.has_value());
                 EXPECT_TRUE(*mapped_offset <= content.size());
             }
@@ -209,45 +200,93 @@ TEST_CASE(strict_utf8_validation) {
 
 TEST_CASE(to_position_out_of_range) {
     std::string_view content = "abc\ndef";
-    auto starts = build_line_starts(content);
+    LineMap map(content, {}, PositionEncoding::UTF8);
 
-    // Offset beyond content size.
-    EXPECT_FALSE(to_position(content, starts, PositionEncoding::UTF8, 100).has_value());
-    EXPECT_FALSE(to_position(content, starts, PositionEncoding::UTF8, 8).has_value());
-
-    // Offset at content size is valid (EOF position).
-    EXPECT_TRUE(to_position(content, starts, PositionEncoding::UTF8, 7).has_value());
+    EXPECT_FALSE(map.to_position(100).has_value());
+    EXPECT_FALSE(map.to_position(8).has_value());
+    EXPECT_TRUE(map.to_position(7).has_value());
 }
 
 TEST_CASE(to_offset_line_out_of_range) {
     std::string_view content = "abc\ndef";
-    auto starts = build_line_starts(content);
+    LineMap map(content, {}, PositionEncoding::UTF8);
 
-    // Line beyond document.
-    EXPECT_FALSE(to_offset(content, starts, PositionEncoding::UTF8, {.line = 5, .character = 0})
-                     .has_value());
-    EXPECT_FALSE(to_offset(content, starts, PositionEncoding::UTF8, {.line = 2, .character = 0})
-                     .has_value());
-
-    // Valid last line.
-    EXPECT_TRUE(to_offset(content, starts, PositionEncoding::UTF8, {.line = 1, .character = 0})
-                    .has_value());
+    EXPECT_FALSE(map.to_offset({.line = 5, .character = 0}).has_value());
+    EXPECT_FALSE(map.to_offset({.line = 2, .character = 0}).has_value());
+    EXPECT_TRUE(map.to_offset({.line = 1, .character = 0}).has_value());
 }
 
 TEST_CASE(to_offset_character_out_of_range) {
     std::string_view content = "abc\ndef";
-    auto starts = build_line_starts(content);
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
-        // Character beyond line length.
-        EXPECT_FALSE(
-            to_offset(content, starts, encoding, {.line = 0, .character = 10}).has_value());
-        EXPECT_FALSE(to_offset(content, starts, encoding, {.line = 1, .character = 4}).has_value());
+        LineMap map(content, {}, encoding);
 
-        // Valid end of line.
-        EXPECT_TRUE(to_offset(content, starts, encoding, {.line = 0, .character = 3}).has_value());
-        EXPECT_TRUE(to_offset(content, starts, encoding, {.line = 1, .character = 3}).has_value());
+        EXPECT_FALSE(map.to_offset({.line = 0, .character = 10}).has_value());
+        EXPECT_FALSE(map.to_offset({.line = 1, .character = 4}).has_value());
+        EXPECT_TRUE(map.to_offset({.line = 0, .character = 3}).has_value());
+        EXPECT_TRUE(map.to_offset({.line = 1, .character = 3}).has_value());
     }
+}
+
+TEST_CASE(encoding_override) {
+    std::string_view content = "a\xe4\xbd\xa0" "b\n";
+    LineMap map(content, {}, PositionEncoding::UTF8);
+
+    auto p_default = map.to_position(4);
+    ASSERT_TRUE(p_default.has_value());
+    EXPECT_EQ(p_default->character, 4U);
+
+    auto p_utf16 = map.to_position(4, PositionEncoding::UTF16);
+    ASSERT_TRUE(p_utf16.has_value());
+    EXPECT_EQ(p_utf16->character, 2U);
+}
+
+TEST_CASE(to_range_basic) {
+    std::string_view content = "abc\ndef";
+    LineMap map(content, {}, PositionEncoding::UTF8);
+
+    auto range = map.to_range(0, 3);
+    ASSERT_TRUE(range.has_value());
+    EXPECT_EQ(range->start.line, 0U);
+    EXPECT_EQ(range->start.character, 0U);
+    EXPECT_EQ(range->end.line, 0U);
+    EXPECT_EQ(range->end.character, 3U);
+
+    auto cross_line = map.to_range(0, 5);
+    ASSERT_TRUE(cross_line.has_value());
+    EXPECT_EQ(cross_line->start.line, 0U);
+    EXPECT_EQ(cross_line->end.line, 1U);
+    EXPECT_EQ(cross_line->end.character, 1U);
+}
+
+TEST_CASE(borrowed_line_starts) {
+    std::string_view content = "ab\ncd";
+    auto starts = build_line_starts(content);
+    LineMap map(content, starts, PositionEncoding::UTF8);
+
+    auto p = map.to_position(3);
+    ASSERT_TRUE(p.has_value());
+    EXPECT_EQ(p->line, 1U);
+    EXPECT_EQ(p->character, 0U);
+}
+
+TEST_CASE(move_semantics) {
+    std::string_view content = "ab\ncd";
+    LineMap map(content, {}, PositionEncoding::UTF8);
+
+    LineMap moved(std::move(map));
+    auto p = moved.to_position(3);
+    ASSERT_TRUE(p.has_value());
+    EXPECT_EQ(p->line, 1U);
+    EXPECT_EQ(p->character, 0U);
+
+    LineMap assigned(std::string_view("x"));
+    assigned = std::move(moved);
+    auto p2 = assigned.to_position(4);
+    ASSERT_TRUE(p2.has_value());
+    EXPECT_EQ(p2->line, 1U);
+    EXPECT_EQ(p2->character, 1U);
 }
 
 };  // TEST_SUITE(language_position)
