@@ -4,6 +4,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "kota/ipc/lsp/protocol.h"
@@ -11,9 +12,9 @@
 
 namespace kota::ipc::lsp {
 
-/// Non-owning view over source content + line starts for LSP position conversion.
-/// When `line_starts` is not provided at construction, it is computed eagerly
-/// and stored internally. Move operations fix up the internal span.
+/// Source content + line starts for LSP position conversion.
+/// Holds line starts either as a borrowed span or as an owned vector
+/// (computed eagerly when not provided at construction).
 class LineMap {
 public:
     struct LineBounds {
@@ -32,10 +33,6 @@ public:
     LineMap(std::string_view content,
             std::vector<std::uint32_t>&& line_starts,
             PositionEncoding encoding = PositionEncoding::UTF16);
-
-    LineMap(LineMap&& other) noexcept;
-
-    LineMap& operator=(LineMap&& other) noexcept;
 
     std::optional<protocol::Position>
         to_position(std::uint32_t offset,
@@ -60,8 +57,7 @@ private:
     PositionEncoding resolve(PositionEncoding encoding) const;
 
     std::string_view source;
-    std::vector<std::uint32_t> storage;
-    std::span<const std::uint32_t> starts;
+    std::variant<std::vector<std::uint32_t>, std::span<const std::uint32_t>> starts;
     PositionEncoding enc;
 };
 

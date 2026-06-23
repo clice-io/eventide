@@ -6,42 +6,21 @@
 namespace kota::ipc::lsp {
 
 LineMap::LineMap(std::string_view content,
-                 PositionEncoding encoding) : source(content), enc(encoding) {
+                 PositionEncoding encoding) :
+    source(content), starts(build_line_starts(content)), enc(encoding) {
     assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
-    storage = build_line_starts(content);
-    starts = storage;
 }
 
 LineMap::LineMap(std::string_view content,
                  std::span<const std::uint32_t> line_starts,
-                 PositionEncoding encoding) : source(content), enc(encoding) {
+                 PositionEncoding encoding) : source(content), starts(line_starts), enc(encoding) {
     assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
-    starts = line_starts;
 }
 
 LineMap::LineMap(std::string_view content,
                  std::vector<std::uint32_t>&& line_starts,
-                 PositionEncoding encoding) : source(content), storage(std::move(line_starts)), enc(encoding) {
+                 PositionEncoding encoding) : source(content), starts(std::move(line_starts)), enc(encoding) {
     assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
-    starts = storage;
-}
-
-LineMap::LineMap(LineMap&& other) noexcept :
-    source(other.source), storage(std::move(other.storage)), starts(other.starts), enc(other.enc) {
-    if(!storage.empty()) {
-        starts = storage;
-    }
-}
-
-LineMap& LineMap::operator=(LineMap&& other) noexcept {
-    source = other.source;
-    storage = std::move(other.storage);
-    starts = other.starts;
-    enc = other.enc;
-    if(!storage.empty()) {
-        starts = storage;
-    }
-    return *this;
 }
 
 PositionEncoding LineMap::resolve(PositionEncoding encoding) const {
@@ -68,16 +47,17 @@ std::optional<protocol::Position> LineMap::to_position(std::uint32_t offset,
 std::optional<std::uint32_t> LineMap::to_offset(protocol::Position position,
                                                 PositionEncoding encoding) const {
     auto actual = resolve(encoding);
+    auto ls = line_starts();
     auto line = position.line;
 
-    if(line >= starts.size()) [[unlikely]] {
+    if(line >= ls.size()) [[unlikely]] {
         return std::nullopt;
     }
 
-    auto begin = starts[line];
+    auto begin = ls[line];
     std::uint32_t end;
-    if(line + 1 < starts.size()) [[likely]] {
-        end = starts[line + 1] - 1;
+    if(line + 1 < ls.size()) [[likely]] {
+        end = ls[line + 1] - 1;
     } else {
         end = static_cast<std::uint32_t>(source.size());
     }
@@ -107,14 +87,15 @@ std::optional<protocol::Range> LineMap::to_range(std::uint32_t begin,
 }
 
 LineMap::LineBounds LineMap::line_bounds(std::uint32_t offset) const {
-    assert(!starts.empty() && "line_starts must not be empty");
-    auto it = std::upper_bound(starts.begin(), starts.end(), offset);
-    auto line = (it == starts.begin()) ? std::uint32_t{0}
-                                       : static_cast<std::uint32_t>((it - starts.begin()) - 1);
-    auto start = starts[line];
+    auto ls = line_starts();
+    assert(!ls.empty() && "line_starts must not be empty");
+    auto it = std::upper_bound(ls.begin(), ls.end(), offset);
+    auto line = (it == ls.begin()) ? std::uint32_t{0}
+                                   : static_cast<std::uint32_t>((it - ls.begin()) - 1);
+    auto start = ls[line];
     std::uint32_t end;
-    if(line + 1 < starts.size()) [[likely]] {
-        end = starts[line + 1] - 1;
+    if(line + 1 < ls.size()) [[likely]] {
+        end = ls[line + 1] - 1;
     } else {
         end = static_cast<std::uint32_t>(source.size());
     }
@@ -126,7 +107,7 @@ std::string_view LineMap::content() const {
 }
 
 std::span<const std::uint32_t> LineMap::line_starts() const {
-    return starts;
+    return std::visit([](const auto& v) -> std::span<const std::uint32_t> { return v; }, starts);
 }
 
 }  // namespace kota::ipc::lsp
