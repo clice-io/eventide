@@ -13,8 +13,7 @@
 namespace kota::ipc::lsp {
 
 /// Source content + line starts for LSP position conversion.
-/// Holds line starts either as a borrowed span or as an owned vector
-/// (computed eagerly when not provided at construction).
+/// Line starts are held either as a borrowed span or as an owned vector.
 class LineMap {
 public:
     struct LineBounds {
@@ -23,12 +22,15 @@ public:
         std::uint32_t end;
     };
 
+    /// Compute line starts from content.
     explicit LineMap(std::string_view content, PositionEncoding encoding = PositionEncoding::UTF16);
 
+    /// Borrow pre-computed line starts. Caller must keep the data alive.
     LineMap(std::string_view content,
             std::span<const std::uint32_t> line_starts,
             PositionEncoding encoding = PositionEncoding::UTF16);
 
+    /// Take ownership of pre-computed line starts.
     LineMap(std::string_view content,
             std::vector<std::uint32_t>&& line_starts,
             PositionEncoding encoding = PositionEncoding::UTF16);
