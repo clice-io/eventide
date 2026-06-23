@@ -23,8 +23,7 @@ public:
         std::uint32_t end;
     };
 
-    explicit LineMap(std::string_view content,
-                     PositionEncoding encoding = PositionEncoding::UTF16);
+    explicit LineMap(std::string_view content, PositionEncoding encoding = PositionEncoding::UTF16);
 
     LineMap(std::string_view content,
             std::span<const std::uint32_t> line_starts,

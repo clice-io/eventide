@@ -5,22 +5,25 @@
 
 namespace kota::ipc::lsp {
 
-LineMap::LineMap(std::string_view content,
-                 PositionEncoding encoding) :
+LineMap::LineMap(std::string_view content, PositionEncoding encoding) :
     source(content), starts(build_line_starts(content)), enc(encoding) {
-    assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
+    assert(encoding != PositionEncoding::Default &&
+           "Default is not valid for LineMap construction");
 }
 
 LineMap::LineMap(std::string_view content,
                  std::span<const std::uint32_t> line_starts,
                  PositionEncoding encoding) : source(content), starts(line_starts), enc(encoding) {
-    assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
+    assert(encoding != PositionEncoding::Default &&
+           "Default is not valid for LineMap construction");
 }
 
 LineMap::LineMap(std::string_view content,
                  std::vector<std::uint32_t>&& line_starts,
-                 PositionEncoding encoding) : source(content), starts(std::move(line_starts)), enc(encoding) {
-    assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
+                 PositionEncoding encoding) :
+    source(content), starts(std::move(line_starts)), enc(encoding) {
+    assert(encoding != PositionEncoding::Default &&
+           "Default is not valid for LineMap construction");
 }
 
 PositionEncoding LineMap::resolve(PositionEncoding encoding) const {
@@ -90,8 +93,8 @@ LineMap::LineBounds LineMap::line_bounds(std::uint32_t offset) const {
     auto ls = line_starts();
     assert(!ls.empty() && "line_starts must not be empty");
     auto it = std::upper_bound(ls.begin(), ls.end(), offset);
-    auto line = (it == ls.begin()) ? std::uint32_t{0}
-                                   : static_cast<std::uint32_t>((it - ls.begin()) - 1);
+    auto line =
+        (it == ls.begin()) ? std::uint32_t{0} : static_cast<std::uint32_t>((it - ls.begin()) - 1);
     auto start = ls[line];
     std::uint32_t end;
     if(line + 1 < ls.size()) [[likely]] {
