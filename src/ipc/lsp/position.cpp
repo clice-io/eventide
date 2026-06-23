@@ -6,14 +6,24 @@
 namespace kota::ipc::lsp {
 
 LineMap::LineMap(std::string_view content,
+                 PositionEncoding encoding) : source(content), enc(encoding) {
+    assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
+    storage = build_line_starts(content);
+    starts = storage;
+}
+
+LineMap::LineMap(std::string_view content,
                  std::span<const std::uint32_t> line_starts,
                  PositionEncoding encoding) : source(content), enc(encoding) {
-    if(line_starts.empty()) {
-        storage = build_line_starts(content);
-        starts = storage;
-    } else {
-        starts = line_starts;
-    }
+    assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
+    starts = line_starts;
+}
+
+LineMap::LineMap(std::string_view content,
+                 std::vector<std::uint32_t>&& line_starts,
+                 PositionEncoding encoding) : source(content), storage(std::move(line_starts)), enc(encoding) {
+    assert(encoding != PositionEncoding::Default && "Default is not valid for LineMap construction");
+    starts = storage;
 }
 
 LineMap::LineMap(LineMap&& other) noexcept :
@@ -82,6 +92,9 @@ std::optional<std::uint32_t> LineMap::to_offset(protocol::Position position,
 std::optional<protocol::Range> LineMap::to_range(std::uint32_t begin,
                                                  std::uint32_t end,
                                                  PositionEncoding encoding) const {
+    if(begin > end) [[unlikely]] {
+        return std::nullopt;
+    }
     auto start = to_position(begin, encoding);
     if(!start) {
         return std::nullopt;

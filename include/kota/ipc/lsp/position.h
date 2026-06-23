@@ -23,8 +23,15 @@ public:
     };
 
     explicit LineMap(std::string_view content,
-                     std::span<const std::uint32_t> line_starts = {},
                      PositionEncoding encoding = PositionEncoding::UTF16);
+
+    LineMap(std::string_view content,
+            std::span<const std::uint32_t> line_starts,
+            PositionEncoding encoding = PositionEncoding::UTF16);
+
+    LineMap(std::string_view content,
+            std::vector<std::uint32_t>&& line_starts,
+            PositionEncoding encoding = PositionEncoding::UTF16);
 
     LineMap(LineMap&& other) noexcept;
 
