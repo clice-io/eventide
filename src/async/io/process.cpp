@@ -127,7 +127,8 @@ process::stdio process::stdio::pipe(bool readable, bool writable) {
 }
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
-    spawn_result out{process(Self::make()), {}, {}, {}};
+    spawn_result out;
+    out.proc = process(Self::make());
 
     std::vector<std::string> argv_storage;
     if(opts.args.empty()) {
@@ -153,10 +154,11 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         envp.push_back(nullptr);
     }
 
-    std::array<pipe, 3> created_pipes{};
-    std::array<uv_stdio_container_t, 3> stdio{};
+    const auto count = opts.streams.size();
+    std::vector<pipe> created_pipes(count);
+    std::vector<uv_stdio_container_t> stdio(count, uv_stdio_container_t{});
 
-    for(std::size_t i = 0; i < opts.streams.size(); ++i) {
+    for(std::size_t i = 0; i < count; ++i) {
         auto& cfg = opts.streams[i];
         auto& dst = stdio[i];
 
@@ -203,7 +205,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     };
     uv_opts.file = opts.file.c_str();
     uv_opts.args = argv.data();
-    uv_opts.stdio_count = static_cast<int>(stdio.size());
+    uv_opts.stdio_count = static_cast<int>(count);
     uv_opts.stdio = stdio.data();
 
     if(!envp.empty()) {
@@ -226,9 +228,10 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         return outcome_error(err);
     }
 
-    out.stdin_pipe = std::move(created_pipes[0]);
-    out.stdout_pipe = std::move(created_pipes[1]);
-    out.stderr_pipe = std::move(created_pipes[2]);
+    out.pipes.resize(count);
+    for(std::size_t i = 0; i < count; ++i) {
+        out.pipes[i] = std::move(created_pipes[i]);
+    }
 
     return out;
 }
