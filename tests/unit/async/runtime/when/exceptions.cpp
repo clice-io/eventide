@@ -243,7 +243,6 @@ TEST_CASE(direct_co_await_rethrows) {
     EXPECT_THROWS(run(parent()));
 }
 
-
 };  // TEST_SUITE(when_exceptions)
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
