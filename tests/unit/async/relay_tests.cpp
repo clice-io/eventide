@@ -314,12 +314,10 @@ TEST_CASE(relay_send_and_destroy_during_drain_delivers) {
     std::thread worker([&, r = std::move(r)]() mutable {
         r.send([&] {
             first_running.store(true, std::memory_order_release);
-            while(!second_sent.load(std::memory_order_acquire)) {
-            }
+            while(!second_sent.load(std::memory_order_acquire)) {}
         });
 
-        while(!first_running.load(std::memory_order_acquire)) {
-        }
+        while(!first_running.load(std::memory_order_acquire)) {}
         r.send([&] { second_ran = true; });
         r = relay{};
         second_sent.store(true, std::memory_order_release);

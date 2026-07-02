@@ -110,26 +110,28 @@ bool event_loop::has_current() noexcept {
 void each(uv_idle_t* idle) {
     auto self = static_cast<event_loop::Self*>(idle->data);
 
-    // Complete the yields enqueued in earlier iterations. New yields (and
-    // cancellations) produced by these continuations stay queued for the
-    // next iteration — a cancelled yield op is never dequeued early, its
-    // completion below reports the Cancelled state, so no entry here can
-    // dangle.
-    auto yielded = std::move(self->yields);
-    for(auto* op: yielded) {
-        op->complete();
-    }
-
     if(self->idle_running && self->tasks.empty() && self->yields.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
         return;
     }
 
-    /// Resume may create new tasks, we want to run them in the next iteration.
+    // Snapshot both queues up front: tasks and yields produced by the
+    // resumes below belong to the next iteration.
+    auto yielded = std::move(self->yields);
     auto all = std::move(self->tasks);
+
     for(auto& task: all) {
         task->resume();
+    }
+
+    // Complete the yields enqueued in earlier iterations, after this
+    // iteration's scheduled tasks — yield() resumes only once everything
+    // queued before it has run. A cancelled yield op is never dequeued
+    // early; its completion here reports the Cancelled state, so no entry
+    // in this batch can dangle.
+    for(auto* op: yielded) {
+        op->complete();
     }
 }
 
@@ -196,8 +198,8 @@ yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
     };
 }
 
-std::coroutine_handle<> yield_awaiter::suspend(async_node& parent,
-                                               std::source_location location) noexcept {
+std::coroutine_handle<> yield_awaiter::suspend(async_node& parent_node,
+                                               std::source_location loc) noexcept {
     auto* self = loop->operator->();
 
     // Enqueue before attach: when the parent is already cancelled, attach's
@@ -209,7 +211,7 @@ std::coroutine_handle<> yield_awaiter::suspend(async_node& parent,
         uv::idle_start(self->idle, each);
     }
 
-    return attach(parent, location);
+    return attach(parent_node, loc);
 }
 
 event_loop::event_loop() : self(new Self()) {

@@ -188,7 +188,7 @@ struct yield_awaiter : io_op {
 
 private:
     /// Enqueues on the loop's yield queue, then attaches. Defined in loop.cpp.
-    std::coroutine_handle<> suspend(async_node& parent, std::source_location location) noexcept;
+    std::coroutine_handle<> suspend(async_node& parent_node, std::source_location loc) noexcept;
 
     event_loop* loop = nullptr;
 };

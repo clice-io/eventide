@@ -122,9 +122,9 @@ struct transition_await {
             if(promise.state == async_node::Failed) {
                 return promise.finalize();
             }
-            assert((promise.state == async_node::Running ||
-                    promise.state == async_node::Cancelled) &&
-                   "only a running or lazily-cancelled task can finish");
+            assert(
+                (promise.state == async_node::Running || promise.state == async_node::Cancelled) &&
+                "only a running or lazily-cancelled task can finish");
             // Real errors outrank cancellation (trio semantics): a task that
             // fails or throws after being cancelled still reports the error.
             // Only a normal completion of a cancelled task finalizes as

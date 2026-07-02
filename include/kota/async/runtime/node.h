@@ -112,7 +112,6 @@ private:
     std::coroutine_handle<> attach_cancelled(task_frame& parent);
 
 public:
-
     std::coroutine_handle<> on_child_complete(async_node& child);
 
     static void resume_and_drain(std::coroutine_handle<> handle);
@@ -276,8 +275,8 @@ protected:
     ///
     /// An external cancel() is tracked separately as `state == Cancelled`
     /// (set by cancel() before it dispatches on the node kind). settle()
-    /// gives it precedence over everything for cancel-intercepting
-    /// aggregates, and treats it like a Cancel decision otherwise.
+    /// treats it like a Cancel decision: it upgrades a plain Resume, but a
+    /// child error still outranks it.
     enum class Decision : std::uint8_t {
         /// Undecided. A when_all whose children all succeed settles as
         /// success without ever recording a decision.
