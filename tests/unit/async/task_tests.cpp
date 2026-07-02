@@ -238,6 +238,35 @@ TEST_CASE(checkpoint_on_cancelled_task) {
     EXPECT_FALSE(resumed);
 }
 
+// A yield enqueued from a timer-phase callback must not resume in the same
+// iteration's idle phase: callbacks later in the enqueueing iteration (here
+// a check-phase watcher armed by a task scheduled alongside) run first.
+TEST_CASE(spans_iteration_from_timer_callback) {
+    std::vector<int> order;
+    auto chk = check::create(loop);
+
+    auto checker = [&]() -> task<> {
+        chk.start();
+        co_await chk.wait();
+        order.push_back(1);
+        chk.stop();
+    };
+
+    auto c = checker();
+
+    auto worker = [&]() -> task<> {
+        co_await sleep(1, loop);
+        loop.schedule(c);
+        co_await yield(loop);
+        order.push_back(2);
+    };
+
+    auto w = worker();
+    schedule_all(w);
+
+    EXPECT_EQ(order, (std::vector<int>{1, 2}));
+}
+
 };  // TEST_SUITE(yield)
 
 }  // namespace

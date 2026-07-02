@@ -28,8 +28,13 @@ struct event_loop::Self : relay::Self {
     bool check_running = false;
     std::deque<async_node*> tasks;
     std::deque<async_node*> deferred;
-    /// Ops suspended via yield(): completed in the next iteration's each().
-    std::deque<io_op*> yields;
+    /// Ops suspended via yield(). New ops land in `yields_staged`; each()
+    /// promotes the staged batch to `yields_ready` and completes the batch
+    /// promoted by the previous each(). The two-step promotion guarantees an
+    /// op never resumes in the iteration that enqueued it, no matter which
+    /// callback phase (timer, idle, poll, check) it was enqueued from.
+    std::deque<io_op*> yields_staged;
+    std::deque<io_op*> yields_ready;
     std::vector<function<void()>> destroy_callbacks;
 };
 
@@ -110,26 +115,28 @@ bool event_loop::has_current() noexcept {
 void each(uv_idle_t* idle) {
     auto self = static_cast<event_loop::Self*>(idle->data);
 
-    if(self->idle_running && self->tasks.empty() && self->yields.empty()) {
+    if(self->idle_running && self->tasks.empty() && self->yields_staged.empty() &&
+       self->yields_ready.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
         return;
     }
 
-    // Snapshot both queues up front: tasks and yields produced by the
-    // resumes below belong to the next iteration.
-    auto yielded = std::move(self->yields);
+    // Promote the staged yields and snapshot the task batch up front:
+    // anything produced by the resumes below belongs to a later iteration.
+    auto yielded = std::move(self->yields_ready);
+    self->yields_ready = std::move(self->yields_staged);
     auto all = std::move(self->tasks);
 
     for(auto& task: all) {
         task->resume();
     }
 
-    // Complete the yields enqueued in earlier iterations, after this
-    // iteration's scheduled tasks — yield() resumes only once everything
-    // queued before it has run. A cancelled yield op is never dequeued
-    // early; its completion here reports the Cancelled state, so no entry
-    // in this batch can dangle.
+    // Complete the previously promoted yields after this iteration's
+    // scheduled tasks — yield() resumes only once everything queued before
+    // it has run. A cancelled yield op is never dequeued early; its
+    // completion here reports the Cancelled state, so no entry in this
+    // batch can dangle.
     for(auto* op: yielded) {
         op->complete();
     }
@@ -204,8 +211,8 @@ std::coroutine_handle<> yield_awaiter::suspend(async_node& parent_node,
 
     // Enqueue before attach: when the parent is already cancelled, attach's
     // cancellation checkpoint cancels this op in place, and the queued
-    // completion still resolves it next iteration.
-    self->yields.push_back(this);
+    // completion still resolves it in a later iteration.
+    self->yields_staged.push_back(this);
     if(!self->idle_running) {
         self->idle_running = true;
         uv::idle_start(self->idle, each);

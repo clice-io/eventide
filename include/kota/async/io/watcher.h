@@ -161,9 +161,10 @@ inline task<> sleep(int ms, event_loop& loop = event_loop::current()) {
     return sleep(std::chrono::milliseconds{ms}, loop);
 }
 
-/// Awaitable returned by yield(): suspends and resumes on the NEXT event-loop
-/// iteration, after every callback, deferred resume and scheduled task of the
-/// current iteration has run.
+/// Awaitable returned by yield(): suspends and resumes no earlier than the
+/// next event-loop iteration, strictly after every callback, deferred resume
+/// and scheduled task that existed when it was enqueued — regardless of
+/// which callback phase (timer, idle, poll, check) performed the enqueue.
 ///
 /// This is the primitive for "let the current cascade settle, then decide"
 /// patterns (debounced cancellation, coalesced re-checks). Unlike sleep(0) it

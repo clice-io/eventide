@@ -3091,6 +3091,45 @@ TEST_CASE(cancel_from_running_child) {
     EXPECT_EQ(slow_done, 0);
 }
 
+// A child that fails while the group is being cancelled externally must not
+// have its error swallowed by the cancellation: join() still resumes and
+// reports it (errors outrank cancellation), and the joiner finalizes as
+// cancelled afterwards.
+TEST_CASE(external_cancel_preserves_child_error) {
+    bool observed = false;
+    async_node* driver_node = nullptr;
+
+    auto child = [&]() -> task<void, error> {
+        auto inner = co_await sleep(std::chrono::seconds(10), loop).catch_cancel();
+        if(inner.is_cancelled()) {
+            co_await fail(error::connection_refused);
+        }
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(child());
+        auto res = co_await group.join();
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error().size(), 1u);
+        EXPECT_EQ(res.error().front(), error::connection_refused);
+        observed = true;
+    };
+
+    auto canceler = [&]() -> task<> {
+        co_await sleep(5, loop);
+        driver_node->cancel();
+    };
+
+    auto t = driver();
+    auto c = canceler();
+    driver_node = t.operator->();
+    schedule_all(t, c);
+
+    EXPECT_TRUE(t->is_cancelled());
+    EXPECT_TRUE(observed);
+}
+
 // Completed children are reclaimed eagerly (frame destroyed as soon as the
 // child finishes) instead of accumulating until the group is destroyed;
 // failed children stay alive so join() can extract their errors. Also

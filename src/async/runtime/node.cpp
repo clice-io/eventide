@@ -432,10 +432,22 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
             assert(!self->settled && "task_group received child completion after settling");
             assert(self->pending > 0 && "task_group completed more children than it owns");
 
-            // A failed or cancelled child aborts the group: cancel the
-            // remaining children, but settle as a normal resume — join()
-            // reports the collected errors.
-            if((child.state == Failed || child.state == Cancelled) && !self->decided()) {
+            if(child.state == Failed) {
+                // A failed child aborts the group, and its error must survive
+                // even a racing external cancel (errors outrank cancellation):
+                // Decision::Error makes settle() resume the joiner, which
+                // collects the error, instead of propagating the cancel past
+                // it. The completing child still pins `pending`, so the
+                // cascade cannot settle re-entrantly.
+                const bool first_abort = !self->decided();
+                self->decision = aggregate_op::Decision::Error;
+                if(first_abort) {
+                    self->cancel_children();
+                }
+            } else if(child.state == Cancelled && !self->decided()) {
+                // A cancelled child aborts the group: cancel the remaining
+                // children, but settle as a normal resume — join() reports
+                // the collected errors.
                 self->decide(aggregate_op::Decision::Resume);
             }
 
