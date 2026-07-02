@@ -3,8 +3,8 @@
 #include <filesystem>
 #include <string>
 
-#include "fs_event_fixture.h"
-#include "loop_fixture.h"
+#include "../fs_event_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

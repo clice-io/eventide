@@ -1,3 +1,8 @@
+// with_token cancellation: pre-cancel skip, cancel-in-flight, token sharing,
+// cancelling tasks blocked on sync primitives (event/mutex/semaphore/cv),
+// multi-token / nested with_token, and cancellation checkpoints. Threadpool
+// cancel races (queue/fs) live here too. Aggregate cancel semantics live in
+// when/cancel.cpp; task_group cancel in task_group/cancel.cpp.
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -5,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-#include "loop_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 
 namespace kota {
