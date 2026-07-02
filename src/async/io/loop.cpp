@@ -8,6 +8,7 @@
 
 #include "../libuv.h"
 #include "kota/support/functional.h"
+#include "kota/async/io/watcher.h"
 #include "kota/async/runtime/node.h"
 
 namespace kota {
@@ -27,6 +28,8 @@ struct event_loop::Self : relay::Self {
     bool check_running = false;
     std::deque<async_node*> tasks;
     std::deque<async_node*> deferred;
+    /// Ops suspended via yield(): completed in the next iteration's each().
+    std::deque<io_op*> yields;
     std::vector<function<void()>> destroy_callbacks;
 };
 
@@ -40,7 +43,17 @@ static void on_relay(uv_async_t* handle) {
     for(auto& cb: batch) {
         cb();
     }
-    if(self->count.load(std::memory_order_acquire) == 0) {
+
+    // Release the loop hold only when no relay is alive AND the queue is
+    // still empty. A producer may send() and destroy its relay while the
+    // batch above is draining; the re-armed async wakeup alone would not
+    // keep uv_run alive once the handle is unreffed, and the refilled queue
+    // would be dropped. count == 0 (acquire) pairs with the release
+    // decrement in ~relay: it guarantees every send() on the destroyed
+    // relays is already visible in the queue, so checking both under the
+    // mutex is race-free.
+    std::lock_guard lock(self->mutex);
+    if(self->count.load(std::memory_order_acquire) == 0 && self->queue.empty()) {
         uv::unref(*handle);
     }
 }
@@ -96,7 +109,18 @@ bool event_loop::has_current() noexcept {
 
 void each(uv_idle_t* idle) {
     auto self = static_cast<event_loop::Self*>(idle->data);
-    if(self->idle_running && self->tasks.empty()) {
+
+    // Complete the yields enqueued in earlier iterations. New yields (and
+    // cancellations) produced by these continuations stay queued for the
+    // next iteration — a cancelled yield op is never dequeued early, its
+    // completion below reports the Cancelled state, so no entry here can
+    // dangle.
+    auto yielded = std::move(self->yields);
+    for(auto* op: yielded) {
+        op->complete();
+    }
+
+    if(self->idle_running && self->tasks.empty() && self->yields.empty()) {
         self->idle_running = false;
         uv::idle_stop(*idle);
         return;
@@ -161,6 +185,31 @@ void event_loop::drain_deferred() {
 
 void event_loop::on_destroy(function<void()> callback) {
     self->destroy_callbacks.push_back(std::move(callback));
+}
+
+yield_awaiter::yield_awaiter(event_loop& loop) noexcept : loop(&loop) {
+    // Cancellation needs no action: the op is intentionally left queued, and
+    // the queued completion in each() delivers the Cancelled outcome on the
+    // next iteration (structured completion). Never dequeuing on cancel is
+    // also what keeps the each() batch free of dangling pointers.
+    action = +[](io_op*) {
+    };
+}
+
+std::coroutine_handle<> yield_awaiter::suspend(async_node& parent,
+                                               std::source_location location) noexcept {
+    auto* self = loop->operator->();
+
+    // Enqueue before attach: when the parent is already cancelled, attach's
+    // cancellation checkpoint cancels this op in place, and the queued
+    // completion still resolves it next iteration.
+    self->yields.push_back(this);
+    if(!self->idle_running) {
+        self->idle_running = true;
+        uv::idle_start(self->idle, each);
+    }
+
+    return attach(parent, location);
 }
 
 event_loop::event_loop() : self(new Self()) {

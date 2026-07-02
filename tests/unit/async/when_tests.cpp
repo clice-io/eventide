@@ -1486,6 +1486,31 @@ TEST_CASE(sync_driver_event_fires_cancel_cascade) {
     EXPECT_TRUE(got_cancel);
 }
 
+// Cancellation checkpoint on the io path: a task cancelled while executing
+// that then awaits an io operation has the operation cancelled at the
+// suspension point, and finalizes once the (asynchronous) cancel completes.
+TEST_CASE(checkpoint_cancels_io_op) {
+    int destroyed = 0;
+    async_node* worker_node = nullptr;
+
+    auto worker = [&]() -> task<> {
+        worker_node->cancel();
+        co_await deferred_cancel_await(destroyed);
+    };
+
+    auto driver = [&]() -> task<> {
+        co_await sleep(1);
+        deferred_cancel_await::finish_pending_cancel();
+    };
+
+    auto t = worker();
+    auto d = driver();
+    worker_node = t.operator->();
+    run(t, d);
+
+    EXPECT_TRUE(t->is_cancelled());
+}
+
 };  // TEST_SUITE(when_cancellation)
 
 // ============================================================================
@@ -1853,6 +1878,40 @@ TEST_CASE(error_vs_cancel_priority) {
     run(combined());
 }
 
+// trio semantics: a racing external cancel never masks a child error. The
+// failing child cancels the whole scope synchronously and then fails; the
+// error must survive both the scope cancellation and the child's own
+// cancelled state.
+TEST_CASE(all_error_beats_external_cancel) {
+    async_node* combined_node = nullptr;
+    bool checked = false;
+
+    auto failing = [&]() -> task<int, error, cancellation> {
+        co_await sleep(1);
+        combined_node->cancel();
+        co_await fail(error::connection_refused);
+    };
+
+    auto slow = [&]() -> task<int, error, cancellation> {
+        co_await sleep(50);
+        co_return 1;
+    };
+
+    auto combined = [&]() -> task<> {
+        auto res = co_await when_all(failing(), slow());
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error(), error::connection_refused);
+        checked = true;
+    };
+
+    auto t = combined();
+    combined_node = t.operator->();
+    run(t);
+
+    EXPECT_TRUE(checked);
+    EXPECT_TRUE(t->is_cancelled());
+}
+
 TEST_CASE(all_range_success_no_false_error) {
     auto combined = [&]() -> task<> {
         small_vector<task<int, error>> tasks;
@@ -1907,6 +1966,34 @@ TEST_CASE(all_exception_cancels_siblings) {
     EXPECT_TRUE(t->is_failed());
     EXPECT_THROWS(t.result());
     EXPECT_EQ(slow_done, 0);
+}
+
+// A child that throws after the scope was cancelled must still deliver the
+// exception (previously the exception was silently swallowed by the
+// Cancelled finalization).
+TEST_CASE(all_exception_beats_external_cancel) {
+    async_node* combined_node = nullptr;
+
+    auto thrower = [&]() -> task<int> {
+        co_await sleep(1);
+        combined_node->cancel();
+        throw std::runtime_error("boom");
+        co_return 0;
+    };
+
+    auto slow = []() -> task<int> {
+        co_await sleep(50);
+        co_return 1;
+    };
+
+    auto combined = [&]() -> task<int> {
+        auto [a, b] = co_await when_all(thrower(), slow());
+        co_return a + b;
+    };
+
+    auto t = combined();
+    combined_node = t.operator->();
+    EXPECT_THROWS(run(t));
 }
 
 TEST_CASE(all_exception_immediate) {
@@ -3002,6 +3089,60 @@ TEST_CASE(cancel_from_running_child) {
     schedule_all(t);
     EXPECT_TRUE(t->is_finished());
     EXPECT_EQ(slow_done, 0);
+}
+
+// Completed children are reclaimed eagerly (frame destroyed as soon as the
+// child finishes) instead of accumulating until the group is destroyed;
+// failed children stay alive so join() can extract their errors. Also
+// exercises tombstone compaction: the third spawn triggers it, and the
+// error handler must stay paired with the failing child across the shift.
+TEST_CASE(reclaims_completed_child_frames) {
+    int destroyed = 0;
+
+    struct probe {
+        int* counter = nullptr;
+
+        explicit probe(int* c) : counter(c) {}
+
+        probe(probe&& other) noexcept : counter(std::exchange(other.counter, nullptr)) {}
+
+        ~probe() {
+            if(counter) {
+                *counter += 1;
+            }
+        }
+    };
+
+    auto work = [](probe) -> task<> {
+        co_return;
+    };
+
+    auto failing = [](probe) -> task<void, error> {
+        co_await fail(error::connection_refused);
+    };
+
+    auto driver = [&]() -> task<> {
+        task_group<error> group(loop);
+        group.spawn(work(probe(&destroyed)));
+        group.spawn(work(probe(&destroyed)));
+        EXPECT_EQ(destroyed, 2);
+
+        group.spawn(failing(probe(&destroyed)));
+        EXPECT_EQ(destroyed, 2);
+
+        auto res = co_await group.join();
+        EXPECT_TRUE(res.has_error());
+        EXPECT_EQ(res.error().size(), 1u);
+        EXPECT_EQ(res.error().front(), error::connection_refused);
+        EXPECT_EQ(destroyed, 2);
+    };
+
+    auto t = driver();
+    schedule_all(t);
+
+    EXPECT_TRUE(t->is_finished());
+    // ~task_group (at the end of driver's body) destroyed the failed child.
+    EXPECT_EQ(destroyed, 3);
 }
 
 };  // TEST_SUITE(task_group)

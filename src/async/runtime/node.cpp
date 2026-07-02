@@ -58,41 +58,51 @@ void async_node::intercept_cancel() noexcept {
     policy = static_cast<Policy>(policy | InterceptCancel);
 }
 
-std::coroutine_handle<> aggregate_op::flush_deferred() noexcept {
-    assert(deferred != Deferred::None && "flush_deferred requires a latched completion");
-    assert(parent && "aggregate has deferred completion but no parent");
+std::coroutine_handle<> aggregate_op::settle_if_idle() noexcept {
+    if(pending != 0 || settled || !parent) {
+        return std::noop_coroutine();
+    }
+    return settle();
+}
 
-    phase = Phase::Settled;
+/// Outcome precedence, derived from the recorded facts (errors are never
+/// dropped, even when an external cancel() raced the failing child — the
+/// same rule trio and Kotlin coroutines use for real errors vs cancellation):
+///   1. a child error;
+///   2. any cancellation — resumed with the cancel outcome when
+///      intercepting, propagated upward via finalize otherwise;
+///   3. success.
+std::coroutine_handle<> aggregate_op::settle() noexcept {
+    assert(pending == 0 && parent && !settled && "settle() caller must check settle_if_idle");
+    settled = true;
 
     assert(parent->is_task_frame() && "aggregate parent must be a task");
     auto* p = static_cast<task_frame*>(parent);
     parent = nullptr;
-    auto completion = deferred;
-    deferred = Deferred::None;
-    switch(completion) {
-        case Deferred::Resume: p->set_child(p); return p->handle();
 
-        case Deferred::Cancel:
-            if(policy & InterceptCancel) {
-                state = Cancelled;
-                p->set_child(p);
-                return p->handle();
-            }
-            p->set_child(nullptr);
-            p->state = Cancelled;
-            return p->finalize();
+    const bool intercepts = policy & InterceptCancel;
+    const bool external_cancel = state == Cancelled;
 
-        case Deferred::Error: p->set_child(p); return p->handle();
-
-        case Deferred::None: break;
+    if(decision == Decision::Error) {
+        state = Failed;
+        p->mark_executing();
+        return p->handle();
     }
 
-    std::abort();
-}
+    if(external_cancel || decision == Decision::Cancel) {
+        state = Cancelled;
+        if(intercepts) {
+            p->mark_executing();
+            return p->handle();
+        }
+        p->set_child(nullptr);
+        p->state = Cancelled;
+        return p->finalize();
+    }
 
-void async_node::clear_child() noexcept {
-    assert(kind == NodeKind::Task && "clear_child requires a task node");
-    static_cast<task_frame*>(this)->set_child(nullptr);
+    state = Finished;
+    p->mark_executing();
+    return p->handle();
 }
 
 /// Recursively cancels this node and all of its descendants.
@@ -106,7 +116,9 @@ void async_node::cancel() {
     switch(kind) {
         case NodeKind::Task: {
             auto* self = static_cast<task_frame*>(this);
-            if(self->child == self) {
+            if(self->is_executing()) {
+                // The frame is live on the stack (or scheduled); it observes
+                // state == Cancelled at its next suspension point.
                 break;
             }
             if(self->child) {
@@ -135,32 +147,18 @@ void async_node::cancel() {
         case NodeKind::WhenAny:
         case NodeKind::TaskGroup: {
             auto* self = static_cast<aggregate_op*>(this);
-            self->cancel_siblings();
 
-            // When InterceptCancel is set, state == Cancelled is sufficient
-            // to signal external cancel — await_resume checks state, and
-            // children completing through on_child_complete will record
-            // first_cancel_child. Calling defer_cancel() here would overwrite
-            // an existing deferred (e.g. Resume from a winner) and create a
-            // Cancel outcome with no child attribution (first_cancel_child
-            // == npos).
-            //
-            // Without InterceptCancel, defer_cancel() IS needed: the Cancel
-            // path in flush_deferred propagates the cancel upward via
-            // finalize, which won't happen on the Resume path.
-            if(!(self->policy & InterceptCancel)) {
-                self->defer_cancel();
+            // state == Cancelled (set above) is the record of this external
+            // cancel; settle() derives the outcome from it. The cascade can
+            // complete every remaining child synchronously, so hold a pin
+            // while it runs and settle only afterwards.
+            {
+                aggregate_op::pin held(*self);
+                self->cancel_children();
             }
 
-            if(self->is_deferring()) {
-                break;
-            }
-
-            if(self->is_settled() || self->completed == self->total) {
-                self->phase = aggregate_op::Phase::Settled;
-                auto next = self->flush_deferred();
-                async_node::resume_and_drain(next);
-            }
+            auto next = self->settle_if_idle();
+            async_node::resume_and_drain(next);
             break;
         }
 
@@ -201,7 +199,7 @@ void async_node::resume() {
             }
             return;
         }
-        f->set_child(f);
+        f->mark_executing();
         f->handle().resume();
 #if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
         drain_pending_destroys();
@@ -222,12 +220,66 @@ void io_op::complete() noexcept {
     async_node::resume_and_drain(next);
 }
 
+/// Cancellation checkpoint: the parent observes its cancellation at the next
+/// suspending co_await instead of starting new work (trio-style prompt
+/// cancellation). Everything below only returns coroutine handles — nothing
+/// is resumed while the parent's await_suspend is still on the stack; the
+/// compiler performs the transfer after it returns.
+std::coroutine_handle<> async_node::attach_cancelled(task_frame& parent) {
+    assert(parent.state == Cancelled && "checkpoint requires a cancelled parent");
+
+    switch(kind) {
+        case NodeKind::Task:
+            // Never started; the frame is destroyed together with the parent
+            // frame that owns the task object.
+            parent.set_child(nullptr);
+            return parent.finalize();
+
+        case NodeKind::MutexWaiter:
+        case NodeKind::EventWaiter: {
+            auto* self = static_cast<wait_node*>(this);
+            if(auto* res = self->resource) {
+                res->remove(self);
+            }
+            parent.set_child(nullptr);
+            return parent.finalize();
+        }
+
+        case NodeKind::WhenAll:
+        case NodeKind::WhenAny:
+        case NodeKind::TaskGroup:
+            // Aggregates run their checkpoints in arm_and_resume / join.
+            break;
+
+        case NodeKind::SystemIO: {
+            // The uv request may already be in flight, so it cannot be
+            // abandoned synchronously: link the parent, then cancel the
+            // operation. Its completion — synchronous or via a later uv
+            // callback — propagates through on_child_complete and finalizes
+            // the parent with structured completion intact. cancel() may
+            // destroy this node and the parent frame; touch nothing after.
+            auto* self = static_cast<io_op*>(this);
+            self->parent = &parent;
+            parent.set_child(this);
+            this->cancel();
+            return std::noop_coroutine();
+        }
+    }
+
+    std::abort();
+}
+
 /// Wires this node as a child of `parent_node`. For Task nodes, sets state
 /// to Running and returns the coroutine handle (ready to resume).
 /// For transient nodes (wait_node, io_op), records the parent
 /// and returns noop_coroutine (resumed later by event/complete).
 std::coroutine_handle<> async_node::attach(async_node& parent_node, std::source_location loc) {
     this->location = loc;
+
+    if(parent_node.is_task_frame() && parent_node.state == Cancelled) {
+        return attach_cancelled(static_cast<task_frame&>(parent_node));
+    }
+
     if(parent_node.kind == NodeKind::Task) {
         static_cast<task_frame*>(&parent_node)->child = this;
     }
@@ -277,7 +329,12 @@ std::coroutine_handle<> async_node::finalize() {
                 return std::noop_coroutine();
             }
 
-            return self->parent->on_child_complete(*self);
+            // Sever the parent link before delivering the completion: a
+            // completion is delivered at most once, and resume()/cancel()
+            // recognize an already-finalized task by its null parent.
+            auto* p = self->parent;
+            self->parent = nullptr;
+            return p->on_child_complete(*self);
         }
 
         case NodeKind::MutexWaiter:
@@ -295,11 +352,10 @@ std::coroutine_handle<> async_node::finalize() {
 ///
 /// For Task parents: resumes the coroutine normally for Finished/Failed,
 ///   or propagates cancellation upward.
-/// For Aggregate parents (when_all/when_any/scope):
-///   - Cancellation: cancels all siblings, propagates upward.
-///   - Failed child (exception or structured error): cancels all siblings, resumes parent.
-///   - WhenAny completion: records winner, cancels siblings, resumes parent.
-///   - WhenAll completion: increments counter, resumes parent when all done.
+/// For Aggregate parents (when_all/when_any/task_group): records the event
+///   (error / cancellation / winner), cancels the remaining children on the
+///   first deciding event, counts the child off, and settles once every
+///   child has completed (structured completion).
 std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
     assert(&child != this && "invalid parameter!");
 
@@ -309,7 +365,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
 
             if(child.state == Cancelled) {
                 if(child.policy & InterceptCancel) {
-                    self->set_child(self);
+                    self->mark_executing();
                     return self->handle();
                 }
 
@@ -318,7 +374,7 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
                 return self->finalize();
             }
 
-            self->set_child(self);
+            self->mark_executing();
             if(child.state == Failed && child.kind == NodeKind::Task) {
                 auto* child_task = static_cast<task_frame*>(&child);
                 if(auto propagate = child_task->get_error_hook()) {
@@ -331,102 +387,78 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
         case NodeKind::WhenAll:
         case NodeKind::WhenAny: {
             auto self = static_cast<aggregate_op*>(this);
-            assert(!self->is_settled() && "aggregate received child completion after settling");
+            assert(!self->settled && "aggregate received child completion after settling");
+            assert(self->pending > 0 && "aggregate completed more children than it owns");
 
-            const bool aggregate_catches_cancel = self->policy & InterceptCancel;
-            const bool cancelled = child.state == Cancelled &&
-                                   (aggregate_catches_cancel || !(child.policy & InterceptCancel));
-            const bool failed = child.state == Failed;
+            const bool intercepts = self->policy & InterceptCancel;
+            // A cancelled child is a cancellation event unless the child
+            // intercepts its own cancellation while the aggregate does not.
+            const bool cancelled =
+                child.state == Cancelled && (intercepts || !(child.policy & InterceptCancel));
 
-            bool trigger_cancel = false;
-
-            if(failed) {
-                const bool first_error = self->first_error_child == aggregate_op::npos;
-                self->defer_error();
-                if(first_error) {
+            // The completing child is not counted off until below, so the
+            // cancel cascades inside decide() cannot settle re-entrantly.
+            if(child.state == Failed) {
+                if(self->first_error_child == aggregate_op::npos) {
                     self->first_error_child = self->find_child_index(child);
                     if(child.propagated_exception) {
                         self->propagated_exception = child.propagated_exception;
                     }
-                    trigger_cancel = true;
+                    // An error upgrades any earlier decision.
+                    self->decide(aggregate_op::Decision::Error);
                 }
             } else if(cancelled) {
-                // Record first_cancel_child independently of the deferred
-                // guard: a cancelled child can arrive after a winner has
-                // already set deferred = Resume (e.g. in when_any), and an
-                // external cancel may later cause the aggregate to settle
-                // as Cancelled. await_resume needs a valid first_cancel_child
-                // to extract the cancellation value.
-                if(aggregate_catches_cancel && self->first_cancel_child == aggregate_op::npos) {
+                // Attribution is recorded independently of the decision: even
+                // when a winner already decided, a later external cancel can
+                // settle the aggregate as Cancelled, and await_resume then
+                // needs first_cancel_child to extract the cancel value.
+                if(intercepts && self->first_cancel_child == aggregate_op::npos) {
                     self->first_cancel_child = self->find_child_index(child);
                 }
-                if(self->deferred == aggregate_op::Deferred::None) {
-                    self->defer_cancel();
-                    trigger_cancel = true;
+                if(!self->decided()) {
+                    self->decide(aggregate_op::Decision::Cancel);
                 }
-            } else if(self->kind == NodeKind::WhenAny && self->winner == aggregate_op::npos &&
-                      self->deferred == aggregate_op::Deferred::None) {
+            } else if(self->kind == NodeKind::WhenAny && !self->decided()) {
                 self->winner = self->find_child_index(child);
-                self->defer_resume();
-                trigger_cancel = true;
+                self->decide(aggregate_op::Decision::Resume);
             }
 
-            if(trigger_cancel) {
-                self->cancel_siblings(&child);
-            }
-
-            self->completed += 1;
-            assert(self->completed <= self->total &&
-                   "aggregate completed more children than it owns");
-
-            if(self->completed == self->total) {
-                const bool deferring = self->is_deferring();
-                self->phase = aggregate_op::Phase::Settled;
-                if(self->deferred == aggregate_op::Deferred::None) {
-                    self->defer_resume();
-                }
-                if(deferring) {
-                    return std::noop_coroutine();
-                }
-                return self->flush_deferred();
-            }
-
-            return std::noop_coroutine();
+            self->pending -= 1;
+            return self->settle_if_idle();
         }
 
         case NodeKind::TaskGroup: {
             auto* self = static_cast<aggregate_op*>(this);
+            assert(!self->settled && "task_group received child completion after settling");
+            assert(self->pending > 0 && "task_group completed more children than it owns");
 
-            assert(!self->is_settled() && "task_group received child completion after settling");
-
-            self->completed += 1;
-            assert(self->completed <= self->total &&
-                   "task_group completed more children than it owns");
-
-            if((child.state == Failed || child.state == Cancelled) &&
-               self->deferred == aggregate_op::Deferred::None &&
-               self->phase == aggregate_op::Phase::Open) {
-                self->defer_resume();
-                if(self->completed < self->total) {
-                    self->cancel_siblings(&child);
-                }
+            // A failed or cancelled child aborts the group: cancel the
+            // remaining children, but settle as a normal resume — join()
+            // reports the collected errors.
+            if((child.state == Failed || child.state == Cancelled) && !self->decided()) {
+                self->decide(aggregate_op::Decision::Resume);
             }
 
-            if(self->completed != self->total) {
-                return std::noop_coroutine();
+            // Eagerly reclaim the completed child's frame unless join()
+            // still needs it for error extraction. The slot is tombstoned
+            // (walkers and the cancel cascade skip null children) and
+            // compacted by the next spawn(). Destroying the frame from its
+            // own final suspension is the same pattern finalize() uses for
+            // root tasks.
+            if(child.state != Failed) {
+                assert(child.kind == NodeKind::Task && "task_group children must be tasks");
+                self->children[self->find_child_index(child)] = nullptr;
+                self->reclaimed += 1;
+                auto handle = static_cast<task_frame&>(child).handle();
+#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+                pending_frame_destroys.push_back(handle);
+#else
+                handle.destroy();
+#endif
             }
 
-            if(!self->parent) {
-                return std::noop_coroutine();
-            }
-
-            const bool deferring = self->is_deferring();
-            self->phase = aggregate_op::Phase::Settled;
-            self->defer_resume();
-            if(deferring) {
-                return std::noop_coroutine();
-            }
-            return self->flush_deferred();
+            self->pending -= 1;
+            return self->settle_if_idle();
         }
 
         case NodeKind::MutexWaiter:

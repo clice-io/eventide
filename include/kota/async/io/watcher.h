@@ -161,4 +161,41 @@ inline task<> sleep(int ms, event_loop& loop = event_loop::current()) {
     return sleep(std::chrono::milliseconds{ms}, loop);
 }
 
+/// Awaitable returned by yield(): suspends and resumes on the NEXT event-loop
+/// iteration, after every callback, deferred resume and scheduled task of the
+/// current iteration has run.
+///
+/// This is the primitive for "let the current cascade settle, then decide"
+/// patterns (debounced cancellation, coalesced re-checks). Unlike sleep(0) it
+/// allocates no timer and does not depend on libuv timer-phase ordering, and
+/// unlike the internal deferred-resume queue it never resumes within the
+/// current drain cycle.
+struct yield_awaiter : io_op {
+    explicit yield_awaiter(event_loop& loop) noexcept;
+
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    template <typename Promise>
+    std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<Promise> h,
+                      std::source_location location = std::source_location::current()) noexcept {
+        return suspend(h.promise(), location);
+    }
+
+    void await_resume() const noexcept {}
+
+private:
+    /// Enqueues on the loop's yield queue, then attaches. Defined in loop.cpp.
+    std::coroutine_handle<> suspend(async_node& parent, std::source_location location) noexcept;
+
+    event_loop* loop = nullptr;
+};
+
+/// Suspends until the next event-loop iteration.
+inline yield_awaiter yield(event_loop& loop = event_loop::current()) {
+    return yield_awaiter(loop);
+}
+
 }  // namespace kota

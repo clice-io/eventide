@@ -33,7 +33,10 @@ public:
 
     ~task_group() {
         for(auto* child: children) {
-            assert(child && "task_group contains a null child");
+            // Null slots are tombstones of eagerly reclaimed children.
+            if(!child) {
+                continue;
+            }
             assert(child->kind == async_node::NodeKind::Task);
             assert((child->state == async_node::Finished || child->state == async_node::Cancelled ||
                     child->state == async_node::Failed) &&
@@ -45,8 +48,15 @@ public:
     template <typename T, typename E, typename C>
         requires std::is_void_v<E> || is_one_of<E, Errors...>
     bool spawn(task<T, E, C>&& t) {
-        if(deferred != Deferred::None || phase != Phase::Open) {
+        if(decided() || settled) {
             return false;
+        }
+
+        // Compact the tombstones left by eager child-frame reclamation once
+        // they outnumber the live slots, so a long-lived group stays bounded
+        // by its in-flight children rather than its lifetime spawn count.
+        if(reclaimed * 2 > children.size()) {
+            compact_children();
         }
 
         auto* node = detail::node_from(t);
@@ -56,7 +66,7 @@ public:
         error_handlers.reserve(error_handlers.size() + 1);
 
         t.release();
-        ++total;
+        ++pending;
         children.push_back(node);
         error_handlers.push_back(&extract_error<T, E>);
 
@@ -66,17 +76,16 @@ public:
     }
 
     void cancel() {
-        if(deferred != Deferred::None || phase != Phase::Open) {
+        if(decided() || settled) {
             return;
         }
-        defer_resume();
-        cancel_siblings();
-
-        if(completed == total && parent) {
-            phase = Phase::Settled;
-            auto handle = flush_deferred();
-            async_node::resume_and_drain(handle);
+        {
+            // The cascade may complete every child synchronously; the pin
+            // keeps those completions from settling mid-loop.
+            pin held(*this);
+            decide(Decision::Resume);
         }
+        async_node::resume_and_drain(settle_if_idle());
     }
 
     auto join() {
@@ -91,10 +100,9 @@ private:
 
         bool await_ready() noexcept {
             assert(!group.joined && "join() called twice on the same task_group");
-            assert(group.completed <= group.total &&
-                   "task_group completed more children than it owns");
-            if(group.completed == group.total) {
-                group.phase = Phase::Settled;
+            if(group.pending == 0) {
+                group.settled = true;
+                group.state = Finished;
                 return true;
             }
             return false;
@@ -104,8 +112,8 @@ private:
         std::coroutine_handle<> await_suspend(
             std::coroutine_handle<Promise> h,
             std::source_location location = std::source_location::current()) noexcept {
-            assert(group.phase != Phase::Settled && "join() called twice on the same task_group");
-            assert(group.completed < group.total &&
+            assert(!group.settled && "join() called twice on the same task_group");
+            assert(group.pending > 0 &&
                    "join await_suspend called even though task_group is complete");
             group.location = location;
             auto* parent_node = static_cast<async_node*>(&h.promise());
@@ -113,6 +121,21 @@ private:
             static_cast<task_frame*>(parent_node)->set_child(&group);
             group.parent = parent_node;
             group.state = Running;
+
+            // Cancellation checkpoint: the parent was cancelled while it was
+            // executing, so its cancel cascade could not reach this group
+            // (it was not attached yet). Unlike the other checkpoints, the
+            // children are already running and must complete structurally:
+            // cancel them now and settle once the last one finishes.
+            if(parent_node->state == Cancelled) {
+                group.state = Cancelled;
+                {
+                    pin held(group);
+                    group.cancel_children();
+                }
+                return group.settle_if_idle();
+            }
+
             return std::noop_coroutine();
         }
 
@@ -139,10 +162,24 @@ private:
         assert(children.size() == error_handlers.size() &&
                "task_group child/error-handler vectors diverged");
         for(std::size_t i = 0; i < children.size(); ++i) {
-            if(children[i]->state == async_node::Failed) {
+            if(children[i] && children[i]->state == async_node::Failed) {
                 error_handlers[i](*children[i], *this);
             }
         }
+    }
+
+    void compact_children() noexcept {
+        std::size_t live = 0;
+        for(std::size_t i = 0; i < children.size(); ++i) {
+            if(children[i]) {
+                children[live] = children[i];
+                error_handlers[live] = error_handlers[i];
+                live += 1;
+            }
+        }
+        children.resize(live);
+        error_handlers.resize(live);
+        reclaimed = 0;
     }
 
     template <typename T, typename E>

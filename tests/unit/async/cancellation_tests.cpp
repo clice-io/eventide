@@ -687,6 +687,107 @@ TEST_CASE(cancel_void_task_in_flight) {
     EXPECT_TRUE(guarded.result().is_cancelled());
 }
 
+// ============================================================================
+// Cancellation checkpoints: a task cancelled while executing observes the
+// cancellation at its next suspending co_await instead of starting new work
+// (trio-style prompt cancellation).
+// ============================================================================
+
+// Pure-compute awaits (no event loop round trip) are checkpoints too.
+// Before checkpoint semantics this loop ran all 100 iterations.
+TEST_CASE(checkpoint_stops_pure_compute_loop) {
+    int loop_count = 0;
+    async_node* worker_node = nullptr;
+
+    auto compute = []() -> task<int> {
+        co_return 1;
+    };
+
+    auto worker = [&]() -> task<> {
+        for(int i = 0; i < 100; ++i) {
+            if(i == 3) {
+                worker_node->cancel();
+            }
+            (void)co_await compute();
+            loop_count = i + 1;
+        }
+    };
+
+    auto t = worker();
+    worker_node = t.operator->();
+    schedule_all(t);
+
+    EXPECT_EQ(loop_count, 3);
+    EXPECT_TRUE(t->is_cancelled());
+}
+
+// Awaiting an aggregate under a cancelled parent must not start any child.
+TEST_CASE(checkpoint_skips_when_all_children) {
+    bool child_ran = false;
+    async_node* worker_node = nullptr;
+
+    auto child = [&]() -> task<> {
+        child_ran = true;
+        co_return;
+    };
+
+    auto worker = [&]() -> task<> {
+        worker_node->cancel();
+        co_await when_all(child(), child());
+    };
+
+    auto t = worker();
+    worker_node = t.operator->();
+    schedule_all(t);
+
+    EXPECT_FALSE(child_ran);
+    EXPECT_TRUE(t->is_cancelled());
+}
+
+// A cancelled task never enters a sync primitive's wait queue.
+TEST_CASE(checkpoint_skips_event_wait) {
+    event ev;
+    async_node* worker_node = nullptr;
+
+    auto worker = [&]() -> task<> {
+        worker_node->cancel();
+        (void)co_await event::wait_awaiter(ev);
+    };
+
+    auto t = worker();
+    worker_node = t.operator->();
+    schedule_all(t);
+
+    EXPECT_TRUE(t->is_cancelled());
+    EXPECT_EQ(ev.get_head(), nullptr);
+}
+
+// join() under a cancelled parent cancels the group's children and waits for
+// them to complete (structured completion) before propagating the cancel.
+TEST_CASE(checkpoint_join_cancels_group) {
+    int slow_done = 0;
+    async_node* worker_node = nullptr;
+
+    auto slow = [&]() -> task<> {
+        co_await sleep(std::chrono::seconds(10), loop);
+        slow_done += 1;
+    };
+
+    auto worker = [&]() -> task<> {
+        task_group<> group(loop);
+        group.spawn(slow());
+        worker_node->cancel();
+        co_await group.join();
+    };
+
+    auto t = worker();
+    worker_node = t.operator->();
+    schedule_all(t);
+
+    EXPECT_TRUE(t->is_cancelled());
+    EXPECT_EQ(slow_done, 0);
+}
+
 };  // TEST_SUITE(cancellation)
 
 }  // namespace
