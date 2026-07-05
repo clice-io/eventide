@@ -147,6 +147,10 @@ if has_config("codec") and has_config("codec_toml") then
 
 		add_deps("meta")
 		add_packages("toml++", { public = true })
+		-- Keep in sync with src/codec/CMakeLists.txt and kota/codec/toml/type.h:
+		-- toml++ is pinned to no-exceptions mode unconditionally, and the pin
+		-- must propagate to consumers that include toml++ headers directly.
+		add_defines("TOML_EXCEPTIONS=0", { public = true })
 	end)
 end
 
