@@ -55,21 +55,9 @@ extra = true
 }
 
 TEST_CASE(syntax_error_has_location) {
-#if defined(__clang__) && defined(_MSC_VER)
-#if __has_feature(address_sanitizer)
-    // clang-cl + ASan mishandles MSVC exception handling when catching
-    // toml++'s parse_error: the catch handler in toml::parse_table receives a
-    // corrupted exception object and crashes with an access violation
-    // (upstream: https://github.com/google/sanitizers/issues/749). The
-    // identical binary passes under clang-cl without ASan and under MSVC ASan,
-    // so this is a toolchain defect, not a kotatsu bug. Skip only on that
-    // combination; the parse-error path stays covered by every other config.
-    zest::skip();
-    return;
-#endif
-#endif
     // Unterminated string — a tokenizer-level error, reported by parse_table
-    // in both the exceptions and no-exceptions builds of toml++.
+    // through toml++'s parse_result (toml++ is pinned to TOML_EXCEPTIONS=0,
+    // see kota/codec/toml/type.h).
     auto result = parse<person>(R"(
 name = "alice
 age = 30

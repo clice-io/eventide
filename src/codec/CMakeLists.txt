@@ -153,8 +153,11 @@ if(KOTA_CODEC_ENABLE_TOML)
         tomlplusplus::tomlplusplus
     )
 
+    # toml++ is pinned to no-exceptions mode unconditionally (independent of
+    # KOTA_ENABLE_EXCEPTIONS); kota/codec/toml/type.h enforces the same pin for
+    # any build system that does not pass this definition. See PR #168.
     target_compile_definitions(kota_codec_toml INTERFACE
-        TOML_EXCEPTIONS=$<IF:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>,1,0>
+        TOML_EXCEPTIONS=0
     )
 
     kota_apply_project_options(kota_codec_toml)

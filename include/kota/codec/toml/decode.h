@@ -380,22 +380,9 @@ private:
 };
 
 inline auto parse_table(std::string_view text) -> std::expected<Table, rich_error> {
-#if TOML_EXCEPTIONS
-    try {
-        return ::toml::parse(text);
-    } catch(const ::toml::parse_error& e) {
-        rich_error err(std::string("TOML parse error: ") + e.what());
-        auto src = e.source();
-        if(src.begin.line != 0) {
-            err.set_location({
-                static_cast<std::size_t>(src.begin.line),
-                static_cast<std::size_t>(src.begin.column),
-                0,
-            });
-        }
-        return std::unexpected(std::move(err));
-    }
-#else
+    // toml++ is pinned to TOML_EXCEPTIONS=0 (see toml/type.h), so parsing
+    // always reports failures through toml::parse_result — a single code path
+    // with no exception handling involved.
     auto parsed = ::toml::parse(text);
     if(!parsed) {
         const auto& e = parsed.error();
@@ -411,7 +398,6 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
         return std::unexpected(std::move(err));
     }
     return std::move(parsed).table();
-#endif
 }
 
 template <typename Config = void, typename T>
