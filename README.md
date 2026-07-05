@@ -54,7 +54,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - A compile-time field-lookup table and behavior-dispatch layer are built from `meta::virtual_schema<T, Config>`; backends consume field slots rather than re-deriving layout.
   - `codec::serialize(s, v)` / `codec::deserialize(d, v)` dispatch on annotations first, then on `meta::type_kind`, giving a single entry point whose behavior is controlled entirely by types and attributes.
 - Generic trait contract: `serialize_traits<S, V>` / `deserialize_traits<D, V>` with `std::expected<…, error>` return. The `serializer_like` / `deserializer_like` concepts spell out the full visitor surface (null, bool, int, uint, float, char, str, bytes, optional, seq, tuple, map, struct, plus external / internal / adjacent variant tagging).
-- Structured error model: a generic `serde_error<Kind>` template carrying a lazily allocated detail block (message, navigation path, source location), with per-backend kind enums (`json::error_kind`, `bincode::error_kind`, `toml::error_kind`, …).
+- Structured error model: a shared `rich_error` type carrying a message, the navigation path from the root to the error site, and an optional source location (line / column / byte offset); every backend exposes it as its `error` alias.
 - Backends:
   - JSON (`codec/json/`): a high-throughput streaming backend built on simdjson, with a portable `content::Value` DOM (pure `std::variant`) for structured in-memory access.
   - Bincode (`codec/bincode/`): compact length-prefixed binary format, read and write.
