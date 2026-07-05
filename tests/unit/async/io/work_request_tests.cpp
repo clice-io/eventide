@@ -52,6 +52,31 @@ TEST_CASE(queue_runs_twice) {
     EXPECT_EQ(flag.load(), 2);
 }
 
+TEST_CASE(queue_on_cancel_unused_on_normal_completion) {
+    std::atomic<bool> hook_ran{false};
+    bool has_value = false;
+    int value = 0;
+
+    auto worker = [&]() -> task<> {
+        auto res = co_await queue([] { return 42; },
+                                  function<void()>([&] { hook_ran.store(true); }),
+                                  loop);
+        has_value = res.has_value();
+        if(has_value) {
+            value = *res;
+        }
+        event_loop::current().stop();
+    };
+
+    auto worker_task = worker();
+    schedule_all(worker_task);
+
+    // Without cancellation the hook must never fire.
+    EXPECT_TRUE(has_value);
+    EXPECT_EQ(value, 42);
+    EXPECT_FALSE(hook_ran.load());
+}
+
 };  // TEST_SUITE(work_request_io)
 
 }  // namespace kota

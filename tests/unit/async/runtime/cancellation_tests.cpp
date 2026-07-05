@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <optional>
+#include <semaphore>
 #include <thread>
 #include <vector>
 
@@ -211,6 +212,95 @@ TEST_CASE(queue_cancel_resume, serial = true) {
     // loop completes the cancellation, so phase has already advanced to 2.
     EXPECT_EQ(observed_phase, 2);
     EXPECT_FALSE(target_started.load(std::memory_order_acquire));
+}
+
+TEST_CASE(queue_cancel_hook_signals_running_work, serial = true) {
+    cancellation_source source;
+    std::atomic<bool> started{false};
+    std::atomic<bool> stop_flag{false};
+    std::atomic<bool> observed_stop{false};
+    bool cancelled = false;
+
+    auto target = [&]() -> task<> {
+        auto res = co_await with_token(
+            queue(
+                [&] {
+                    started.store(true, std::memory_order_release);
+                    while(!stop_flag.load(std::memory_order_acquire)) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                    }
+                    observed_stop.store(true, std::memory_order_release);
+                },
+                [&] { stop_flag.store(true, std::memory_order_release); },
+                loop),
+            source.token());
+        cancelled = res.is_cancelled();
+        loop.stop();
+    };
+
+    auto canceler = [&]() -> task<> {
+        while(!started.load(std::memory_order_acquire)) {
+            co_await sleep(1, loop);
+        }
+        source.cancel();
+    };
+
+    auto target_task = target();
+    auto cancel_task = canceler();
+    loop.schedule(target_task);
+    loop.schedule(cancel_task);
+    loop.run();
+
+    // The work was already running when the token fired: uv_cancel can't
+    // dequeue it, so the on_cancel hook is the only way it returns.
+    EXPECT_TRUE(cancelled);
+    EXPECT_TRUE(observed_stop.load(std::memory_order_acquire));
+}
+
+TEST_CASE(queue_cancel_hook_runs_on_loop_thread, serial = true) {
+    cancellation_source source;
+    std::atomic<bool> started{false};
+    std::atomic<bool> hook_on_loop_thread{false};
+    std::binary_semaphore wakeup{0};
+    bool cancelled = false;
+
+    const auto loop_thread = std::this_thread::get_id();
+
+    auto target = [&]() -> task<> {
+        auto res = co_await with_token(queue(
+                                           [&] {
+                                               started.store(true, std::memory_order_release);
+                                               wakeup.acquire();
+                                           },
+                                           [&] {
+                                               hook_on_loop_thread.store(
+                                                   std::this_thread::get_id() == loop_thread,
+                                                   std::memory_order_release);
+                                               wakeup.release();
+                                           },
+                                           loop),
+                                       source.token());
+        cancelled = res.is_cancelled();
+        loop.stop();
+    };
+
+    auto canceler = [&]() -> task<> {
+        while(!started.load(std::memory_order_acquire)) {
+            co_await sleep(1, loop);
+        }
+        source.cancel();
+    };
+
+    auto target_task = target();
+    auto cancel_task = canceler();
+    loop.schedule(target_task);
+    loop.schedule(cancel_task);
+    loop.run();
+
+    // Blocking-style work: the fn sleeps on a semaphore that only the hook
+    // releases, and the hook must run on the loop thread.
+    EXPECT_TRUE(cancelled);
+    EXPECT_TRUE(hook_on_loop_thread.load(std::memory_order_acquire));
 }
 
 TEST_CASE(fs_cancel_resume, serial = true) {
