@@ -9,8 +9,8 @@
 #include <sys/stat.h>
 #endif
 
-#include "loop_fixture.h"
-#include "../support/fd_helpers.h"
+#include "../../support/fd_helpers.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

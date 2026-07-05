@@ -119,16 +119,22 @@ struct transition_await {
     std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) const noexcept {
         auto& promise = handle.promise();
         if(state == async_node::Finished) {
-            if(promise.state == async_node::Cancelled || promise.state == async_node::Failed) {
+            if(promise.state == async_node::Failed) {
                 return promise.finalize();
             }
-            assert(promise.state == async_node::Running && "only running task could finish");
+            assert(
+                (promise.state == async_node::Running || promise.state == async_node::Cancelled) &&
+                "only a running or lazily-cancelled task can finish");
+            // Real errors outrank cancellation (trio semantics): a task that
+            // fails or throws after being cancelled still reports the error.
+            // Only a normal completion of a cancelled task finalizes as
+            // Cancelled.
             if(promise.has_exception()) {
                 promise.state = async_node::Failed;
                 promise.propagated_exception = promise.get_exception();
             } else if(promise.has_error_result()) {
                 promise.state = async_node::Failed;
-            } else {
+            } else if(promise.state != async_node::Cancelled) {
                 promise.state = state;
             }
         } else if(state == async_node::Cancelled) {

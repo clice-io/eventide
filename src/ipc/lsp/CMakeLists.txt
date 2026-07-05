@@ -2,6 +2,7 @@ add_library(kota_ipc_lsp STATIC)
 add_library(kota::ipc::lsp ALIAS kota_ipc_lsp)
 
 target_sources(kota_ipc_lsp PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/text.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/position.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/uri.cpp"
 )

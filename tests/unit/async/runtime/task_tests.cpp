@@ -1,5 +1,10 @@
+// TEST_SUITE(task): direct task<> semantics — co_await chaining, up/down
+// cancellation, exception propagation (co_await and or_fail), and dump_dot on a
+// live task node. Cooperative yield() ordering lives in yield_tests.cpp; the
+// aggregate combinators in when/.
 #include <stdexcept>
 
+#include "../loop_fixture.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"

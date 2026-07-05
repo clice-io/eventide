@@ -2,7 +2,7 @@
 #include <string>
 #include <utility>
 
-#include "loop_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 #include "kota/async/io/system.h"
 

@@ -16,6 +16,7 @@
 namespace kota {
 
 class sync_primitive;
+class task_frame;
 
 /// Type-erased base for all coroutine-related nodes in the task tree.
 ///
@@ -96,9 +97,6 @@ public:
     // https://github.com/llvm/llvm-project/issues/105595. Fixed in clang 21.
     void intercept_cancel() noexcept;
 
-    /// If this node is a task, clear its child pointer.
-    void clear_child() noexcept;
-
     void cancel();
 
     void resume();
@@ -107,6 +105,13 @@ public:
 
     std::coroutine_handle<> finalize();
 
+private:
+    /// Cancellation-checkpoint path of attach(): the awaiting task was
+    /// cancelled while it was executing, so instead of starting new work
+    /// under it, finalize it at this suspension point.
+    std::coroutine_handle<> attach_cancelled(task_frame& parent);
+
+public:
     std::coroutine_handle<> on_child_complete(async_node& child);
 
     static void resume_and_drain(std::coroutine_handle<> handle);
@@ -142,6 +147,20 @@ public:
 
     void set_child(async_node* node) noexcept {
         child = node;
+    }
+
+    /// A task's child pointer distinguishes three situations:
+    ///   - child == some node: suspended, awaiting that node;
+    ///   - child == this (sentinel): the coroutine is executing on the stack
+    ///     (or scheduled to); cancel() must not finalize it — the frame
+    ///     observes `state == Cancelled` at its next suspension point;
+    ///   - child == nullptr: idle — not executing and awaiting nothing.
+    bool is_executing() const noexcept {
+        return child == this;
+    }
+
+    void mark_executing() noexcept {
+        child = this;
     }
 
     void set_error_hook(error_hook fn) noexcept {
@@ -210,17 +229,6 @@ protected:
     /// The sync_primitive this waiter is queued on (nullptr if not queued).
     sync_primitive* resource = nullptr;
 
-    /// Captures which wait-queue generation this waiter joined.
-    ///
-    /// `event::interrupt()` must only cancel the waiters that were already
-    /// present when the interrupt began. The tricky part is that cancelling one
-    /// waiter resumes arbitrary user code synchronously, and that code may
-    /// immediately enqueue a fresh waiter on the same resource before
-    /// interrupt() continues. Tagging each waiter with the generation observed
-    /// at insertion time lets interrupt() stop once it reaches a waiter that
-    /// was added by a later, re-entrant wait.
-    std::size_t generation = 0;
-
     /// Intrusive doubly-linked list pointers for the sync_primitive's wait queue.
     wait_node* prev = nullptr;
     wait_node* next = nullptr;
@@ -232,17 +240,19 @@ protected:
     abandon_fn abandon = nullptr;
 };
 
-/// Base for when_all / when_any.
+/// Base for when_all / when_any / task_group.
 ///
-/// Uses a two-phase protocol in await_suspend:
-///   1. Arming: link all children, then resume them. During this phase,
-///      synchronous child completions are deferred instead of directly
-///      resuming the parent (to avoid use-after-resume).
-///   2. Post-arm: deliver any deferred completion once it is safe.
+/// The aggregate settles (delivers its outcome to the parent) exactly when
+/// `pending` drops to zero. `pending` counts unfinished children plus one pin
+/// for every stack frame that is still iterating over `children` (the arming
+/// loop in await_suspend and every cancel cascade). Re-entrant child
+/// completions during those loops therefore only decrement the counter; they
+/// can never resume the parent from inside a loop that still touches this
+/// object.
 ///
-/// Aggregate state is tracked explicitly:
-///   - `phase` controls whether child callbacks must be deferred.
-///   - `deferred` latches the completion to deliver once deferral ends.
+/// The outcome itself is not latched as a separate "what to deliver" value;
+/// it is derived in settle() from `decision`, `state` and the attribution
+/// indices, so the delivered outcome and its attribution cannot diverge.
 class aggregate_op : public async_node {
 protected:
     friend class async_node;
@@ -259,34 +269,27 @@ public:
     }
 
 protected:
-    enum class Phase : std::uint8_t {
-        /// Normal operating state after arming completes.
-        /// Child callbacks may settle the aggregate immediately.
-        Open,
-
-        /// await_suspend is still linking/resuming children.
-        /// Any child completion observed here must be deferred until
-        /// await_suspend returns to avoid resuming the parent re-entrantly.
-        Arming,
-
-        /// The aggregate itself is propagating cancellation to children.
-        /// Child callbacks can re-enter while this walk is in progress, so
-        /// completion is deferred until the cancel cascade finishes.
-        Cancelling,
-
-        /// Final outcome has been chosen and further child callbacks are ignored.
-        Settled,
-    };
-
-    enum class Deferred : std::uint8_t {
-        /// No deferred completion is waiting to be delivered.
+    /// The first event that picked this aggregate's outcome. Latched once,
+    /// with one exception: a child error upgrades any earlier decision,
+    /// because an error must never be dropped silently.
+    ///
+    /// An external cancel() is tracked separately as `state == Cancelled`
+    /// (set by cancel() before it dispatches on the node kind). settle()
+    /// treats it like a Cancel decision: it upgrades a plain Resume, but a
+    /// child error still outranks it.
+    enum class Decision : std::uint8_t {
+        /// Undecided. A when_all whose children all succeed settles as
+        /// success without ever recording a decision.
         None,
 
+        /// Resume the parent normally (when_any winner; task_group child
+        /// failure, which is reported via join() instead).
         Resume,
 
+        /// A child's un-intercepted cancellation cancels the aggregate.
         Cancel,
 
-        /// Error outranks all other deferred outcomes.
+        /// A child failed with a structured error or exception.
         Error,
     };
 
@@ -297,11 +300,8 @@ protected:
 
     std::vector<async_node*> children;
 
-    /// Number of children that have completed so far.
-    std::size_t completed = 0;
-
-    /// Total number of children expected to complete.
-    std::size_t total = 0;
+    /// Unfinished children plus active stack pins. Zero means "safe to settle".
+    std::size_t pending = 0;
 
     /// Index of the first child to finish (when_any only).
     std::size_t winner = npos;
@@ -312,38 +312,56 @@ protected:
     /// Index of the first child to finish with cancellation.
     std::size_t first_cancel_child = npos;
 
-    /// Runtime phase for this aggregate while it is awaiting children.
-    Phase phase = Phase::Open;
+    Decision decision = Decision::None;
 
-    /// Completion latched while callbacks are being deferred.
-    Deferred deferred = Deferred::None;
+    /// Set once the outcome has been delivered to the parent.
+    bool settled = false;
 
-    bool is_settled() const noexcept {
-        return phase == Phase::Settled;
-    }
+    /// Number of tombstoned (null) slots in `children` left behind by eager
+    /// child-frame reclamation. Used by task_group only: completed children
+    /// that join() will never inspect again are destroyed on completion
+    /// instead of accumulating until the group is destroyed.
+    std::size_t reclaimed = 0;
 
-    bool is_deferring() const noexcept {
-        return phase == Phase::Arming || phase == Phase::Cancelling;
-    }
+    /// Keeps `pending` above zero while a loop over `children` is on the
+    /// stack. The holder must call settle_if_idle() after the pin dies.
+    struct pin {
+        aggregate_op& op;
 
-    /// Latch a normal completion, but preserve any stronger deferred signal
-    /// (cancel/error) that may already have won.
-    void defer_resume() noexcept {
-        if(deferred == Deferred::None) {
-            deferred = Deferred::Resume;
+        explicit pin(aggregate_op& op) noexcept : op(op) {
+            op.pending += 1;
         }
-    }
 
-    /// Cancellation outranks a plain resume and is itself outranked only by error.
-    void defer_cancel() noexcept {
-        if(deferred != Deferred::Error) {
-            deferred = Deferred::Cancel;
+        ~pin() {
+            op.pending -= 1;
         }
+    };
+
+    /// True once an outcome has been picked (or an external cancel arrived);
+    /// implies the children cancel cascade has already been triggered.
+    bool decided() const noexcept {
+        return decision != Decision::None || state == Cancelled;
     }
 
-    /// Error outranks all other deferred outcomes.
-    void defer_error() noexcept {
-        deferred = Deferred::Error;
+    /// Latches `d` as the outcome and cancels the remaining children.
+    ///
+    /// The caller must guarantee `pending > 0` for the duration of the
+    /// cascade — either by holding a pin, or by being the completion handler
+    /// of a child that has not been counted off yet.
+    void decide(Decision d) {
+        decision = d;
+        cancel_children();
+    }
+
+    /// Cancels every child that has not reached a terminal state yet.
+    /// Idempotent: terminal children ignore cancel(). Null slots are
+    /// tombstones of reclaimed task_group children.
+    void cancel_children() {
+        for(auto* child: children) {
+            if(child) {
+                child->cancel();
+            }
+        }
     }
 
     std::size_t find_child_index(const async_node& child) const {
@@ -352,24 +370,6 @@ protected:
         if(it == children.end())
             std::abort();
         return static_cast<std::size_t>(it - children.begin());
-    }
-
-    void cancel_siblings(async_node* exclude = nullptr) {
-        [[maybe_unused]] bool found = exclude == nullptr;
-        auto saved = phase;
-        phase = Phase::Cancelling;
-        for(auto* child: children) {
-            assert(child && "aggregate contains a null child");
-            if(child == exclude) {
-                found = true;
-                continue;
-            }
-            child->cancel();
-        }
-        assert(found && "cancel_siblings exclude is not a child of this aggregate");
-        if(phase == Phase::Cancelling) {
-            phase = saved;
-        }
     }
 
     /// Rethrows the propagated exception if one was captured from a failed child.
@@ -381,50 +381,63 @@ protected:
 #endif
     }
 
-    /// Deliver the latched completion to the aggregate parent once it is safe
-    /// to resume or propagate out of the current callback stack.
-    std::coroutine_handle<> flush_deferred() noexcept;
+    /// Settles if all children completed, no pins are held, and a parent is
+    /// attached (a task_group settles only after join()). Returns the
+    /// coroutine to resume, or noop.
+    std::coroutine_handle<> settle_if_idle() noexcept;
+
+    /// Delivers the final outcome to the parent. Runs exactly once.
+    std::coroutine_handle<> settle() noexcept;
 
     std::coroutine_handle<> arm_and_resume(async_node& parent_node,
                                            std::source_location loc) noexcept {
         this->location = loc;
 
         assert(parent_node.is_task_frame() && "aggregate parent must be a task");
+
+        // Cancellation checkpoint: don't start any children under a parent
+        // that is already cancelled. The unstarted child tasks are destroyed
+        // together with the parent frame that owns this aggregate.
+        if(parent_node.state == Cancelled) {
+            auto* p = static_cast<task_frame*>(&parent_node);
+            p->set_child(nullptr);
+            return p->finalize();
+        }
+
         static_cast<task_frame*>(&parent_node)->set_child(this);
 
         parent = &parent_node;
-        completed = 0;
+        pending = children.size();
         winner = npos;
         first_error_child = npos;
         first_cancel_child = npos;
-        phase = Phase::Arming;
-        deferred = Deferred::None;
+        decision = Decision::None;
+        settled = false;
         propagated_exception = nullptr;
         state = Running;
 
-        for(auto* child: children) {
-            assert(child && "aggregate contains a null child");
-            child->attach(*this, location);
-        }
+        {
+            pin held(*this);
 
-        for(auto* child: children) {
-            assert(child && "aggregate contains a null child");
-            child->resume();
-            if(is_settled() || deferred != Deferred::None) {
-                break;
+            for(auto* child: children) {
+                assert(child && "aggregate contains a null child");
+                child->attach(*this, location);
+            }
+
+            for(auto* child: children) {
+                if(decided()) {
+                    // A synchronous completion already picked the outcome and
+                    // cancelled the remaining children; resuming a cancelled
+                    // child would deliver a second completion.
+                    break;
+                }
+                child->resume();
             }
         }
 
-        if(phase == Phase::Arming) {
-            phase = Phase::Open;
-        }
-
-        assert(completed <= total && "aggregate completed more children than it owns");
-        if(completed == total && deferred != Deferred::None) {
-            return flush_deferred();
-        }
-
-        return std::noop_coroutine();
+        // If every child completed synchronously, resume the parent now via
+        // symmetric transfer.
+        return settle_if_idle();
     }
 };
 

@@ -12,9 +12,6 @@ void sync_primitive::insert(wait_node* link) {
     assert(link->prev == nullptr && link->next == nullptr && "insert: wait_node has links");
 
     link->resource = this;
-    // Snapshot semantics for interrupt() depend on each waiter remembering the
-    // generation that was current when it joined the queue.
-    link->generation = waiter_generation;
 
     if(tail) {
         tail->next = link;

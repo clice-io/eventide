@@ -2,7 +2,7 @@
 #include <thread>
 #include <vector>
 
-#include "loop_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 
 namespace kota {
@@ -298,6 +298,34 @@ TEST_CASE(relay_multiple_keep_alive) {
     loop.run();
     worker.join();
     EXPECT_TRUE(called);
+}
+
+// Regression: a producer that send()s and destroys its relay while the loop
+// thread is mid-drain must not lose the callback. The first callback blocks
+// the drain until the worker has enqueued the second callback and dropped the
+// relay; the loop-hold release must observe the refilled queue and keep the
+// loop alive for one more drain.
+TEST_CASE(relay_send_and_destroy_during_drain_delivers) {
+    std::atomic<bool> first_running{false};
+    std::atomic<bool> second_sent{false};
+    bool second_ran = false;
+
+    auto r = loop.create_relay();
+    std::thread worker([&, r = std::move(r)]() mutable {
+        r.send([&] {
+            first_running.store(true, std::memory_order_release);
+            while(!second_sent.load(std::memory_order_acquire)) {}
+        });
+
+        while(!first_running.load(std::memory_order_acquire)) {}
+        r.send([&] { second_ran = true; });
+        r = relay{};
+        second_sent.store(true, std::memory_order_release);
+    });
+
+    loop.run();
+    worker.join();
+    EXPECT_TRUE(second_ran);
 }
 
 };  // TEST_SUITE(event_loop_relay)

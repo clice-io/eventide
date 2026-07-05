@@ -1,6 +1,6 @@
 #include <atomic>
 
-#include "loop_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

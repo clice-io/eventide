@@ -3,7 +3,7 @@
 #include <string_view>
 #include <utility>
 
-#include "loop_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/macro.h"
 
 #ifdef _WIN32
@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #endif
 
-#include "../support/fd_helpers.h"
+#include "../../support/fd_helpers.h"
 #include "kota/zest/zest.h"
 
 namespace kota {

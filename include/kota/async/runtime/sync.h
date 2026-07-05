@@ -51,49 +51,27 @@ protected:
         return link;
     }
 
-    bool front_waiter_matches(std::size_t snapshot) const noexcept {
-        return head && head->generation == snapshot;
-    }
-
     bool resume_waiter(wait_node& link) noexcept;
 
     bool cancel_waiter(wait_node& link) noexcept;
 
-    /// Processes the waiters that were already queued when this call began.
+    /// Pops and processes every queued waiter.
     ///
-    /// The callback may detach waiters and enqueue deferred resumes. Using a
-    /// generation snapshot keeps the walk stable without stashing sibling
-    /// waiter pointers that may become dangling before the next iteration.
+    /// resume_waiter/cancel_waiter never run user code — they only tag the
+    /// waiter and queue its awaiting task on the event loop — so no waiter
+    /// can be enqueued or removed re-entrantly while this loop runs: popping
+    /// until the queue is empty is a stable snapshot of the callers.
     template <typename Fn>
-    void drain_waiter_snapshot(Fn&& fn) {
-        const auto snapshot = begin_waiter_snapshot();
-        while(front_waiter_matches(snapshot)) {
-            fn(*pop_waiter());
+    void drain_waiters(Fn&& fn) {
+        while(auto* waiter = pop_waiter()) {
+            fn(*waiter);
         }
-    }
-
-    /// Starts a logical "snapshot" of the current wait queue.
-    ///
-    /// We do not materialize that snapshot into a temporary container: doing so
-    /// would keep raw waiter pointers alive across synchronous resumes, and one
-    /// resumed waiter is allowed to cancel/destroy sibling waiters immediately.
-    /// Instead, each queued waiter is tagged with the current generation. An
-    /// interrupt bumps the generation once, then keeps popping from the front
-    /// only while the head still belongs to the old generation.
-    std::size_t begin_waiter_snapshot() noexcept {
-        auto snapshot = waiter_generation;
-        waiter_generation += 1;
-        return snapshot;
     }
 
 private:
     /// Head and tail of the intrusive doubly-linked waiter queue.
     wait_node* head = nullptr;
     wait_node* tail = nullptr;
-
-    /// Monotonic tag used to distinguish "already queued" waiters from
-    /// re-entrantly added waiters during interrupt().
-    std::size_t waiter_generation = 0;
 };
 
 class mutex : public sync_primitive {
@@ -301,7 +279,7 @@ public:
 
     void set() noexcept {
         signaled = true;
-        drain_waiter_snapshot([this](wait_node& waiter) { resume_waiter(waiter); });
+        drain_waiters([this](wait_node& waiter) { resume_waiter(waiter); });
     }
 
     void reset() noexcept {
@@ -310,9 +288,7 @@ public:
 
     /// Interrupts the current wait queue without changing the signaled state.
     void interrupt() noexcept {
-        // New waits linked while processing this interrupt belong to a newer
-        // generation and are excluded by drain_waiter_snapshot().
-        drain_waiter_snapshot([this](wait_node& waiter) { cancel_waiter(waiter); });
+        drain_waiters([this](wait_node& waiter) { cancel_waiter(waiter); });
     }
 
     bool is_set() const noexcept {
@@ -381,7 +357,7 @@ public:
     }
 
     void notify_all() {
-        drain_waiter_snapshot([this](wait_node& waiter) { resume_waiter(waiter); });
+        drain_waiters([this](wait_node& waiter) { resume_waiter(waiter); });
     }
 };
 

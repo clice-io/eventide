@@ -1,7 +1,7 @@
 #include <chrono>
 #include <csignal>
 
-#include "loop_fixture.h"
+#include "../loop_fixture.h"
 #include "kota/zest/zest.h"
 #include "kota/async/vocab/cancellation.h"
 

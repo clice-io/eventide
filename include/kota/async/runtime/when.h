@@ -59,9 +59,8 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> parent_handle,
                       std::source_location location = std::source_location::current()) noexcept {
-        total = sizeof...(Tasks);
         children.clear();
-        children.reserve(total);
+        children.reserve(sizeof...(Tasks));
         std::apply([&](auto&... ts) { (children.push_back(detail::node_from(ts)), ...); }, tasks);
         return arm_and_resume(parent_handle.promise(), location);
     }
@@ -69,25 +68,8 @@ public:
     auto await_resume() -> result_type {
         rethrow_if_propagated();
 
-        if constexpr(!std::is_void_v<cancel_type>) {
-            if(this->state == async_node::Cancelled) {
-                auto cancel = detail::tuple_visit_at_return<cancel_type>(
-                    first_cancel_child,
-                    tasks,
-                    [&](auto, auto& task) -> cancel_type {
-                        using task_t = std::remove_reference_t<decltype(task)>;
-                        if constexpr(std::is_void_v<detail::task_cancel_type_t<task_t>>) {
-                            return cancel_type(cancellation{});
-                        } else {
-                            auto result = detail::take_result(task);
-                            assert(result.is_cancelled());
-                            return cancel_type(std::move(result).cancellation());
-                        }
-                    });
-                return result_type(outcome_cancel(std::move(cancel)));
-            }
-        }
-
+        // Errors outrank cancellation: settle() never reports Cancelled when a
+        // child error was recorded, even if an external cancel raced it.
         if constexpr(!std::is_void_v<error_type>) {
             if(first_error_child != aggregate_op::npos) {
                 auto error = detail::tuple_visit_at_return<error_type>(
@@ -105,6 +87,27 @@ public:
                         }
                     });
                 return result_type(outcome_error(std::move(error)));
+            }
+        }
+
+        if constexpr(!std::is_void_v<cancel_type>) {
+            if(this->state == async_node::Cancelled) {
+                assert(first_cancel_child != aggregate_op::npos &&
+                       "InterceptCancel aggregate cancelled with no attributed child");
+                auto cancel = detail::tuple_visit_at_return<cancel_type>(
+                    first_cancel_child,
+                    tasks,
+                    [&](auto, auto& task) -> cancel_type {
+                        using task_t = std::remove_reference_t<decltype(task)>;
+                        if constexpr(std::is_void_v<detail::task_cancel_type_t<task_t>>) {
+                            return cancel_type(cancellation{});
+                        } else {
+                            auto result = detail::take_result(task);
+                            assert(result.is_cancelled());
+                            return cancel_type(std::move(result).cancellation());
+                        }
+                    });
+                return result_type(outcome_cancel(std::move(cancel)));
             }
         }
 
@@ -187,9 +190,8 @@ public:
     std::coroutine_handle<>
         await_suspend(std::coroutine_handle<Promise> parent_handle,
                       std::source_location location = std::source_location::current()) noexcept {
-        total = tasks.size();
         children.clear();
-        children.reserve(total);
+        children.reserve(tasks.size());
         for(auto& task: tasks) {
             children.push_back(detail::node_from(task));
         }
@@ -199,19 +201,22 @@ public:
     auto await_resume() -> result_type {
         rethrow_if_propagated();
 
-        if constexpr(!std::is_void_v<cancel_type>) {
-            if(this->state == async_node::Cancelled) {
-                auto result = detail::take_result(tasks[first_cancel_child]);
-                assert(result.is_cancelled());
-                return result_type(outcome_cancel(std::move(result).cancellation()));
-            }
-        }
-
+        // Errors outrank cancellation — see the variadic overload.
         if constexpr(!std::is_void_v<error_type>) {
             if(first_error_child != aggregate_op::npos) {
                 auto result = detail::take_result(tasks[first_error_child]);
                 assert(result.has_error());
                 return result_type(outcome_error(error_type(std::move(result).error())));
+            }
+        }
+
+        if constexpr(!std::is_void_v<cancel_type>) {
+            if(this->state == async_node::Cancelled) {
+                assert(first_cancel_child != aggregate_op::npos &&
+                       "InterceptCancel aggregate cancelled with no attributed child");
+                auto result = detail::take_result(tasks[first_cancel_child]);
+                assert(result.is_cancelled());
+                return result_type(outcome_cancel(std::move(result).cancellation()));
             }
         }
 
