@@ -100,7 +100,12 @@ struct schema_struct_trait {
         }
     }
 
-    constexpr static bool value = meta::reflectable_class<T> && std::is_trivial_v<T> &&
+    // FlatBuffers inline structs are read and written by memcpy, so trivial
+    // copyability and a fixed layout are what matters; default member
+    // initializers (which break std::is_trivial) are fine.
+    constexpr static bool value = meta::reflectable_class<T> &&
+                                  std::is_trivially_copyable_v<T> &&
+                                  std::is_default_constructible_v<T> &&
                                   std::is_standard_layout_v<T> && fields_supported();
 };
 

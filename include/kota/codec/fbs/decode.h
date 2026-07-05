@@ -583,11 +583,13 @@ bool verify_variant_slots(verifier_t& v, const Table* var_table) {
             detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
         bool ok = true;
         std::size_t i = 0;
-        ((i++ == index ? (ok = verify_field<std::remove_cvref_t<Ts>, Config>(v, var_table,
-                                                                             payload_slot),
-                          true)
-                       : false) ||
-         ...);
+        [[maybe_unused]] bool matched =
+            ((i++ == index ? (ok = verify_field<std::remove_cvref_t<Ts>, Config>(v,
+                                                                                 var_table,
+                                                                                 payload_slot),
+                              true)
+                           : false) ||
+             ...);
         return ok;
     }(std::type_identity<T>{});
 }
@@ -911,7 +913,7 @@ auto from_flatbuffer(std::span<const std::uint8_t> buf, T& out) -> std::expected
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     auto result = from_flatbuffer<Config>(buf, value);
     if(!result) {
         return std::unexpected(result.error());
@@ -922,7 +924,7 @@ auto from_flatbuffer(std::span<const std::uint8_t> buf) -> std::expected<T, rich
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
 auto from_flatbuffer(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
-    T value{};
+    auto value = T();
     auto result = from_flatbuffer<Config>(buf, value);
     if(!result) {
         return std::unexpected(result.error());

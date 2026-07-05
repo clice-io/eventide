@@ -864,7 +864,7 @@ bool decode_value(Vis& vis, T& out) {
                 }
                 std::size_t idx = 0;
                 return vis.visit_seq([&](auto& ev) -> bool {
-                    element_t item{};
+                    auto item = element_t();
                     bool ok = decode_value<Config>(ev, item);
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
@@ -884,7 +884,7 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     std::size_t idx = 0;
                     while(sv.has_element()) {
-                        element_t item{};
+                        auto item = element_t();
                         bool ok = sv.visit_element(
                             [&](auto& ev) -> bool { return decode_value<Config>(ev, item); });
                         if(!ok) {
@@ -972,7 +972,7 @@ bool decode_value(Vis& vis, T& out) {
                 }
                 std::size_t idx = 0;
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
-                    key_t key{};
+                    auto key = key_t();
                     bool ok = decode_value<Config>(kv, key);
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
@@ -981,7 +981,7 @@ bool decode_value(Vis& vis, T& out) {
                         }
                         return false;
                     }
-                    mapped_t val{};
+                    auto val = mapped_t();
                     ok = decode_value<Config>(vv, val);
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
@@ -1001,8 +1001,8 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     std::size_t idx = 0;
                     while(sv.has_entry()) {
-                        key_t key{};
-                        mapped_t val{};
+                        auto key = key_t();
+                        auto val = mapped_t();
                         bool ok = sv.visit_entry(
                             [&](auto& kv) -> bool { return decode_value<Config>(kv, key); },
                             [&](auto& vv) -> bool { return decode_value<Config>(vv, val); });
