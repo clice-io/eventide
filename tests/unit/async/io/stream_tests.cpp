@@ -352,6 +352,46 @@ TEST_CASE(read_some_fd) {
     }
 }
 
+TEST_CASE(concurrent_read_rejected) {
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto pipe_res = pipe::open(fds[0], {}, loop);
+    ASSERT_TRUE(pipe_res.has_value());
+    auto p = std::move(*pipe_res);
+
+    std::string first;
+    error second{};
+
+    // The first reader arms and suspends (no data yet).
+    auto reader = [&]() -> task<> {
+        auto res = co_await p.read();
+        if(res.has_value()) {
+            first = *res;
+        }
+        event_loop::current().stop();
+    };
+
+    // A second concurrent read must fail fast instead of overwriting the
+    // armed waiter (which would leave the first reader suspended forever).
+    auto intruder = [&]() -> task<> {
+        auto res = co_await p.read();
+        if(!res.has_value()) {
+            second = res.error();
+        }
+
+        write_fd(fds[1], "x", 1);
+        close_fd(fds[1]);
+    };
+
+    auto t1 = reader();
+    auto t2 = intruder();
+    schedule_all(t1, t2);
+
+    EXPECT_EQ(second, error::connection_already_in_progress);
+    EXPECT_EQ(first, "x");
+}
+
 TEST_CASE(read_eof_reports_error) {
     int fds[2] = {-1, -1};
     ASSERT_EQ(create_pipe(fds), 0);

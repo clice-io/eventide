@@ -47,6 +47,9 @@ public:
     /// Reads whatever is buffered, waiting until at least one byte arrives.
     /// A successful read is never empty; EOF is reported as
     /// error::end_of_file (like every other read failure).
+    ///
+    /// One read (of any flavor) may be pending at a time; a concurrent read
+    /// fails with error::connection_already_in_progress.
     task<std::string, error> read();
 
     /// Reads up to dst.size() bytes into dst. A successful read carries at

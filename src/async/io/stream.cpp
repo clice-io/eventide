@@ -321,6 +321,12 @@ handle_type guess_handle(int fd) {
 task<std::string, error> stream::read() {
     assert(self && "stream object is invalid (moved-from or default-constructed)");
 
+    // A second concurrent read would silently overwrite the armed waiter,
+    // leaving the first reader suspended forever.
+    if(self->reader.has_waiter()) {
+        co_await fail(error::connection_already_in_progress);
+    }
+
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
             co_await fail(err);
@@ -335,6 +341,10 @@ task<std::string, error> stream::read() {
 
 task<std::size_t, error> stream::read_some(std::span<char> dst) {
     assert(self && "stream object is invalid (moved-from or default-constructed)");
+
+    if(self->reader.has_waiter()) {
+        co_await fail(error::connection_already_in_progress);
+    }
 
     if(dst.empty()) {
         co_return std::size_t{0};
@@ -353,6 +363,10 @@ task<std::size_t, error> stream::read_some(std::span<char> dst) {
 task<stream::chunk, error> stream::read_chunk() {
     chunk out{};
     assert(self && "stream object is invalid (moved-from or default-constructed)");
+
+    if(self->reader.has_waiter()) {
+        co_await fail(error::connection_already_in_progress);
+    }
 
     if(self->buffer.readable_bytes() == 0) {
         if(auto err = co_await stream_read_await{self.get()}) {
