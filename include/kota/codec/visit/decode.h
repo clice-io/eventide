@@ -957,8 +957,15 @@ bool decode_value(Vis& vis, T& out) {
             }
         } else if constexpr(kind == map) {
             using kv_t = std::ranges::range_value_t<V>;
-            using key_t = std::remove_const_t<typename kv_t::first_type>;
-            using mapped_t = typename kv_t::second_type;
+            // Decode keys into owning storage: entry protocols that hand out
+            // views (string_view, llvm::StringRef, ...) would otherwise decode
+            // into a dangling view before insertion copies it.
+            using raw_key_t = kota::map_entry_key_t<kv_t>;
+            using key_t = std::conditional_t<meta::str_like<raw_key_t> &&
+                                                 !std::same_as<raw_key_t, std::string>,
+                                             std::string,
+                                             raw_key_t>;
+            using mapped_t = kota::map_entry_mapped_t<kv_t>;
             if constexpr(detail::data_driven<Vis>) {
                 if constexpr(requires { out.clear(); }) {
                     out.clear();

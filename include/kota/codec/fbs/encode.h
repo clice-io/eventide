@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <numeric>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -52,12 +53,11 @@ struct boxed_table_collector;
 struct byte_collector;
 
 struct map_entry_collector;
-struct key_capture_visitor;
 
 struct root_visitor;
 
 template <typename Body>
-inline auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t;
+inline auto two_pass(builder_t& fbb, Body&& body) -> std::optional<table_offset_t>;
 
 struct alloc_field_visitor {
     builder_t& fbb;
@@ -187,7 +187,12 @@ struct write_field_visitor {
 
     template <typename T>
     bool visit_float(T v) {
-        fbb.AddElement<T>(sid, v);
+        // Decoders read non-float/double floats as double; keep widths in sync.
+        if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
+            fbb.AddElement<T>(sid, v);
+        } else {
+            fbb.AddElement<double>(sid, static_cast<double>(v));
+        }
         return true;
     }
 
@@ -495,7 +500,10 @@ struct boxed_table_collector {
 
         auto start = fbb.StartTable();
         write_field_visitor wv{fbb, detail::first_field, av.stored_offset};
-        KOTA_CODEC_TRY(writer(wv));
+        if(!writer(wv)) {
+            fbb.EndTable(start);
+            return false;
+        }
         table_offsets.push_back(table_offset_t(fbb.EndTable(start)));
         return true;
     }
@@ -546,51 +554,9 @@ struct byte_collector {
     }
 };
 
-struct key_capture_visitor {
-    std::string captured;
-
-    using error_type = rich_error;
-    constexpr static bool human_readable = false;
-
-    bool visit_bool(bool v) {
-        captured = v ? "true" : "false";
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T v) {
-        captured = std::to_string(static_cast<std::int64_t>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T v) {
-        captured = std::to_string(static_cast<std::uint64_t>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_float(T v) {
-        captured = std::to_string(static_cast<double>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_str(const T& v) {
-        captured = std::string(std::string_view(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_char(T v) {
-        captured = std::string(1, static_cast<char>(v));
-        return true;
-    }
-};
-
 struct map_entry_collector {
     builder_t& fbb;
-    std::vector<std::pair<std::string, table_offset_t>> entries;
+    std::vector<table_offset_t> entries;
 
     template <typename KF, typename VF>
     inline bool visit_entry(KF&& key_fn, VF&& value_fn);
@@ -619,7 +585,11 @@ struct root_visitor {
 
     template <typename T>
     bool visit_float(T v) {
-        return box_root_scalar<T>(v);
+        if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
+            return box_root_scalar<T>(v);
+        } else {
+            return box_root_scalar<double>(static_cast<double>(v));
+        }
     }
 
     template <typename T>
@@ -680,35 +650,74 @@ private:
 };
 
 template <typename Body>
-auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
+auto two_pass(builder_t& fbb, Body&& body) -> std::optional<table_offset_t> {
     alloc_table_visitor av{fbb, {}, 0};
     if(!body(av))
-        return table_offset_t{0};
+        return std::nullopt;
 
     auto start = fbb.StartTable();
     write_table_visitor wv{fbb, av.offsets, 0};
     if(!body(wv)) {
         fbb.EndTable(start);
-        return table_offset_t{0};
+        return std::nullopt;
     }
     return table_offset_t(fbb.EndTable(start));
 }
 
-template <typename Body>
-inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
+// Reorder collected entry offsets so that wire order follows the keys' natural
+// ordering — the same ordering map_view::find uses for its binary search.
+template <typename Key>
+inline void sort_entries_by_key(std::vector<table_offset_t>& offsets, std::vector<Key>& keys) {
+    if(keys.size() != offsets.size()) {
+        return;
+    }
+    std::vector<std::uint32_t> order(offsets.size());
+    std::iota(order.begin(), order.end(), 0U);
+    std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) {
+        return keys[a] < keys[b];
+    });
+    std::vector<table_offset_t> sorted;
+    sorted.reserve(offsets.size());
+    for(auto i: order) {
+        sorted.push_back(offsets[i]);
+    }
+    offsets = std::move(sorted);
+}
+
+template <typename Container, typename Body>
+inline bool encode_sorted_map(builder_t& fbb,
+                              const Container& m,
+                              Body&& body,
+                              uoffset_t& out_offset) {
     map_entry_collector coll{fbb, {}};
     KOTA_CODEC_TRY(body(coll));
 
-    std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
-        return a.first < b.first;
-    });
+    auto offsets = std::move(coll.entries);
 
-    std::vector<table_offset_t> sorted_offsets;
-    sorted_offsets.reserve(coll.entries.size());
-    for(auto& entry: coll.entries) {
-        sorted_offsets.push_back(entry.second);
+    using entry_t = std::ranges::range_value_t<Container>;
+    using key_t = kota::map_entry_key_t<entry_t>;
+
+    if constexpr(std::convertible_to<const key_t&, std::string_view>) {
+        // String-like keys compare lexicographically; views stay valid because
+        // they point into key storage owned by the container.
+        std::vector<std::string_view> keys;
+        keys.reserve(offsets.size());
+        for(const auto& entry: m) {
+            keys.emplace_back(std::string_view(kota::detail::map_entry_key(entry)));
+        }
+        sort_entries_by_key(offsets, keys);
+    } else if constexpr(std::copy_constructible<key_t> && std::totally_ordered<key_t>) {
+        std::vector<key_t> keys;
+        keys.reserve(offsets.size());
+        for(const auto& entry: m) {
+            keys.emplace_back(kota::detail::map_entry_key(entry));
+        }
+        sort_entries_by_key(offsets, keys);
     }
-    out_offset = fbb.CreateVector(sorted_offsets.data(), sorted_offsets.size()).o;
+    // Keys that are neither string-like nor totally ordered keep iteration
+    // order; map_view rejects lookups on such key types at compile time.
+
+    out_offset = fbb.CreateVector(offsets.data(), offsets.size()).o;
     return true;
 }
 
@@ -724,7 +733,10 @@ inline bool
     auto start = fbb.StartTable();
     fbb.AddElement<std::uint32_t>(detail::first_field, static_cast<std::uint32_t>(index));
     write_field_visitor payload_write{fbb, payload_slot, payload_alloc.stored_offset};
-    body(payload_write);
+    if(!body(payload_write)) {
+        fbb.EndTable(start);
+        return false;
+    }
     out_offset = fbb.EndTable(start);
     return true;
 }
@@ -769,7 +781,14 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         }
     } else if constexpr(meta::int_like<element_t> || meta::uint_like<element_t> ||
                         meta::floating_like<element_t> || meta::char_like<element_t>) {
-        using wire_t = std::conditional_t<meta::char_like<element_t>, std::int8_t, element_t>;
+        using wire_t = std::conditional_t<
+            meta::char_like<element_t>,
+            std::int8_t,
+            std::conditional_t<meta::floating_like<element_t> &&
+                                   !std::same_as<element_t, float> &&
+                                   !std::same_as<element_t, double>,
+                               double,
+                               element_t>>;
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container> && std::same_as<element_t, wire_t>) {
             auto data = std::ranges::data(c);
@@ -868,7 +887,10 @@ bool alloc_field_visitor::visit_struct(const T&, Body&& body) {
         return true;
     } else {
         auto off = two_pass(fbb, std::forward<Body>(body));
-        stored_offset = off.o;
+        if(!off) {
+            return false;
+        }
+        stored_offset = off->o;
         return true;
     }
 }
@@ -881,13 +903,16 @@ bool alloc_field_visitor::visit_seq(const Container& c, Body&& body) {
 template <typename T, typename Body>
 bool alloc_field_visitor::visit_tuple(const T&, Body&& body) {
     auto off = two_pass(fbb, std::forward<Body>(body));
-    stored_offset = off.o;
+    if(!off) {
+        return false;
+    }
+    stored_offset = off->o;
     return true;
 }
 
 template <typename Container, typename Body>
-bool alloc_field_visitor::visit_map(const Container&, Body&& body) {
-    return encode_sorted_map(fbb, std::forward<Body>(body), stored_offset);
+bool alloc_field_visitor::visit_map(const Container& m, Body&& body) {
+    return encode_sorted_map(fbb, m, std::forward<Body>(body), stored_offset);
 }
 
 template <typename Body>
@@ -898,14 +923,20 @@ bool alloc_field_visitor::visit_variant(std::size_t index, Body&& body) {
 template <typename T, typename Body>
 bool table_elem_visitor::visit_struct(const T&, Body&& body) {
     auto off = two_pass(fbb, std::forward<Body>(body));
-    table_offsets.push_back(off);
+    if(!off) {
+        return false;
+    }
+    table_offsets.push_back(*off);
     return true;
 }
 
 template <typename T, typename Body>
 bool table_elem_visitor::visit_tuple(const T&, Body&& body) {
     auto off = two_pass(fbb, std::forward<Body>(body));
-    table_offsets.push_back(off);
+    if(!off) {
+        return false;
+    }
+    table_offsets.push_back(*off);
     return true;
 }
 
@@ -929,9 +960,9 @@ bool table_elem_visitor::visit_seq(const Container& c, Body&& body) {
 }
 
 template <typename Container, typename Body>
-bool table_elem_visitor::visit_map(const Container&, Body&& body) {
+bool table_elem_visitor::visit_map(const Container& m, Body&& body) {
     uoffset_t vec_off = 0;
-    KOTA_CODEC_TRY(encode_sorted_map(fbb, std::forward<Body>(body), vec_off));
+    KOTA_CODEC_TRY(encode_sorted_map(fbb, m, std::forward<Body>(body), vec_off));
 
     auto start = fbb.StartTable();
     fbb.AddOffset(detail::first_field, offset_t<void>(vec_off));
@@ -941,9 +972,6 @@ bool table_elem_visitor::visit_map(const Container&, Body&& body) {
 
 template <typename KF, typename VF>
 bool map_entry_collector::visit_entry(KF&& key_fn, VF&& value_fn) {
-    key_capture_visitor capture;
-    KOTA_CODEC_TRY(key_fn(capture));
-
     auto table_off = two_pass(fbb, [&](auto& sv) -> bool {
         KOTA_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 0>{},
                                       std::string_view{"key"},
@@ -953,14 +981,20 @@ bool map_entry_collector::visit_entry(KF&& key_fn, VF&& value_fn) {
                                       [&](auto& vv) -> bool { return value_fn(vv); }));
         return true;
     });
-
-    entries.emplace_back(std::move(capture.captured), table_off);
+    if(!table_off) {
+        return false;
+    }
+    entries.push_back(*table_off);
     return true;
 }
 
 template <typename T, typename Body>
 bool root_visitor::visit_struct(const T&, Body&& body) {
-    root_off = two_pass(fbb, std::forward<Body>(body));
+    auto off = two_pass(fbb, std::forward<Body>(body));
+    if(!off) {
+        return false;
+    }
+    root_off = *off;
     return true;
 }
 
@@ -977,14 +1011,18 @@ bool root_visitor::visit_seq(const Container& c, Body&& body) {
 
 template <typename T, typename Body>
 bool root_visitor::visit_tuple(const T&, Body&& body) {
-    root_off = two_pass(fbb, std::forward<Body>(body));
+    auto off = two_pass(fbb, std::forward<Body>(body));
+    if(!off) {
+        return false;
+    }
+    root_off = *off;
     return true;
 }
 
 template <typename Container, typename Body>
-bool root_visitor::visit_map(const Container&, Body&& body) {
+bool root_visitor::visit_map(const Container& m, Body&& body) {
     uoffset_t vec_off = 0;
-    KOTA_CODEC_TRY(encode_sorted_map(fbb, std::forward<Body>(body), vec_off));
+    KOTA_CODEC_TRY(encode_sorted_map(fbb, m, std::forward<Body>(body), vec_off));
 
     auto start = fbb.StartTable();
     fbb.AddOffset(detail::first_field, offset_t<void>(vec_off));

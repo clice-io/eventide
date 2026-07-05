@@ -333,7 +333,9 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(kind == map) {
             return vis.visit_map(value, [&](auto& mv) -> bool {
                 std::size_t idx = 0;
-                for(const auto& [k, v]: value) {
+                for(const auto& entry: value) {
+                    auto&& k = kota::detail::map_entry_key(entry);
+                    auto&& v = kota::detail::map_entry_value(entry);
                     bool ok = mv.visit_entry(
                         [&](auto& kv) -> bool { return encode_value<Config>(kv, k); },
                         [&](auto& vv) -> bool { return encode_value<Config>(vv, v); });
