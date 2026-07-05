@@ -51,7 +51,6 @@ target_sources(kota_async PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/io/system.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/udp.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/io/watcher.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/io/fs_event.cpp"
 )
 
 target_include_directories(kota_async PUBLIC
@@ -61,11 +60,5 @@ target_include_directories(kota_async PUBLIC
 target_link_libraries(kota_async PUBLIC
     libuv::libuv
 )
-
-if(APPLE)
-    target_link_libraries(kota_async PRIVATE
-        "-framework CoreServices"
-    )
-endif()
 
 kota_apply_project_options(kota_async)

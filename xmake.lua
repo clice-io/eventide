@@ -208,9 +208,6 @@ if has_config("async") then
 		add_headerfiles("include/(kota/async/**)")
 		add_deps("support")
 		add_packages("libuv", { public = true })
-		if is_plat("macosx") then
-			add_frameworks("CoreServices")
-		end
 	end)
 end
 

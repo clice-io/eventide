@@ -26,8 +26,15 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
 - Child process API (`process::spawn`) with stdio piping, async wait/kill, and resource-usage reporting.
-- Async filesystem API covering the full libuv fs surface (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …) and filesystem-change notifications via `fs_event`.
+- Async filesystem API covering the full libuv fs surface (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …).
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
+
+> **Filesystem-change notifications** are no longer provided. The former `fs_event`
+> watcher has been removed — the underlying platform backends proved hard to use and
+> unreliable across OSes. For change detection, build a periodic poll on top of the
+> existing primitives: a `kota::timer` firing at your desired interval combined with
+> `fs::stat` (comparing mtime / size) gives predictable, portable "did this path
+> change?" semantics without the platform-specific pitfalls.
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
 - Coroutine-friendly sync primitives: mutex, semaphore, event (with interrupt), and condition variable.
 - Error vocabulary: `error` (libuv status wrapper with named codes), `result<T>`, and the general `outcome<T, E, C>`.
