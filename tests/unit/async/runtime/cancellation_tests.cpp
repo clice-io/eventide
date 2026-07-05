@@ -179,9 +179,15 @@ TEST_CASE(queue_cancel_resume, serial = true) {
         source.cancel();
         phase = 2;
 
+        // cancel() only schedules the token waiter; the cascade that reaches
+        // work_op::on_cancel (and thus uv_cancel) runs in the loop's check
+        // phase. Wait for the target to settle before releasing the blockers,
+        // otherwise a freed pool thread races uv_cancel for the queued target
+        // and can spuriously start it.
+        co_await target_done.wait();
+
         release.store(true, std::memory_order_release);
 
-        co_await target_done.wait();
         while(blockers_done.load(std::memory_order_acquire) < blocker_count) {
             co_await sleep(1, loop);
         }

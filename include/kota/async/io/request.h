@@ -16,14 +16,15 @@ task<void, error> queue(function<void()> fn, event_loop& loop = event_loop::curr
 /// Run work on libuv's worker pool, with a hook for chaining cancellation.
 ///
 /// If the awaiting task is cancelled while the work is still queued, the work
-/// is dequeued and `fn` never runs. If `fn` is already running on a pool
-/// thread it cannot be interrupted; `on_cancel` is how it learns it should
-/// return early — the task settles as cancelled once `fn` returns.
+/// is dequeued, `fn` never runs, and the hook is not invoked. If `fn` is
+/// already running on a pool thread it cannot be interrupted; `on_cancel` is
+/// how it learns it should return early — the task settles as cancelled once
+/// `fn` returns.
 ///
-/// `on_cancel` runs on the loop thread, at most once, and may fire whether or
-/// not `fn` has started (or already finished). Keep it cheap and idempotent,
-/// and only touch state that is safe to share with the concurrently running
-/// `fn` — the typical shape is setting an atomic flag that `fn` polls.
+/// `on_cancel` runs on the loop thread, at most once, and can still fire
+/// after `fn` has already finished. Keep it cheap and idempotent, and only
+/// touch state that is safe to share with the concurrently running `fn` —
+/// the typical shape is setting an atomic flag that `fn` polls.
 task<void, error> queue(function<void()> fn,
                         function<void()> on_cancel,
                         event_loop& loop = event_loop::current());
