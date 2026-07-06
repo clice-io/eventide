@@ -172,6 +172,11 @@ bool encode_value(Vis& vis, const T& value) {
                      serialize_visit<Vis, V, Config>::visit(v, val);
                  }) {
         return serialize_visit<Vis, V, Config>::visit(vis, value);
+    } else if constexpr(requires(const V& val) { serialize_visit<Vis, V, Config>::to_wire(val); }) {
+        // Value-mode specialization: `wire_type` declares the on-wire layout,
+        // to_wire/from_wire convert. One specialization serves both
+        // directions (decode_value picks up from_wire).
+        return encode_value<Config>(vis, serialize_visit<Vis, V, Config>::to_wire(value));
     } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename V::attrs;
         auto&& inner = meta::annotated_value(value);

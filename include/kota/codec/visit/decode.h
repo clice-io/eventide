@@ -31,6 +31,11 @@ namespace kota::codec {
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct deserialize_visit {};
 
+/// Declared in visit/encode.h; value-mode specializations (wire_type +
+/// to_wire + from_wire) also drive decoding, see decode_value.
+template <typename Vis, typename T, typename Config, typename>
+struct serialize_visit;
+
 template <typename Config, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out);
 
@@ -724,6 +729,17 @@ bool decode_value(Vis& vis, T& out) {
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
+    } else if constexpr(requires {
+                            serialize_visit<Vis, V, Config, void>::from_wire(
+                                std::declval<
+                                    typename serialize_visit<Vis, V, Config, void>::wire_type>());
+                        }) {
+        // Value-mode serialize_visit specialization: decode the declared
+        // wire_type, then convert back through from_wire.
+        auto wire = typename serialize_visit<Vis, V, Config, void>::wire_type();
+        KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
+        out = serialize_visit<Vis, V, Config, void>::from_wire(std::move(wire));
+        return true;
     } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename V::attrs;
         auto&& inner = meta::annotated_value(out);
