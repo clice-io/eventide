@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/compare.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
@@ -664,8 +665,10 @@ auto two_pass(builder_t& fbb, Body&& body) -> std::optional<table_offset_t> {
     return table_offset_t(fbb.EndTable(start));
 }
 
-// Reorder collected entry offsets so that wire order follows the keys' natural
-// ordering — the same ordering map_view::find uses for its binary search.
+// Reorder collected entry offsets so that wire order follows the keys'
+// ordering under meta::lt — operator< when the key defines one, otherwise the
+// reflection-synthesized field-by-field order. map_view::find binary-searches
+// with the same comparison.
 template <typename Key>
 inline void sort_entries_by_key(std::vector<table_offset_t>& offsets, std::vector<Key>& keys) {
     if(keys.size() != offsets.size()) {
@@ -674,7 +677,7 @@ inline void sort_entries_by_key(std::vector<table_offset_t>& offsets, std::vecto
     std::vector<std::uint32_t> order(offsets.size());
     std::iota(order.begin(), order.end(), 0U);
     std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) {
-        return keys[a] < keys[b];
+        return meta::lt(keys[a], keys[b]);
     });
     std::vector<table_offset_t> sorted;
     sorted.reserve(offsets.size());
@@ -706,7 +709,8 @@ inline bool encode_sorted_map(builder_t& fbb,
             keys.emplace_back(std::string_view(kota::detail::map_entry_key(entry)));
         }
         sort_entries_by_key(offsets, keys);
-    } else if constexpr(std::copy_constructible<key_t> && std::totally_ordered<key_t>) {
+    } else if constexpr(std::copy_constructible<key_t> &&
+                        meta::synthesized_lt_with<key_t, key_t>) {
         std::vector<key_t> keys;
         keys.reserve(offsets.size());
         for(const auto& entry: m) {
@@ -714,8 +718,8 @@ inline bool encode_sorted_map(builder_t& fbb,
         }
         sort_entries_by_key(offsets, keys);
     }
-    // Keys that are neither string-like nor totally ordered keep iteration
-    // order; map_view rejects lookups on such key types at compile time.
+    // Keys that meta::lt cannot order keep iteration order; map_view rejects
+    // lookups on such key types at compile time.
 
     out_offset = fbb.CreateVector(offsets.data(), offsets.size()).o;
     return true;

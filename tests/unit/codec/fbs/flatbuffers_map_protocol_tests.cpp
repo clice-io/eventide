@@ -149,6 +149,20 @@ struct span_key_holder {
     scrambled_map<span_key, std::int32_t> table;
 };
 
+// Deliberately no operator< / <=> : ordering must be synthesized field by
+// field via reflection (meta::lt), on both the encode sort and map_view's
+// binary search.
+struct bare_key {
+    std::uint16_t group;
+    std::uint32_t item;
+
+    constexpr bool operator==(const bare_key&) const = default;
+};
+
+struct bare_key_holder {
+    scrambled_map<bare_key, std::int32_t> table;
+};
+
 struct string_map_holder {
     mock_string_map<std::int32_t> table;
 };
@@ -325,6 +339,45 @@ TEST_CASE(inline_struct_keys_sort_and_lookup) {
         }
         EXPECT_TRUE(found);
     }
+}
+
+// Keys without any comparison operator: meta::lt synthesizes the ordering
+// from reflection, and map_view searches with the same synthesized order.
+TEST_CASE(comparison_free_struct_keys_sort_and_lookup) {
+    bare_key_holder input;
+    input.table.insert_or_assign(bare_key{2, 7}, 27);
+    input.table.insert_or_assign(bare_key{1, 100}, 110);
+    input.table.insert_or_assign(bare_key{2, 3}, 23);
+    input.table.insert_or_assign(bare_key{1, 5}, 15);
+    input.table.insert_or_assign(bare_key{3, 1}, 31);
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = table_view<bare_key_holder>::from_bytes(*encoded);
+    auto view = root[&bare_key_holder::table];
+    ASSERT_EQ(view.size(), 5U);
+
+    for(const auto& [key, value]: input.table.entries) {
+        ASSERT_TRUE(view.contains(key));
+        EXPECT_EQ(view[key], value);
+    }
+    EXPECT_FALSE(view.contains(bare_key{2, 4}));
+
+    // wire order follows the synthesized (group, item) lexicographic order
+    bare_key last{};
+    for(std::size_t i = 0; i < view.size(); ++i) {
+        auto key = view.at(i).template get<0>();
+        if(i > 0) {
+            EXPECT_TRUE(kota::meta::lt(last, key));
+        }
+        last = key;
+    }
+
+    bare_key_holder decoded;
+    auto result = from_flatbuffer(std::span<const std::uint8_t>(*encoded), decoded);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(decoded.table.entries.size(), 5U);
 }
 
 // llvm::StringMap-shaped containers: getKey()/getValue() entries, view-typed
