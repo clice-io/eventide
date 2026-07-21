@@ -907,6 +907,143 @@ TEST_CASE(globstar_intermediate) {
     EXPECT_FALSE(pat2.match("foo/test"));
 }
 
+TEST_CASE(unicode_question) {
+    PATDEF(pat1, "?文.txt")
+    EXPECT_TRUE(pat1.match("中文.txt"));
+    EXPECT_FALSE(pat1.match("文.txt"));
+    EXPECT_FALSE(pat1.match("中中文.txt"));
+
+    PATDEF(pat2, "?.txt")
+    EXPECT_TRUE(pat2.match("中.txt"));
+    EXPECT_TRUE(pat2.match("🚀.txt"));
+    EXPECT_FALSE(pat2.match("中文.txt"));
+
+    PATDEF(pat3, "??.txt")
+    EXPECT_TRUE(pat3.match("中文.txt"));
+    EXPECT_FALSE(pat3.match("中.txt"));
+}
+
+TEST_CASE(unicode_bracket) {
+    PATDEF(pat1, "[中文].txt")
+    EXPECT_TRUE(pat1.match("中.txt"));
+    EXPECT_TRUE(pat1.match("文.txt"));
+    EXPECT_FALSE(pat1.match("英.txt"));
+    EXPECT_FALSE(pat1.match("a.txt"));
+
+    // 中 (U+4E2D) lies inside the range 一 (U+4E00) .. 十 (U+5341).
+    PATDEF(pat2, "[一-十].txt")
+    EXPECT_TRUE(pat2.match("中.txt"));
+    EXPECT_FALSE(pat2.match("a.txt"));
+
+    PATDEF(pat3, "[!一-十].txt")
+    EXPECT_FALSE(pat3.match("中.txt"));
+    EXPECT_TRUE(pat3.match("a.txt"));
+
+    PATDEF(pat4, "[a-z中]?")
+    EXPECT_TRUE(pat4.match("中文"));
+    EXPECT_TRUE(pat4.match("x文"));
+    EXPECT_FALSE(pat4.match("文文"));
+}
+
+TEST_CASE(unicode_escape_star) {
+    PATDEF(pat1, "\\中.txt")
+    EXPECT_TRUE(pat1.match("中.txt"));
+    EXPECT_FALSE(pat1.match("文.txt"));
+
+    PATDEF(pat2, "*文.txt")
+    EXPECT_TRUE(pat2.match("中文.txt"));
+    EXPECT_TRUE(pat2.match("文.txt"));
+    EXPECT_FALSE(pat2.match("中英.txt"));
+
+    PATDEF(pat3, "**/中.txt")
+    EXPECT_TRUE(pat3.match("a/b/中.txt"));
+    EXPECT_TRUE(pat3.match("中.txt"));
+}
+
+TEST_CASE(invalid_utf8_bytes) {
+    // Bytes that are not valid UTF-8 count as one character each and
+    // only compare equal to themselves.
+    PATDEF(pat1, "*.txt")
+    EXPECT_TRUE(pat1.match("\xFF\xFE.txt"));
+
+    PATDEF(pat2, "??.txt")
+    EXPECT_TRUE(pat2.match("\xFF\xFE.txt"));
+
+    PATDEF(pat3, "?.txt")
+    EXPECT_FALSE(pat3.match("\xFF\xFE.txt"));
+    EXPECT_TRUE(pat3.match("\x80.txt"));
+
+    PATDEF(pat4, "\xFF.txt")
+    EXPECT_TRUE(pat4.match("\xFF.txt"));
+    EXPECT_FALSE(pat4.match("\xFE.txt"));
+
+    PATDEF(pat5, "[!a].txt")
+    EXPECT_TRUE(pat5.match("\xFF.txt"));
+    EXPECT_FALSE(pat5.match("a.txt"));
+}
+
+// The wildcard and range cases below are ported from rust-lang/glob's
+// test suite (MIT/Apache-2.0).
+TEST_CASE(ported_wildcards) {
+    PATDEF(pat1, "a*b")
+    EXPECT_TRUE(pat1.match("a_b"));
+
+    PATDEF(pat2, "a*b*c")
+    EXPECT_TRUE(pat2.match("abc"));
+    EXPECT_FALSE(pat2.match("abcd"));
+    EXPECT_TRUE(pat2.match("a_b_c"));
+    EXPECT_TRUE(pat2.match("a___b___c"));
+
+    PATDEF(pat3, "abc*abc*abc")
+    EXPECT_TRUE(pat3.match("abcabcabcabcabcabcabc"));
+    EXPECT_FALSE(pat3.match("abcabcabcabcabcabcabca"));
+
+    PATDEF(pat4, "a*a*a*a*a*a*a*a*a")
+    EXPECT_TRUE(pat4.match("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+    PATDEF(pat5, "a*b[xyz]c*d")
+    EXPECT_TRUE(pat5.match("abxcdbxcddd"));
+}
+
+TEST_CASE(ported_ranges) {
+    PATDEF(pat1, "a[0-9]b")
+    for(char digit = '0'; digit <= '9'; ++digit) {
+        EXPECT_TRUE(pat1.match(std::string("a") + digit + "b"));
+    }
+    EXPECT_FALSE(pat1.match("a_b"));
+
+    PATDEF(pat2, "a[!0-9]b")
+    for(char digit = '0'; digit <= '9'; ++digit) {
+        EXPECT_FALSE(pat2.match(std::string("a") + digit + "b"));
+    }
+    EXPECT_TRUE(pat2.match("a_b"));
+
+    for(std::string_view p: {"[a-z123]", "[1a-z23]", "[123a-z]"}) {
+        PATDEF(pat, p)
+        for(char c = 'a'; c <= 'z'; ++c) {
+            EXPECT_TRUE(pat.match(std::string_view(&c, 1)));
+        }
+        EXPECT_TRUE(pat.match("1"));
+        EXPECT_TRUE(pat.match("2"));
+        EXPECT_TRUE(pat.match("3"));
+    }
+
+    for(std::string_view p: {"[abc-]", "[-abc]", "[a-c-]"}) {
+        PATDEF(pat, p)
+        EXPECT_TRUE(pat.match("a"));
+        EXPECT_TRUE(pat.match("b"));
+        EXPECT_TRUE(pat.match("c"));
+        EXPECT_TRUE(pat.match("-"));
+        EXPECT_FALSE(pat.match("d"));
+    }
+
+    PATDEF(pat3, "[-]")
+    EXPECT_TRUE(pat3.match("-"));
+
+    PATDEF(pat4, "[!-]")
+    EXPECT_FALSE(pat4.match("-"));
+}
+
 };  // TEST_SUITE(glob_pattern)
 
 }  // namespace

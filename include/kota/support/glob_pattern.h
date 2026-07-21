@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bitset>
 #include <cstdint>
 #include <expected>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "kota/support/small_vector.h"
 #include "kota/support/string_ref.h"
@@ -42,8 +42,11 @@ struct GlobError {
 ///
 /// Note: Use only `/` for path segment separator
 ///
-/// Only supports single-byte characters (ASCII/Latin-1). Multi-byte encodings
-/// like UTF-8 are matched byte-by-byte.
+/// Matching is Unicode-aware: `?`, `[]` and escaped literals consume one
+/// decoded UTF-8 code point at a time. Bytes that do not form valid UTF-8
+/// are treated as single-byte characters that only compare equal to
+/// themselves, so non-UTF-8 paths still match literally and count one
+/// byte per `?`.
 class GlobPattern {
 public:
     [[nodiscard]] static std::expected<GlobPattern, GlobError>
@@ -76,7 +79,10 @@ private:
 
         struct Bracket {
             size_t next_offset;
-            std::bitset<256> bytes;
+            bool negated = false;
+            small_vector<std::pair<char32_t, char32_t>, 2> ranges;
+
+            [[nodiscard]] bool contains(char32_t cp) const;
         };
 
         small_vector<Bracket, 0> brackets;

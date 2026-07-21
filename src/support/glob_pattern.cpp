@@ -11,75 +11,124 @@ namespace kota {
 
 namespace {
 
-using GlobCharSet = std::bitset<256>;
+/// One matching unit of the subject or pattern text: a decoded Unicode
+/// scalar value, or a byte that is not valid UTF-8 mapped above the
+/// Unicode range so it only compares equal to the same byte.
+struct Utf8Atom {
+    char32_t cp;
+    std::uint32_t len;
+};
 
-std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) {
-    GlobCharSet bv{};
+constexpr char32_t invalid_atom_base = 0x110000;
 
-    for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(s.size()); i < e; ++i) {
-        switch(s[i]) {
-            case '\\': {
-                auto backslash_pos = i;
-                ++i;
-                if(i == e) [[unlikely]] {
-                    return std::unexpected{
-                        GlobError{GlobError::StrayBackslash,
-                                  backslash_pos, backslash_pos + 1,
-                                  "stray `\\`"}
-                    };
-                }
-                if(s[i] != '/') {
-                    bv.set(static_cast<std::uint8_t>(s[i]), true);
-                }
-                break;
-            }
-
-            case '-': {
-                if(i == 0 || i + 1 == e) {
-                    bv.set('-', true);
-                    break;
-                }
-                auto dash_pos = i;
-                auto c_begin = static_cast<std::uint8_t>(s[i - 1]);
-                auto c_end = static_cast<std::uint8_t>(s[i + 1]);
-                ++i;
-                if(c_end == '\\') {
-                    auto backslash_pos = i;
-                    ++i;
-                    if(i == e) [[unlikely]] {
-                        return std::unexpected{
-                            GlobError{GlobError::StrayBackslash,
-                                      backslash_pos, backslash_pos + 1,
-                                      "stray `\\`"}
-                        };
-                    }
-                    c_end = static_cast<std::uint8_t>(s[i]);
-                }
-                if(c_begin > c_end) [[unlikely]] {
-                    return std::unexpected{
-                        GlobError{GlobError::InvalidRange,
-                                  dash_pos - 1,
-                                  dash_pos + 2,
-                                  std::format("`{}` is larger than `{}`", c_begin, c_end)}
-                    };
-                }
-                for(std::uint32_t c = c_begin; c <= c_end; ++c) {
-                    if(c != '/') {
-                        bv.set(static_cast<std::uint8_t>(c), true);
-                    }
-                }
-                break;
-            }
-
-            default: {
-                if(s[i] != '/') {
-                    bv.set(static_cast<std::uint8_t>(s[i]), true);
-                }
-            }
-        }
+Utf8Atom decode_utf8_atom(const char* it, const char* end) {
+    const auto lead = static_cast<std::uint8_t>(*it);
+    if(lead < 0x80) [[likely]] {
+        return {lead, 1};
     }
 
-    return bv;
+    const auto invalid = Utf8Atom{invalid_atom_base + lead, 1};
+
+    std::uint32_t len;
+    char32_t cp;
+    if((lead & 0xE0) == 0xC0) {
+        len = 2;
+        cp = lead & 0x1F;
+    } else if((lead & 0xF0) == 0xE0) {
+        len = 3;
+        cp = lead & 0x0F;
+    } else if((lead & 0xF8) == 0xF0) {
+        len = 4;
+        cp = lead & 0x07;
+    } else {
+        return invalid;
+    }
+
+    if(end - it < static_cast<std::ptrdiff_t>(len)) {
+        return invalid;
+    }
+    for(std::uint32_t k = 1; k < len; ++k) {
+        const auto cont = static_cast<std::uint8_t>(it[k]);
+        if((cont & 0xC0) != 0x80) {
+            return invalid;
+        }
+        cp = (cp << 6) | (cont & 0x3F);
+    }
+
+    // Reject overlong encodings, surrogates and out-of-range values so a
+    // decoded atom never aliases a differently-spelled byte sequence.
+    constexpr char32_t min_for_len[] = {0, 0, 0x80, 0x800, 0x10000};
+    if(cp < min_for_len[len] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+        return invalid;
+    }
+    return {cp, len};
+}
+
+using CharClassRanges = small_vector<std::pair<char32_t, char32_t>, 2>;
+
+std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view s) {
+    CharClassRanges ranges;
+    const char* it = s.data();
+    const char* const end = it + s.size();
+    auto offset = [&](const char* q) {
+        return static_cast<std::uint32_t>(q - s.data());
+    };
+
+    // Decode one class member, resolving a leading `\` escape.
+    auto next_member = [&]() -> std::expected<char32_t, GlobError> {
+        if(*it == '\\') {
+            auto backslash_pos = offset(it);
+            ++it;
+            if(it == end) [[unlikely]] {
+                return std::unexpected{
+                    GlobError{GlobError::StrayBackslash,
+                              backslash_pos, backslash_pos + 1,
+                              "stray `\\`"}
+                };
+            }
+        }
+        const auto atom = decode_utf8_atom(it, end);
+        it += atom.len;
+        return atom.cp;
+    };
+
+    // A member is held back one step so a following `-` can turn it into
+    // the lower bound of a range; `-` first or last in the class stays a
+    // literal member, as before.
+    std::optional<char32_t> pending;
+    std::uint32_t pending_begin = 0;
+
+    while(it != end) {
+        if(*it == '-' && pending.has_value() && it + 1 != end) {
+            ++it;
+            KOTA_EXPECTED_TRY_V(auto hi, next_member());
+            if(*pending > hi) [[unlikely]] {
+                return std::unexpected{
+                    GlobError{GlobError::InvalidRange,
+                              pending_begin, offset(it),
+                              std::format("`U+{:04X}` is larger than `U+{:04X}`",
+                              static_cast<std::uint32_t>(*pending),
+                              static_cast<std::uint32_t>(hi))}
+                };
+            }
+            ranges.push_back({*pending, hi});
+            pending.reset();
+            continue;
+        }
+
+        auto member_begin = offset(it);
+        KOTA_EXPECTED_TRY_V(auto cp, next_member());
+        if(pending.has_value()) {
+            ranges.push_back({*pending, *pending});
+        }
+        pending = cp;
+        pending_begin = member_begin;
+    }
+    if(pending.has_value()) {
+        ranges.push_back({*pending, *pending});
+    }
+
+    return ranges;
 }
 
 std::expected<small_vector<std::string, 1>, GlobError>
@@ -318,15 +367,11 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
 
         std::string_view chars = s.substr(i, j - i);
         bool invert = s[i] == '^' || s[i] == '!';
-        auto bv = invert ? parse_bracket_charset(chars.substr(1)) : parse_bracket_charset(chars);
-        if(!bv.has_value()) [[unlikely]] {
-            return std::unexpected{std::move(bv.error())};
+        auto ranges = parse_bracket_charset(invert ? chars.substr(1) : chars);
+        if(!ranges.has_value()) [[unlikely]] {
+            return std::unexpected{std::move(ranges.error())};
         }
-        if(invert) {
-            bv->flip();
-            bv->set('/', false);
-        }
-        pat.brackets.push_back(Bracket{j + 1, std::move(*bv)});
+        pat.brackets.push_back(Bracket{j + 1, invert, std::move(*ranges)});
         return j;
     };
 
@@ -376,6 +421,17 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
 
     pat.glob_segments.assign(std::move(glob_segments));
     return pat;
+}
+
+bool GlobPattern::SubGlobPattern::Bracket::contains(char32_t cp) const {
+    // A bracket never matches the segment separator, whether negated or not.
+    if(cp == U'/') {
+        return false;
+    }
+    const bool hit = std::ranges::any_of(ranges, [&](const auto& range) {
+        return range.first <= cp && cp <= range.second;
+    });
+    return negated ? !hit : hit;
 }
 
 bool GlobPattern::match(std::string_view sv) const {
@@ -538,33 +594,40 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                 case '?': {
                     if(s != s_end && *s != '/') {
                         ++p;
-                        ++s;
+                        s += decode_utf8_atom(s, s_end).len;
                         continue;
                     }
                     break;
                 }
 
                 case '[': {
-                    if(b < brackets.size() && brackets[b].bytes[std::uint8_t(*s)]) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
-                            break;
+                    if(b < brackets.size()) {
+                        const auto atom = decode_utf8_atom(s, s_end);
+                        if(brackets[b].contains(atom.cp)) {
+                            if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                                break;
+                            }
+                            p = pat.data() + brackets[b].next_offset;
+                            ++b;
+                            s += atom.len;
+                            continue;
                         }
-                        p = pat.data() + brackets[b].next_offset;
-                        ++b;
-                        ++s;
-                        continue;
                     }
                     break;
                 }
 
                 case '\\': {
-                    if(p + 1 != seg_end && *(p + 1) == *s) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
-                            break;
+                    if(p + 1 != seg_end) {
+                        const auto escaped = decode_utf8_atom(p + 1, seg_end);
+                        const auto atom = decode_utf8_atom(s, s_end);
+                        if(escaped.cp == atom.cp) {
+                            if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                                break;
+                            }
+                            p += 1 + escaped.len;
+                            s += atom.len;
+                            continue;
                         }
-                        p += 2;
-                        ++s;
-                        continue;
                     }
                     break;
                 }
