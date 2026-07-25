@@ -1,9 +1,12 @@
 #pragma once
 
-#include "kota/zest/assert/check.h"
-#include "kota/zest/assert/trace.h"
-#include "kota/zest/runner/suite.h"
-#include "kota/zest/snapshot/snapshot.h"
+// The zest test macros, and nothing else — this header includes nothing, by
+// design. Modules cannot export macros, so a downstream consuming kotatsu as a
+// module still has to pick these up textually, and anything included here would
+// duplicate declarations the module already provides.
+//
+// The kota::zest entities an expansion refers to only have to be visible where
+// the macro is used, not here. Include "kota/zest/zest.h" or import the module.
 
 #define TEST_SUITE(name, ...)                                                                      \
     struct name##TEST : __VA_OPT__(__VA_ARGS__, )::kota::zest::TestSuiteDef<name##TEST>
@@ -171,8 +174,10 @@
 
 #endif
 
+// Gated on the header being reachable, but deliberately not including it — the
+// snapshot-JSON macros need ::kota::codec::json visible at the use site, which
+// "kota/zest/zest.h" arranges under the same condition.
 #if __has_include("kota/codec/json/json.h")
-#include "kota/codec/json/json.h"
 
 // clang-format off
 #define ZEST_SNAPSHOT_JSON_IMPL(return_action, value, ...)                                         \

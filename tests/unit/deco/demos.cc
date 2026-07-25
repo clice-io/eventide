@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "kota/deco/deco.h"
-#include "kota/zest/macro.h"
+#include "kota/zest/zest.h"
 
 namespace kota::deco {
 namespace {

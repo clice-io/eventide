@@ -1,5 +1,5 @@
 #include "kota/http/http.h"
-#include "kota/zest/macro.h"
+#include "kota/zest/zest.h"
 #include "kota/async/io/loop.h"
 
 TEST_SUITE(http_manual_request) {
