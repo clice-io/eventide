@@ -46,12 +46,12 @@ llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
 
 [feature.macos-clang.target.osx-arm64.dependencies]
-clang = "==20.1.8"
-clangxx = "==20.1.8"
-lld = "==20.1.8"
-llvm-tools = "==20.1.8"
-compiler-rt = "==20.1.8"
-libcxx = "==20.1.8"
+clang = "==22.1.8"
+clangxx = "==22.1.8"
+lld = "==22.1.8"
+llvm-tools = "==22.1.8"
+compiler-rt = "==22.1.8"
+libcxx = "==22.1.8"
 
 [feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
