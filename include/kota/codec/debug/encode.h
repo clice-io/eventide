@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include "kota/support/format.h"
 
 #include "kota/meta/enum.h"
 #include "kota/meta/name.h"
@@ -44,7 +45,7 @@ struct Formatter {
                 case '\0': out += "\\0"; break;
                 default:
                     if(static_cast<unsigned char>(c) < 0x20) {
-                        out += std::format("\\x{:02x}", static_cast<unsigned char>(c));
+                        out += kota::fmt("\\x{:02x}", static_cast<unsigned char>(c));
                     } else {
                         out += c;
                     }
@@ -104,7 +105,7 @@ struct Formatter {
             case '\0': out += "\\0"; break;
             default:
                 if(static_cast<unsigned char>(c) < 0x20) {
-                    out += std::format("\\x{:02x}", static_cast<unsigned char>(c));
+                    out += kota::fmt("\\x{:02x}", static_cast<unsigned char>(c));
                 } else {
                     out += c;
                 }
@@ -144,7 +145,7 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_float(T v) {
-        fmt.out += std::format("{}", static_cast<double>(v));
+        fmt.out += kota::fmt("{}", static_cast<double>(v));
         return true;
     }
 
@@ -203,9 +204,9 @@ struct ValueWriter {
     bool visit_pointer(const T& ptr) {
         if(ptr) {
             if constexpr(std::is_pointer_v<T>) {
-                fmt.out += std::format("0x{:x}", reinterpret_cast<std::uintptr_t>(ptr));
+                fmt.out += kota::fmt("0x{:x}", reinterpret_cast<std::uintptr_t>(ptr));
             } else {
-                fmt.out += std::format("0x{:x}", reinterpret_cast<std::uintptr_t>(ptr.get()));
+                fmt.out += kota::fmt("0x{:x}", reinterpret_cast<std::uintptr_t>(ptr.get()));
             }
         } else {
             fmt.out += "null";

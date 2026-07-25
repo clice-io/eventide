@@ -6,6 +6,7 @@
 #include <string_view>
 #include <type_traits>
 #include <vector>
+#include "kota/support/format.h"
 
 #include "config.h"
 #include "decl.h"
@@ -29,10 +30,10 @@ constexpr inline bool has_help_text(std::string_view help_text) {
 
 inline std::string category_desc(const decl::Category& category) {
     if(!category.name.empty() && !category.description.empty()) {
-        return std::format("<{}> ({})", category.name, category.description);
+        return kota::fmt("<{}> ({})", category.name, category.description);
     }
     if(!category.name.empty()) {
-        return std::format("<{}>", category.name);
+        return kota::fmt("<{}>", category.name);
     }
     if(!category.description.empty()) {
         return std::string(category.description);
@@ -42,11 +43,11 @@ inline std::string category_desc(const decl::Category& category) {
 
 inline std::string field_desc(std::string_view field_name, const decl::CommonOptionFields& cfg) {
     if(has_help_text(cfg.help)) {
-        return std::format("{} ({})", field_name, cfg.help);
+        return kota::fmt("{} ({})", field_name, cfg.help);
     }
     const auto category = cfg.category.ptr();
     if(!category->name.empty() || !category->description.empty()) {
-        return std::format("{} [category: {}]", field_name, category_desc(*category));
+        return kota::fmt("{} [category: {}]", field_name, category_desc(*category));
     }
     return std::string(field_name);
 }
@@ -58,7 +59,7 @@ inline std::string meta_var_token(std::string_view meta_var) {
     if(meta_var.front() == '<' && meta_var.back() == '>') {
         return std::string(meta_var);
     }
-    return std::format("<{}>", meta_var);
+    return kota::fmt("<{}>", meta_var);
 }
 
 inline std::string enum_meta_var_token(const std::vector<std::string>& names,
@@ -78,7 +79,7 @@ inline std::string enum_meta_var_token(const std::vector<std::string>& names,
     if(names.size() > limit) {
         body += cfg.overflow_suffix;
     }
-    return std::format("<{}>", body);
+    return kota::fmt("<{}>", body);
 }
 
 inline auto active_config(const config::Config* override_config) -> const config::Config& {
@@ -178,9 +179,9 @@ inline std::string default_name_from_member(std::string_view member_name) {
         return "";
     }
     if(normalized_name.size() == 1) {
-        return std::format("-{}", normalized_name);
+        return kota::fmt("-{}", normalized_name);
     }
-    return std::format("--{}", normalized_name);
+    return kota::fmt("--{}", normalized_name);
 }
 
 template <typename CfgTy>
@@ -213,16 +214,16 @@ constexpr inline bool has_kv_style(char style, decl::KVStyle expected) {
 
 inline std::string kv_joined_alias(std::string_view alias, std::string_view value_token) {
     if(alias.starts_with("--")) {
-        return std::format("{}={}", alias, value_token);
+        return kota::fmt("{}={}", alias, value_token);
     }
     if(alias.starts_with("/")) {
-        return std::format("{}:{}", alias, value_token);
+        return kota::fmt("{}:{}", alias, value_token);
     }
-    return std::format("{}{}", alias, value_token);
+    return kota::fmt("{}{}", alias, value_token);
 }
 
 inline std::string comma_joined_alias(std::string_view alias, std::string_view value_token) {
-    return std::format("{},{}[,{}...]", alias, value_token, value_token);
+    return kota::fmt("{},{}[,{}...]", alias, value_token, value_token);
 }
 
 inline std::string base_meta_name(std::string_view value_token) {
@@ -245,7 +246,7 @@ inline std::string repeated_meta_vars(std::string_view value_token, unsigned arg
     std::vector<std::string> values;
     values.reserve(arg_num);
     for(unsigned i = 1; i <= arg_num; ++i) {
-        values.push_back(std::format("<{}{}>", base_name, i));
+        values.push_back(kota::fmt("<{}{}>", base_name, i));
     }
     return join_strings(values, " ");
 }
@@ -258,7 +259,7 @@ inline std::string usage_text(const CfgTy& cfg,
     if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
         return std::string(value_token);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
-        return std::format("-- {}...", value_token);
+        return kota::fmt("-- {}...", value_token);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
         return join_aliases(named_aliases(cfg, fallback_name), help_mode);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::KV) {
@@ -266,11 +267,11 @@ inline std::string usage_text(const CfgTy& cfg,
         const bool allow_separate = has_kv_style(cfg.style, decl::KVStyle::Separate);
         const bool allow_joined = has_kv_style(cfg.style, decl::KVStyle::Joined);
         if(allow_separate && !allow_joined) {
-            return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
+            return kota::fmt("{} {}", join_aliases(aliases, help_mode), value_token);
         }
         std::vector<std::string> forms;
         if(allow_separate) {
-            forms.push_back(std::format("{} {}", join_aliases(aliases, help_mode), value_token));
+            forms.push_back(kota::fmt("{} {}", join_aliases(aliases, help_mode), value_token));
         }
         if(allow_joined) {
             forms.reserve(forms.size() + aliases.size());
@@ -279,7 +280,7 @@ inline std::string usage_text(const CfgTy& cfg,
             }
         }
         if(forms.empty()) {
-            return std::format("{} {}", join_aliases(aliases, help_mode), value_token);
+            return kota::fmt("{} {}", join_aliases(aliases, help_mode), value_token);
         }
         return join_aliases(forms, help_mode);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::CommaJoined) {
@@ -291,7 +292,7 @@ inline std::string usage_text(const CfgTy& cfg,
         }
         return join_aliases(forms, help_mode);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Multi) {
-        return std::format("{} {}",
+        return kota::fmt("{} {}",
                            join_aliases(named_aliases(cfg, fallback_name), help_mode),
                            repeated_meta_vars(value_token, cfg.arg_num));
     } else {
@@ -303,14 +304,14 @@ inline std::string render_help_text(std::string_view usage,
                                     std::string_view help,
                                     const config::UsageStyle& style) {
     if(usage.size() >= style.help_column) {
-        return std::format(R"(  {}
+        return kota::fmt(R"(  {}
     {:<{}}{})",
                            usage,
                            "",
                            style.help_column,
                            help);
     }
-    return std::format("  {:<{}}{}", usage, style.help_column, help);
+    return kota::fmt("  {:<{}}{}", usage, style.help_column, help);
 }
 
 template <typename CfgTy>
@@ -336,7 +337,7 @@ inline std::string usage_text_for_field(const FieldTy&,
         if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
             if constexpr(!trait::ScalarResultType<result_ty> &&
                          trait::VectorResultType<result_ty>) {
-                return std::format("{}...", value_token);
+                return kota::fmt("{}...", value_token);
             } else {
                 return value_token;
             }

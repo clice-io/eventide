@@ -18,6 +18,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "kota/support/format.h"
 
 #include "kota/support/config.h"
 
@@ -484,16 +485,16 @@ public:
         if(ptr != nullptr) {
             return (*ptr)[key];
         }
-        return make_error(message.empty() ? std::format(R"(["{}"])", key)
-                                          : std::format(R"({} -> ["{}"])", message, key));
+        return make_error(message.empty() ? kota::fmt(R"(["{}"])", key)
+                                          : kota::fmt(R"({} -> ["{}"])", message, key));
     }
 
     [[nodiscard]] Cursor operator[](std::size_t index) const {
         if(ptr != nullptr) {
             return (*ptr)[index];
         }
-        return make_error(message.empty() ? std::format("[{}]", index)
-                                          : std::format("{} -> [{}]", message, index));
+        return make_error(message.empty() ? kota::fmt("[{}]", index)
+                                          : kota::fmt("{} -> [{}]", message, index));
     }
 
     void assert_valid() const {
@@ -522,9 +523,9 @@ inline Cursor Value::operator[](std::string_view key) const {
         if(const Value* v = obj->find(key)) {
             return Cursor(*v);
         }
-        return Cursor::make_error(std::format(R"(missing key "{}")", key));
+        return Cursor::make_error(kota::fmt(R"(missing key "{}")", key));
     }
-    return Cursor::make_error(std::format("expected object, got {}", detail::kind_name(kind())));
+    return Cursor::make_error(kota::fmt("expected object, got {}", detail::kind_name(kind())));
 }
 
 inline Cursor Value::operator[](std::size_t index) const {
@@ -533,9 +534,9 @@ inline Cursor Value::operator[](std::size_t index) const {
             return Cursor((*arr)[index]);
         }
         return Cursor::make_error(
-            std::format("index {} out of range (size {})", index, arr->size()));
+            kota::fmt("index {} out of range (size {})", index, arr->size()));
     }
-    return Cursor::make_error(std::format("expected array, got {}", detail::kind_name(kind())));
+    return Cursor::make_error(kota::fmt("expected array, got {}", detail::kind_name(kind())));
 }
 
 inline Array::Array() = default;

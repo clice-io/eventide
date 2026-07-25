@@ -17,6 +17,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "kota/support/format.h"
 
 #include "backend.h"
 #include "decl.h"
@@ -470,7 +471,7 @@ std::string check_valid(const T& options,
         if constexpr(ty::deco_option_like<field_ty>) {
             if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
                !field.has_value()) {
-                err = std::format("required option {} is missing",
+                err = kota::fmt("required option {} is missing",
                                   desc::from_deco_option(cfg, false, name));
                 return false;
             }
@@ -498,14 +499,14 @@ std::string check_valid(const T& options,
     }
     for(const auto* category: required_categories) {
         if(!matched_categories.contains(category)) {
-            err = std::format("required {} is missing", desc::detail::category_desc(*category));
+            err = kota::fmt("required {} is missing", desc::detail::category_desc(*category));
             return err;
         }
     }
     // check category exclusiveness
     for(auto category: matched_categories) {
         if(category->exclusive && matched_categories.size() > 1) {
-            err = std::format("options in {} are exclusive, but multiple categories are matched",
+            err = kota::fmt("options in {} are exclusive, but multiple categories are matched",
                               desc::detail::category_desc(*category));
             return err;
         }
@@ -583,7 +584,7 @@ std::expected<Invocation<T>, ParseError>
             };
             if(storage.is_unknown_option_id(raw_parg.id)) {
                 err = {ParseError::Type::BackendParsing,
-                       error_at_argument(std::format("unknown option '{}'", raw_parg.spelling))};
+                       error_at_argument(kota::fmt("unknown option '{}'", raw_parg.spelling))};
                 break;
             }
 
@@ -595,14 +596,14 @@ std::expected<Invocation<T>, ParseError>
                 if(!storage.has_input_option()) {
                     err = {ParseError::Type::DecoParsing,
                            error_at_argument(
-                               std::format("unexpected input argument {}", raw_parg.spelling))};
+                               kota::fmt("unexpected input argument {}", raw_parg.spelling))};
                     break;
                 }
             } else if(storage.is_trailing_argument(raw_parg)) {
                 if(!storage.has_trailing_option()) {
                     err = {ParseError::Type::DecoParsing,
                            error_at_argument(
-                               std::format("unexpected trailing argument {}", raw_parg.spelling))};
+                               kota::fmt("unexpected trailing argument {}", raw_parg.spelling))};
                     break;
                 }
                 opt_raw_ptr = storage.trailing_ptr_of(res.options);
@@ -721,7 +722,7 @@ std::expected<Invocation<T>, ParseError>
                     err = {
                         ParseError::Type::DecoParsing,
                         decl::IntoContext::at_cursor(active_argv, res.next_index, formatter)
-                            .format_error(std::format("required option {} is missing",
+                            .format_error(kota::fmt("required option {} is missing",
                                                       desc::from_deco_option(cfg, false, name)))};
                     return false;
                 }

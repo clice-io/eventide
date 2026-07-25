@@ -2,6 +2,7 @@
 
 #ifndef KOTA_IPC_PEER_INL_FROM_HEADER
 #include "kota/ipc/peer.h"
+#include "kota/support/format.h"
 #endif
 
 #include <deque>
@@ -25,7 +26,7 @@
 #define ET_IPC_LOG(self_ptr, lvl, fmt, ...)                                                        \
     do {                                                                                           \
         if((self_ptr)->logger && (lvl) >= (self_ptr)->min_level)                                   \
-            (self_ptr)->logger((lvl), std::format(fmt, __VA_ARGS__));                              \
+            (self_ptr)->logger((lvl), kota::fmt(fmt, __VA_ARGS__));                              \
     } while(false)
 
 namespace kota::ipc {

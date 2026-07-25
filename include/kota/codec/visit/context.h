@@ -8,6 +8,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "kota/support/format.h"
 
 namespace kota::codec {
 
@@ -60,7 +61,7 @@ struct rich_error {
                 }
                 result += *field;
             } else {
-                result += std::format("[{}]", std::get<std::size_t>(path[i]));
+                result += kota::fmt("[{}]", std::get<std::size_t>(path[i]));
             }
         }
         return result;
@@ -78,29 +79,29 @@ struct rich_error {
             result += p;
         }
         if(location) {
-            result += std::format(" (line {}, column {})", location->line, location->column);
+            result += kota::fmt(" (line {}, column {})", location->line, location->column);
         }
         return result;
     }
 
     static rich_error missing_field(std::string_view name) {
-        return rich_error(std::format("missing required field '{}'", name));
+        return rich_error(kota::fmt("missing required field '{}'", name));
     }
 
     static rich_error unknown_field(std::string_view name) {
-        return rich_error(std::format("unknown field '{}'", name));
+        return rich_error(kota::fmt("unknown field '{}'", name));
     }
 
     static rich_error duplicate_field(std::string_view name) {
-        return rich_error(std::format("duplicate field '{}'", name));
+        return rich_error(kota::fmt("duplicate field '{}'", name));
     }
 
     static rich_error invalid_type(std::string_view expected, std::string_view got) {
-        return rich_error(std::format("invalid type: expected {}, got {}", expected, got));
+        return rich_error(kota::fmt("invalid type: expected {}, got {}", expected, got));
     }
 
     static rich_error invalid_length(std::size_t expected, std::size_t got) {
-        return rich_error(std::format("invalid length: expected {}, got {}", expected, got));
+        return rich_error(kota::fmt("invalid length: expected {}, got {}", expected, got));
     }
 };
 

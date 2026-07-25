@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include "kota/support/format.h"
 
 #include "kota/support/expected_try.h"
 #include "kota/support/naming.h"
@@ -74,7 +75,7 @@ private:
         auto name = kota::naming::normalize_identifier(ti->type_name);
         if(!used_names.insert(name).second) {
             return std::unexpected(rich_error(
-                std::format("duplicate $defs name '{}' from type '{}'", name, ti->type_name)));
+                kota::fmt("duplicate $defs name '{}' from type '{}'", name, ti->type_name)));
         }
         auto [pos, _] = def_names.emplace(ti, std::move(name));
         return std::string_view(pos->second);
@@ -139,7 +140,7 @@ private:
             case tk::any: return dyn::Value(dyn::Object{});
             default:
                 return std::unexpected(
-                    rich_error(std::format("unsupported type kind '{}' for JSON Schema generation",
+                    rich_error(kota::fmt("unsupported type kind '{}' for JSON Schema generation",
                                            ti->type_name)));
         }
     }
@@ -245,7 +246,7 @@ private:
         KOTA_EXPECTED_TRY_V(auto name, def_name(ti));
         KOTA_EXPECTED_TRY(ensure_struct_def(ti));
         return dyn::Value{
-            {"$ref", std::format("#/$defs/{}", name)}
+            {"$ref", kota::fmt("#/$defs/{}", name)}
         };
     }
 
