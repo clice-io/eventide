@@ -1,8 +1,16 @@
 #pragma once
-#include <type_traits>
 
-#include "decl.h"
-#include "trait.h"
+// The deco declaration macros, and nothing else. Modules cannot export macros,
+// so a downstream consuming kotatsu as a module still has to include this file
+// textually — hence it pulls in no deco header, which would otherwise duplicate
+// the module's declarations. Only the std headers the expansions name are
+// included; kota::deco::decl and kota::deco::trait have to be visible at the
+// point of use, from "kota/deco/deco.h" or from the imported module.
+
+#include <cstdint>
+#include <string>
+#include <type_traits>
+#include <vector>
 
 #define DECO_CONCAT_IMPL(a, b) a##b
 #define DECO_CONCAT(a, b) DECO_CONCAT_IMPL(a, b)

@@ -235,6 +235,7 @@ if has_config("deco") then
 		add_headerfiles(
 			"include/(kota/deco/option.h)",
 			"include/(kota/deco/deco.h)",
+			"include/(kota/deco/macro.h)",
 			"include/(kota/deco/option/**.h)",
 			"include/(kota/deco/facade/**.h)"
 		)
