@@ -7,8 +7,6 @@
 #include "kota/zest/runner/suite.h"
 #include "kota/zest/snapshot/snapshot.h"
 
-// Matches the guard "kota/zest/macro.h" uses for the snapshot-JSON macros, which
-// name ::kota::codec::json but cannot include it themselves.
-#if __has_include("kota/codec/json/json.h")
-#include "kota/codec/json/json.h"
-#endif
+// No JSON codec include here on purpose. zest does not depend on it — the
+// EXPECT_SNAPSHOT_JSON family just names ::kota::codec::json in its expansion,
+// so a test that wants those macros includes "kota/codec/json/json.h" itself.

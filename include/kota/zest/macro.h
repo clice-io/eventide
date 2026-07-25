@@ -174,10 +174,13 @@
 
 #endif
 
-// Gated on the header being reachable, but deliberately not including it — the
-// snapshot-JSON macros need ::kota::codec::json visible at the use site, which
-// "kota/zest/zest.h" arranges under the same condition.
-#if __has_include("kota/codec/json/json.h")
+// Defined unconditionally, like every other macro here: these name
+// ::kota::codec::json, which — as always — only has to be visible where the
+// macro is used. Reaching for the JSON snapshot macros without the JSON codec
+// available is a name-lookup error at that use site, which is the honest
+// failure. (This used to be gated on __has_include of kotatsu's own json.h,
+// which answered the wrong question: that file is on disk whether or not the
+// codec was built, so the gate opened even when the backend was unavailable.)
 
 // clang-format off
 #define ZEST_SNAPSHOT_JSON_IMPL(return_action, value, ...)                                         \
@@ -206,5 +209,3 @@
 #define ASSERT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL(return, value __VA_OPT__(,) __VA_ARGS__)
 #define CO_ASSERT_SNAPSHOT_JSON(value, ...) ZEST_SNAPSHOT_JSON_IMPL(co_return, value __VA_OPT__(,) __VA_ARGS__)
 // clang-format on
-
-#endif

@@ -53,6 +53,10 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
     target_sources(unit_tests PRIVATE
         ${TEST_CODEC_CONTENT_SOURCES}
     )
+
+    # Lets always-built suites opt into cases that need the JSON codec, such as
+    # zest's EXPECT_SNAPSHOT_JSON tests.
+    target_compile_definitions(unit_tests PRIVATE KOTA_TEST_HAS_JSON=1)
 else()
     message(STATUS "KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping tests/unit/codec/{json,content}/*")
 endif()

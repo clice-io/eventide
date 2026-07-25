@@ -6,7 +6,8 @@
 #include "kota/zest/macro.h"
 
 #if !defined(TEST_SUITE) || !defined(TEST_CASE) || !defined(EXPECT_TRUE) || !defined(EXPECT_EQ) || \
-    !defined(ASSERT_TRUE) || !defined(EXPECT_SNAPSHOT) || !defined(STATIC_EXPECT_EQ)
+    !defined(ASSERT_TRUE) || !defined(EXPECT_SNAPSHOT) || !defined(STATIC_EXPECT_EQ) ||            \
+    !defined(EXPECT_SNAPSHOT_JSON)
 #error "kota/zest/macro.h must define the zest test macros on its own"
 #endif
 

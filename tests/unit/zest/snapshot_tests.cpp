@@ -6,6 +6,12 @@
 
 #include "kota/zest/zest.h"
 
+// The EXPECT_SNAPSHOT_JSON family names ::kota::codec::json in its expansion but
+// does not include it; this suite is built even when the JSON codec is not.
+#ifdef KOTA_TEST_HAS_JSON
+#include "kota/codec/json/json.h"
+#endif
+
 namespace kota::zest {
 
 namespace {
@@ -53,6 +59,8 @@ TEST_CASE(special_chars) {
     ASSERT_SNAPSHOT("tabs\there\nnewlines\nand \"quotes\"", "special_chars");
 }
 
+#ifdef KOTA_TEST_HAS_JSON
+
 TEST_CASE(json_vector) {
     auto vec = std::vector<int>{1, 2, 3};
     ASSERT_SNAPSHOT_JSON(vec, "json_vector");
@@ -65,6 +73,8 @@ TEST_CASE(json_map) {
     };
     ASSERT_SNAPSHOT_JSON(m, "json_map");
 }
+
+#endif
 
 TEST_CASE(glob_fixtures) {
     ASSERT_SNAPSHOT_GLOB(fixtures_dir(), "**/*.txt", read_file);
