@@ -23,10 +23,10 @@
 
 // Lazy log macro: level check happens before std::format is evaluated.
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define ET_IPC_LOG(self_ptr, lvl, fmt, ...)                                                        \
+#define ET_IPC_LOG(self_ptr, lvl, fstr, ...)                                                       \
     do {                                                                                           \
         if((self_ptr)->logger && (lvl) >= (self_ptr)->min_level)                                   \
-            (self_ptr)->logger((lvl), kota::fmt(fmt, __VA_ARGS__));                              \
+            (self_ptr)->logger((lvl), kota::fmt(fstr, __VA_ARGS__));                               \
     } while(false)
 
 namespace kota::ipc {
