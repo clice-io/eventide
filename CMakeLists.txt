@@ -42,8 +42,6 @@ if(MSVC)
     endif()
 endif()
 
-add_compile_options("-D_LIBCPP_DISABLE_AVAILABILITY")
-
 set(kota_primary_sanitizers "")
 if(KOTA_SANITIZE_ADDRESS)
     list(APPEND kota_primary_sanitizers "address")
