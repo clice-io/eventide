@@ -48,6 +48,8 @@ add_library(kota::zest ALIAS kota_zest)
 target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/capture.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/report.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
 )
@@ -61,5 +63,10 @@ target_link_libraries(kota_zest PUBLIC
     kota::deco
     kota::support
 )
+
+if(TARGET kota::codec::json)
+    target_link_libraries(kota_zest PRIVATE kota::codec::json)
+    target_compile_definitions(kota_zest PRIVATE KOTA_ZEST_HAS_JSON=1)
+endif()
 
 kota_apply_project_options(kota_zest)

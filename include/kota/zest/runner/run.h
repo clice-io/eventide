@@ -7,6 +7,11 @@
 
 namespace kota::zest {
 
+enum class OutputFormat {
+    Text,
+    Json,
+};
+
 /// Runtime configuration for the zest test runner.
 ///
 /// Fields use kota::deco macros, so this struct doubles as a CLI option definition.
@@ -35,6 +40,11 @@ struct Options {
 
     DecoFlag(help = "list all registered test cases and exit"; required = false)
     list_tests = false;
+
+    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<FORMAT>";
+                 help = "output format: text or json";
+                 required = false)
+    <OutputFormat> output_format = OutputFormat::Text;
 
     DecoFlag(help = "run test cases in parallel"; required = false)
     parallel = false;
