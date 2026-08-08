@@ -25,19 +25,26 @@ query($owner: String!, $repo: String!, $pr: Int!) {
           isOutdated
           path
           line
-          comments(first: 10) { nodes { author { login } body } }
+          comments(first: 50) {
+            pageInfo { hasNextPage endCursor }
+            nodes { author { login } body }
+          }
         }
       }
     }
   }
 }' -F owner=clice-io -F repo=kotatsu -F pr=<N> \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes | map(select(.isResolved | not))'
+  --jq '.data.repository.pullRequest.reviewThreads
+        | {page: .pageInfo, threads: (.nodes | map(select(.isResolved | not)))}'
 ```
 
 Always select by `isResolved == false` — never filter by timestamps.
-While `hasNextPage` is true, fetch the next page with
-`reviewThreads(first: 100, after: "<endCursor>")` — never report from a
-partial listing.
+Both connections paginate: while the outer `page.hasNextPage` is true,
+fetch the next page with `reviewThreads(first: 100, after:
+"<endCursor>")`; if a thread's own `comments.pageInfo.hasNextPage` is
+true, fetch that thread's remaining comments (query the thread `node` by
+`id` with `comments(first: 50, after: "<endCursor>")`) before handling
+it. Never act on a partial thread listing or a truncated discussion.
 
 ## Handle each thread
 
