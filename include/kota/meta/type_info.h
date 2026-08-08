@@ -97,11 +97,13 @@ struct field_info {
     type_info_fn type;
 
     bool has_default;
-    bool is_literal;
     bool has_skip_if;
     bool has_behavior;
 
-    /// Documentation text from attrs::description, empty when absent.
+    /// Field ordinal for index-addressed formats; field_spec::no_idx when absent.
+    std::uint32_t idx = field_spec::no_idx;
+
+    /// Documentation text from the annotation, empty when absent.
     std::string_view description = {};
 };
 
@@ -149,16 +151,6 @@ struct wire_name_static {
     constexpr static std::string_view value{storage.data(), storage.size()};
 };
 
-template <typename T, std::size_t I>
-constexpr bool field_has_explicit_rename() {
-    using field_t = meta::field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return false;
-    } else {
-        return tuple_any_of_v<typename field_t::attrs, is_rename_attr>;
-    }
-}
-
 template <typename Config>
 struct effective_field_rename {
     using type = naming::rename_policy::identity;
@@ -176,13 +168,25 @@ using effective_field_rename_t = typename effective_field_rename<Config>::type;
 template <typename T, std::size_t I, typename Config>
 constexpr std::string_view resolve_wire_name() {
     using policy = effective_field_rename_t<Config>;
-    if constexpr(field_has_explicit_rename<T, I>() ||
-                 std::is_same_v<policy, naming::rename_policy::identity>) {
-        return attrs::canonical_field_name<T, I>();
+    constexpr const field_spec& spec = field_spec_of<meta::field_type<T, I>>;
+    if constexpr(!spec.rename.empty()) {
+        return spec.rename;
+    } else if constexpr(std::is_same_v<policy, naming::rename_policy::identity>) {
+        return meta::field_name<I, T>();
     } else {
         return wire_name_static<T, I, policy>::value;
     }
 }
+
+/// True for a spec attr whose values matter beyond schema building (decode
+/// default handling, encode skip conditions); name-only specs are dropped
+/// from encode slots so identically-shaped fields share one slot type.
+template <typename Attr>
+constexpr bool is_runtime_spec_attr_v = false;
+
+template <typename Tag>
+constexpr bool is_runtime_spec_attr_v<attrs::spec<Tag>> =
+    attrs::spec<Tag>::value.defaulted || attrs::spec<Tag>::value.skip_if != skip_when::never;
 
 template <typename Tuple>
 struct filter_runtime_attrs;
@@ -196,7 +200,7 @@ template <typename First, typename... Rest>
 struct filter_runtime_attrs<std::tuple<First, Rest...>> {
     using tail = typename filter_runtime_attrs<std::tuple<Rest...>>::type;
     constexpr static bool keep = is_behavior_attr_v<First> || is_tagged_attr<First>::value ||
-                                 std::is_same_v<First, attrs::default_value>;
+                                 is_runtime_spec_attr_v<First>;
     using type = std::conditional_t<keep,
                                     decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
                                                             std::declval<tail>())),
@@ -318,32 +322,6 @@ struct type_instance :
                        Config> {};
 
 template <typename T, std::size_t I>
-constexpr bool has_alias_attr() {
-    using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
-    return tuple_any_of_v<attrs_t, is_alias_attr>;
-}
-
-template <typename T, std::size_t I, bool HasAlias = has_alias_attr<T, I>()>
-struct alias_storage {
-    constexpr static bool has_alias = false;
-    constexpr static std::size_t count = 0;
-    constexpr static std::array<std::string_view, 0> names = {};
-};
-
-template <typename T, std::size_t I>
-struct alias_storage<T, I, true> {
-    constexpr static bool has_alias = true;
-
-    using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
-    using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
-
-    constexpr static std::size_t count = alias_attr::names.size();
-    constexpr static auto names = alias_attr::names;
-};
-
-template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();
 
 template <typename T>
@@ -362,13 +340,11 @@ constexpr std::size_t effective_field_count() {
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count() {
     using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
-    constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
-    constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
+    constexpr const field_spec& spec = field_spec_of<field_t>;
 
-    if constexpr(skipped) {
+    if constexpr(spec.skip) {
         return 0;
-    } else if constexpr(flattened) {
+    } else if constexpr(spec.flatten) {
         using inner_t = std::remove_cvref_t<typename unwrap_annotated<field_t>::raw_type>;
         static_assert(meta::reflectable_class<inner_t>,
                       "flatten requires the field type to be a reflectable struct");
@@ -380,10 +356,8 @@ constexpr std::size_t single_field_count() {
 
 template <typename T, std::size_t I>
 struct field_attr_flags {
-    using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
-    constexpr static bool skipped = tuple_has_v<attrs_t, attrs::skip>;
-    constexpr static bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
+    constexpr static bool skipped = field_spec_of<meta::field_type<T, I>>.skip;
+    constexpr static bool flattened = field_spec_of<meta::field_type<T, I>>.flatten;
 };
 
 template <typename T, typename Config>
@@ -598,37 +572,20 @@ template <typename T, typename Config, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
-
-    std::string_view name = resolve_wire_name<T, I, Config>();
-
-    auto& alias_arr = alias_storage<T, I>::names;
-    std::span<const std::string_view> aliases{alias_arr.data(), alias_arr.size()};
-
-    std::size_t offset = base_offset + meta::field_offset<T>(I);
-    constexpr bool has_default = tuple_has_v<attrs_t, attrs::default_value>;
-    constexpr bool is_literal = tuple_any_of_v<attrs_t, is_literal_attr>;
-    constexpr bool has_skip_if = tuple_has_spec_v<attrs_t, behavior::skip_if>;
-    constexpr bool has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>;
-
-    constexpr std::string_view description = [] {
-        if constexpr(tuple_any_of_v<attrs_t, is_description_attr>) {
-            return tuple_find_t<attrs_t, is_description_attr>::text;
-        } else {
-            return std::string_view{};
-        }
-    }();
+    constexpr const field_spec& spec = field_spec_of<field_t>;
 
     return field_info{
-        .name = name,
-        .aliases = aliases,
-        .offset = offset,
+        .name = resolve_wire_name<T, I, Config>(),
+        .aliases = spec.alias.names(),
+        .offset = base_offset + meta::field_offset<T>(I),
         .physical_index = I,
         .type = type_info_of<field_t, Config>,
-        .has_default = has_default,
-        .is_literal = is_literal,
-        .has_skip_if = has_skip_if,
-        .has_behavior = has_behavior,
-        .description = description,
+        .has_default = spec.defaulted,
+        .has_skip_if = spec.skip_if != skip_when::never ||
+                       tuple_has_spec_v<attrs_t, behavior::skip_if>,
+        .has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>,
+        .idx = spec.idx,
+        .description = spec.description,
     };
 }
 
@@ -650,12 +607,10 @@ constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset) {
 template <typename T, typename Config, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
-    constexpr bool skipped = tuple_has_v<attrs_t, attrs::skip>;
-    constexpr bool flattened = tuple_has_v<attrs_t, attrs::flatten>;
+    constexpr const field_spec& spec = field_spec_of<field_t>;
 
-    if constexpr(skipped) {
-    } else if constexpr(flattened) {
+    if constexpr(spec.skip) {
+    } else if constexpr(spec.flatten) {
         using inner_t = typename unwrap_annotated<field_t>::raw_type;
         std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);

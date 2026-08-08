@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "kota/codec/macro.h"
 #include "kota/codec/json/decode.h"
 #include "kota/codec/json/encode.h"
 #include "kota/codec/json/type.h"

@@ -218,6 +218,18 @@ bool decode_field_value(Vis& vis, T& out) {
                 return true;
             }
         }
+    } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
+                        when != meta::skip_when::never) {
+        constexpr std::size_t offset = schema::fields[I].offset;
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
+        if(meta::evaluate_skip_when<when>(field_ref, false)) {
+            if constexpr(requires { vis.visit_skip(); }) {
+                return vis.visit_skip();
+            } else {
+                return true;
+            }
+        }
     }
 
     bool ok = decode_field_inner<Config, I>(vis, out);
@@ -309,11 +321,13 @@ bool check_required_fields(std::uint64_t field_mask) {
                         return true;
                     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
                         return true;
-                    } else if constexpr(tuple_has_v<attrs_t, meta::attrs::default_value>) {
+                    } else if constexpr(meta::spec_of<attrs_t>.skip_if != meta::skip_when::never) {
+                        return true;
+                    } else if constexpr(meta::spec_of<attrs_t>.defaulted) {
                         return true;
                     } else if constexpr(meta::annotated_type<raw_t>) {
                         using inner_attrs = typename raw_t::attrs;
-                        if constexpr(tuple_has_v<inner_attrs, meta::attrs::default_value>) {
+                        if constexpr(meta::spec_of<inner_attrs>.defaulted) {
                             return true;
                         } else {
                             using inner_t = meta::annotated_underlying_t<raw_t>;
@@ -668,6 +682,17 @@ bool decode_one_field(Vis& vis, T& out) {
         auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
+            raw_t discard{};
+            return vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+                return decode_value<Config>(fv, discard);
+            });
+        }
+    } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
+                        when != meta::skip_when::never) {
+        constexpr std::size_t offset = schema::fields[I].offset;
+        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
+        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
+        if(meta::evaluate_skip_when<when>(field_ref, false)) {
             raw_t discard{};
             return vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
                 return decode_value<Config>(fv, discard);

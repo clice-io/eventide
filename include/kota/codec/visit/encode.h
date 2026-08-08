@@ -101,6 +101,11 @@ bool encode_one_field(Vis& vis, const T& value) {
         if(meta::evaluate_skip_predicate<pred>(field_ref, true)) {
             return true;
         }
+    } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
+                        when != meta::skip_when::never) {
+        if(meta::evaluate_skip_when<when>(field_ref, true)) {
+            return true;
+        }
     }
 
     constexpr auto idx = std::integral_constant<std::size_t, I>{};

@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "kota/ipc/codec/json.h"
+#include "kota/codec/macro.h"
 
 namespace kota::ipc {
 
@@ -50,9 +51,10 @@ struct json_rpc_incoming {
     std::optional<std::string> method;
     std::optional<codec::RawValue> params;
     // Not optional<RawValue> because "result": null is a valid success
-    // response — optional would lose it as nullopt. defaulted<RawValue>
+    // response — optional would lose it as nullopt. A defaulted RawValue
     // keeps absent → empty(), null → "null" text.
-    meta::defaulted<codec::RawValue> result;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <codec::RawValue> result;
     std::optional<Error> error;
 };
 
