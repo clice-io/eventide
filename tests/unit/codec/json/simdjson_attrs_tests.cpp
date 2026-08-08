@@ -46,6 +46,11 @@ struct skip_unsupported_payload {
     skip<int*> raw = nullptr;
 };
 
+struct documented_payload {
+    description<int, "Numeric identifier."> id = 0;
+    std::string name;
+};
+
 struct struct_level_payload {
     int user_id = 0;
     int login_count = 0;
@@ -174,6 +179,19 @@ TEST_CASE(annotated_struct_deny_unknown_fields_applies) {
     auto status = from_json(R"({"userId":3,"loginCount":4,"extra":9})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("unknown field") != std::string::npos);
+}
+
+TEST_CASE(description_attr_is_wire_transparent) {
+    documented_payload input{.id = 7, .name = "alice"};
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"id":7,"name":"alice"})");
+
+    documented_payload parsed{};
+    auto status = from_json(R"({"id":3,"name":"bob"})", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.id, 3);
+    EXPECT_EQ(parsed.name, "bob");
 }
 
 };  // TEST_SUITE(serde_simdjson_attrs)

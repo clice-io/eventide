@@ -265,6 +265,9 @@ private:
         dyn::Object props;
         for(const auto& f: si->fields) {
             KOTA_EXPECTED_TRY_V(auto schema, make_schema(&f.type()));
+            if(!f.description.empty()) {
+                schema.get_object()->insert("description", f.description);
+            }
             props.insert(std::string(f.name), std::move(schema));
         }
         return dyn::Value(std::move(props));

@@ -100,6 +100,9 @@ struct field_info {
     bool is_literal;
     bool has_skip_if;
     bool has_behavior;
+
+    /// Documentation text from attrs::description, empty when absent.
+    std::string_view description = {};
 };
 
 struct struct_type_info : type_info {
@@ -203,6 +206,33 @@ struct filter_runtime_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_runtime_attrs_t = typename filter_runtime_attrs<Tuple>::type;
 
+/// Attrs that shape the type-level schema (variant tagging, struct-wide rename,
+/// unknown-field policy). Field-local attrs (rename/description/default/...) are
+/// dropped so annotated and bare uses of the same type share one type_info
+/// instance — and thus one $defs entry in schema output.
+template <typename Tuple>
+struct filter_type_attrs;
+
+template <>
+struct filter_type_attrs<std::tuple<>> {
+    using type = std::tuple<>;
+};
+
+template <typename First, typename... Rest>
+struct filter_type_attrs<std::tuple<First, Rest...>> {
+    using tail = typename filter_type_attrs<std::tuple<Rest...>>::type;
+    constexpr static bool keep = is_tagged_attr<First>::value ||
+                                 is_specialization_of<attrs::rename_all, First> ||
+                                 std::is_same_v<First, attrs::deny_unknown_fields>;
+    using type = std::conditional_t<keep,
+                                    decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
+                                                            std::declval<tail>())),
+                                    tail>;
+};
+
+template <typename Tuple>
+using filter_type_attrs_t = typename filter_type_attrs<Tuple>::type;
+
 template <typename T>
 constexpr bool has_wire_type_v = requires { typename T::wire_type; };
 
@@ -284,7 +314,7 @@ template <typename T, typename Config = default_config>
 struct type_instance :
     type_instance_impl<resolve_wire_type_t<typename unwrap_annotated<std::remove_cv_t<T>>::raw_type,
                                            typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
-                       typename unwrap_annotated<std::remove_cv_t<T>>::attrs,
+                       filter_type_attrs_t<typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
                        Config> {};
 
 template <typename T, std::size_t I>
@@ -580,6 +610,14 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     constexpr bool has_skip_if = tuple_has_spec_v<attrs_t, behavior::skip_if>;
     constexpr bool has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>;
 
+    constexpr std::string_view description = [] {
+        if constexpr(tuple_any_of_v<attrs_t, is_description_attr>) {
+            return tuple_find_t<attrs_t, is_description_attr>::text;
+        } else {
+            return std::string_view{};
+        }
+    }();
+
     return field_info{
         .name = name,
         .aliases = aliases,
@@ -590,6 +628,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .is_literal = is_literal,
         .has_skip_if = has_skip_if,
         .has_behavior = has_behavior,
+        .description = description,
     };
 }
 

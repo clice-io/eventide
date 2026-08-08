@@ -133,6 +133,9 @@ using flatten = annotation<T, attrs::flatten>;
 template <typename T, fixed_string Name>
 using literal = annotation<T, attrs::literal<Name>>;
 
+template <typename T, fixed_string Text>
+using description = annotation<T, attrs::description<Text>>;
+
 template <typename T, fixed_string Name>
 using rename = annotation<T, attrs::rename<Name>>;
 
