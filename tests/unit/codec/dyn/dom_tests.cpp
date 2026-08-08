@@ -11,7 +11,7 @@ namespace {
 
 struct mixed_payload {
     int id = 0;
-    json::Value extra;
+    dyn::Value extra;
 };
 
 struct dom_payload {
@@ -74,7 +74,7 @@ TEST_CASE(int_uint_cross_sign_access) {
 }
 
 TEST_CASE(parse_and_view_basic_via_json) {
-    auto parsed = json::parse<json::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
+    auto parsed = json::parse<dyn::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
     ASSERT_TRUE(parsed.has_value());
 
     ASSERT_TRUE(parsed->is_object());
@@ -85,7 +85,7 @@ TEST_CASE(parse_and_view_basic_via_json) {
 }
 
 TEST_CASE(cursor_miss_describes_failure) {
-    auto parsed = json::parse<json::Value>(R"({"a":{"b":[10,20]}})");
+    auto parsed = json::parse<dyn::Value>(R"({"a":{"b":[10,20]}})");
     ASSERT_TRUE(parsed.has_value());
 
     auto missing_key = (*parsed)["zzz"];
@@ -103,7 +103,7 @@ TEST_CASE(cursor_miss_describes_failure) {
 }
 
 TEST_CASE(cursor_chain_appends_path) {
-    auto parsed = json::parse<json::Value>(R"({"a":1})");
+    auto parsed = json::parse<dyn::Value>(R"({"a":1})");
     ASSERT_TRUE(parsed.has_value());
 
     auto deep = (*parsed)["missing"]["x"][3]["y"];
@@ -113,7 +113,7 @@ TEST_CASE(cursor_chain_appends_path) {
 
 TEST_CASE(object_lookup_builds_lazy_index) {
     auto json_text = make_large_object_json(32);
-    auto parsed = json::parse<json::Value>(json_text);
+    auto parsed = json::parse<dyn::Value>(json_text);
     ASSERT_TRUE(parsed.has_value());
 
     ASSERT_TRUE(parsed->is_object());
@@ -176,7 +176,7 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
     text.push_back('1');
     text.append(depth, ']');
 
-    auto parsed = json::parse<json::Value>(text);
+    auto parsed = json::parse<dyn::Value>(text);
     ASSERT_TRUE(parsed.has_value());
 
     dyn::Cursor cursor = parsed->cursor();
@@ -401,9 +401,9 @@ TEST_CASE(object_mutation_during_iteration) {
 }
 
 TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
-    auto make_dom = []() -> json::Value {
-        auto parsed = json::parse<json::Value>(R"({"id":7,"name":"alice"})");
-        return parsed ? std::move(*parsed) : json::Value{};
+    auto make_dom = []() -> dyn::Value {
+        auto parsed = json::parse<dyn::Value>(R"({"id":7,"name":"alice"})");
+        return parsed ? std::move(*parsed) : dyn::Value{};
     };
 
     dom_payload payload{};
