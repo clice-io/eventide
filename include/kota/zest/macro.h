@@ -35,7 +35,9 @@
 
 // Registers a group of dynamically named test cases. The body receives
 // `const ::kota::zest::CaseRegistrar& add_case` and is invoked once at static
-// init; call `add_case(name, body)` for each case to register.
+// init; call `add_case(name, body)` for each case to register. Unlike
+// TEST_CASE, the registered bodies run without a suite instance, so
+// setup()/teardown() do not apply to them.
 #define TEST_CASE_GROUP(name, ...)                                                                 \
     inline static constexpr char _zest_file_##name[] = __FILE__;                                   \
     void _register_##name() {                                                                      \
