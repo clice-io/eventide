@@ -135,7 +135,9 @@ jobs:
             )
           fi
 
-          cmake --preset "${{ matrix.preset }}" "${extra_args[@]}"
+          # ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an
+          # empty array under set -u is an unbound-variable error.
+          cmake --preset "${{ matrix.preset }}" ${extra_args[@]+"${extra_args[@]}"}
 
           cmake --build --preset "${{ matrix.preset }}" --parallel
 

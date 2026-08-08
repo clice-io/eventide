@@ -32,7 +32,7 @@ function(kota_check_toolchain_env lang env_var)
             "'${CMAKE_${lang}_COMPILER}', but the current environment sets "
             "${env_var}='${env_value}' ('${env_real}'). CMake would silently "
             "keep the old compiler. Delete the tree and reconfigure, e.g. "
-            "`rm -rf build/<preset>` and rerun `pixi run build <preset>`."
+            "`cmake -E rm -rf build/<preset>` and rerun `pixi run build <preset>`."
         )
     endif()
 endfunction()
