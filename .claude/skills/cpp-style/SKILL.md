@@ -144,7 +144,8 @@ process(result.value());
   - `template<typename T> void f(T& x)` — `T` is deduced as the referred-to type (possibly cv-qualified, but never a reference). No need for `remove_cvref_t` to strip references.
   - `template<typename T> void f(const T& x)` — `T` is deduced as a non-const, non-reference type. No need for `remove_cvref_t`.
   - `template<typename T> void f(T&& x)` — **forwarding reference**: `T` CAN be deduced as an lvalue reference (e.g., `int&`). This is the ONLY case where `std::remove_cvref_t<T>` is needed to get the bare type.
-  - The same reasoning, not a blanket rule, applies to other deduction contexts: strip cv/ref only where the context can actually produce a cv/ref-qualified type. Plain `auto` return deduction and by-value CTAD guides never yield references, but `decltype(auto)`, explicit deduction guides, and explicitly supplied template arguments can carry references and cv-qualifiers.
+  - The same reasoning, not a blanket rule, applies to other deduction contexts: strip cv/ref only where the context can actually produce a cv/ref-qualified type. Plain `auto` return deduction and by-value CTAD guides never yield references, but `decltype(auto)` and explicit deduction guides can carry references and cv-qualifiers.
+  - Separately from deduction: explicitly supplied template arguments bypass deduction entirely, so `T` is whatever the caller wrote — `f<int&>(x)` makes `T = int&` even for a by-value `f(T x)`. Only defend with `remove_cvref_t` if the API actually invites explicit reference arguments.
 
 ## Type Traits & Concepts (C++20/23)
 
