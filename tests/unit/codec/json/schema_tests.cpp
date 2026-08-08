@@ -15,6 +15,7 @@
 #include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/json/schema.h"
+#include "kota/codec/macro.h"
 
 namespace kota::meta {
 
@@ -198,12 +199,12 @@ struct with_shared {
 // ---------------------------------------------------------------------------
 struct with_default {
     std::string name;
-    annotation<std::int32_t, attrs::default_value> count;
+    KOTATSU_ANNOTATE(defaulted = true)<std::int32_t> count;
 };
 
 struct with_skip {
     std::string visible;
-    annotation<std::int32_t, attrs::skip> hidden;
+    KOTATSU_ANNOTATE(skip = true)<std::int32_t> hidden;
 };
 
 struct base_fields {
@@ -212,12 +213,12 @@ struct base_fields {
 };
 
 struct with_flatten {
-    annotation<base_fields, attrs::flatten> base;
+    KOTATSU_ANNOTATE(flatten = true)<base_fields> base;
     std::string extra;
 };
 
 struct with_rename {
-    annotation<std::int32_t, attrs::rename<"my_field">> x;
+    KOTATSU_ANNOTATE(rename = "my_field")<std::int32_t> x;
     std::string y;
 };
 
@@ -301,14 +302,14 @@ struct all_optional {
 };
 
 struct all_default {
-    annotation<std::int32_t, attrs::default_value> x;
-    annotation<std::string, attrs::default_value> y;
+    KOTATSU_ANNOTATE(defaulted = true)<std::int32_t> x;
+    KOTATSU_ANNOTATE(defaulted = true)<std::string> y;
 };
 
 struct skip_default {
     std::string name;
-    annotation<std::int32_t, attrs::skip> hidden;
-    annotation<std::int32_t, attrs::default_value> count;
+    KOTATSU_ANNOTATE(skip = true)<std::int32_t> hidden;
+    KOTATSU_ANNOTATE(defaulted = true)<std::int32_t> count;
 };
 
 struct base_with_opt {
@@ -317,17 +318,17 @@ struct base_with_opt {
 };
 
 struct flatten_opt {
-    annotation<base_with_opt, attrs::flatten> base;
+    KOTATSU_ANNOTATE(flatten = true)<base_with_opt> base;
     std::string tag;
 };
 
 struct rename_base {
-    annotation<std::int32_t, attrs::rename<"alpha">> a;
+    KOTATSU_ANNOTATE(rename = "alpha")<std::int32_t> a;
     std::int32_t b;
 };
 
 struct flatten_rename {
-    annotation<rename_base, attrs::flatten> inner;
+    KOTATSU_ANNOTATE(flatten = true)<rename_base> inner;
     std::string extra;
 };
 
@@ -452,45 +453,43 @@ struct set_of_struct {
 // ---------------------------------------------------------------------------
 
 struct desc_scalar {
-    annotation<std::int32_t, attrs::description<"Number of worker threads.">> threads;
+    KOTATSU_ANNOTATE(description = "Number of worker threads.")<std::int32_t> threads;
     std::string name;
 };
 
 struct desc_optional {
-    annotation<std::optional<std::string>, attrs::description<"Optional display label.">> label;
+    KOTATSU_ANNOTATE(description = "Optional display label.")<std::optional<std::string>> label;
 };
 
 struct desc_struct_ref {
-    annotation<point2d, attrs::description<"Anchor position.">> anchor;
+    KOTATSU_ANNOTATE(description = "Anchor position.")<point2d> anchor;
 };
 
 struct desc_base {
-    annotation<std::int32_t, attrs::description<"Inherited counter.">> count;
+    KOTATSU_ANNOTATE(description = "Inherited counter.")<std::int32_t> count;
 };
 
 struct desc_flatten {
-    annotation<desc_base, attrs::flatten> base;
+    KOTATSU_ANNOTATE(flatten = true)<desc_base> base;
     std::string tag;
 };
 
 struct desc_rename {
-    annotation<std::int32_t,
-               attrs::rename<"max_size">,
-               attrs::description<"Maximum size in bytes.">>
-        size;
+    KOTATSU_ANNOTATE(rename = "max_size",
+                     description = "Maximum size in bytes.")<std::int32_t> size;
 };
 
 struct desc_default {
-    annotation<std::int32_t, attrs::default_value, attrs::description<"Retry limit.">> retries;
+    KOTATSU_ANNOTATE(defaulted = true, description = "Retry limit.")<std::int32_t> retries;
 };
 
 struct desc_shared_ref {
     point2d origin;
-    annotation<point2d, attrs::description<"Anchor position.">> anchor;
+    KOTATSU_ANNOTATE(description = "Anchor position.")<point2d> anchor;
 };
 
 struct desc_tagged_circle {
-    annotation<double, attrs::description<"Radius in meters.">> radius;
+    KOTATSU_ANNOTATE(description = "Radius in meters.")<double> radius;
 };
 
 struct desc_tagged_rect {
@@ -862,8 +861,8 @@ TEST_CASE(all_default_fields) {
 
 TEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
-        {"name",  {}, 0, 0, type_info_of<std::string>,  false, false, false, false},
-        {"count", {}, 0, 1, type_info_of<std::int32_t>, false, false, false, false},
+        {"name",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
+        {"count", {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
     };
     const static struct_type_info deny_info = {
         {type_kind::structure, "deny_struct"},
@@ -979,7 +978,6 @@ TEST_CASE(variant_external_tag) {
         false,
         false,
         false,
-        false,
     };
     const static struct_type_info ext_wrap = {
         {type_kind::structure, "ext_wrap"},
@@ -1023,7 +1021,6 @@ TEST_CASE(variant_internal_tag) {
         false,
         false,
         false,
-        false,
     };
     const static struct_type_info int_wrap = {
         {type_kind::structure, "int_wrap"},
@@ -1064,7 +1061,6 @@ TEST_CASE(variant_adjacent_tag) {
         0,
         0,
         adj_var_ref,
-        false,
         false,
         false,
         false,
@@ -1114,7 +1110,7 @@ TEST_CASE(any_type_root) {
 TEST_CASE(any_type_field) {
     const static type_info any_ti = {type_kind::any, "any"};
     const static field_info any_fields[] = {
-        {"data", {}, 0, 0, []() -> const type_info& { return any_ti; }, false, false, false, false},
+        {"data", {}, 0, 0, []() -> const type_info& { return any_ti; }, false, false, false},
     };
     const static struct_type_info any_struct = {
         {type_kind::structure, "with_any"},
@@ -1346,13 +1342,8 @@ TEST_CASE(self_referential_struct) {
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false, false},
-        {"next",
-         {},
-         0,              1,
-         []() -> const type_info& { return opt_self; },
-         false,                                                false,
-         false,                                                              false},
+        {"value", {}, 0, 0, type_info_of<std::int32_t>,                    false, false, false},
+        {"next",  {}, 0, 1, []() -> const type_info& { return opt_self; }, false, false, false},
     };
     self_info.fields = {self_fields, 2};
 
@@ -1420,10 +1411,10 @@ TEST_CASE(variant_of_variant) {
 
 TEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
-        {"zebra",  {}, 0, 0, type_info_of<std::string>,  false, false, false, false},
-        {"alpha",  {}, 0, 1, type_info_of<std::int32_t>, false, false, false, false},
-        {"middle", {}, 0, 2, type_info_of<bool>,         false, false, false, false},
-        {"beta",   {}, 0, 3, type_info_of<double>,       false, false, false, false},
+        {"zebra",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
+        {"alpha",  {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
+        {"middle", {}, 0, 2, type_info_of<bool>,         false, false, false},
+        {"beta",   {}, 0, 3, type_info_of<double>,       false, false, false},
     };
     const static struct_type_info ordered_info = {
         {type_kind::structure, "ordered_struct"},
@@ -1480,12 +1471,12 @@ TEST_CASE(mutual_recursion) {
     };
 
     const static field_info fields_a[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>,                 false, false, false, false},
-        {"b",     {}, 0, 1, []() -> const type_info& { return opt_b; }, false, false, false, false},
+        {"value", {}, 0, 0, type_info_of<std::int32_t>,                 false, false, false},
+        {"b",     {}, 0, 1, []() -> const type_info& { return opt_b; }, false, false, false},
     };
     const static field_info fields_b[] = {
-        {"name", {}, 0, 0, type_info_of<std::string>,                  false, false, false, false},
-        {"a",    {}, 0, 1, []() -> const type_info& { return opt_a; }, false, false, false, false},
+        {"name", {}, 0, 0, type_info_of<std::string>,                  false, false, false},
+        {"a",    {}, 0, 1, []() -> const type_info& { return opt_a; }, false, false, false},
     };
     info_a.fields = {fields_a, 2};
     info_b.fields = {fields_b, 2};
@@ -1503,12 +1494,7 @@ TEST_CASE(mutual_recursion) {
 TEST_CASE(bytes_field) {
     const static type_info bytes_ti = {type_kind::bytes, "bytes"};
     const static field_info bytes_fields[] = {
-        {"data",
-         {},
-         0, 0,
-         []() -> const type_info& { return bytes_ti; },
-         false, false,
-         false, false},
+        {"data", {}, 0, 0, []() -> const type_info& { return bytes_ti; }, false, false, false},
     };
     const static struct_type_info bytes_struct = {
         {type_kind::structure, "with_bytes"},

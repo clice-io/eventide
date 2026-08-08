@@ -75,9 +75,8 @@ TEST_CASE(make_spec_keeps_type_components_in_type) {
     STATIC_EXPECT_EQ(extras_tag::spec.value.description, "Converted field.");
     using extras = decltype(extras_tag::spec)::extras;
     STATIC_EXPECT_TRUE(std::tuple_size_v<extras> == 1);
-    STATIC_EXPECT_TRUE(
-        (std::is_same_v<std::tuple_element_t<0, extras>,
-                        dsl::type_component<dsl::aspect::as, std::int64_t>>));
+    STATIC_EXPECT_TRUE((std::is_same_v<std::tuple_element_t<0, extras>,
+                                       dsl::type_component<dsl::aspect::as, std::int64_t>>));
 }
 
 TEST_CASE(annotate_maps_components_to_behavior_attrs) {
@@ -87,10 +86,9 @@ TEST_CASE(annotate_maps_components_to_behavior_attrs) {
     STATIC_EXPECT_TRUE((tuple_has_v<attrs_t, attrs::spec<extras_tag>>));
     STATIC_EXPECT_TRUE((tuple_has_v<attrs_t, behavior::as<std::int64_t>>));
 
-    using with_extra = annotate<skip_none_tag>::type<std::optional<int>,
-                                                     behavior::skip_if<custom_pred>>;
-    STATIC_EXPECT_TRUE(
-        (tuple_has_v<typename with_extra::attrs, behavior::skip_if<custom_pred>>));
+    using with_extra =
+        annotate<skip_none_tag>::type<std::optional<int>, behavior::skip_if<custom_pred>>;
+    STATIC_EXPECT_TRUE((tuple_has_v<typename with_extra::attrs, behavior::skip_if<custom_pred>>));
 }
 
 TEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
@@ -131,8 +129,7 @@ TEST_CASE(name_only_spec_shares_slot_with_bare_field) {
 
     // A defaulted spec stays in the slot attrs for decode.
     using retries_slot = type_list_element_t<3, slots>;
-    STATIC_EXPECT_TRUE(
-        (tuple_has_v<typename retries_slot::attrs, attrs::spec<defaulted_tag>>));
+    STATIC_EXPECT_TRUE((tuple_has_v<typename retries_slot::attrs, attrs::spec<defaulted_tag>>));
 }
 
 TEST_CASE(skip_when_evaluates_builtin_predicates) {

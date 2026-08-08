@@ -31,37 +31,30 @@ struct negative_pred {
 struct annotated_payload {
     int id = 0;
 
-    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})
-    <std::string> display_name;
+    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})<std::string> display_name;
 
-    KOTATSU_ANNOTATE(skip = true)
-    <int> internal_id = 0;
+    KOTATSU_ANNOTATE(skip = true)<int> internal_id = 0;
 
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
-    <std::optional<std::string>> note;
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)<std::optional<std::string>> note;
 
-    KOTATSU_ANNOTATE(flatten = true)
-    <profile_info> profile;
+    KOTATSU_ANNOTATE(flatten = true)<profile_info> profile;
 
-    KOTATSU_ANNOTATE(enum_string = type<meta::rename_policy::lower_camel>)
-    <access_level> level = access_level::admin;
+    KOTATSU_ANNOTATE(enum_string = type<meta::rename_policy::lower_camel>)<access_level> level =
+        access_level::admin;
 };
 
 struct defaulted_payload {
     int id = 0;
 
-    KOTATSU_ANNOTATE(defaulted = true)
-    <int> retries = 3;
+    KOTATSU_ANNOTATE(defaulted = true)<int> retries = 3;
 };
 
 struct custom_skip_payload {
-    KOTATSU_ANNOTATE(skip_if = type<negative_pred>)
-    <int> score = 0;
+    KOTATSU_ANNOTATE(skip_if = type<negative_pred>)<int> score = 0;
 };
 
 struct documented_payload {
-    KOTATSU_ANNOTATE(description = "Numeric identifier.", idx = 1u)
-    <int> id = 0;
+    KOTATSU_ANNOTATE(description = "Numeric identifier.", idx = 1u)<int> id = 0;
 
     std::string name;
 };
@@ -135,7 +128,7 @@ TEST_CASE(description_is_wire_transparent_and_in_schema) {
 
     auto schema = json::schema_string<documented_payload>();
     ASSERT_TRUE(schema.has_value());
-    EXPECT_TRUE(schema->find(R"("description": "Numeric identifier.")") != std::string::npos);
+    EXPECT_TRUE(schema->find(R"("description":"Numeric identifier.")") != std::string::npos);
 }
 
 TEST_CASE(annotated_and_bare_use_share_type_info) {

@@ -422,7 +422,7 @@ struct StrictStruct {
 struct MixedStruct {
     int required_field{};
     std::optional<int> optional_field;
-    defaulted<std::string> defaulted_field;
+    KOTATSU_ANNOTATE(defaulted = true)<std::string> defaulted_field;
 };
 
 struct AllOptional {

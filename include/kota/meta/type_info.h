@@ -199,8 +199,8 @@ struct filter_runtime_attrs<std::tuple<>> {
 template <typename First, typename... Rest>
 struct filter_runtime_attrs<std::tuple<First, Rest...>> {
     using tail = typename filter_runtime_attrs<std::tuple<Rest...>>::type;
-    constexpr static bool keep = is_behavior_attr_v<First> || is_tagged_attr<First>::value ||
-                                 is_runtime_spec_attr_v<First>;
+    constexpr static bool keep =
+        is_behavior_attr_v<First> || is_tagged_attr<First>::value || is_runtime_spec_attr_v<First>;
     using type = std::conditional_t<keep,
                                     decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
                                                             std::declval<tail>())),
@@ -581,8 +581,8 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .physical_index = I,
         .type = type_info_of<field_t, Config>,
         .has_default = spec.defaulted,
-        .has_skip_if = spec.skip_if != skip_when::never ||
-                       tuple_has_spec_v<attrs_t, behavior::skip_if>,
+        .has_skip_if =
+            spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
         .has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>,
         .idx = spec.idx,
         .description = spec.description,

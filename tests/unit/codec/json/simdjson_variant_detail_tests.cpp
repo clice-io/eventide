@@ -841,6 +841,10 @@ TEST_CASE(optional_tagged_absent) {
 
 };  // TEST_SUITE(serde_variant_nested)
 
+struct skip_if_none_extra_tag {
+    constexpr static auto spec = make_spec(dsl::skip_if = skip_when::none);
+};
+
 TEST_SUITE(serde_variant_deep_dispatch) {
 
 TEST_CASE(struct_with_variant_field_disambiguation) {
@@ -1202,7 +1206,7 @@ TEST_CASE(subset_with_optional_field_missing) {
     // When the missing field has skip_if (e.g. skip_if_none), it should NOT be penalized.
     struct WithOptional {
         std::string value;
-        skip_if_none<int> extra;
+        annotate<skip_if_none_extra_tag>::type<std::optional<int>> extra;
     };
 
     struct Plain {

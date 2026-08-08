@@ -162,9 +162,8 @@ struct annotated_field<T, Tag, std::tuple<Cs...>, Extra...> {
 template <typename Tag>
 struct annotate {
     template <typename T, typename... Extra>
-    using type =
-        typename detail::annotated_field<T, Tag, typename decltype(Tag::spec)::extras, Extra...>::
-            type;
+    using type = typename detail::
+        annotated_field<T, Tag, typename decltype(Tag::spec)::extras, Extra...>::type;
 };
 
 }  // namespace kota::meta

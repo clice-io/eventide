@@ -18,6 +18,13 @@ enum class access_level {
     viewer,
 };
 
+struct access_level_enum_string_tag {
+    constexpr static auto spec =
+        make_spec(dsl::enum_string = dsl::type<rename_policy::lower_camel>);
+};
+
+using access_level_enum_string = annotate<access_level_enum_string_tag>::type<access_level>;
+
 struct profile_info {
     std::string first;
     int age = 0;
@@ -25,29 +32,29 @@ struct profile_info {
 
 struct builtin_attr_payload {
     int id = 0;
-    rename_alias<std::string, "displayName", "name"> display_name;
-    skip<int> internal_id;
-    skip_if_none<std::string> note;
-    flatten<profile_info> profile;
-    enum_string<access_level> level;
+    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})<std::string> display_name;
+    KOTATSU_ANNOTATE(skip = true)<int> internal_id;
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)<std::optional<std::string>> note;
+    KOTATSU_ANNOTATE(flatten = true)<profile_info> profile;
+    KOTATSU_ANNOTATE(enum_string = type<rename_policy::lower_camel>)<access_level> level;
 };
 
 struct custom_rename_payload {
-    rename<std::string, "handle"> nickname;
+    KOTATSU_ANNOTATE(rename = "handle")<std::string> nickname;
 };
 
 struct alias_conflict_payload {
-    alias<int, "dup"> left = 0;
-    alias<int, "dup"> right = 0;
+    KOTATSU_ANNOTATE(alias = {"dup"})<int> left = 0;
+    KOTATSU_ANNOTATE(alias = {"dup"})<int> right = 0;
 };
 
 struct skip_unsupported_payload {
     int id = 0;
-    skip<int*> raw = nullptr;
+    KOTATSU_ANNOTATE(skip = true)<int*> raw = nullptr;
 };
 
 struct documented_payload {
-    description<int, "Numeric identifier."> id = 0;
+    KOTATSU_ANNOTATE(description = "Numeric identifier.")<int> id = 0;
     std::string name;
 };
 
@@ -125,19 +132,19 @@ TEST_CASE(rename_attr_serialization) {
 }
 
 TEST_CASE(top_level_annotated_value_enum_string) {
-    enum_string<access_level> level = access_level::admin;
+    access_level_enum_string level = access_level::admin;
     auto encoded = to_json(level);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"("admin")");
 
-    enum_string<access_level> parsed = access_level::admin;
+    access_level_enum_string parsed = access_level::admin;
     auto status = from_json(R"("viewer")", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed, access_level::viewer);
 }
 
 TEST_CASE(top_level_annotated_value_enum_string_unknown_fails) {
-    enum_string<access_level> parsed = access_level::admin;
+    access_level_enum_string parsed = access_level::admin;
     auto status = from_json(R"("unknown")", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(parsed, access_level::admin);

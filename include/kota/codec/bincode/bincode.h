@@ -1,9 +1,9 @@
 #pragma once
 
-#include "kota/codec/macro.h"
 #include "kota/codec/bincode/decode.h"
 #include "kota/codec/bincode/encode.h"
 #include "kota/codec/bincode/type.h"
+#include "kota/codec/macro.h"
 #include "kota/codec/visit/common.h"
 
 namespace kota::codec {

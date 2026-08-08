@@ -77,7 +77,7 @@ namespace attrs {
 /// meta::spec_result; only the short tag name appears in template arguments.
 template <typename Tag>
 struct spec {
-    constexpr static const field_spec& value = Tag::spec.value;
+    constexpr const static field_spec& value = Tag::spec.value;
 };
 
 // Struct-level
@@ -136,11 +136,11 @@ struct is_spec_attr<attrs::spec<Tag>> {
     constexpr static bool value = true;
 };
 
-inline constexpr field_spec empty_field_spec{};
+constexpr inline field_spec empty_field_spec{};
 
 /// The value spec inside an attrs tuple; the empty spec when absent.
 template <typename AttrsTuple>
-inline constexpr const field_spec& spec_of = [] -> const field_spec& {
+constexpr const inline field_spec& spec_of = [] -> const field_spec& {
     if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
         return tuple_find_t<AttrsTuple, is_spec_attr>::value;
     } else {
@@ -150,7 +150,7 @@ inline constexpr const field_spec& spec_of = [] -> const field_spec& {
 
 /// The value spec attached to a (possibly annotated) field type.
 template <typename T>
-inline constexpr const field_spec& field_spec_of = [] -> const field_spec& {
+constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
     if constexpr(annotated_type<T>) {
         return spec_of<typename T::attrs>;
     } else {

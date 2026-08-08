@@ -170,21 +170,21 @@ struct type_proxy {
     }
 };
 
-inline constexpr value_proxy<aspect::rename, &field_spec::rename, std::string_view> rename{};
-inline constexpr value_proxy<aspect::description, &field_spec::description, std::string_view>
+constexpr inline value_proxy<aspect::rename, &field_spec::rename, std::string_view> rename{};
+constexpr inline value_proxy<aspect::description, &field_spec::description, std::string_view>
     description{};
-inline constexpr value_proxy<aspect::idx, &field_spec::idx, std::uint32_t> idx{};
-inline constexpr value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
-inline constexpr value_proxy<aspect::flatten, &field_spec::flatten, bool> flatten{};
-inline constexpr value_proxy<aspect::defaulted, &field_spec::defaulted, bool> defaulted{};
-inline constexpr alias_proxy alias{};
-inline constexpr skip_if_proxy skip_if{};
-inline constexpr type_proxy<aspect::as> as{};
-inline constexpr type_proxy<aspect::with> with{};
-inline constexpr type_proxy<aspect::enum_string> enum_string{};
+constexpr inline value_proxy<aspect::idx, &field_spec::idx, std::uint32_t> idx{};
+constexpr inline value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
+constexpr inline value_proxy<aspect::flatten, &field_spec::flatten, bool> flatten{};
+constexpr inline value_proxy<aspect::defaulted, &field_spec::defaulted, bool> defaulted{};
+constexpr inline alias_proxy alias{};
+constexpr inline skip_if_proxy skip_if{};
+constexpr inline type_proxy<aspect::as> as{};
+constexpr inline type_proxy<aspect::with> with{};
+constexpr inline type_proxy<aspect::enum_string> enum_string{};
 
 template <typename T>
-inline constexpr type_tag<T> type{};
+constexpr inline type_tag<T> type{};
 
 using meta::skip_when;
 
@@ -245,9 +245,8 @@ constexpr auto make_spec(const Cs&... components) {
     detail::validate_spec(spec);
 
     using extras_t = decltype(std::tuple_cat(
-        std::declval<std::conditional_t<dsl::is_type_component_v<Cs>,
-                                        std::tuple<Cs>,
-                                        std::tuple<>>>()...));
+        std::declval<
+            std::conditional_t<dsl::is_type_component_v<Cs>, std::tuple<Cs>, std::tuple<>>>()...));
     return []<typename... Ts>(const field_spec& value, std::type_identity<std::tuple<Ts...>>) {
         return spec_result<Ts...>{value};
     }(spec, std::type_identity<extras_t>{});

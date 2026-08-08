@@ -23,6 +23,13 @@ using strict_payload = annotation<meta::fixtures::StrictIdName, meta::attrs::den
 
 enum class color { red, green, blue };
 
+struct color_enum_string_tag {
+    constexpr static auto spec =
+        make_spec(dsl::enum_string = dsl::type<rename_policy::lower_camel>);
+};
+
+using color_enum_string = annotate<color_enum_string_tag>::type<color>;
+
 TEST_SUITE(serde_simdjson_error_message) {
 
 TEST_CASE(missing_required_field) {
@@ -69,7 +76,7 @@ TEST_CASE(nested_sequence_error_path) {
 }
 
 TEST_CASE(enum_string_error_message) {
-    enum_string<color> parsed = color::red;
+    color_enum_string parsed = color::red;
     auto status = from_json(R"("yellow")", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("yellow") != std::string::npos);
