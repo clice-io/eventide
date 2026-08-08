@@ -27,36 +27,46 @@ using Color = meta::fixtures::Color3;
 using IntHolder = meta::fixtures::IntHolder;
 using StringHolder = meta::fixtures::StringHolder;
 
-using ExtSimple =
-    annotation<std::variant<int, std::string>, meta::attrs::externally_tagged::names<"num", "str">>;
+KOTATSU_ANNOTATION(ext_simple_annotation, tagged = true, tag_names = {"num", "str"});
+using ExtSimple = annotate<ext_simple_annotation>::type<std::variant<int, std::string>>;
 
-using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               meta::attrs::externally_tagged::names<"none", "num", "str">>;
+KOTATSU_ANNOTATION(ext_with_mono_annotation, tagged = true, tag_names = {"none", "num", "str"});
+using ExtWithMono =
+    annotate<ext_with_mono_annotation>::type<std::variant<std::monostate, int, std::string>>;
 
-using ExtWithStruct = annotation<std::variant<int, Point, Color>,
-                                 meta::attrs::externally_tagged::names<"int", "point", "color">>;
+KOTATSU_ANNOTATION(ext_with_struct_annotation,
+                   tagged = true,
+                   tag_names = {"int", "point", "color"});
+using ExtWithStruct = annotate<ext_with_struct_annotation>::type<std::variant<int, Point, Color>>;
 
-using AdjSimple = annotation<std::variant<int, std::string>,
-                             meta::attrs::adjacently_tagged<"t", "v">::names<"num", "str">>;
+KOTATSU_ANNOTATION(adj_simple_annotation, tag = "t", content = "v", tag_names = {"num", "str"});
+using AdjSimple = annotate<adj_simple_annotation>::type<std::variant<int, std::string>>;
 
+KOTATSU_ANNOTATION(adj_with_mono_annotation,
+                   tag = "tag",
+                   content = "data",
+                   tag_names = {"nil", "num", "str"});
 using AdjWithMono =
-    annotation<std::variant<std::monostate, int, std::string>,
-               meta::attrs::adjacently_tagged<"tag", "data">::names<"nil", "num", "str">>;
+    annotate<adj_with_mono_annotation>::type<std::variant<std::monostate, int, std::string>>;
 
-using AdjWithStruct =
-    annotation<std::variant<int, Point>,
-               meta::attrs::adjacently_tagged<"type", "value">::names<"int", "point">>;
+KOTATSU_ANNOTATION(adj_with_struct_annotation,
+                   tag = "type",
+                   content = "value",
+                   tag_names = {"int", "point"});
+using AdjWithStruct = annotate<adj_with_struct_annotation>::type<std::variant<int, Point>>;
 
 using Circle = meta::fixtures::Circle;
 using Rect = meta::fixtures::Rect;
 using Triangle = meta::fixtures::Triangle;
 
-using IntTagShape = annotation<std::variant<Circle, Rect>,
-                               meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(int_tag_shape_annotation, tag = "type", tag_names = {"circle", "rect"});
+using IntTagShape = annotate<int_tag_shape_annotation>::type<std::variant<Circle, Rect>>;
 
+KOTATSU_ANNOTATION(int_tag_tri_shape_annotation,
+                   tag = "kind",
+                   tag_names = {"circle", "rect", "triangle"});
 using IntTagTriShape =
-    annotation<std::variant<Circle, Rect, Triangle>,
-               meta::attrs::internally_tagged<"kind">::names<"circle", "rect", "triangle">>;
+    annotate<int_tag_tri_shape_annotation>::type<std::variant<Circle, Rect, Triangle>>;
 
 struct ExtHolder {
     std::string label;
@@ -769,20 +779,22 @@ TEST_CASE(missing_required_field_rejects_untagged_variant_candidate) {
 
 };  // TEST_SUITE(serde_variant_int_tag)
 
+KOTATSU_ANNOTATION(nested_inner_annotation, tagged = true, tag_names = {"i", "s"});
+KOTATSU_ANNOTATION(nested_outer_annotation, tagged = true, tag_names = {"plain", "wrapped"});
+KOTATSU_ANNOTATION(vec_tagged_annotation, tag = "t", content = "v", tag_names = {"i", "s"});
+
 TEST_SUITE(serde_variant_nested) {
 
 TEST_CASE(variant_in_struct_in_variant) {
     // An externally tagged variant whose struct alternative contains another ext variant
-    using Inner =
-        annotation<std::variant<int, std::string>, meta::attrs::externally_tagged::names<"i", "s">>;
+    using Inner = annotate<nested_inner_annotation>::type<std::variant<int, std::string>>;
 
     struct Wrapper {
         std::string id;
         Inner val;
     };
 
-    using Outer = annotation<std::variant<int, Wrapper>,
-                             meta::attrs::externally_tagged::names<"plain", "wrapped">>;
+    using Outer = annotate<nested_outer_annotation>::type<std::variant<int, Wrapper>>;
 
     Outer v = Wrapper{.id = "w1", .val = std::string("inner")};
     auto encoded = to_json(v);
@@ -795,8 +807,7 @@ TEST_CASE(variant_in_struct_in_variant) {
 }
 
 TEST_CASE(vector_of_tagged_variants) {
-    using V = annotation<std::variant<int, std::string>,
-                         meta::attrs::adjacently_tagged<"t", "v">::names<"i", "s">>;
+    using V = annotate<vec_tagged_annotation>::type<std::variant<int, std::string>>;
 
     std::vector<V> vec = {V{1}, V{std::string("a")}, V{2}, V{std::string("b")}};
     auto encoded = to_json(vec);

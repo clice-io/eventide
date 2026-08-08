@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "kota/support/config.h"
+#include "kota/support/naming.h"
 
 namespace kota::meta {
 
@@ -65,6 +66,36 @@ struct field_spec {
     bool defaulted = false;
 };
 
+/// How a variant is tagged on the wire.
+enum class tag_mode : std::uint8_t {
+    none,
+    /// { "TagName": value }
+    external,
+    /// { "tag": "TagName", ...fields... }
+    internal,
+    /// { "tag": "TagName", "content": value }
+    adjacent,
+};
+
+/// The value part of a struct or variant annotation. Unlike field_spec, these
+/// values fork the type_info identity of the annotated type (a renamed struct
+/// and its bare form have different wire schemas).
+struct struct_spec {
+    /// Naming policy applied to every field wire name.
+    naming::casing rename_all = naming::casing::identity;
+    /// Reject unknown keys during deserialization.
+    bool deny_unknown_fields = false;
+    /// Variant tagging mode; derived from tagged/tag/content by make_struct_spec.
+    tag_mode tagging = tag_mode::none;
+    /// Tag field name (internal and adjacent tagging).
+    std::string_view tag = {};
+    /// Content field name (adjacent tagging).
+    std::string_view content = {};
+    /// Custom wire names for the variant alternatives, in declaration order;
+    /// empty means meta::type_name of each alternative.
+    name_list tag_names = {};
+};
+
 /// Carries a type into the annotation DSL: `as = type<Target>`.
 template <typename T>
 struct type_tag {};
@@ -73,6 +104,7 @@ namespace dsl {
 
 /// Which spec aspect a component sets; used to reject duplicates.
 enum class aspect : std::uint8_t {
+    // field_spec
     rename,
     description,
     alias,
@@ -84,26 +116,41 @@ enum class aspect : std::uint8_t {
     as,
     with,
     enum_string,
+    // struct_spec
+    rename_all,
+    deny_unknown_fields,
+    tagged,
+    tag,
+    content,
+    tag_names,
 };
 
+/// The member pointer decides which spec type a component applies to, and
+/// thereby whether it is valid in make_spec or make_struct_spec.
 template <aspect A, auto Member, typename V>
 struct value_component {
     V value;
 
     constexpr static aspect kind = A;
 
-    constexpr void apply(field_spec& spec) const {
+    template <typename Spec>
+        requires requires(Spec& spec, const V& value) { spec.*Member = value; }
+    constexpr void apply(Spec& spec) const {
         spec.*Member = value;
     }
 };
 
-struct alias_component {
-    name_list value;
+/// `tagged = true` selects external tagging; internal and adjacent tagging are
+/// selected by naming the tag (and content) fields instead.
+struct tagged_component {
+    bool value;
 
-    constexpr static aspect kind = aspect::alias;
+    constexpr static aspect kind = aspect::tagged;
 
-    constexpr void apply(field_spec& spec) const {
-        spec.alias = value;
+    constexpr void apply(struct_spec& spec) const {
+        if(value) {
+            spec.tagging = tag_mode::external;
+        }
     }
 };
 
@@ -123,8 +170,9 @@ constexpr bool is_type_component_v = false;
 template <aspect A, typename T>
 constexpr bool is_type_component_v<type_component<A, T>> = true;
 
-template <typename T>
-concept annotation_component = requires(const T& component, field_spec& spec) {
+/// A DSL component applicable to the given spec type.
+template <typename T, typename Spec>
+concept spec_component = requires(const T& component, Spec& spec) {
     { T::kind } -> std::convertible_to<aspect>;
     component.apply(spec);
 };
@@ -136,16 +184,23 @@ struct value_proxy {
     }
 };
 
-struct alias_proxy {
+template <aspect A, auto Member>
+struct name_list_proxy {
     constexpr auto operator=(std::initializer_list<std::string_view> names) const {
         if(names.size() > name_list::capacity) {
-            KOTA_THROW("annotation: too many aliases");
+            KOTA_THROW("annotation: too many names");
         }
-        alias_component component{};
+        value_component<A, Member, name_list> component{};
         for(auto name: names) {
             component.value.storage[component.value.count++] = name;
         }
         return component;
+    }
+};
+
+struct tagged_proxy {
+    constexpr auto operator=(bool value) const {
+        return tagged_component{value};
     }
 };
 
@@ -177,11 +232,20 @@ constexpr inline value_proxy<aspect::idx, &field_spec::idx, std::uint32_t> idx{}
 constexpr inline value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
 constexpr inline value_proxy<aspect::flatten, &field_spec::flatten, bool> flatten{};
 constexpr inline value_proxy<aspect::defaulted, &field_spec::defaulted, bool> defaulted{};
-constexpr inline alias_proxy alias{};
+constexpr inline name_list_proxy<aspect::alias, &field_spec::alias> alias{};
 constexpr inline skip_if_proxy skip_if{};
 constexpr inline type_proxy<aspect::as> as{};
 constexpr inline type_proxy<aspect::with> with{};
 constexpr inline type_proxy<aspect::enum_string> enum_string{};
+
+constexpr inline value_proxy<aspect::rename_all, &struct_spec::rename_all, naming::casing>
+    rename_all{};
+constexpr inline value_proxy<aspect::deny_unknown_fields, &struct_spec::deny_unknown_fields, bool>
+    deny_unknown_fields{};
+constexpr inline tagged_proxy tagged{};
+constexpr inline value_proxy<aspect::tag, &struct_spec::tag, std::string_view> tag{};
+constexpr inline value_proxy<aspect::content, &struct_spec::content, std::string_view> content{};
+constexpr inline name_list_proxy<aspect::tag_names, &struct_spec::tag_names> tag_names{};
 
 template <typename T>
 constexpr inline type_tag<T> type{};
@@ -212,6 +276,10 @@ consteval bool component_kinds_unique() {
     return true;
 }
 
+/// True for any DSL component, regardless of which spec type it applies to.
+template <typename T>
+concept any_component = dsl::spec_component<T, field_spec> || dsl::spec_component<T, struct_spec>;
+
 constexpr void validate_spec(const field_spec& spec) {
     if(spec.skip && spec.flatten) {
         KOTA_THROW("annotation: skip and flatten conflict");
@@ -232,12 +300,47 @@ constexpr void validate_spec(const field_spec& spec) {
     }
 }
 
+/// Derive the tagging mode from the tag/content field names and check the
+/// combination for consistency.
+constexpr struct_spec finalize_struct_spec(struct_spec spec) {
+    if(spec.tagging == tag_mode::external && !spec.tag.empty()) {
+        KOTA_THROW("annotation: tagged = true conflicts with a tag field name");
+    }
+    if(!spec.content.empty()) {
+        if(spec.tag.empty()) {
+            KOTA_THROW("annotation: content requires a tag field name");
+        }
+        spec.tagging = tag_mode::adjacent;
+    } else if(!spec.tag.empty()) {
+        spec.tagging = tag_mode::internal;
+    }
+
+    auto names = spec.tag_names.names();
+    if(!names.empty() && spec.tagging == tag_mode::none) {
+        KOTA_THROW("annotation: tag_names requires a tagging mode");
+    }
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(names[i].empty()) {
+            KOTA_THROW("annotation: empty tag name");
+        }
+        for(std::size_t j = i + 1; j < names.size(); ++j) {
+            if(names[i] == names[j]) {
+                KOTA_THROW("annotation: duplicate tag name");
+            }
+        }
+    }
+    return spec;
+}
+
 }  // namespace detail
 
 template <typename... Cs>
 constexpr auto make_spec(const Cs&... components) {
-    static_assert((dsl::annotation_component<Cs> && ...),
+    static_assert((detail::any_component<Cs> && ...),
                   "annotation entries must be assignments, e.g. skip = true");
+    static_assert(
+        (dsl::spec_component<Cs, field_spec> && ...),
+        "rename_all/deny_unknown_fields/tagged/... are struct-level entries; " "use make_struct_spec");
     static_assert(detail::component_kinds_unique<Cs...>(),
                   "annotation: the same attribute appears twice");
 
@@ -251,6 +354,32 @@ constexpr auto make_spec(const Cs&... components) {
     return []<typename... Ts>(const field_spec& value, std::type_identity<std::tuple<Ts...>>) {
         return spec_result<Ts...>{value};
     }(spec, std::type_identity<extras_t>{});
+}
+
+template <typename... Cs>
+constexpr struct_spec make_struct_spec(const Cs&... components) {
+    static_assert((detail::any_component<Cs> && ...),
+                  "annotation entries must be assignments, e.g. deny_unknown_fields = true");
+    static_assert((dsl::spec_component<Cs, struct_spec> && ...),
+                  "field-level entries are not valid in a struct annotation; use make_spec");
+    static_assert(detail::component_kinds_unique<Cs...>(),
+                  "annotation: the same attribute appears twice");
+
+    struct_spec spec{};
+    (components.apply(spec), ...);
+    return detail::finalize_struct_spec(spec);
+}
+
+/// The entries decide what an annotation describes: struct-level entries only
+/// make a struct_spec, anything else a field spec. KOTATSU_ANNOTATION routes
+/// through this so one macro covers both.
+template <typename... Cs>
+constexpr auto make_annotation(const Cs&... components) {
+    if constexpr(sizeof...(Cs) > 0 && (dsl::spec_component<Cs, struct_spec> && ...)) {
+        return make_struct_spec(components...);
+    } else {
+        return make_spec(components...);
+    }
 }
 
 }  // namespace kota::meta

@@ -63,12 +63,15 @@ struct struct_level_payload {
     int login_count = 0;
 };
 
+KOTATSU_ANNOTATION(renamed_struct_level_annotation, rename_all = casing::lower_camel);
 using renamed_struct_level_payload =
-    annotation<struct_level_payload, meta::attrs::rename_all<meta::rename_policy::lower_camel>>;
+    annotate<renamed_struct_level_annotation>::type<struct_level_payload>;
+
+KOTATSU_ANNOTATION(strict_renamed_struct_level_annotation,
+                   rename_all = casing::lower_camel,
+                   deny_unknown_fields = true);
 using strict_renamed_struct_level_payload =
-    annotation<struct_level_payload,
-               meta::attrs::rename_all<meta::rename_policy::lower_camel>,
-               meta::attrs::deny_unknown_fields>;
+    annotate<strict_renamed_struct_level_annotation>::type<struct_level_payload>;
 
 TEST_SUITE(serde_simdjson_attrs) {
 

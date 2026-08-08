@@ -21,7 +21,8 @@ using toml::parse;
 using person = meta::fixtures::Person;
 using with_scores = meta::fixtures::WithScores;
 
-using strict_payload = annotation<meta::fixtures::StrictIdName, meta::attrs::deny_unknown_fields>;
+KOTATSU_ANNOTATION(strict_payload_annotation, deny_unknown_fields = true);
+using strict_payload = annotate<strict_payload_annotation>::type<meta::fixtures::StrictIdName>;
 
 enum class color { red, green, blue };
 

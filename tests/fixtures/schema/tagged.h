@@ -26,18 +26,37 @@ struct TaggedIntRect {
     int height;
 };
 
-using ExternalTagged =
-    annotation<std::variant<int, std::string>, attrs::externally_tagged::names<"integer", "text">>;
+// Named annotation tags in the fixtures namespace so every including TU sees
+// one type (required for shared headers). Hand-written make_struct_spec rather
+// than the KOTATSU_ANNOTATION macro since this fixture header avoids macros.
+struct ExternalTag {
+    constexpr static auto spec =
+        make_struct_spec(dsl::tagged = true, dsl::tag_names = {"integer", "text"});
+};
 
-using InternalTagged = annotation<std::variant<TaggedIntCircle, TaggedIntRect>,
-                                  attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+struct InternalKindTag {
+    constexpr static auto spec =
+        make_struct_spec(dsl::tag = "kind", dsl::tag_names = {"circle", "rect"});
+};
 
-using AdjacentTagged =
-    annotation<std::variant<int, std::string>,
-               attrs::adjacently_tagged<"type", "value">::names<"integer", "text">>;
+struct AdjacentTag {
+    constexpr static auto spec = make_struct_spec(dsl::tag = "type",
+                                                  dsl::content = "value",
+                                                  dsl::tag_names = {"integer", "text"});
+};
 
-using TaggedRoot = annotation<std::variant<Circle, Rect>,
-                              attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+struct TaggedTag {
+    constexpr static auto spec = make_struct_spec(dsl::tagged = true);
+};
+
+using ExternalTagged = annotate<ExternalTag>::type<std::variant<int, std::string>>;
+
+using InternalTagged =
+    annotate<InternalKindTag>::type<std::variant<TaggedIntCircle, TaggedIntRect>>;
+
+using AdjacentTagged = annotate<AdjacentTag>::type<std::variant<int, std::string>>;
+
+using TaggedRoot = annotate<InternalKindTag>::type<std::variant<Circle, Rect>>;
 
 struct TaggedFieldStruct {
     ExternalTagged ext;
@@ -46,7 +65,7 @@ struct TaggedFieldStruct {
 };
 
 struct TaggedVariantStruct {
-    annotation<std::variant<int, std::string>, attrs::tagged<>> tv;
+    annotate<TaggedTag>::type<std::variant<int, std::string>> tv;
 };
 
 }  // namespace kota::meta::fixtures

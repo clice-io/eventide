@@ -187,6 +187,17 @@ template <typename Tag>
 constexpr bool is_runtime_spec_attr_v<attrs::spec<Tag>> =
     attrs::spec<Tag>::value.defaulted || attrs::spec<Tag>::value.skip_if != skip_when::never;
 
+/// A struct spec whose values matter at encode/decode dispatch: the tagged
+/// variant paths read the tagging mode and names from the slot attrs. A
+/// rename_all/deny_unknown-only spec acts through the merged config instead
+/// and is dropped from slots.
+template <typename Attr>
+constexpr bool is_runtime_struct_spec_attr_v = false;
+
+template <typename Tag>
+constexpr bool is_runtime_struct_spec_attr_v<attrs::struct_spec<Tag>> =
+    attrs::struct_spec<Tag>::value.tagging != tag_mode::none;
+
 template <typename Tuple>
 struct filter_runtime_attrs;
 
@@ -198,8 +209,9 @@ struct filter_runtime_attrs<std::tuple<>> {
 template <typename First, typename... Rest>
 struct filter_runtime_attrs<std::tuple<First, Rest...>> {
     using tail = typename filter_runtime_attrs<std::tuple<Rest...>>::type;
-    constexpr static bool keep =
-        is_behavior_attr_v<First> || is_tagged_attr<First>::value || is_runtime_spec_attr_v<First>;
+    constexpr static bool keep = is_behavior_attr_v<First> ||
+                                 is_runtime_struct_spec_attr_v<First> ||
+                                 is_runtime_spec_attr_v<First>;
     using type = std::conditional_t<keep,
                                     decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
                                                             std::declval<tail>())),
@@ -224,9 +236,7 @@ struct filter_type_attrs<std::tuple<>> {
 template <typename First, typename... Rest>
 struct filter_type_attrs<std::tuple<First, Rest...>> {
     using tail = typename filter_type_attrs<std::tuple<Rest...>>::type;
-    constexpr static bool keep = is_tagged_attr<First>::value ||
-                                 is_specialization_of<attrs::rename_all, First> ||
-                                 std::is_same_v<First, attrs::deny_unknown_fields>;
+    constexpr static bool keep = is_struct_spec_attr<First>::value;
     using type = std::conditional_t<keep,
                                     decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
                                                             std::declval<tail>())),
@@ -285,7 +295,7 @@ struct unwrap_annotated<T> {
 
 template <typename BaseConfig,
           typename AttrsTuple,
-          bool HasRenameAll = tuple_has_spec_v<AttrsTuple, attrs::rename_all>>
+          bool HasRenameAll = struct_spec_of<AttrsTuple>.rename_all != naming::casing::identity>
 struct struct_schema_config {
     using type = BaseConfig;
 };
@@ -293,22 +303,12 @@ struct struct_schema_config {
 template <typename BaseConfig, typename AttrsTuple>
 struct struct_schema_config<BaseConfig, AttrsTuple, true> {
     struct type : BaseConfig {
-        using field_rename = typename tuple_find_spec_t<AttrsTuple, attrs::rename_all>::policy;
+        using field_rename = naming::rename_policy_t<struct_spec_of<AttrsTuple>.rename_all>;
     };
 };
 
 template <typename BaseConfig, typename AttrsTuple>
 using struct_schema_config_t = typename struct_schema_config<BaseConfig, AttrsTuple>::type;
-
-template <typename AttrsTuple>
-constexpr bool has_struct_schema_attrs_v = tuple_has_spec_v<AttrsTuple, attrs::rename_all> ||
-                                           tuple_has_v<AttrsTuple, attrs::deny_unknown_fields>;
-
-template <typename AttrsTuple>
-using tagged_schema_attr_t = tuple_find_t<AttrsTuple, is_tagged_attr>;
-
-template <typename AttrsTuple>
-constexpr bool has_tagged_schema_attr_v = !std::is_void_v<tagged_schema_attr_t<AttrsTuple>>;
 
 template <typename WireT, typename AttrsT, typename Config, type_kind Kind = kind_of<WireT>()>
 struct type_instance_impl;
@@ -368,19 +368,7 @@ constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset = 0);
 template <typename T>
 constexpr bool has_deny_unknown_fields() {
     using attrs_t = typename unwrap_annotated<T>::attrs;
-    return tuple_has_v<attrs_t, attrs::deny_unknown_fields>;
-}
-
-template <typename TagAttr>
-constexpr tag_mode tagged_mode_for() {
-    constexpr auto strategy = tagged_strategy_of<TagAttr>;
-    if constexpr(strategy == tagged_strategy::external) {
-        return tag_mode::external;
-    } else if constexpr(strategy == tagged_strategy::internal) {
-        return tag_mode::internal;
-    } else {
-        return tag_mode::adjacent;
-    }
+    return struct_spec_of<attrs_t>.deny_unknown_fields;
 }
 
 template <typename Variant, typename Config, typename AttrsTuple = std::tuple<>>
@@ -389,7 +377,8 @@ struct variant_info_node;
 template <typename Config, typename AttrsTuple, typename... Ts>
 struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     using variant_t = std::variant<Ts...>;
-    constexpr static bool has_tag = has_tagged_schema_attr_v<AttrsTuple>;
+    constexpr const static struct_spec& spec = struct_spec_of<AttrsTuple>;
+    constexpr static bool has_tag = spec.tagging != tag_mode::none;
 
     constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
         type_info_of<Ts, Config>...};
@@ -399,46 +388,18 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {
         if constexpr(has_tag) {
-            return resolve_tag_names<tagged_schema_attr_t<AttrsTuple>, Ts...>();
+            return resolve_tag_names<tuple_find_t<AttrsTuple, is_struct_spec_attr>, Ts...>();
         } else {
             return std::array<std::string_view, sizeof...(Ts)>{};
         }
     }();
 
-    constexpr static tag_mode tagging = [] {
-        if constexpr(has_tag) {
-            return tagged_mode_for<tagged_schema_attr_t<AttrsTuple>>();
-        } else {
-            return tag_mode::none;
-        }
-    }();
-
-    constexpr static std::string_view tag_field = [] {
-        if constexpr(has_tag) {
-            using tag_attr = tagged_schema_attr_t<AttrsTuple>;
-            if constexpr(tagged_mode_for<tag_attr>() != tag_mode::external) {
-                return std::string_view{tag_attr::field_names[0]};
-            }
-        }
-        return std::string_view{};
-    }();
-
-    constexpr static std::string_view content_field = [] {
-        if constexpr(has_tag) {
-            using tag_attr = tagged_schema_attr_t<AttrsTuple>;
-            if constexpr(tagged_mode_for<tag_attr>() == tag_mode::adjacent) {
-                return std::string_view{tag_attr::field_names[1]};
-            }
-        }
-        return std::string_view{};
-    }();
-
     constexpr inline static variant_type_info value = {
         {type_kind::variant,  meta::type_name<variant_t>()  },
         {alternatives.data(), alternatives.size()           },
-        tagging,
-        tag_field,
-        content_field,
+        spec.tagging,
+        spec.tag,
+        spec.content,
         {alt_names.data(),    has_tag ? alt_names.size() : 0},
     };
 };
@@ -536,7 +497,7 @@ struct type_instance_impl<WireT, AttrsT, Config, type_kind::structure> {
     using schema_config = struct_schema_config_t<Config, AttrsT>;
     constexpr static std::size_t count = effective_field_count<WireT>();
     constexpr static bool deny_unknown =
-        has_deny_unknown_fields<WireT>() || tuple_has_v<AttrsT, attrs::deny_unknown_fields>;
+        has_deny_unknown_fields<WireT>() || struct_spec_of<AttrsT>.deny_unknown_fields;
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<WireT>;
 
     constexpr inline static built_fields_t<WireT, schema_config> fields =

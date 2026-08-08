@@ -16,8 +16,17 @@
 // using-directive: block-scope using-declarations shadow outer names, while a
 // using-directive would make e.g. `rename` ambiguous with ::rename from
 // <stdio.h> at any use site outside namespace kota.
-#define KOTATSU_ANNOTATE_IMPL(tag, ...)                                                            \
-    struct tag {                                                                                   \
+
+/// Defines a named, reusable annotation tag. The entries decide whether it is
+/// a field annotation (rename, skip, ...) or a struct/variant annotation
+/// (rename_all, tagged, ...); attach it with kota::meta::annotate:
+///
+///     KOTATSU_ANNOTATION(shape_annotation, tag = "kind",
+///                        tag_names = {"circle", "rect"});
+///     using shape = kota::meta::annotate<shape_annotation>::type<
+///         std::variant<circle, rect>>;
+#define KOTATSU_ANNOTATION(name, ...)                                                              \
+    struct name {                                                                                  \
         constexpr static auto spec = [] {                                                          \
             using ::kota::meta::dsl::rename;                                                       \
             using ::kota::meta::dsl::description;                                                  \
@@ -30,11 +39,21 @@
             using ::kota::meta::dsl::as;                                                           \
             using ::kota::meta::dsl::with;                                                         \
             using ::kota::meta::dsl::enum_string;                                                  \
+            using ::kota::meta::dsl::rename_all;                                                   \
+            using ::kota::meta::dsl::deny_unknown_fields;                                          \
+            using ::kota::meta::dsl::tagged;                                                       \
+            using ::kota::meta::dsl::tag;                                                          \
+            using ::kota::meta::dsl::content;                                                      \
+            using ::kota::meta::dsl::tag_names;                                                    \
             using ::kota::meta::dsl::type;                                                         \
             using ::kota::meta::skip_when;                                                         \
-            return ::kota::meta::make_spec(__VA_ARGS__);                                           \
+            using ::kota::naming::casing;                                                          \
+            return ::kota::meta::make_annotation(__VA_ARGS__);                                     \
         }();                                                                                       \
-    };                                                                                             \
+    }
+
+#define KOTATSU_ANNOTATE_IMPL(tag, ...)                                                            \
+    KOTATSU_ANNOTATION(tag, __VA_ARGS__);                                                          \
     typename ::kota::meta::annotate<tag>::template type
 
 /// Annotates the next field declaration with serde attributes:

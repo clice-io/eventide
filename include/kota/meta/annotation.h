@@ -157,13 +157,25 @@ struct annotated_field<T, Tag, std::tuple<Cs...>, Extra...> {
 
 }  // namespace detail
 
+/// A tag whose spec is a struct-level annotation (made by make_struct_spec)
+/// rather than a field spec.
+template <typename Tag>
+concept struct_spec_tag = std::same_as<std::remove_cv_t<decltype(Tag::spec)>, struct_spec>;
+
 /// Binds a KOTATSU_ANNOTATE tag to the field type it annotates. Extra type
-/// attrs (behavior, tagged, ...) may follow the field type explicitly.
+/// attrs (behavior, ...) may follow the field type explicitly.
 template <typename Tag>
 struct annotate {
     template <typename T, typename... Extra>
     using type = typename detail::
         annotated_field<T, Tag, typename decltype(Tag::spec)::extras, Extra...>::type;
+};
+
+/// Binds a make_struct_spec tag to the struct or variant type it annotates.
+template <struct_spec_tag Tag>
+struct annotate<Tag> {
+    template <typename T, typename... Extra>
+    using type = annotation<T, attrs::struct_spec<Tag>, Extra...>;
 };
 
 }  // namespace kota::meta

@@ -180,14 +180,14 @@ bool decode_field_inner(Vis& vis, T& out) {
         }
         return scoped_context<typename Vis::error_type>::fail(
             rich_error(std::string("unknown enum value '") + name_str + "'"));
-    } else if constexpr(tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
         static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
                       "tagged attribute requires a variant type");
         if constexpr(!is_human_readable<Config, Vis>()) {
             return decode_value<Config>(vis, field_ref);
         } else {
-            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
-            return decode_variant<Config, tag_attr>(vis, field_ref);
+            using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
+            return decode_variant<Config, spec_attr>(vis, field_ref);
         }
     } else {
         return decode_value<Config>(vis, field_ref);
@@ -337,9 +337,9 @@ bool check_required_fields(std::uint64_t field_mask) {
 }
 
 /// External tagged: { "TagName": value }
-template <typename Config, typename TagAttr, typename Vis, typename... Ts>
+template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     bool found = false;
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
         if(found) {
@@ -363,10 +363,10 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
 
 /// Internal tagged: { "tag": "TagName", ...fields... }
 /// Three paths: try_read pre-lookup, streaming (tag first), schema-driven (struct_reader).
-template <typename Config, typename TagAttr, typename Vis, typename... Ts>
+template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
-    constexpr std::string_view tag_key = TagAttr::field_names[0];
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
+    constexpr std::string_view tag_key = SpecAttr::value.tag;
+    constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = npos;
@@ -476,11 +476,11 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
 }
 
 /// Adjacent tagged: { "t": "TagName", "c": value }
-template <typename Config, typename TagAttr, typename Vis, typename... Ts>
+template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
-    constexpr std::string_view tag_key = TagAttr::field_names[0];
-    constexpr std::string_view content_key = TagAttr::field_names[1];
-    constexpr auto names = meta::resolve_tag_names<TagAttr, Ts...>();
+    constexpr std::string_view tag_key = SpecAttr::value.tag;
+    constexpr std::string_view content_key = SpecAttr::value.content;
+    constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = npos;
@@ -691,25 +691,25 @@ bool decode_one_field(Vis& vis, T& out) {
 }  // namespace detail
 
 /// Unified variant decode: dispatches to native, tagged, or untagged path.
-template <typename Config, typename TagAttr, typename Vis, typename Var>
+template <typename Config, typename SpecAttr, typename Vis, typename Var>
 bool decode_variant(Vis& vis, Var& var) {
     return [&]<typename... Ts>(std::variant<Ts...>&) -> bool {
         if constexpr(detail::has_native_variant<Vis>) {
             return vis.visit_variant([&](std::size_t index, auto& pv) -> bool {
                 return detail::construct_and_visit<Config>(pv, var, index);
             });
-        } else if constexpr(!std::is_same_v<TagAttr, detail::no_tag>) {
+        } else if constexpr(!std::is_same_v<SpecAttr, detail::no_tag>) {
             if constexpr(!is_human_readable<Config, Vis>()) {
                 return detail::decode_untagged_variant<Config>(vis, var);
             } else {
-                constexpr auto strategy = meta::tagged_strategy_of<TagAttr>;
-                if constexpr(strategy == meta::tagged_strategy::external) {
-                    return detail::decode_externally_tagged<Config, TagAttr>(vis, var);
-                } else if constexpr(strategy == meta::tagged_strategy::internal) {
-                    return detail::decode_internally_tagged<Config, TagAttr>(vis, var);
+                constexpr auto tagging = SpecAttr::value.tagging;
+                if constexpr(tagging == meta::tag_mode::external) {
+                    return detail::decode_externally_tagged<Config, SpecAttr>(vis, var);
+                } else if constexpr(tagging == meta::tag_mode::internal) {
+                    return detail::decode_internally_tagged<Config, SpecAttr>(vis, var);
                 } else {
-                    static_assert(strategy == meta::tagged_strategy::adjacent);
-                    return detail::decode_adjacently_tagged<Config, TagAttr>(vis, var);
+                    static_assert(tagging == meta::tag_mode::adjacent);
+                    return detail::decode_adjacently_tagged<Config, SpecAttr>(vis, var);
                 }
             }
         } else {
@@ -730,12 +730,12 @@ bool decode_value(Vis& vis, T& out) {
         using inner_t = std::remove_cvref_t<decltype(inner)>;
 
         if constexpr(is_specialization_of<std::variant, inner_t> &&
-                     tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+                     meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
             if constexpr(!is_human_readable<Config, Vis>()) {
                 return decode_value<Config>(vis, inner);
             } else {
-                using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
-                return decode_variant<Config, tag_attr>(vis, inner);
+                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
+                return decode_variant<Config, spec_attr>(vis, inner);
             }
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
             using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
@@ -772,8 +772,8 @@ bool decode_value(Vis& vis, T& out) {
             inner = inner_t(std::move(converted));
             return true;
         } else if constexpr(meta::reflectable_class<inner_t> &&
-                            (tuple_has_spec_v<attrs_t, meta::attrs::rename_all> ||
-                             tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
+                            (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
+                             meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
             using merged_config = detail::annotated_config<Config, attrs_t>;
             return decode_value<merged_config>(vis, inner);
         } else {

@@ -711,9 +711,12 @@ TEST_CASE(variant_valueless_compares_less) {
 }
 #endif
 
+struct kind_tag {
+    constexpr static auto spec = make_struct_spec(dsl::tag = "kind");
+};
+
 TEST_CASE(variant_in_annotation) {
-    using tagged_shape_t =
-        annotation<std::variant<v_circle, v_rect>, attrs::internally_tagged<"kind">>;
+    using tagged_shape_t = annotate<kind_tag>::type<std::variant<v_circle, v_rect>>;
     tagged_shape_t lhs = v_circle{.radius = 2};
     tagged_shape_t rhs = v_circle{.radius = 2};
     tagged_shape_t other = v_rect{.width = 3, .height = 4};

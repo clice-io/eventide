@@ -3,14 +3,12 @@
 #include <array>
 #include <concepts>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 
 #include "name.h"
 #include "spec.h"
-#include "kota/support/fixed_string.h"
 #include "kota/support/tuple_traits.h"
 #include "kota/support/type_traits.h"
 
@@ -81,47 +79,13 @@ struct spec {
 
 // Struct-level
 
-/// Apply a rename policy to all fields of a struct.
-template <typename Policy>
-struct rename_all {
-    using policy = Policy;
+/// The value attributes of one annotated struct or variant type. Unlike spec,
+/// this attr forks the type_info identity of the annotated type — a renamed
+/// or tagged type and its bare form have different wire schemas.
+template <typename Tag>
+struct struct_spec {
+    constexpr const static meta::struct_spec& value = Tag::spec;
 };
-
-/// Reject unknown fields during deserialization.
-struct deny_unknown_fields {};
-
-/// Unified tagged variant representation.
-/// - tagged<>             = externally tagged  (key is tag name, value is content)
-/// - tagged<Tag>          = internally tagged  (tag field embedded in struct)
-/// - tagged<Tag, Content> = adjacently tagged  (separate tag and content fields)
-///
-/// Use ::names<...> to provide custom tag names for each alternative.
-/// Without ::names, defaults to meta::type_name<Alt>() for each alternative.
-template <fixed_string... FieldNames>
-struct tagged {
-    static_assert(sizeof...(FieldNames) <= 2, "tagged: 0=external, 1=internal, 2=adjacent");
-
-    constexpr static auto field_names =
-        std::array<std::string_view, sizeof...(FieldNames)>{FieldNames...};
-    constexpr static bool has_custom_names = false;
-
-    template <fixed_string... Names>
-    struct names {
-        constexpr static auto field_names =
-            std::array<std::string_view, sizeof...(FieldNames)>{FieldNames...};
-        constexpr static auto tag_names = std::array<std::string_view, sizeof...(Names)>{Names...};
-        constexpr static bool has_custom_names = true;
-    };
-};
-
-/// Semantic aliases for backward compatibility.
-using externally_tagged = tagged<>;
-
-template <fixed_string Tag>
-using internally_tagged = tagged<Tag>;
-
-template <fixed_string Tag, fixed_string Content>
-using adjacently_tagged = tagged<Tag, Content>;
 
 }  // namespace attrs
 
@@ -157,31 +121,42 @@ constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
     }
 }();
 
-/// Unified predicate for all tagged attrs (tagged<...> and tagged<...>::names<...>).
 template <typename T>
-struct is_tagged_attr {
-    constexpr static bool value = requires {
-        { T::field_names } -> std::convertible_to<std::span<const std::string_view>>;
-        { T::has_custom_names } -> std::same_as<const bool&>;
-    };
+struct is_struct_spec_attr {
+    constexpr static bool value = false;
 };
 
-/// Strategy dispatch based on field_names count.
-enum class tagged_strategy { external = 0, internal = 1, adjacent = 2 };
+template <typename Tag>
+struct is_struct_spec_attr<attrs::struct_spec<Tag>> {
+    constexpr static bool value = true;
+};
 
-template <typename TagAttr>
-constexpr tagged_strategy tagged_strategy_of =
-    static_cast<tagged_strategy>(TagAttr::field_names.size());
+constexpr inline struct_spec empty_struct_spec{};
 
-/// Resolve tag names for variant alternatives.
-/// With ::names, uses the user-provided names (static_assert on count match).
-/// Without ::names, uses meta::type_name<Alt>() for each alternative.
-template <typename TagAttr, typename... Ts>
+/// The struct-level spec inside an attrs tuple; the empty spec when absent.
+template <typename AttrsTuple>
+constexpr const inline struct_spec& struct_spec_of = [] -> const struct_spec& {
+    if constexpr(tuple_any_of_v<AttrsTuple, is_struct_spec_attr>) {
+        return tuple_find_t<AttrsTuple, is_struct_spec_attr>::value;
+    } else {
+        return empty_struct_spec;
+    }
+}();
+
+/// Resolve wire names for variant alternatives: the annotation's tag_names
+/// when provided (count must match), meta::type_name of each alternative
+/// otherwise.
+template <typename SpecAttr, typename... Ts>
 constexpr auto resolve_tag_names() {
-    if constexpr(TagAttr::has_custom_names) {
-        static_assert(TagAttr::tag_names.size() == sizeof...(Ts),
+    constexpr const struct_spec& spec = SpecAttr::value;
+    if constexpr(spec.tag_names.count != 0) {
+        static_assert(spec.tag_names.count == sizeof...(Ts),
                       "tagged: number of custom names must match variant alternatives");
-        return TagAttr::tag_names;
+        std::array<std::string_view, sizeof...(Ts)> names{};
+        for(std::size_t i = 0; i < names.size(); ++i) {
+            names[i] = spec.tag_names.storage[i];
+        }
+        return names;
     } else {
         return std::array<std::string_view, sizeof...(Ts)>{type_name<Ts>()...};
     }
@@ -303,6 +278,8 @@ constexpr bool validate_attrs() {
                   "At most one behavior provider (with/as/enum_string) allowed per field");
     static_assert(tuple_count_of_v<AttrsTuple, is_spec_attr> <= 1,
                   "At most one annotation spec allowed per field");
+    static_assert(tuple_count_of_v<AttrsTuple, is_struct_spec_attr> <= 1,
+                  "At most one struct annotation spec allowed per type");
     static_assert(!(spec_of<AttrsTuple>.skip_if != skip_when::never &&
                     tuple_has_spec_v<AttrsTuple, behavior::skip_if>),
                   "A built-in skip_if condition and a custom skip_if predicate conflict");

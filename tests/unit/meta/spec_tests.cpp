@@ -1,5 +1,6 @@
 #include <tuple>
 #include <type_traits>
+#include <variant>
 
 #include "kota/zest/zest.h"
 #include "kota/meta/schema.h"
@@ -47,6 +48,32 @@ struct extras_tag {
 struct inner_pair {
     int first = 0;
     int second = 0;
+};
+
+struct circle_alt {
+    double radius = 0;
+};
+
+struct rect_alt {
+    double width = 0;
+};
+
+struct internal_struct_tag {
+    constexpr static auto spec =
+        make_struct_spec(dsl::tag = "kind", dsl::tag_names = {"circle", "rect"});
+};
+
+struct adjacent_struct_tag {
+    constexpr static auto spec = make_struct_spec(dsl::tag = "t", dsl::content = "c");
+};
+
+struct external_struct_tag {
+    constexpr static auto spec = make_struct_spec(dsl::tagged = true);
+};
+
+struct config_struct_tag {
+    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::casing::lower_camel,
+                                                  dsl::deny_unknown_fields = true);
 };
 
 struct spec_struct {
@@ -134,6 +161,58 @@ TEST_CASE(name_only_spec_shares_slot_with_bare_field) {
     // A defaulted spec stays in the slot attrs for decode.
     using retries_slot = type_list_element_t<3, slots>;
     STATIC_EXPECT_TRUE((tuple_has_v<typename retries_slot::attrs, attrs::spec<defaulted_tag>>));
+}
+
+TEST_CASE(make_struct_spec_folds_values_and_derives_tagging) {
+    constexpr const struct_spec& internal = internal_struct_tag::spec;
+    STATIC_EXPECT_TRUE(internal.tagging == tag_mode::internal);
+    STATIC_EXPECT_EQ(internal.tag, "kind");
+    STATIC_EXPECT_EQ(internal.tag_names.count, 2u);
+    STATIC_EXPECT_EQ(internal.tag_names.storage[1], "rect");
+
+    constexpr const struct_spec& adjacent = adjacent_struct_tag::spec;
+    STATIC_EXPECT_TRUE(adjacent.tagging == tag_mode::adjacent);
+    STATIC_EXPECT_EQ(adjacent.tag, "t");
+    STATIC_EXPECT_EQ(adjacent.content, "c");
+
+    STATIC_EXPECT_TRUE(external_struct_tag::spec.tagging == tag_mode::external);
+
+    constexpr const struct_spec& config = config_struct_tag::spec;
+    STATIC_EXPECT_TRUE(config.rename_all == naming::casing::lower_camel);
+    STATIC_EXPECT_TRUE(config.deny_unknown_fields);
+    STATIC_EXPECT_TRUE(config.tagging == tag_mode::none);
+}
+
+TEST_CASE(annotate_attaches_struct_spec) {
+    using shape = annotate<internal_struct_tag>::type<std::variant<circle_alt, rect_alt>>;
+    STATIC_EXPECT_TRUE(
+        (tuple_has_v<typename shape::attrs, attrs::struct_spec<internal_struct_tag>>));
+    STATIC_EXPECT_TRUE(&struct_spec_of<typename shape::attrs> == &internal_struct_tag::spec);
+    STATIC_EXPECT_TRUE(&struct_spec_of<std::tuple<>> == &empty_struct_spec);
+}
+
+TEST_CASE(variant_type_info_carries_struct_spec) {
+    using shape = annotate<internal_struct_tag>::type<std::variant<circle_alt, rect_alt>>;
+    const auto& info = static_cast<const variant_type_info&>(type_info_of<shape>());
+    EXPECT_EQ(info.tagging, tag_mode::internal);
+    EXPECT_EQ(info.tag_field, "kind");
+    EXPECT_EQ(info.content_field, "");
+    ASSERT_EQ(info.alt_names.size(), 2u);
+    EXPECT_EQ(info.alt_names[0], "circle");
+    EXPECT_EQ(info.alt_names[1], "rect");
+
+    // Without tag_names the alternatives fall back to their type names.
+    using adjacent = annotate<adjacent_struct_tag>::type<std::variant<circle_alt, rect_alt>>;
+    const auto& adj = static_cast<const variant_type_info&>(type_info_of<adjacent>());
+    EXPECT_EQ(adj.content_field, "c");
+    ASSERT_EQ(adj.alt_names.size(), 2u);
+    EXPECT_EQ(adj.alt_names[0], "circle_alt");
+
+    // An untagged variant exposes no alternative names.
+    const auto& bare =
+        static_cast<const variant_type_info&>(type_info_of<std::variant<circle_alt, rect_alt>>());
+    EXPECT_EQ(bare.tagging, tag_mode::none);
+    EXPECT_EQ(bare.alt_names.size(), 0u);
 }
 
 TEST_CASE(skip_when_evaluates_builtin_predicates) {

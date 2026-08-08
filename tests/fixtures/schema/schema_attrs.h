@@ -86,7 +86,10 @@ struct RenameTarget {
     std::string display_name;
 };
 
-using RenamedRoot = annotation<RenameTarget, attrs::rename_all<rename_policy::lower_camel>>;
-using StrictRoot = annotation<RenameTarget, attrs::deny_unknown_fields>;
+KOTATSU_ANNOTATION(RenameAllCamelTag, rename_all = casing::lower_camel);
+using RenamedRoot = annotate<RenameAllCamelTag>::type<RenameTarget>;
+
+KOTATSU_ANNOTATION(DenyUnknownTag, deny_unknown_fields = true);
+using StrictRoot = annotate<DenyUnknownTag>::type<RenameTarget>;
 
 }  // namespace kota::meta::fixtures

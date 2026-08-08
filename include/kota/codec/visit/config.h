@@ -6,7 +6,6 @@
 #include <type_traits>
 
 #include "kota/support/naming.h"
-#include "kota/support/tuple_traits.h"
 #include "kota/meta/attrs.h"
 
 namespace kota::codec {
@@ -128,8 +127,8 @@ namespace detail {
 
 template <typename BaseConfig,
           typename Attrs,
-          bool HasRenameAll = tuple_has_spec_v<Attrs, meta::attrs::rename_all>,
-          bool HasDenyUnknown = tuple_has_v<Attrs, meta::attrs::deny_unknown_fields>>
+          bool HasRenameAll = meta::struct_spec_of<Attrs>.rename_all != naming::casing::identity,
+          bool HasDenyUnknown = meta::struct_spec_of<Attrs>.deny_unknown_fields>
 struct annotated_config_impl {
     using type = BaseConfig;
 };
@@ -137,7 +136,7 @@ struct annotated_config_impl {
 template <typename BaseConfig, typename Attrs>
 struct annotated_config_impl<BaseConfig, Attrs, true, false> {
     struct type : BaseConfig {
-        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
+        using field_rename = naming::rename_policy_t<meta::struct_spec_of<Attrs>.rename_all>;
     };
 };
 
@@ -151,7 +150,7 @@ struct annotated_config_impl<BaseConfig, Attrs, false, true> {
 template <typename BaseConfig, typename Attrs>
 struct annotated_config_impl<BaseConfig, Attrs, true, true> {
     struct type : BaseConfig {
-        using field_rename = typename tuple_find_spec_t<Attrs, meta::attrs::rename_all>::policy;
+        using field_rename = naming::rename_policy_t<meta::struct_spec_of<Attrs>.rename_all>;
         constexpr static bool deny_unknown_fields = true;
     };
 };

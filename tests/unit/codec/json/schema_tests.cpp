@@ -242,15 +242,20 @@ struct tagged_rect {
     double height;
 };
 
-using root_external_variant = annotation<std::variant<std::int32_t, std::string>,
-                                         attrs::externally_tagged::names<"integer", "text">>;
+KOTATSU_ANNOTATION(root_external_annotation, tagged = true, tag_names = {"integer", "text"});
+using root_external_variant =
+    annotate<root_external_annotation>::type<std::variant<std::int32_t, std::string>>;
 
-using root_internal_variant = annotation<std::variant<tagged_circle, tagged_rect>,
-                                         attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(root_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
+using root_internal_variant =
+    annotate<root_internal_annotation>::type<std::variant<tagged_circle, tagged_rect>>;
 
+KOTATSU_ANNOTATION(root_adjacent_annotation,
+                   tag = "type",
+                   content = "value",
+                   tag_names = {"integer", "text"});
 using root_adjacent_variant =
-    annotation<std::variant<std::int32_t, std::string>,
-               attrs::adjacently_tagged<"type", "value">::names<"integer", "text">>;
+    annotate<root_adjacent_annotation>::type<std::variant<std::int32_t, std::string>>;
 
 // ---------------------------------------------------------------------------
 // Combinations
@@ -497,8 +502,9 @@ struct desc_tagged_rect {
     double height;
 };
 
-using desc_internal_variant = annotation<std::variant<desc_tagged_circle, desc_tagged_rect>,
-                                         attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(desc_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
+using desc_internal_variant =
+    annotate<desc_internal_annotation>::type<std::variant<desc_tagged_circle, desc_tagged_rect>>;
 
 namespace json = kota::codec::json;
 

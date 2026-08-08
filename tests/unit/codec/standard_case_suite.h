@@ -235,11 +235,14 @@ struct StructLevelPayload {
     auto operator==(const StructLevelPayload&) const -> bool = default;
 };
 
-using RenamedStructLevelPayload =
-    annotation<StructLevelPayload, attrs::rename_all<rename_policy::lower_camel>>;
-using StrictRenamedStructLevelPayload = annotation<StructLevelPayload,
-                                                   attrs::rename_all<rename_policy::lower_camel>,
-                                                   attrs::deny_unknown_fields>;
+KOTATSU_ANNOTATION(renamed_struct_level_tag, rename_all = casing::lower_camel);
+using RenamedStructLevelPayload = annotate<renamed_struct_level_tag>::type<StructLevelPayload>;
+
+KOTATSU_ANNOTATION(strict_renamed_struct_level_tag,
+                   rename_all = casing::lower_camel,
+                   deny_unknown_fields = true);
+using StrictRenamedStructLevelPayload =
+    annotate<strict_renamed_struct_level_tag>::type<StructLevelPayload>;
 
 struct enum_string_access_tag {
     constexpr static auto spec =
@@ -248,15 +251,20 @@ struct enum_string_access_tag {
 
 using EnumStringAccess = annotate<enum_string_access_tag>::type<AccessLevel>;
 
+KOTATSU_ANNOTATION(tagged_external_tag, tagged = true, tag_names = {"integer", "text", "basic"});
 using TaggedExternalVariant =
-    annotation<std::variant<int, std::string, Basic>,
-               attrs::externally_tagged::names<"integer", "text", "basic">>;
-using TaggedAdjacentVariant =
-    annotation<std::variant<int, std::string, Basic>,
-               attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
+    annotate<tagged_external_tag>::type<std::variant<int, std::string, Basic>>;
 
-using TaggedInternalVariant = annotation<std::variant<TaggedCircle, TaggedRect>,
-                                         attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(tagged_adjacent_tag,
+                   tag = "type",
+                   content = "value",
+                   tag_names = {"integer", "text", "basic"});
+using TaggedAdjacentVariant =
+    annotate<tagged_adjacent_tag>::type<std::variant<int, std::string, Basic>>;
+
+KOTATSU_ANNOTATION(tagged_internal_tag, tag = "kind", tag_names = {"circle", "rect"});
+using TaggedInternalVariant =
+    annotate<tagged_internal_tag>::type<std::variant<TaggedCircle, TaggedRect>>;
 
 struct TaggedExternalHolder {
     std::string name;

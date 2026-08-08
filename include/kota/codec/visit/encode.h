@@ -33,14 +33,14 @@ bool encode_struct_fields(Vis& vis, const T& value);
 
 namespace detail {
 
-template <typename Config, typename tag_attr, typename Vis, typename Var>
+template <typename Config, typename SpecAttr, typename Vis, typename Var>
 bool encode_tagged_variant(Vis& vis, const Var& var) {
     return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-        constexpr auto strategy = meta::tagged_strategy_of<tag_attr>;
-        constexpr auto names = meta::resolve_tag_names<tag_attr, Ts...>();
+        constexpr const meta::struct_spec& spec = SpecAttr::value;
+        constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
         std::string_view tag_name = names[var.index()];
 
-        if constexpr(strategy == meta::tagged_strategy::external) {
+        if constexpr(spec.tagging == meta::tag_mode::external) {
             return vis.visit_struct(var, [&](auto& sv) -> bool {
                 return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
                     return std::visit(
@@ -48,36 +48,32 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                         var);
                 });
             });
-        } else if constexpr(strategy == meta::tagged_strategy::internal) {
+        } else if constexpr(spec.tagging == meta::tag_mode::internal) {
             return std::visit(
                 [&](const auto& alt) -> bool {
                     using alt_t = std::remove_cvref_t<decltype(alt)>;
                     static_assert(meta::reflectable_class<alt_t>,
                                   "internally tagged requires struct alternatives");
                     return vis.visit_struct(alt, [&](auto& sv) -> bool {
-                        KOTA_CODEC_TRY(sv.visit_field(
-                            std::size_t(0),
-                            tag_attr::field_names[0],
-                            [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
+                        KOTA_CODEC_TRY(
+                            sv.visit_field(std::size_t(0), spec.tag, [&](auto& tv) -> bool {
+                                return tv.visit_str(tag_name);
+                            }));
                         return encode_struct_fields<Config>(sv, alt);
                     });
                 },
                 var);
         } else {
-            static_assert(strategy == meta::tagged_strategy::adjacent);
+            static_assert(spec.tagging == meta::tag_mode::adjacent);
             return vis.visit_struct(var, [&](auto& sv) -> bool {
-                KOTA_CODEC_TRY(
-                    sv.visit_field(std::size_t(0), tag_attr::field_names[0], [&](auto& tv) -> bool {
-                        return tv.visit_str(tag_name);
-                    }));
-                return sv.visit_field(
-                    std::size_t(1),
-                    tag_attr::field_names[1],
-                    [&](auto& cv) -> bool {
-                        return std::visit(
-                            [&](const auto& alt) -> bool { return encode_value<Config>(cv, alt); },
-                            var);
-                    });
+                KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), spec.tag, [&](auto& tv) -> bool {
+                    return tv.visit_str(tag_name);
+                }));
+                return sv.visit_field(std::size_t(1), spec.content, [&](auto& cv) -> bool {
+                    return std::visit(
+                        [&](const auto& alt) -> bool { return encode_value<Config>(cv, alt); },
+                        var);
+                });
             });
         }
     }(var);
@@ -140,7 +136,7 @@ bool encode_one_field(Vis& vis, const T& value) {
         auto renamed = policy{}(true, meta::enum_name(field_ref));
         std::string_view sv(renamed);
         ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool { return fv.visit_str(sv); });
-    } else if constexpr(tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+    } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
         static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
                       "tagged attribute requires a variant type");
         if constexpr(!is_human_readable<Config, Vis>()) {
@@ -148,9 +144,9 @@ bool encode_one_field(Vis& vis, const T& value) {
                 return encode_value<Config>(fv, field_ref);
             });
         } else {
-            using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
+            using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
             ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
-                return encode_tagged_variant<Config, tag_attr>(fv, field_ref);
+                return encode_tagged_variant<Config, spec_attr>(fv, field_ref);
             });
         }
     } else {
@@ -184,12 +180,12 @@ bool encode_value(Vis& vis, const T& value) {
         using inner_t = std::remove_cvref_t<decltype(inner)>;
 
         if constexpr(is_specialization_of<std::variant, inner_t> &&
-                     tuple_any_of_v<attrs_t, meta::is_tagged_attr>) {
+                     meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
             if constexpr(!is_human_readable<Config, Vis>()) {
                 return encode_value<Config>(vis, inner);
             } else {
-                using tag_attr = tuple_find_t<attrs_t, meta::is_tagged_attr>;
-                return detail::encode_tagged_variant<Config, tag_attr>(vis, inner);
+                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
+                return detail::encode_tagged_variant<Config, spec_attr>(vis, inner);
             }
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
             using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
@@ -212,8 +208,8 @@ bool encode_value(Vis& vis, const T& value) {
             target converted(inner);
             return encode_value<Config>(vis, converted);
         } else if constexpr(meta::reflectable_class<inner_t> &&
-                            (tuple_has_spec_v<attrs_t, meta::attrs::rename_all> ||
-                             tuple_has_v<attrs_t, meta::attrs::deny_unknown_fields>)) {
+                            (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
+                             meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
             using merged_config = detail::annotated_config<Config, attrs_t>;
             return encode_value<merged_config>(vis, inner);
         } else {
