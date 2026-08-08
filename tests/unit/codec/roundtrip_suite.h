@@ -22,6 +22,7 @@
 // not declare are filtered out; a case where nothing remains reports Skipped.
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>

@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
