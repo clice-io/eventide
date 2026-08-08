@@ -71,7 +71,7 @@ jobs:
             linux-clang)
               echo "PIXI_ENV=linux-clang"; echo "CC=clang"; echo "CXX=clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=linux-clang" ;;
             macos-apple-clang)
-              echo "PIXI_ENV=default"; echo "CC=/usr/bin/clang"; echo "CXX=/usr/bin/clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=macos-appleclang" ;;
+              echo "PIXI_ENV=system"; echo "CC=/usr/bin/clang"; echo "CXX=/usr/bin/clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=macos-appleclang" ;;
             macos-clang)
               echo "PIXI_ENV=macos-clang"; echo "CC=clang"; echo "CXX=clang++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=macos-clang" ;;
             windows-msvc)

@@ -16,7 +16,7 @@ The development flow is: branch off `main` → write code (discussing requiremen
 Never push anything unverified — "it compiles" is not verified, and CI is not a debugger.
 
 1. `pixi run format`.
-2. Both test suites pass locally (the test skill): unit tests via `./build/unit_tests --snapshot-dir=tests/snapshots` from the repo root, and `pixi run integration-test`. Every failure on the branch is yours to fix now — even if it looks pre-existing (main is green), and never by skipping, disabling, or weakening the test.
+2. Both test suites pass locally (the test skill): unit tests via `pixi run test` (builds the `debug` preset and runs ctest, which handles the snapshot dir), and `pixi run integration-test`. Every failure on the branch is yours to fix now — even if it looks pre-existing (main is green), and never by skipping, disabling, or weakening the test.
 
 ## Self-review (before opening)
 

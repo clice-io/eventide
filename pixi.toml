@@ -12,7 +12,14 @@ channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [environments]
-default = ["build", "linux-clang"]
+# The toolchain features are target-scoped, so combining them gives the
+# default environment a platform-native reproducible toolchain everywhere:
+# clang on linux-64/osx-arm64, self-contained mingw gcc on win-64 (msvc and
+# clang-cl need a VS developer environment, so they stay opt-in).
+default = ["build", "linux-clang", "macos-clang", "windows-mingw"]
+# Build tools only — for builds that deliberately use the system toolchain
+# (e.g. the CI apple-clang job, or MSVC from a VS developer prompt).
+system = ["build"]
 linux-gcc = ["build", "linux-gcc"]
 linux-clang = ["build", "linux-clang"]
 macos-clang = ["build", "macos-clang"]
@@ -77,6 +84,8 @@ sccache = "*"
 
 [feature.windows-mingw.target.win-64.activation.env]
 PATH = "%CONDA_PREFIX%\\Library\\bin;%PATH%"
+CC = "gcc"
+CXX = "g++"
 
 [feature.windows-msvc.target.win-64.dependencies]
 sccache = "*"
