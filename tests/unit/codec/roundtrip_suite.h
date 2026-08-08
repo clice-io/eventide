@@ -6,7 +6,7 @@
 //
 //   struct my_adapter {
 //       constexpr static std::string_view name = "json";
-//       constexpr static roundtrip::cap caps = roundtrip::cap::uint64_full | ...;
+//       constexpr static roundtrip::cap caps = roundtrip::cap::Uint64Full | ...;
 //       template <typename T>
 //       static auto run(const T& value) -> std::expected<T, some_error>;  // encode + decode
 //   };
@@ -21,6 +21,7 @@
 // value for that type. Values whose capability requirements the adapter does
 // not declare are filtered out; a case where nothing remains reports Skipped.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -30,7 +31,6 @@
 #include <print>
 #include <set>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -38,21 +38,22 @@
 
 #include "standard_case_suite.h"
 #include "kota/zest/zest.h"
+#include "kota/support/type_list.h"
 
 namespace kota::codec::roundtrip {
 
 enum class cap : std::uint32_t {
-    none = 0,
-    // uint64 values above int64::max survive the wire format
-    uint64_full = 1U << 0,
-    // null-like elements (nullopt / null pointer) inside sequences and maps
-    null_in_seq = 1U << 1,
-    // plain std::variant roundtrips (by untagged scoring or native index)
-    variant_plain = 1U << 2,
-    // annotation attrs (rename / skip / skip_if_none / flatten / enum_string)
-    attrs = 1U << 3,
-    // externally/adjacently/internally tagged variants
-    variant_tagged = 1U << 4,
+    None = 0,
+    /// uint64 values above int64::max survive the wire format
+    Uint64Full = 1U << 0,
+    /// null-like elements (nullopt / null pointer) inside sequences and maps
+    NullInSeq = 1U << 1,
+    /// plain std::variant roundtrips (by untagged scoring or native index)
+    VariantPlain = 1U << 2,
+    /// annotation attrs (rename / skip / skip_if_none / flatten / enum_string)
+    Attrs = 1U << 3,
+    /// externally/adjacently/internally tagged variants
+    VariantTagged = 1U << 4,
 };
 
 constexpr cap operator|(cap a, cap b) {
@@ -63,14 +64,11 @@ constexpr bool supports(cap have, cap need) {
     return (static_cast<std::uint32_t>(need) & ~static_cast<std::uint32_t>(have)) == 0;
 }
 
-template <typename... Ts>
-struct types {};
-
 template <typename T>
 struct test_value {
     std::string label;
     T value{};
-    cap required = cap::none;
+    cap required = cap::None;
     bool null_like = false;
 };
 
@@ -141,7 +139,7 @@ struct corpus<T> {
             static_cast<std::uint64_t>(max) >
             static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)());
         out.push_back(
-            {.label = "max", .value = max, .required = above_int64 ? cap::uint64_full : cap::none});
+            {.label = "max", .value = max, .required = above_int64 ? cap::Uint64Full : cap::None});
         return out;
     }
 };
@@ -221,16 +219,14 @@ struct corpus<std::vector<T>> {
         std::vector<test_value<std::vector<T>>> out;
         out.push_back({.label = "empty", .value = {}});
         auto inner = corpus<T>::values();
-        for(const auto& tv: inner) {
-            if(!tv.null_like) {
-                out.push_back({.label = std::format("[{}]", tv.label),
-                               .value = std::vector<T>{tv.value},
-                               .required = tv.required});
-                break;
-            }
+        if(auto it = std::ranges::find_if(inner, [](const auto& tv) { return !tv.null_like; });
+           it != inner.end()) {
+            out.push_back({.label = std::format("[{}]", it->label),
+                           .value = std::vector<T>{it->value},
+                           .required = it->required});
         }
         std::vector<T> all;
-        cap req = cap::none;
+        cap req = cap::None;
         bool has_null = false;
         for(auto& tv: inner) {
             all.push_back(std::move(tv.value));
@@ -238,7 +234,7 @@ struct corpus<std::vector<T>> {
             has_null = has_null || tv.null_like;
         }
         if(has_null) {
-            req = req | cap::null_in_seq;
+            req = req | cap::NullInSeq;
         }
         out.push_back({.label = "all-values", .value = std::move(all), .required = req});
         return out;
@@ -270,7 +266,7 @@ struct corpus<std::set<T>> {
         std::vector<test_value<std::set<T>>> out;
         out.push_back({.label = "empty", .value = {}});
         std::set<T> all;
-        cap req = cap::none;
+        cap req = cap::None;
         for(auto& tv: corpus<T>::values()) {
             if(tv.null_like) {
                 continue;
@@ -293,7 +289,7 @@ struct corpus<std::map<K, T>> {
         std::vector<test_value<std::map<K, T>>> out;
         out.push_back({.label = "empty", .value = {}});
         std::map<K, T> all;
-        cap req = cap::none;
+        cap req = cap::None;
         bool has_null = false;
         std::size_t index = 0;
         for(auto& tv: corpus<T>::values()) {
@@ -307,7 +303,7 @@ struct corpus<std::map<K, T>> {
             index += 1;
         }
         if(has_null) {
-            req = req | cap::null_in_seq;
+            req = req | cap::NullInSeq;
         }
         out.push_back({.label = "all-values", .value = std::move(all), .required = req});
         return out;
@@ -357,14 +353,14 @@ struct corpus<std::tuple<Ts...>> {
 
 private:
     static auto pick(auto select, std::string label) -> test_value<std::tuple<Ts...>> {
-        cap req = cap::none;
-        auto get = [&]<typename T>(types<T>) -> T {
+        cap req = cap::None;
+        auto get = [&]<typename T>(type_list<T>) -> T {
             auto vals = corpus<T>::values();
             auto& tv = select(vals);
             req = req | tv.required;
             return std::move(tv.value);
         };
-        auto value = std::tuple<Ts...>{get(types<Ts>{})...};
+        auto value = std::tuple<Ts...>{get(type_list<Ts>{})...};
         return {.label = std::move(label), .value = std::move(value), .required = req};
     }
 };
@@ -392,7 +388,7 @@ private:
             out.push_back(
                 {.label = std::format("{}:{}", corpus<Alt>::name(), tv.label),
                  .value = std::variant<Alts...>(std::in_place_type<Alt>, std::move(tv.value)),
-                 .required = tv.required | cap::variant_plain,
+                 .required = tv.required | cap::VariantPlain,
                  .null_like = tv.null_like});
         }
     }
@@ -501,13 +497,13 @@ struct corpus<standard_case::Ultimate> {
         std::vector<test_value<standard_case::Ultimate>> out;
         out.push_back({.label = "typical",
                        .value = standard_case::make_ultimate(),
-                       .required = cap::variant_plain});
+                       .required = cap::VariantPlain});
         auto cleared = standard_case::make_ultimate();
         cleared.adts.multi_variant = std::monostate{};
         cleared.nullables.opt_value.reset();
         cleared.nullables.heap_allocated.reset();
         out.push_back(
-            {.label = "cleared", .value = std::move(cleared), .required = cap::variant_plain});
+            {.label = "cleared", .value = std::move(cleared), .required = cap::VariantPlain});
         return out;
     }
 };
@@ -522,7 +518,7 @@ struct corpus<standard_case::AttrPayload> {
         std::vector<test_value<standard_case::AttrPayload>> out;
         out.push_back({.label = "typical",
                        .value = standard_case::make_attr_payload(),
-                       .required = cap::attrs});
+                       .required = cap::Attrs});
         return out;
     }
 };
@@ -537,7 +533,7 @@ struct corpus<standard_case::TaggedExternalHolder> {
         return std::vector<test_value<standard_case::TaggedExternalHolder>>{
             {.label = "typical",
              .value = standard_case::make_tagged_external_holder(),
-             .required = cap::variant_tagged},
+             .required = cap::VariantTagged},
         };
     }
 };
@@ -552,7 +548,7 @@ struct corpus<standard_case::TaggedAdjacentHolder> {
         return std::vector<test_value<standard_case::TaggedAdjacentHolder>>{
             {.label = "typical",
              .value = standard_case::make_tagged_adjacent_holder(),
-             .required = cap::variant_tagged},
+             .required = cap::VariantTagged},
         };
     }
 };
@@ -567,7 +563,7 @@ struct corpus<standard_case::TaggedInternalHolder> {
         return std::vector<test_value<standard_case::TaggedInternalHolder>>{
             {.label = "typical",
              .value = standard_case::make_tagged_internal_holder(),
-             .required = cap::variant_tagged},
+             .required = cap::VariantTagged},
         };
     }
 };
@@ -607,12 +603,12 @@ void register_type(const ::kota::zest::CaseRegistrar& add_case) {
 }
 
 template <typename Adapter, typename... Ts>
-void register_list(const ::kota::zest::CaseRegistrar& add_case, types<Ts...>) {
+void register_list(const ::kota::zest::CaseRegistrar& add_case, type_list<Ts...>) {
     (register_type<Adapter, Ts>(add_case), ...);
 }
 
 template <template <typename> class W, typename... Ts>
-consteval auto wrap(types<Ts...>) -> types<W<Ts>...> {
+consteval auto wrap(type_list<Ts...>) -> type_list<W<Ts>...> {
     return {};
 }
 
@@ -629,23 +625,23 @@ using pair_self = std::pair<T, T>;
 template <typename T>
 using tuple_mix = std::tuple<T, bool, std::string>;
 
-using scalar_types = types<bool,
-                           char,
-                           std::int8_t,
-                           std::uint8_t,
-                           std::int16_t,
-                           std::uint16_t,
-                           std::int32_t,
-                           std::uint32_t,
-                           std::int64_t,
-                           std::uint64_t,
-                           float,
-                           double,
-                           std::string>;
+using scalar_types = type_list<bool,
+                               char,
+                               std::int8_t,
+                               std::uint8_t,
+                               std::int16_t,
+                               std::uint16_t,
+                               std::int32_t,
+                               std::uint32_t,
+                               std::int64_t,
+                               std::uint64_t,
+                               float,
+                               double,
+                               std::string>;
 
 // representative element set for depth-2 combinations: full cartesian over all
 // scalars would explode compile time without adding signal
-using nested_elem_types = types<std::int32_t, std::uint64_t, std::string, standard_case::Basic>;
+using nested_elem_types = type_list<std::int32_t, std::uint64_t, std::string, standard_case::Basic>;
 
 using untagged_variant_t =
     std::variant<std::monostate, std::int32_t, double, std::string, standard_case::Basic>;
@@ -662,7 +658,7 @@ void register_cases(const ::kota::zest::CaseRegistrar& add_case) {
     register_list<Adapter>(add_case, wrap<map_i32>(scalar_types{}));
     register_list<Adapter>(add_case, wrap<pair_self>(scalar_types{}));
     register_list<Adapter>(add_case, wrap<tuple_mix>(scalar_types{}));
-    register_list<Adapter>(add_case, wrap<set_of>(types<std::int32_t, std::string>{}));
+    register_list<Adapter>(add_case, wrap<set_of>(type_list<std::int32_t, std::string>{}));
     register_type<Adapter, std::vector<std::byte>>(add_case);
 
     register_list<Adapter>(add_case, wrap<std::optional>(wrap<vec_of>(nested_elem_types{})));
@@ -675,19 +671,19 @@ void register_cases(const ::kota::zest::CaseRegistrar& add_case) {
     register_list<Adapter>(add_case, wrap<std::optional>(wrap<map_str>(nested_elem_types{})));
 
     register_list<Adapter>(add_case,
-                           types<standard_case::Role,
-                                 standard_case::Basic,
-                                 meta::fixtures::AllPrimitives,
-                                 standard_case::Compound,
-                                 standard_case::NestedContainers,
-                                 standard_case::EmptyContainers,
-                                 standard_case::Ultimate,
-                                 standard_case::AttrPayload,
-                                 standard_case::TaggedExternalHolder,
-                                 standard_case::TaggedAdjacentHolder,
-                                 standard_case::TaggedInternalHolder>{});
+                           type_list<standard_case::Role,
+                                     standard_case::Basic,
+                                     meta::fixtures::AllPrimitives,
+                                     standard_case::Compound,
+                                     standard_case::NestedContainers,
+                                     standard_case::EmptyContainers,
+                                     standard_case::Ultimate,
+                                     standard_case::AttrPayload,
+                                     standard_case::TaggedExternalHolder,
+                                     standard_case::TaggedAdjacentHolder,
+                                     standard_case::TaggedInternalHolder>{});
 
-    register_list<Adapter>(add_case, types<untagged_variant_t, container_variant_t>{});
+    register_list<Adapter>(add_case, type_list<untagged_variant_t, container_variant_t>{});
 }
 
 }  // namespace kota::codec::roundtrip

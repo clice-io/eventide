@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "kota/zest/zest.h"
@@ -69,6 +70,29 @@ TEST_CASE(invalid_optional_tag_returns_error) {
     std::optional<bool> value;
     auto status = bincode::from_bytes(bytes, value);
     ASSERT_FALSE(status.has_value());
+}
+
+TEST_CASE(truncated_string_payload_returns_error) {
+    auto bytes = bincode::to_bytes(std::string("hello"));
+    ASSERT_TRUE(bytes.has_value());
+
+    auto truncated = std::span<const std::byte>(*bytes).first(bytes->size() - 3);
+    std::string value;
+    auto status = bincode::from_bytes(truncated, value);
+    ASSERT_FALSE(status.has_value());
+    EXPECT_EQ(status.error().message, "unexpected eof");
+}
+
+TEST_CASE(oversized_length_prefix_returns_error) {
+    // A string length prefix of uint64::max with no payload behind it must be
+    // rejected as EOF, never used to size a read.
+    const std::vector<std::uint8_t> raw(8, 0xFF);
+    auto bytes =
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()), raw.size());
+    std::string value;
+    auto status = bincode::from_bytes(bytes, value);
+    ASSERT_FALSE(status.has_value());
+    EXPECT_EQ(status.error().message, "unexpected eof");
 }
 
 TEST_CASE(struct_deserialize_respects_schema_skip) {

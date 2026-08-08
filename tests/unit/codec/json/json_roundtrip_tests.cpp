@@ -1,3 +1,5 @@
+#include <string_view>
+
 #include "../roundtrip_suite.h"
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
@@ -11,13 +13,13 @@ using roundtrip::cap;
 struct json_adapter {
     constexpr static std::string_view name = "json";
     constexpr static cap caps =
-        cap::uint64_full | cap::null_in_seq | cap::variant_plain | cap::attrs | cap::variant_tagged;
+        cap::Uint64Full | cap::NullInSeq | cap::VariantPlain | cap::Attrs | cap::VariantTagged;
 
     template <typename T>
     static auto run(const T& input) -> std::expected<T, rich_error> {
         auto encoded = json::to_json(input);
         if(!encoded) {
-            return std::unexpected(rich_error(encoded.error().to_string()));
+            return std::unexpected(std::move(encoded).error());
         }
         return json::parse<T>(*encoded);
     }
