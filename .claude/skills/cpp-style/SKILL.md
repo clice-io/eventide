@@ -193,7 +193,8 @@ process(result.value());
 
 ## Modern C++ Usage
 
-- Use C++20/23 APIs whenever possible. Do NOT use `<iostream>` facilities (`std::cout`, `std::cin`, `std::cerr`, etc.). Also do NOT use C-style I/O (`printf`, `fprintf`, etc.). A library does not print — it returns.
+- Use C++20/23 APIs whenever possible.
+- Library code does not print — it returns. Do NOT use `<iostream>` facilities (`std::cout`, `std::cin`, `std::cerr`, etc.) or C-style I/O (`printf`, `fprintf`, etc.) in library components. Exempt are components whose purpose is producing output: CLI presentation (e.g. `deco` usage printing), test reporting in `zest`, and fatal-diagnostic paths that must emit before aborting.
 - Prefer `std::format` for string building.
 - Prefer `std::ranges` / `std::views` APIs over raw loops and traditional `<algorithm>` calls.
 
