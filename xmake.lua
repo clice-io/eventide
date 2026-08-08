@@ -1,3 +1,4 @@
+-- Auxiliary build description; CMake is the primary build system.
 set_project("kotatsu")
 
 add_rules("mode.debug", "mode.release", "mode.releasedbg")

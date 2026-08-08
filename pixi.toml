@@ -119,18 +119,4 @@ fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 """
 
 [tasks]
-xmake-test = "xmake test --verbose"
-xmake-build = "xmake --all --verbose --diagnosis"
 integration-test = "pytest tests/integration/ -v"
-
-[tasks.ci-xmake-configure]
-args = ["build_type"]
-cmd = "xmake config --clean --yes --mode={{ build_type }}{% if pixi.is_osx %} --toolchain=clang{% endif %}"
-
-[tasks.ci-xmake-build]
-args = ["build_type"]
-depends-on = [
-    { task = "ci-xmake-configure", args = ["{{ build_type }}"] },
-    { task = "xmake-build" },
-    { task = "xmake-test" },
-]
