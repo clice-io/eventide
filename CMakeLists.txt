@@ -2,61 +2,6 @@ cmake_minimum_required(VERSION 3.16)
 
 project(kotatsu LANGUAGES C CXX)
 
-# Preset build trees (build/<preset>) are shared across toolchain
-# environments: pixi environments select the compiler via CC/CXX, but CMake
-# keeps the compiler a tree was first configured with and silently ignores a
-# later environment change. Detect the mismatch and fail with instructions
-# instead of silently building — and testing — the wrong toolchain.
-function(kota_check_toolchain_env lang env_var)
-    set(env_value "$ENV{${env_var}}")
-    if(env_value STREQUAL "" OR NOT DEFINED CACHE{CMAKE_${lang}_COMPILER})
-        return()
-    endif()
-
-    # CC/CXX may carry flags after the driver ("ccache gcc", "clang -m32");
-    # CMake itself only treats the first word as the compiler, so do the same.
-    separate_arguments(env_command NATIVE_COMMAND "${env_value}")
-    if(env_command STREQUAL "")
-        return()
-    endif()
-    list(GET env_command 0 env_compiler)
-
-    # An absolute path is compared as-is — even if it does not exist (a fresh
-    # configure would fail loudly, so silently keeping the cached compiler
-    # would be wrong). Bare names are resolved via PATH; if that fails we
-    # cannot tell what the environment means, so skip the check.
-    if(NOT IS_ABSOLUTE "${env_compiler}")
-        unset(kota_env_compiler_path CACHE)
-        find_program(kota_env_compiler_path NAMES "${env_compiler}")
-        if(NOT kota_env_compiler_path)
-            return()
-        endif()
-        set(env_compiler "${kota_env_compiler_path}")
-        unset(kota_env_compiler_path CACHE)
-    endif()
-
-    get_filename_component(env_real "${env_compiler}" REALPATH)
-    get_filename_component(cached_real "${CMAKE_${lang}_COMPILER}" REALPATH)
-    if(CMAKE_HOST_WIN32)
-        string(TOLOWER "${env_real}" env_real)
-        string(TOLOWER "${cached_real}" cached_real)
-    endif()
-    if(NOT env_real STREQUAL cached_real)
-        message(FATAL_ERROR
-            "This build tree was configured with ${lang} compiler "
-            "'${CMAKE_${lang}_COMPILER}', but the current environment sets "
-            "${env_var}='${env_value}' ('${env_real}'). CMake would silently "
-            "keep the old compiler. Delete the tree and reconfigure, e.g. "
-            "`cmake -E rm -rf build/<preset>` and rerun `pixi run build <preset>`."
-        )
-    endif()
-endfunction()
-
-if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-    kota_check_toolchain_env(C CC)
-    kota_check_toolchain_env(CXX CXX)
-endif()
-
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
