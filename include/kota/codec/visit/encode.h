@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -297,10 +298,20 @@ bool encode_value(Vis& vis, const T& value) {
             }
         } else if constexpr(kind == array || kind == set) {
             return vis.visit_seq(value, [&](auto& sv) -> bool {
+                using element_t = std::ranges::range_value_t<V>;
                 std::size_t idx = 0;
                 for(const auto& elem: value) {
-                    bool ok = sv.visit_element(
-                        [&](auto& ev) -> bool { return encode_value<Config>(ev, elem); });
+                    bool ok = sv.visit_element([&](auto& ev) -> bool {
+                        // vector<bool> iteration yields a proxy reference on
+                        // libc++; materialize it as the element type before
+                        // dispatch, mirroring the decode path.
+                        if constexpr(std::is_same_v<std::remove_cvref_t<decltype(elem)>,
+                                                    element_t>) {
+                            return encode_value<Config>(ev, elem);
+                        } else {
+                            return encode_value<Config>(ev, static_cast<element_t>(elem));
+                        }
+                    });
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
                             if(auto* e = scoped_context<typename Vis::error_type>::try_current())
