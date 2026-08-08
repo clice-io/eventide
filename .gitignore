@@ -60,5 +60,6 @@ scripts/schema.json
 /temp/
 
 .codex/
-.claude/
+.claude/*
+!.claude/skills/
 openspec/
