@@ -447,6 +447,60 @@ struct set_of_struct {
     std::string name;
 };
 
+// ---------------------------------------------------------------------------
+// description fixtures
+// ---------------------------------------------------------------------------
+
+struct desc_scalar {
+    annotation<std::int32_t, attrs::description<"Number of worker threads.">> threads;
+    std::string name;
+};
+
+struct desc_optional {
+    annotation<std::optional<std::string>, attrs::description<"Optional display label.">> label;
+};
+
+struct desc_struct_ref {
+    annotation<point2d, attrs::description<"Anchor position.">> anchor;
+};
+
+struct desc_base {
+    annotation<std::int32_t, attrs::description<"Inherited counter.">> count;
+};
+
+struct desc_flatten {
+    annotation<desc_base, attrs::flatten> base;
+    std::string tag;
+};
+
+struct desc_rename {
+    annotation<std::int32_t,
+               attrs::rename<"max_size">,
+               attrs::description<"Maximum size in bytes.">>
+        size;
+};
+
+struct desc_default {
+    annotation<std::int32_t, attrs::default_value, attrs::description<"Retry limit.">> retries;
+};
+
+struct desc_shared_ref {
+    point2d origin;
+    annotation<point2d, attrs::description<"Anchor position.">> anchor;
+};
+
+struct desc_tagged_circle {
+    annotation<double, attrs::description<"Radius in meters.">> radius;
+};
+
+struct desc_tagged_rect {
+    double width;
+    double height;
+};
+
+using desc_internal_variant = annotation<std::variant<desc_tagged_circle, desc_tagged_rect>,
+                                         attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+
 namespace json = kota::codec::json;
 
 template <typename T>
@@ -1472,35 +1526,6 @@ TEST_CASE(bytes_field) {
 // description
 // ---------------------------------------------------------------------------
 
-struct desc_scalar {
-    annotation<std::int32_t, attrs::description<"Number of worker threads.">> threads;
-    std::string name;
-};
-
-struct desc_optional {
-    annotation<std::optional<std::string>, attrs::description<"Optional display label.">> label;
-};
-
-struct desc_struct_ref {
-    annotation<point2d, attrs::description<"Anchor position.">> anchor;
-};
-
-struct desc_base {
-    annotation<std::int32_t, attrs::description<"Inherited counter.">> count;
-};
-
-struct desc_flatten {
-    annotation<desc_base, attrs::flatten> base;
-    std::string tag;
-};
-
-struct desc_rename {
-    annotation<std::int32_t,
-               attrs::rename<"max_size">,
-               attrs::description<"Maximum size in bytes.">>
-        size;
-};
-
 TEST_CASE(description_on_scalar_field) {
     const auto result = json::schema_string<desc_scalar>().value();
     EXPECT_EQ(
@@ -1534,6 +1559,27 @@ TEST_CASE(description_with_rename) {
     EXPECT_EQ(
         result,
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("max_size":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647,)" R"("description":"Maximum size in bytes."}},)" R"("required":["max_size"]})");
+}
+
+TEST_CASE(description_with_default_value) {
+    const auto result = json::schema_string<desc_default>().value();
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("retries":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647,)" R"("description":"Retry limit."}}})");
+}
+
+TEST_CASE(described_and_bare_struct_share_def) {
+    const auto result = json::schema_string<desc_shared_ref>().value();
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("origin":{"$ref":"#/$defs/point2d"},)" R"("anchor":{"$ref":"#/$defs/point2d",)" R"("description":"Anchor position."}},)" R"("required":["origin","anchor"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+}
+
+TEST_CASE(description_in_internal_tagged_alternative) {
+    const auto result = json::schema_string<desc_internal_variant>().value();
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("radius":{"type":"number",)" R"("description":"Radius in meters."},)" R"("kind":{"const":"circle"}},)" R"("required":["radius","kind"]},)" R"({"type":"object",)" R"("properties":{)" R"("width":{"type":"number"},)" R"("height":{"type":"number"},)" R"("kind":{"const":"rect"}},)" R"("required":["width","height","kind"]}]})");
 }
 
 };  // TEST_SUITE(serde_json_schema)

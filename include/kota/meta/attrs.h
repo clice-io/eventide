@@ -95,7 +95,9 @@ struct literal {
 };
 
 /// Human-readable documentation for a field, exported by schema backends
-/// (e.g. as the "description" keyword in JSON Schema).
+/// (e.g. as the "description" keyword in JSON Schema). Transparent on the
+/// wire. Ignored on fields that emit no property of their own (attrs::skip,
+/// the attrs::flatten wrapper itself).
 template <fixed_string Text>
 struct description {
     constexpr inline static std::string_view text = Text;
