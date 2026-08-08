@@ -33,6 +33,19 @@
     }                                                                                              \
     void test_##name()
 
+// Registers a group of dynamically named test cases. The body receives
+// `const ::kota::zest::CaseRegistrar& add_case` and is invoked once at static
+// init; call `add_case(name, body)` for each case to register.
+#define TEST_CASE_GROUP(name, ...)                                                                 \
+    inline static constexpr char _zest_file_##name[] = __FILE__;                                   \
+    void _register_##name() {                                                                      \
+        (void)_register_suites<>;                                                                  \
+        constexpr auto _zest_attrs_ = ZEST_MAKE_ATTRS(__VA_OPT__(__VA_ARGS__));                    \
+        (void)                                                                                     \
+            _register_case_group<&Self::group_##name, _zest_file_##name, __LINE__, _zest_attrs_>;  \
+    }                                                                                              \
+    static void group_##name(const ::kota::zest::CaseRegistrar& add_case)
+
 #define ZEST_CHECK_IMPL(condition, return_action)                                                  \
     do {                                                                                           \
         if(condition) [[unlikely]] {                                                               \
