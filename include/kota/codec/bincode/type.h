@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string_view>
+#include <utility>
 
 #include "kota/codec/visit/context.h"
 
@@ -22,7 +23,7 @@ constexpr std::string_view error_message(error_kind error) {
         case error_kind::TrailingBytes: return "trailing bytes";
     }
 
-    return "unknown error";
+    std::unreachable();
 }
 
 using error = rich_error;
