@@ -1,12 +1,41 @@
 #pragma once
 
-// This header intentionally includes nothing: it is a pure macro sheet that
-// can be included from anywhere at zero transitive cost. The entities the
-// macros reference (::kota::meta::make_spec, ::kota::meta::dsl,
-// ::kota::meta::annotate) only need to be visible at the point of use.
+// The kotatsu annotation macros, and nothing else — this header includes
+// nothing, by design. Modules cannot export macros, so a downstream consuming
+// kotatsu as a module still has to pick these up textually, and anything
+// included here would duplicate declarations the module already provides.
+//
+// The kota::meta entities an expansion refers to only have to be visible where
+// the macro is used, e.g. via a codec backend header such as
+// "kota/codec/json/json.h".
 
 #define KOTATSU_CONCAT_IMPL(a, b) a##b
 #define KOTATSU_CONCAT(a, b) KOTATSU_CONCAT_IMPL(a, b)
+
+// The DSL names are brought in with using-declarations rather than a
+// using-directive: block-scope using-declarations shadow outer names, while a
+// using-directive would make e.g. `rename` ambiguous with ::rename from
+// <stdio.h> at any use site outside namespace kota.
+#define KOTATSU_ANNOTATE_IMPL(tag, ...)                                                            \
+    struct tag {                                                                                   \
+        constexpr static auto spec = [] {                                                          \
+            using ::kota::meta::dsl::rename;                                                       \
+            using ::kota::meta::dsl::description;                                                  \
+            using ::kota::meta::dsl::alias;                                                        \
+            using ::kota::meta::dsl::idx;                                                          \
+            using ::kota::meta::dsl::skip;                                                         \
+            using ::kota::meta::dsl::flatten;                                                      \
+            using ::kota::meta::dsl::defaulted;                                                    \
+            using ::kota::meta::dsl::skip_if;                                                      \
+            using ::kota::meta::dsl::as;                                                           \
+            using ::kota::meta::dsl::with;                                                         \
+            using ::kota::meta::dsl::enum_string;                                                  \
+            using ::kota::meta::dsl::type;                                                         \
+            using ::kota::meta::skip_when;                                                         \
+            return ::kota::meta::make_spec(__VA_ARGS__);                                           \
+        }();                                                                                       \
+    };                                                                                             \
+    typename ::kota::meta::annotate<tag>::template type
 
 /// Annotates the next field declaration with serde attributes:
 ///
@@ -21,14 +50,5 @@
 /// attributes ride along as `as = type<Target>`, `with = type<Adapter>`,
 /// `skip_if = type<Pred>`, `enum_string = type<Policy>`, or as explicit
 /// trailing template arguments after the field type.
-#define KOTATSU_ANNOTATE_AT(tag, ...)                                                              \
-    struct tag {                                                                                   \
-        constexpr static auto spec = [] {                                                          \
-            using namespace ::kota::meta::dsl;                                                     \
-            return ::kota::meta::make_spec(__VA_ARGS__);                                           \
-        }();                                                                                       \
-    };                                                                                             \
-    ::kota::meta::annotate<tag>::type
-
 #define KOTATSU_ANNOTATE(...)                                                                      \
-    KOTATSU_ANNOTATE_AT(KOTATSU_CONCAT(kotatsu_annotation_, __LINE__), __VA_ARGS__)
+    KOTATSU_ANNOTATE_IMPL(KOTATSU_CONCAT(kotatsu_annotation_, __LINE__), __VA_ARGS__)

@@ -218,18 +218,6 @@ bool decode_field_value(Vis& vis, T& out) {
                 return true;
             }
         }
-    } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
-                        when != meta::skip_when::never) {
-        constexpr std::size_t offset = schema::fields[I].offset;
-        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
-        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
-        if(meta::evaluate_skip_when<when>(field_ref, false)) {
-            if constexpr(requires { vis.visit_skip(); }) {
-                return vis.visit_skip();
-            } else {
-                return true;
-            }
-        }
     }
 
     bool ok = decode_field_inner<Config, I>(vis, out);
@@ -297,8 +285,8 @@ bool match_field(std::string_view key, Vis& reader, T& out, std::uint64_t* field
 }
 
 /// After data-driven struct decode, validate that all required fields were present.
-/// A field is required if it is not optional/pointer/null, has no skip_if behavior,
-/// and is not annotated with default_value.
+/// A field is required if it is not optional/pointer/null, has no skip
+/// condition, and is not marked defaulted.
 template <typename Config, typename T, typename Vis>
 bool check_required_fields(std::uint64_t field_mask) {
     using schema = meta::virtual_schema<T, Config>;
@@ -319,11 +307,9 @@ bool check_required_fields(std::uint64_t field_mask) {
                                  kind == meta::type_kind::pointer ||
                                  kind == meta::type_kind::null) {
                         return true;
-                    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
-                        return true;
-                    } else if constexpr(meta::spec_of<attrs_t>.skip_if != meta::skip_when::never) {
-                        return true;
-                    } else if constexpr(meta::spec_of<attrs_t>.defaulted) {
+                    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
+                                        meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
+                                        meta::spec_of<attrs_t>.defaulted) {
                         return true;
                     } else if constexpr(meta::annotated_type<raw_t>) {
                         using inner_attrs = typename raw_t::attrs;
@@ -682,17 +668,6 @@ bool decode_one_field(Vis& vis, T& out) {
         auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
-            raw_t discard{};
-            return vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
-                return decode_value<Config>(fv, discard);
-            });
-        }
-    } else if constexpr(constexpr auto when = meta::spec_of<attrs_t>.skip_if;
-                        when != meta::skip_when::never) {
-        constexpr std::size_t offset = schema::fields[I].offset;
-        auto* base = reinterpret_cast<std::byte*>(std::addressof(out));
-        auto& field_ref = *reinterpret_cast<raw_t*>(base + offset);
-        if(meta::evaluate_skip_when<when>(field_ref, false)) {
             raw_t discard{};
             return vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
                 return decode_value<Config>(fv, discard);

@@ -1203,7 +1203,7 @@ TEST_CASE(subset_with_required_field_missing) {
 }
 
 TEST_CASE(subset_with_optional_field_missing) {
-    // When the missing field has skip_if (e.g. skip_if_none), it should NOT be penalized.
+    // When the missing field has a skip_if condition, it should NOT be penalized.
     struct WithOptional {
         std::string value;
         annotate<skip_if_none_extra_tag>::type<std::optional<int>> extra;

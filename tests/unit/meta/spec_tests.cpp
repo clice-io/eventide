@@ -27,8 +27,10 @@ struct flatten_tag {
     constexpr static auto spec = make_spec(dsl::flatten = true);
 };
 
-struct skip_none_tag {
-    constexpr static auto spec = make_spec(dsl::skip_if = skip_when::none);
+struct probe_adapter {};
+
+struct with_tag {
+    constexpr static auto spec = make_spec(dsl::with = dsl::type<probe_adapter>);
 };
 
 struct custom_pred {
@@ -86,8 +88,10 @@ TEST_CASE(annotate_maps_components_to_behavior_attrs) {
     STATIC_EXPECT_TRUE((tuple_has_v<attrs_t, attrs::spec<extras_tag>>));
     STATIC_EXPECT_TRUE((tuple_has_v<attrs_t, behavior::as<std::int64_t>>));
 
-    using with_extra =
-        annotate<skip_none_tag>::type<std::optional<int>, behavior::skip_if<custom_pred>>;
+    using with_extra = annotate<defaulted_tag>::type<int, behavior::skip_if<custom_pred>>;
+
+    using adapted = annotate<with_tag>::type<int>;
+    STATIC_EXPECT_TRUE((tuple_has_v<typename adapted::attrs, behavior::with<probe_adapter>>));
     STATIC_EXPECT_TRUE((tuple_has_v<typename with_extra::attrs, behavior::skip_if<custom_pred>>));
 }
 

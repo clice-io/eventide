@@ -75,7 +75,7 @@ struct FlattenOuterWithChildRename {
     KOTATSU_ANNOTATE(flatten = true)<FlattenInnerWithRename> inner;
 };
 
-struct DefaultLiteralStruct {
+struct DefaultStruct {
     KOTATSU_ANNOTATE(defaulted = true)<int> with_default;
     std::string version;
     int plain;

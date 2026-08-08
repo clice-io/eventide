@@ -91,7 +91,7 @@ inline auto make_deep_outer() -> DeepOuter {
     return v;
 }
 
-inline auto make_default_literal() -> DefaultLiteralStruct {
+inline auto make_default() -> DefaultStruct {
     return {.with_default = 0, .version = "v1", .plain = 3};
 }
 

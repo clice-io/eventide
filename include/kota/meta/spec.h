@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -8,6 +9,7 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "kota/support/config.h"
 
@@ -110,8 +112,6 @@ struct alias_component {
 /// behavior attr; the spec value is untouched.
 template <aspect A, typename T>
 struct type_component {
-    using target = T;
-
     constexpr static aspect kind = A;
 
     constexpr void apply(field_spec&) const {}
@@ -186,8 +186,6 @@ constexpr inline type_proxy<aspect::enum_string> enum_string{};
 template <typename T>
 constexpr inline type_tag<T> type{};
 
-using meta::skip_when;
-
 }  // namespace dsl
 
 /// What KOTATSU_ANNOTATE stores in its tag: the folded value spec, plus the
@@ -203,7 +201,7 @@ namespace detail {
 
 template <typename... Cs>
 consteval bool component_kinds_unique() {
-    std::array kinds = {Cs::kind...};
+    std::array<dsl::aspect, sizeof...(Cs)> kinds = {Cs::kind...};
     for(std::size_t i = 0; i < kinds.size(); ++i) {
         for(std::size_t j = i + 1; j < kinds.size(); ++j) {
             if(kinds[i] == kinds[j]) {
@@ -220,6 +218,9 @@ constexpr void validate_spec(const field_spec& spec) {
     }
     auto aliases = spec.alias.names();
     for(std::size_t i = 0; i < aliases.size(); ++i) {
+        if(aliases[i].empty()) {
+            KOTA_THROW("annotation: empty alias name");
+        }
         if(aliases[i] == spec.rename) {
             KOTA_THROW("annotation: alias duplicates the rename name");
         }

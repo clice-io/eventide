@@ -2,15 +2,14 @@
 
 #include <array>
 #include <concepts>
-#include <cstddef>
 #include <optional>
 #include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 
+#include "name.h"
 #include "spec.h"
-#include "struct.h"
 #include "kota/support/fixed_string.h"
 #include "kota/support/tuple_traits.h"
 #include "kota/support/type_traits.h"
@@ -304,6 +303,9 @@ constexpr bool validate_attrs() {
                   "At most one behavior provider (with/as/enum_string) allowed per field");
     static_assert(tuple_count_of_v<AttrsTuple, is_spec_attr> <= 1,
                   "At most one annotation spec allowed per field");
+    static_assert(!(spec_of<AttrsTuple>.skip_if != skip_when::never &&
+                    tuple_has_spec_v<AttrsTuple, behavior::skip_if>),
+                  "A built-in skip_if condition and a custom skip_if predicate conflict");
     return true;
 }
 

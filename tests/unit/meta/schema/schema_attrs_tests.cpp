@@ -132,9 +132,9 @@ TEST_CASE(deep_flatten) {
 }
 
 TEST_CASE(default_value) {
-    STATIC_EXPECT_EQ(virtual_schema<fx::DefaultLiteralStruct>::count, 3U);
+    STATIC_EXPECT_EQ(virtual_schema<fx::DefaultStruct>::count, 3U);
 
-    constexpr auto& fields = virtual_schema<fx::DefaultLiteralStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::DefaultStruct>::fields;
 
     STATIC_EXPECT_TRUE(fields[0].has_default);
     STATIC_EXPECT_FALSE(fields[1].has_default);
