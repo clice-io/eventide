@@ -4,7 +4,6 @@ on:
   workflow_call:
 
 env:
-  BUILD_DIR: build-cmake
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
   CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
   SCCACHE_DIR: ${{ github.workspace }}/.cache/sccache
@@ -17,61 +16,54 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.os_label }} | ${{ matrix.toolchain }} | ${{ matrix.build_name }}
+    name: ${{ matrix.os_label }} | ${{ matrix.toolchain }} | ${{ matrix.preset }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       # prettier-ignore
       matrix:
-        include: 
+        include:
           # Windows - MSVC
-          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: debug,                 cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: asan,                  cmake_args: "-DKOTA_SANITIZE_ADDRESS=ON" }
-          - { os_label: windows, os: windows-2025, toolchain: msvc,        build_name: no-exceptions,         cmake_args: "-DKOTA_ENABLE_EXCEPTIONS=OFF" }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        preset: debug }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        preset: asan }
+          - { os_label: windows, os: windows-2025, toolchain: msvc,        preset: no-exceptions }
 
           # Windows - Clang-CL
-          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: debug,                 cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: asan,                  cmake_args: "-DKOTA_SANITIZE_ADDRESS=ON" }
-          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    build_name: no-exceptions+no-rtti, cmake_args: "-DKOTA_ENABLE_EXCEPTIONS=OFF -DKOTA_ENABLE_RTTI=OFF" }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    preset: debug }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    preset: relwithdebinfo }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    preset: asan }
+          - { os_label: windows, os: windows-2025, toolchain: clang-cl,    preset: no-exceptions-no-rtti }
 
           # Windows - MinGW
-          - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: debug,                 cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: windows, os: windows-2025, toolchain: mingw,       build_name: no-exceptions+no-rtti, cmake_args: "-DKOTA_ENABLE_EXCEPTIONS=OFF -DKOTA_ENABLE_RTTI=OFF" }
+          - { os_label: windows, os: windows-2025, toolchain: mingw,       preset: debug }
+          - { os_label: windows, os: windows-2025, toolchain: mingw,       preset: relwithdebinfo }
+          - { os_label: windows, os: windows-2025, toolchain: mingw,       preset: no-exceptions-no-rtti }
 
           # Linux - GCC
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: debug,                 cmake_args: "" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: asan,                  cmake_args: "-DKOTA_SANITIZE_ADDRESS=ON" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         build_name: ubsan,                 cmake_args: "-DKOTA_SANITIZE_UNDEFINED=ON" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         preset: debug }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         preset: relwithdebinfo }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         preset: asan }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: gcc,         preset: ubsan }
 
           # Linux - Clang
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: debug,                 cmake_args: "" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: asan+ubsan,            cmake_args: "-DKOTA_SANITIZE_ADDRESS=ON -DKOTA_SANITIZE_UNDEFINED=ON" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: tsan,                  cmake_args: "-DKOTA_SANITIZE_THREAD=ON" }
-          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       build_name: no-exceptions,         cmake_args: "-DKOTA_ENABLE_EXCEPTIONS=OFF" }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: debug }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: asan-ubsan }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: tsan }
+          - { os_label: linux,   os: ubuntu-24.04, toolchain: clang,       preset: no-exceptions }
 
           # macOS - Apple Clang
-          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: debug,                 cmake_args: "" }
-          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, build_name: asan+ubsan,            cmake_args: "-DKOTA_SANITIZE_ADDRESS=ON -DKOTA_SANITIZE_UNDEFINED=ON" }
+          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, preset: debug }
+          - { os_label: macos,   os: macos-15,     toolchain: apple-clang, preset: asan-ubsan }
 
           # macOS - Clang
-          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: debug,                 cmake_args: "" }
-          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: relwithdebinfo,        cmake_args: "" }
-          - { os_label: macos,   os: macos-15,     toolchain: clang,       build_name: no-exceptions+no-rtti, cmake_args: "-DKOTA_ENABLE_EXCEPTIONS=OFF -DKOTA_ENABLE_RTTI=OFF" }
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       preset: debug }
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       preset: relwithdebinfo }
+          - { os_label: macos,   os: macos-15,     toolchain: clang,       preset: no-exceptions-no-rtti }
 
     steps:
       - name: Derive toolchain variables
         shell: bash
         run: |
-          # Build type: debug -> Debug, everything else -> RelWithDebInfo
-          if [[ "${{ matrix.build_name }}" == "debug" ]]; then
-            echo "BUILD_TYPE=Debug" >> "$GITHUB_ENV"
-          else
-            echo "BUILD_TYPE=RelWithDebInfo" >> "$GITHUB_ENV"
-          fi
-
           # Toolchain-specific: PIXI_ENV, CC, CXX, COMPILER_CACHE, CACHE_KEY, NEEDS_MSVC_ENV
           case "${{ matrix.os_label }}-${{ matrix.toolchain }}" in
             linux-gcc)
@@ -109,7 +101,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-${{ runner.os }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('pixi.lock', '.github/workflows/cmake.yml', 'CMakePresets.json', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
           restore-keys: |
             cpm-${{ runner.os }}-
 
@@ -117,7 +109,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}
 
       - name: Configure, build, and test
         shell: bash
@@ -129,39 +121,25 @@ jobs:
             sccache --stop-server || true
             sccache --zero-stats || true
           fi
-          build_dir="${BUILD_DIR}-${{ matrix.build_name }}"
-
+          extra_args=()
           if [[ "${{ runner.os }}" == "macOS" && "${{ env.CC }}" == "clang" ]]; then
             export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
             export CONDA_BUILD_SYSROOT="${SDKROOT}"
-            cmake -S . -B "${build_dir}" -G Ninja \
-              -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
-              -DCMAKE_C_COMPILER="${{ env.CC }}" \
-              -DCMAKE_CXX_COMPILER="${{ env.CXX }}" \
-              -DCMAKE_OSX_SYSROOT="${SDKROOT}" \
-              -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}" \
-              -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}" \
-              -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}" \
-              -DKOTA_BUILD_ALL_TESTS=ON \
-              -DKOTA_USE_CPM_FOR_TESTS=ON \
-              -DKOTA_ENABLE_CCACHE=ON \
-              ${{ matrix.cmake_args }}
-          else
-            cmake -S . -B "${build_dir}" -G Ninja \
-              -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
-              -DCMAKE_C_COMPILER="${{ env.CC }}" \
-              -DCMAKE_CXX_COMPILER="${{ env.CXX }}" \
-              -DKOTA_BUILD_ALL_TESTS=ON \
-              -DKOTA_USE_CPM_FOR_TESTS=ON \
-              -DKOTA_ENABLE_CCACHE=ON \
-              ${{ matrix.cmake_args }}
+            extra_args=(
+              -DCMAKE_OSX_SYSROOT="${SDKROOT}"
+              -DCMAKE_C_FLAGS="--sysroot=${SDKROOT}"
+              -DCMAKE_CXX_FLAGS="--sysroot=${SDKROOT}"
+              -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
+              -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
+              -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
+            )
           fi
 
-          cmake --build "${build_dir}" --parallel
+          cmake --preset "${{ matrix.preset }}" "${extra_args[@]}"
 
-          ctest --test-dir "${build_dir}" --verbose
+          cmake --build --preset "${{ matrix.preset }}" --parallel
+
+          ctest --preset "${{ matrix.preset }}" --verbose
 
       - name: Show compiler cache stats
         if: always()
@@ -178,7 +156,7 @@ jobs:
         if: always() && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          gh actions-cache delete "${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}" \
+          gh actions-cache delete "${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}" \
             --ref refs/heads/main --confirm || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -188,4 +166,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.COMPILER_CACHE == 'sccache' && env.SCCACHE_DIR || env.CCACHE_DIR }}
-          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.build_name }}
+          key: ${{ env.COMPILER_CACHE }}-${{ runner.os }}-${{ env.CACHE_KEY }}-${{ matrix.preset }}

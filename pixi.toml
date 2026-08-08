@@ -12,7 +12,7 @@ channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [environments]
-default = ["build"]
+default = ["build", "linux-clang"]
 linux-gcc = ["build", "linux-gcc"]
 linux-clang = ["build", "linux-clang"]
 macos-clang = ["build", "macos-clang"]
@@ -23,6 +23,7 @@ format = ["format"]
 
 [feature.build.dependencies]
 python = "*"
+cmake = ">=3.25"
 ninja = "*"
 ccache = "*"
 openssl = "*"
@@ -37,6 +38,10 @@ sysroot_linux-64 = "==2.17"
 gcc = "==14.2.0"
 gxx = "==14.2.0"
 
+[feature.linux-gcc.target.linux-64.activation.env]
+CC = "gcc"
+CXX = "g++"
+
 [feature.linux-clang.target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 clang = "==20.1.8"
@@ -44,6 +49,14 @@ clangxx = "==20.1.8"
 lld = "==20.1.8"
 llvm-tools = "==20.1.8"
 compiler-rt = "==20.1.8"
+# Keep clang's C++ standard library aligned with the linux-gcc toolchain pin;
+# unpinned, the devel headers drift ahead of the libstdcxx runtime.
+libstdcxx-devel_linux-64 = "==14.2.0"
+libgcc-devel_linux-64 = "==14.2.0"
+
+[feature.linux-clang.target.linux-64.activation.env]
+CC = "clang"
+CXX = "clang++"
 
 [feature.macos-clang.target.osx-arm64.dependencies]
 clang = "==22.1.8"
@@ -52,6 +65,10 @@ lld = "==22.1.8"
 llvm-tools = "==22.1.8"
 compiler-rt = "==22.1.8"
 libcxx = "==22.1.8"
+
+[feature.macos-clang.target.osx-arm64.activation.env]
+CC = "clang"
+CXX = "clang++"
 
 [feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
@@ -120,3 +137,17 @@ fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 
 [tasks]
 integration-test = "pytest tests/integration/ -v"
+
+[tasks.configure]
+args = [{ arg = "preset", default = "debug" }]
+cmd = "cmake --preset {{ preset }}"
+
+[tasks.build]
+args = [{ arg = "preset", default = "debug" }]
+cmd = "cmake --build --preset {{ preset }}"
+depends-on = [{ task = "configure", args = ["{{ preset }}"] }]
+
+[tasks.test]
+args = [{ arg = "preset", default = "debug" }]
+cmd = "ctest --preset {{ preset }}"
+depends-on = [{ task = "build", args = ["{{ preset }}"] }]
