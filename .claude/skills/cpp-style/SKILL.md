@@ -41,12 +41,16 @@ defending against ghosts.
 
 ## Module Boundaries & macro.h
 
-- Modules (`async`, `codec`, `deco`, `http`, `ipc`, `meta`, `support`,
-  `zest`) do not export macros through regular headers. Each library's
-  macros live in its own `macro.h`.
-- **Iron rule: a `macro.h` contains zero `#include` directives — not
-  even standard headers.** It must stay a pure macro sheet a consumer
-  can include from anywhere with no transitive cost.
+- Libraries with user-facing declaration macros keep them in a
+  dedicated `macro.h` (today: `deco`, `zest`) instead of exporting them
+  from regular headers. **Iron rule: such a `macro.h` contains zero
+  `#include` directives — not even standard headers.** It must stay a
+  pure macro sheet a consumer can include from anywhere with no
+  transitive cost.
+- This rule covers only those dedicated macro sheets. Configuration and
+  implementation macros that ordinary headers legitimately define —
+  e.g. `KOTA_THROW` and the platform feature macros in
+  `kota/support/config.h` — stay where they are.
 
 ## Data & Types
 
@@ -117,9 +121,14 @@ process(result.value());
 
 ## Concurrency & Async
 
-- Async code is coroutine-style (`kota::task`, `co_await`) — no callback
-  style in public APIs; callbacks appear only at the libuv boundary
-  inside the implementation.
+- Async code is coroutine-style (`kota::task`, `co_await`) — an
+  operation that produces a single asynchronous result returns an
+  awaitable, never takes a completion callback; completion callbacks
+  appear only at the libuv boundary inside the implementation.
+- Event handlers and customization hooks are a different animal:
+  public callback registration APIs such as `Peer::on_request`,
+  `Peer::on_notification`, or `set_logger` are legitimate extension
+  points — do not replace them with coroutine APIs.
 
 ## Naming Conventions
 
@@ -135,7 +144,7 @@ process(result.value());
   - `template<typename T> void f(T& x)` — `T` is deduced as the referred-to type (possibly cv-qualified, but never a reference). No need for `remove_cvref_t` to strip references.
   - `template<typename T> void f(const T& x)` — `T` is deduced as a non-const, non-reference type. No need for `remove_cvref_t`.
   - `template<typename T> void f(T&& x)` — **forwarding reference**: `T` CAN be deduced as an lvalue reference (e.g., `int&`). This is the ONLY case where `std::remove_cvref_t<T>` is needed to get the bare type.
-  - Class template parameters and return types are also never deduced as references; don't add `remove_cvref_t` on them either.
+  - The same reasoning, not a blanket rule, applies to other deduction contexts: strip cv/ref only where the context can actually produce a cv/ref-qualified type. Plain `auto` return deduction and by-value CTAD guides never yield references, but `decltype(auto)`, explicit deduction guides, and explicitly supplied template arguments can carry references and cv-qualifiers.
 
 ## Type Traits & Concepts (C++20/23)
 

@@ -20,7 +20,7 @@ Never push anything unverified — "it compiles" is not verified, and CI is not 
 
 ## Self-review (before opening)
 
-Launch **3 parallel subagents** to review the full diff (`git diff origin/main...HEAD` — never the local `main`, which goes stale) independently, and fix everything they report before opening:
+Commit all work first — the review diff only sees commits, so a dirty worktree means the reviewers inspect an incomplete patch (`git status` must be clean). Then launch **3 parallel subagents** to review the full diff (`git diff origin/main...HEAD` — never against the local `main`, which goes stale) independently, and fix everything they report before opening:
 
 1. **Correctness reviewer**: logic errors, edge cases, undefined behavior, off-by-one mistakes — coroutine lifetime and cancellation paths deserve extra suspicion.
 2. **Style reviewer**: naming conventions, coding style, cpp-style skill rules.
