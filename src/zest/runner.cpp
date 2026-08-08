@@ -53,6 +53,7 @@ struct FailedTest {
 struct RunSummary {
     std::uint32_t tests = 0;
     std::uint32_t suites = 0;
+    std::uint32_t passed = 0;
     std::uint32_t failed = 0;
     std::uint32_t skipped = 0;
     std::chrono::milliseconds duration{0};
@@ -188,9 +189,8 @@ void print_summary(const RunSummary& summary) {
                  summary.duration.count(),
                  clear);
 
-    const auto passed = summary.tests - summary.failed;
-    if(passed > 0) {
-        std::println("{}[  PASSED  ] {} tests.{}", green, passed, clear);
+    if(summary.passed > 0) {
+        std::println("{}[  PASSED  ] {} tests.{}", green, summary.passed, clear);
     }
     if(summary.skipped > 0) {
         std::println("{}[  SKIPPED ] {} tests.{}", yellow, summary.skipped, clear);
@@ -369,6 +369,13 @@ int Runner::run_tests(Options options) {
     };
 
     auto record_result = [&](const TestResult& result) {
+        if(result.state == TestState::Skipped) {
+            if(verbose) {
+                std::println("{}[ SKIPPED  ] {}{}", yellow, result.display_name, clear);
+            }
+            summary.skipped += 1;
+            return;
+        }
         const bool failed = is_failure(result.state);
         if(failed && !result.output.empty()) {
             std::println("{}", result.output);
@@ -378,6 +385,8 @@ int Runner::run_tests(Options options) {
             summary.failed += 1;
             summary.failed_tests.push_back(
                 FailedTest{result.display_name, result.path, result.line});
+        } else {
+            summary.passed += 1;
         }
     };
 
