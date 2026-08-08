@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bit>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -46,8 +47,9 @@ struct reader {
     using error_type = rich_error;
     constexpr static bool human_readable = false;
 
-    bool check_remaining(std::size_t n) {
-        if(pos > data.size() || n > data.size() - pos) {
+    bool check_remaining(std::uint64_t n) {
+        assert(pos <= data.size());
+        if(n > data.size() - pos) {
             return scoped_context<rich_error>::fail(
                 rich_error(std::string(error_message(error_kind::UnexpectedEof))));
         }
@@ -123,12 +125,8 @@ struct reader {
     bool visit_str(T& out) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto length = read_le<std::uint64_t>();
-        if(length > static_cast<std::uint64_t>(data.size())) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::UnexpectedEof))));
-        }
+        KOTA_CODEC_TRY(check_remaining(length));
         auto len = static_cast<std::size_t>(length);
-        KOTA_CODEC_TRY(check_remaining(len));
         const auto* begin = reinterpret_cast<const char*>(data.data() + pos);
         out = T(begin, begin + len);
         pos += len;
@@ -146,12 +144,8 @@ struct reader {
     bool visit_bytes(T& out) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto length = read_le<std::uint64_t>();
-        if(length > static_cast<std::uint64_t>(data.size())) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string(error_message(error_kind::UnexpectedEof))));
-        }
+        KOTA_CODEC_TRY(check_remaining(length));
         auto len = static_cast<std::size_t>(length);
-        KOTA_CODEC_TRY(check_remaining(len));
         using value_type = typename T::value_type;
         auto* begin = reinterpret_cast<const value_type*>(data.data() + pos);
         out = T(begin, begin + len);

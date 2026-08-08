@@ -3,6 +3,7 @@
 #include <string>
 
 #include "kota/zest/zest.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
 namespace kota::codec {

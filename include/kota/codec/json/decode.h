@@ -166,15 +166,11 @@ struct StrReader {
 
 struct Reader {
     Source src;
-    const char* buf_base = nullptr;
-    std::size_t buf_size = 0;
+    const char* buf_base;
+    std::size_t buf_size;
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
-
-    explicit Reader(ondemand::Value& v) : src(v) {}
-
-    explicit Reader(ondemand::Document& d) : src(d) {}
 
     Reader(ondemand::Document& d, const char* base, std::size_t size) :
         src(d), buf_base(base), buf_size(size) {}
@@ -188,26 +184,28 @@ struct Reader {
     }
 
     bool fail_located(rich_error err) {
-        if(buf_base) {
-            auto loc_result = src.apply([](auto& s) { return s.current_location(); });
-            if(!loc_result.error()) {
-                const char* loc = loc_result.value_unsafe();
-                if(loc >= buf_base && loc <= buf_base + buf_size) {
-                    auto offset = static_cast<std::size_t>(loc - buf_base);
-                    std::size_t line = 1, col = 1;
-                    for(std::size_t i = 0; i < offset; ++i) {
-                        if(buf_base[i] == '\n') {
-                            ++line;
-                            col = 1;
-                        } else {
-                            ++col;
-                        }
+        auto loc_result = src.apply([](auto& s) { return s.current_location(); });
+        if(!loc_result.error()) {
+            const char* loc = loc_result.value_unsafe();
+            if(loc >= buf_base && loc <= buf_base + buf_size) {
+                auto offset = static_cast<std::size_t>(loc - buf_base);
+                std::size_t line = 1, col = 1;
+                for(std::size_t i = 0; i < offset; ++i) {
+                    if(buf_base[i] == '\n') {
+                        ++line;
+                        col = 1;
+                    } else {
+                        ++col;
                     }
-                    err.set_location({line, col, offset});
                 }
+                err.set_location({line, col, offset});
             }
         }
         return scoped_context<rich_error>::fail(std::move(err));
+    }
+
+    bool fail_simdjson(simdjson::error_code ec) {
+        return fail_located(rich_error(std::string(simdjson::error_message(ec))));
     }
 
     template <typename F>
@@ -216,7 +214,7 @@ struct Reader {
     bool visit_bool(bool& out) {
         auto r = src.apply([&](auto& s) { return s.get_bool(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         out = r.value_unsafe();
         return true;
     }
@@ -225,7 +223,7 @@ struct Reader {
     bool visit_int(T& out) {
         auto r = src.apply([&](auto& s) { return s.get_int64(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         if(!kota::narrow_int(r.value_unsafe(), out)) {
             return fail_located(rich_error("number out of range"));
         }
@@ -236,7 +234,7 @@ struct Reader {
     bool visit_uint(T& out) {
         auto r = src.apply([&](auto& s) { return s.get_uint64(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         if(!kota::narrow_int(r.value_unsafe(), out)) {
             return fail_located(rich_error("number out of range"));
         }
@@ -247,7 +245,7 @@ struct Reader {
     bool visit_float(T& out) {
         auto r = src.apply([&](auto& s) { return s.get_double(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         out = static_cast<T>(r.value_unsafe());
         return true;
     }
@@ -256,7 +254,7 @@ struct Reader {
     bool visit_str(T& out) {
         auto r = src.apply([&](auto& s) { return s.get_string(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         out = T(r.value_unsafe());
         return true;
     }
@@ -265,7 +263,7 @@ struct Reader {
     bool visit_char(T& out) {
         auto r = src.apply([&](auto& s) { return s.get_string(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         auto sv = r.value_unsafe();
         char32_t cp = detail::decode_first_codepoint(sv);
         if(cp == 0xFFFFFFFF) {
@@ -283,13 +281,12 @@ struct Reader {
     bool visit_bytes(T& out) {
         auto r = src.apply([&](auto& s) { return s.get_array(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         out.clear();
         for(auto elem: r.value_unsafe()) {
             auto byte_r = elem.get_uint64();
             if(byte_r.error())
-                return fail_located(
-                    rich_error(std::string(simdjson::error_message(byte_r.error()))));
+                return fail_simdjson(byte_r.error());
             if(byte_r.value_unsafe() > 255)
                 return fail_located(rich_error("byte value out of range"));
             out.push_back(static_cast<typename T::value_type>(
@@ -306,10 +303,9 @@ struct Reader {
     bool visit_null() {
         auto r = src.apply([&](auto& s) { return s.is_null(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         if(!r.value_unsafe())
-            return fail_located(
-                rich_error(std::string(simdjson::error_message(simdjson::INCORRECT_TYPE))));
+            return fail_simdjson(simdjson::INCORRECT_TYPE);
         return true;
     }
 
@@ -317,14 +313,14 @@ struct Reader {
         using namespace ondemand;
         using meta::type_kind;
 
-        return src.apply([&](auto& s) -> meta::type_kind {
+        return src.apply([&](auto& s) -> type_kind {
             auto r = s.is_null();
             if(!r.error() && r.value_unsafe())
                 return type_kind::null;
 
             auto t = s.type();
             if(t.error())
-                return meta::type_kind::unknown;
+                return type_kind::unknown;
 
             switch(t.value_unsafe()) {
                 case Type::null: return type_kind::null;
@@ -357,19 +353,18 @@ struct Reader {
     bool visit_struct(Callback&& cb) {
         auto r = src.apply([&](auto& s) { return s.get_object(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         auto& obj = r.value_unsafe();
         bool ok = true;
         for(auto field_result: obj) {
             if(field_result.error()) {
-                ok = fail_located(
-                    rich_error(std::string(simdjson::error_message(field_result.error()))));
+                ok = fail_simdjson(field_result.error());
                 break;
             }
             auto field = std::move(field_result).value_unsafe();
             auto key = field.unescaped_key();
             if(key.error()) {
-                ok = fail_located(rich_error(std::string(simdjson::error_message(key.error()))));
+                ok = fail_simdjson(key.error());
                 break;
             }
             auto fv = std::move(field).value();
@@ -387,12 +382,12 @@ struct Reader {
     bool visit_seq(Callback&& cb) {
         auto r = src.apply([&](auto& s) { return s.get_array(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         auto& arr = r.value_unsafe();
         bool ok = true;
         for(auto elem: arr) {
             if(elem.error()) {
-                ok = fail_located(rich_error(std::string(simdjson::error_message(elem.error()))));
+                ok = fail_simdjson(elem.error());
                 break;
             }
             auto val = std::move(elem).value_unsafe();
@@ -410,19 +405,18 @@ struct Reader {
     bool visit_map(Callback&& cb) {
         auto r = src.apply([&](auto& s) { return s.get_object(); });
         if(r.error())
-            return fail_located(rich_error(std::string(simdjson::error_message(r.error()))));
+            return fail_simdjson(r.error());
         auto& obj = r.value_unsafe();
         bool ok = true;
         for(auto field_result: obj) {
             if(field_result.error()) {
-                ok = fail_located(
-                    rich_error(std::string(simdjson::error_message(field_result.error()))));
+                ok = fail_simdjson(field_result.error());
                 break;
             }
             auto field = std::move(field_result).value_unsafe();
             auto key = field.unescaped_key();
             if(key.error()) {
-                ok = fail_located(rich_error(std::string(simdjson::error_message(key.error()))));
+                ok = fail_simdjson(key.error());
                 break;
             }
             auto fv = std::move(field).value();

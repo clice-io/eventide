@@ -5,6 +5,7 @@
 #include "kota/http/detail/manager.h"
 #include "kota/http/http.h"
 #include "kota/async/async.h"
+#include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
 using namespace std::chrono_literals;
@@ -31,7 +32,7 @@ task<void, http::error> request_openai(event_loop& loop) {
                       .send()
                       .or_fail();
 
-    auto parsed = codec::json::parse<codec::json::Value>(result.text()).value();
+    auto parsed = codec::json::parse<codec::dyn::Value>(result.text()).value();
     auto reply = parsed["output"][0]["content"][0]["text"].as_string();
 
     std::println("status: {}", result.status);
