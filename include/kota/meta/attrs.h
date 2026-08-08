@@ -94,6 +94,13 @@ struct literal {
     constexpr inline static std::string_view name = Name;
 };
 
+/// Human-readable documentation for a field, exported by schema backends
+/// (e.g. as the "description" keyword in JSON Schema).
+template <fixed_string Text>
+struct description {
+    constexpr inline static std::string_view text = Text;
+};
+
 // Struct-level
 
 /// Apply a rename policy to all fields of a struct.
@@ -170,6 +177,16 @@ struct is_literal_attr<attrs::literal<N>> {
     constexpr static bool value = true;
 };
 
+template <typename T>
+struct is_description_attr {
+    constexpr static bool value = false;
+};
+
+template <fixed_string Text>
+struct is_description_attr<attrs::description<Text>> {
+    constexpr static bool value = true;
+};
+
 /// Unified predicate for all tagged attrs (tagged<...> and tagged<...>::names<...>).
 template <typename T>
 struct is_tagged_attr {
@@ -205,7 +222,7 @@ template <typename T>
 constexpr bool is_schema_attr_v =
     std::is_same_v<T, attrs::skip> || std::is_same_v<T, attrs::flatten> ||
     std::is_same_v<T, attrs::default_value> || is_rename_attr<T>::value ||
-    is_alias_attr<T>::value || is_literal_attr<T>::value ||
+    is_alias_attr<T>::value || is_literal_attr<T>::value || is_description_attr<T>::value ||
     is_specialization_of<attrs::rename_all, T> || std::is_same_v<T, attrs::deny_unknown_fields> ||
     is_tagged_attr<T>::value;
 

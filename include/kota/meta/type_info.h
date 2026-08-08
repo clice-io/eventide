@@ -100,6 +100,9 @@ struct field_info {
     bool is_literal;
     bool has_skip_if;
     bool has_behavior;
+
+    /// Documentation text from attrs::description, empty when absent.
+    std::string_view description = {};
 };
 
 struct struct_type_info : type_info {
@@ -580,6 +583,14 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     constexpr bool has_skip_if = tuple_has_spec_v<attrs_t, behavior::skip_if>;
     constexpr bool has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>;
 
+    constexpr std::string_view description = [] {
+        if constexpr(tuple_any_of_v<attrs_t, is_description_attr>) {
+            return tuple_find_t<attrs_t, is_description_attr>::text;
+        } else {
+            return std::string_view{};
+        }
+    }();
+
     return field_info{
         .name = name,
         .aliases = aliases,
@@ -590,6 +601,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .is_literal = is_literal,
         .has_skip_if = has_skip_if,
         .has_behavior = has_behavior,
+        .description = description,
     };
 }
 
