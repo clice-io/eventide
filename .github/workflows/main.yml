@@ -36,6 +36,7 @@ jobs:
               - 'cmake/**'
               - 'tests/**'
               - 'CMakeLists.txt'
+              - 'CMakePresets.json'
               - 'pixi.toml'
               - '.github/workflows/main.yml'
               - '.github/workflows/cmake.yml'

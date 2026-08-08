@@ -1,0 +1,104 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "KOTA_BUILD_ALL_TESTS": "ON",
+        "KOTA_USE_CPM_FOR_TESTS": "ON",
+        "KOTA_ENABLE_CCACHE": "ON",
+        "CPM_SOURCE_CACHE": "${sourceDir}/.cache/cpm"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "relwithdebinfo",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "asan",
+      "inherits": "relwithdebinfo",
+      "cacheVariables": { "KOTA_SANITIZE_ADDRESS": "ON" }
+    },
+    {
+      "name": "ubsan",
+      "inherits": "relwithdebinfo",
+      "cacheVariables": { "KOTA_SANITIZE_UNDEFINED": "ON" }
+    },
+    {
+      "name": "asan-ubsan",
+      "inherits": "relwithdebinfo",
+      "cacheVariables": {
+        "KOTA_SANITIZE_ADDRESS": "ON",
+        "KOTA_SANITIZE_UNDEFINED": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "relwithdebinfo",
+      "cacheVariables": { "KOTA_SANITIZE_THREAD": "ON" }
+    },
+    {
+      "name": "no-exceptions",
+      "inherits": "relwithdebinfo",
+      "cacheVariables": { "KOTA_ENABLE_EXCEPTIONS": "OFF" }
+    },
+    {
+      "name": "no-exceptions-no-rtti",
+      "inherits": "no-exceptions",
+      "cacheVariables": { "KOTA_ENABLE_RTTI": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "ubsan", "configurePreset": "ubsan" },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "no-exceptions", "configurePreset": "no-exceptions" },
+    {
+      "name": "no-exceptions-no-rtti",
+      "configurePreset": "no-exceptions-no-rtti"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true }
+    },
+    { "name": "debug", "inherits": "base", "configurePreset": "debug" },
+    {
+      "name": "relwithdebinfo",
+      "inherits": "base",
+      "configurePreset": "relwithdebinfo"
+    },
+    { "name": "asan", "inherits": "base", "configurePreset": "asan" },
+    { "name": "ubsan", "inherits": "base", "configurePreset": "ubsan" },
+    {
+      "name": "asan-ubsan",
+      "inherits": "base",
+      "configurePreset": "asan-ubsan"
+    },
+    { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
+    {
+      "name": "no-exceptions",
+      "inherits": "base",
+      "configurePreset": "no-exceptions"
+    },
+    {
+      "name": "no-exceptions-no-rtti",
+      "inherits": "base",
+      "configurePreset": "no-exceptions-no-rtti"
+    }
+  ]
+}

@@ -10,18 +10,19 @@ A C++20/23 coroutine wrapper for libuv. Library modules live under
 description for downstream xmake users, kept working by the small `xmake.yml`
 CI workflow — never use xmake for local development.
 
-- Local dev uses pre-configured cmake+ninja trees at the repo root: `build`
-  (Debug, day-to-day), plus variants like `build-asan`, `build-tsan`,
-  `build-cov`. Build with `cmake --build <tree>`; don't reconfigure trees on
-  your own.
+- All configuration lives in `CMakePresets.json`; trees land in
+  `build/<preset>/`. Build with `pixi run build [preset]` (default `debug`;
+  also `asan`, `tsan`, `no-exceptions`, ...) — this uses the pixi toolchain,
+  never the system compiler.
 - The main CI matrix is `cmake.yml` (all toolchains, sanitizers,
-  no-exceptions/no-rtti variants), driving cmake/ctest directly.
+  no-exceptions/no-rtti variants), driving the same presets.
 
 ## Testing
 
-- Unit tests — always from the repo root, always with the snapshot dir:
-  `./build/unit_tests --snapshot-dir=tests/snapshots`. Omitting the snapshot
-  dir makes snapshot tests fail spuriously.
+- Unit tests: `pixi run test [preset]` (ctest; handles the snapshot dir).
+  Running `unit_tests` by hand — e.g. to pass `--test-filter` — must be done
+  from the repo root with `--snapshot-dir=tests/snapshots`, or snapshot tests
+  fail spuriously.
 - Integration tests: `pixi run integration-test`.
 
 ## Skills

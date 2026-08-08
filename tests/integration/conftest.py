@@ -29,8 +29,8 @@ def _find_stub_server() -> str:
 
     root = Path(__file__).parent.parent.parent
     candidates = [
-        root / "build" / "tests" / "integration" / "lsp_stub_server",
-        root / "build" / "lsp_stub_server",
+        root / "build" / "debug" / "tests" / "integration" / "lsp_stub_server",
+        root / "build" / "debug" / "lsp_stub_server",
     ]
     for p in candidates:
         if p.exists():
