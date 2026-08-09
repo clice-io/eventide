@@ -310,6 +310,9 @@ constexpr struct_spec finalize_struct_spec(struct_spec spec) {
         if(spec.tag.empty()) {
             KOTA_THROW("annotation: content requires a tag field name");
         }
+        if(spec.content == spec.tag) {
+            KOTA_THROW("annotation: tag and content field names must differ");
+        }
         spec.tagging = tag_mode::adjacent;
     } else if(!spec.tag.empty()) {
         spec.tagging = tag_mode::internal;
