@@ -21,9 +21,17 @@ using toml::parse;
 using person = meta::fixtures::Person;
 using with_scores = meta::fixtures::WithScores;
 
-using strict_payload = annotation<meta::fixtures::StrictIdName, meta::attrs::deny_unknown_fields>;
+KOTATSU_ANNOTATION(strict_payload_annotation, deny_unknown_fields = true);
+using strict_payload = annotate<strict_payload_annotation>::type<meta::fixtures::StrictIdName>;
 
 enum class color { red, green, blue };
+
+struct enum_string_color_tag {
+    constexpr static auto spec =
+        make_spec(dsl::enum_string = dsl::type<rename_policy::lower_camel>);
+};
+
+using enum_string_color = annotate<enum_string_color_tag>::type<color>;
 
 TEST_SUITE(serde_toml_error_message) {
 
@@ -99,7 +107,7 @@ scores = ["bad"]
 }
 
 TEST_CASE(enum_string_error_message) {
-    enum_string<color> parsed = color::red;
+    enum_string_color parsed = color::red;
     auto table = toml::parse_table(R"(__value = "purple")");
     ASSERT_TRUE(table.has_value());
     auto status = toml::from_toml_table(*table, parsed);

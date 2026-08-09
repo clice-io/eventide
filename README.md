@@ -49,10 +49,10 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Runtime type metadata (`type_info.h`): typed descriptors (`struct_type_info`, `enum_type_info`, `tuple_type_info`, `variant_type_info`, `array_type_info`, `map_type_info`, `optional_type_info`) accessible through `type_info_of<T, Config>()`.
 - Reflection-powered comparison (`compare.h`): transparent `eq` / `ne` / `lt` / `le` / `gt` / `ge` functors that recursively handle aggregates, variants, optionals, and ranges.
 - Attribute markers for the codec layer (`annotation.h`, `attrs.h`):
-  - schema markers: `rename`, `alias`, `literal`, `skip`, `flatten`, `default_value`, `rename_all`, `deny_unknown_fields`, `tagged`, `hint`
-  - behavior markers: `enum_string`, `skip_if`, `with<Adapter>`, `as<Target>`
-  - attach via the `annotation<T, Attrs...>` wrapper (three kinds: wrap / inherit / inherit-use)
-  - compile-time validation via `validate_field_schema<T>()`
+  - field values (`spec.h`): `rename`, `alias`, `description`, `idx`, `skip`, `flatten`, `defaulted`, built-in `skip_if` conditions — declared with `KOTATSU_ANNOTATE(...)` and stored in one constexpr `field_spec` per annotation, so strings never enter mangled names
+  - struct/variant values (`spec.h`): `rename_all`, `deny_unknown_fields`, variant tagging (`tagged`/`tag`/`content`/`tag_names`) — declared with `KOTATSU_ANNOTATION(name, ...)` and stored in one constexpr `struct_spec` per annotation
+  - type attributes: `hint`, and behaviors `enum_string`, `skip_if<Pred>`, `with<Adapter>`, `as<Target>`
+  - attach via the macros or the `annotation<T, Attrs...>` wrapper (three kinds: wrap / inherit / inherit-use)
 - Compile-time schema IR (`schema.h`): `virtual_schema<T, Config>` produces `field_slot<RawType, WireType, BehaviorAttrs>` entries that codec backends consume, with flattening and skipping resolved up-front.
 
 ### `codec` (`include/kota/codec/*`)
@@ -123,7 +123,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `cow_string` — copy-on-write string that can borrow or own its storage
   - `small_vector<T, N>` / `hybrid_vector<T>` — SBO vectors with per-element-size tuned size types
   - `small_string<N>` — SBO string, shares layout with `small_vector<char>`
-- Compile-time string utilities: `fixed_string<N>` (usable as an NTTP), `string_ref`.
+- Compile-time string utilities: `string_ref`.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 

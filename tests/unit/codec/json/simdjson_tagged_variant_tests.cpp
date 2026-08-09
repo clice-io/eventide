@@ -19,36 +19,42 @@ using ShapeCircle = meta::fixtures::Circle;
 using ShapeRect = meta::fixtures::Rect;
 using Basic = meta::fixtures::BoolInt;
 
-using ExtVariant = annotation<std::variant<int, std::string, Basic>,
-                              meta::attrs::externally_tagged::names<"integer", "text", "basic">>;
+KOTATSU_ANNOTATION(ext_variant_annotation, tagged = true, tag_names = {"integer", "text", "basic"});
+using ExtVariant = annotate<ext_variant_annotation>::type<std::variant<int, std::string, Basic>>;
 
 struct ExtTaggedHolder {
     std::string name;
     ExtVariant data;
 };
 
-using AdjVariant =
-    annotation<std::variant<int, std::string, Basic>,
-               meta::attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
+KOTATSU_ANNOTATION(adj_variant_annotation,
+                   tag = "type",
+                   content = "value",
+                   tag_names = {"integer", "text", "basic"});
+using AdjVariant = annotate<adj_variant_annotation>::type<std::variant<int, std::string, Basic>>;
 
 struct AdjTaggedHolder {
     std::string name;
     AdjVariant data;
 };
 
-using ExtWithMono = annotation<std::variant<std::monostate, int, std::string>,
-                               meta::attrs::externally_tagged::names<"none", "integer", "text">>;
+KOTATSU_ANNOTATION(ext_with_mono_annotation,
+                   tagged = true,
+                   tag_names = {"none", "integer", "text"});
+using ExtWithMono =
+    annotate<ext_with_mono_annotation>::type<std::variant<std::monostate, int, std::string>>;
 
 struct ShapeLine {
     int line_width{};
 };
 
-using IntTagVariant = annotation<std::variant<ShapeCircle, ShapeRect>,
-                                 meta::attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(int_tag_variant_annotation, tag = "kind", tag_names = {"circle", "rect"});
+using IntTagVariant =
+    annotate<int_tag_variant_annotation>::type<std::variant<ShapeCircle, ShapeRect>>;
 
+KOTATSU_ANNOTATION(int_tag_renamed_variant_annotation, tag = "kind", tag_names = {"line", "rect"});
 using IntTagRenamedVariant =
-    annotation<std::variant<ShapeLine, ShapeRect>,
-               meta::attrs::internally_tagged<"kind">::names<"line", "rect">>;
+    annotate<int_tag_renamed_variant_annotation>::type<std::variant<ShapeLine, ShapeRect>>;
 
 struct IntTagHolder {
     std::string label;

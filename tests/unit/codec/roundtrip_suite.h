@@ -51,7 +51,7 @@ enum class cap : std::uint32_t {
     NullInSeq = 1U << 1,
     /// plain std::variant roundtrips (by untagged scoring or native index)
     VariantPlain = 1U << 2,
-    /// annotation attrs (rename / skip / skip_if_none / flatten / enum_string)
+    /// annotation attrs (rename / skip / skip_if / flatten / enum_string)
     Attrs = 1U << 3,
     /// externally/adjacently/internally tagged variants
     VariantTagged = 1U << 4,

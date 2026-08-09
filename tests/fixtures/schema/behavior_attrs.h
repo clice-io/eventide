@@ -10,6 +10,7 @@
 #include "fixtures/schema/primitives.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/macro.h"
 
 namespace kota::meta::fixtures {
 
@@ -91,9 +92,9 @@ struct SkipIfCustomStruct {
 };
 
 struct MultiAttrStruct {
-    annotation<std::optional<int>, attrs::default_value, behavior::skip_if<pred::optional_none>>
-        opt_with_default;
-    annotation<int, attrs::rename<"score">, behavior::as<std::string>> renamed_as;
+    KOTATSU_ANNOTATE(defaulted = true,
+                     skip_if = type<pred::optional_none>)<std::optional<int>> opt_with_default;
+    KOTATSU_ANNOTATE(rename = "score", as = type<std::string>)<int> renamed_as;
 };
 
 struct SkipIfAsStruct {

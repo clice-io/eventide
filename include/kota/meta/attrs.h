@@ -1,16 +1,15 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <concepts>
-#include <cstddef>
 #include <optional>
-#include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 
-#include "struct.h"
-#include "kota/support/fixed_string.h"
+#include "name.h"
+#include "spec.h"
 #include "kota/support/tuple_traits.h"
 #include "kota/support/type_traits.h"
 
@@ -70,352 +69,97 @@ concept annotated_type = requires {
 namespace attrs {
 
 // Field-level
-struct skip {};
 
-struct flatten {};
-
-/// Allow a field to be absent during deserialization.
-/// When missing, the field keeps its default-constructed value.
-/// Equivalent to Rust's #[serde(default)].
-struct default_value {};
-
-template <fixed_string Name>
-struct rename {
-    constexpr inline static std::string_view name = Name;
-};
-
-template <fixed_string... Names>
-struct alias {
-    constexpr inline static std::array names = {std::string_view(Names)...};
-};
-
-template <fixed_string Name>
-struct literal {
-    constexpr inline static std::string_view name = Name;
-};
-
-/// Human-readable documentation for a field, exported by schema backends
-/// (e.g. as the "description" keyword in JSON Schema). Transparent on the
-/// wire. Ignored on fields that emit no property of their own (attrs::skip,
-/// the attrs::flatten wrapper itself).
-template <fixed_string Text>
-struct description {
-    constexpr inline static std::string_view text = Text;
+/// The value attributes of one annotated field. Tag is the struct generated
+/// by KOTATSU_ANNOTATE (or hand-written) whose `spec` static member is a
+/// meta::spec_result; only the short tag name appears in template arguments.
+template <typename Tag>
+struct spec {
+    constexpr const static field_spec& value = Tag::spec.value;
 };
 
 // Struct-level
 
-/// Apply a rename policy to all fields of a struct.
-template <typename Policy>
-struct rename_all {
-    using policy = Policy;
+/// The value attributes of one annotated struct or variant type. Unlike spec,
+/// this attr forks the type_info identity of the annotated type — a renamed
+/// or tagged type and its bare form have different wire schemas.
+template <typename Tag>
+struct struct_spec {
+    constexpr const static meta::struct_spec& value = Tag::spec;
 };
-
-/// Reject unknown fields during deserialization.
-struct deny_unknown_fields {};
-
-/// Unified tagged variant representation.
-/// - tagged<>             = externally tagged  (key is tag name, value is content)
-/// - tagged<Tag>          = internally tagged  (tag field embedded in struct)
-/// - tagged<Tag, Content> = adjacently tagged  (separate tag and content fields)
-///
-/// Use ::names<...> to provide custom tag names for each alternative.
-/// Without ::names, defaults to meta::type_name<Alt>() for each alternative.
-template <fixed_string... FieldNames>
-struct tagged {
-    static_assert(sizeof...(FieldNames) <= 2, "tagged: 0=external, 1=internal, 2=adjacent");
-
-    constexpr static auto field_names =
-        std::array<std::string_view, sizeof...(FieldNames)>{FieldNames...};
-    constexpr static bool has_custom_names = false;
-
-    template <fixed_string... Names>
-    struct names {
-        constexpr static auto field_names =
-            std::array<std::string_view, sizeof...(FieldNames)>{FieldNames...};
-        constexpr static auto tag_names = std::array<std::string_view, sizeof...(Names)>{Names...};
-        constexpr static bool has_custom_names = true;
-    };
-};
-
-/// Semantic aliases for backward compatibility.
-using externally_tagged = tagged<>;
-
-template <fixed_string Tag>
-using internally_tagged = tagged<Tag>;
-
-template <fixed_string Tag, fixed_string Content>
-using adjacently_tagged = tagged<Tag, Content>;
 
 }  // namespace attrs
 
 template <typename T>
-struct is_rename_attr {
+struct is_spec_attr {
     constexpr static bool value = false;
 };
 
-template <fixed_string N>
-struct is_rename_attr<attrs::rename<N>> {
+template <typename Tag>
+struct is_spec_attr<attrs::spec<Tag>> {
     constexpr static bool value = true;
 };
 
+[[maybe_unused]] constexpr inline field_spec empty_field_spec{};
+
+/// The value spec inside an attrs tuple; the empty spec when absent.
+template <typename AttrsTuple>
+constexpr const inline field_spec& spec_of = [] -> const field_spec& {
+    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
+        return tuple_find_t<AttrsTuple, is_spec_attr>::value;
+    } else {
+        return empty_field_spec;
+    }
+}();
+
+/// The value spec attached to a (possibly annotated) field type.
 template <typename T>
-struct is_alias_attr {
+constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
+    if constexpr(annotated_type<T>) {
+        return spec_of<typename T::attrs>;
+    } else {
+        return empty_field_spec;
+    }
+}();
+
+template <typename T>
+struct is_struct_spec_attr {
     constexpr static bool value = false;
 };
 
-template <fixed_string... Ns>
-struct is_alias_attr<attrs::alias<Ns...>> {
+template <typename Tag>
+struct is_struct_spec_attr<attrs::struct_spec<Tag>> {
     constexpr static bool value = true;
 };
 
-template <typename T>
-struct is_literal_attr {
-    constexpr static bool value = false;
-};
+[[maybe_unused]] constexpr inline struct_spec empty_struct_spec{};
 
-template <fixed_string N>
-struct is_literal_attr<attrs::literal<N>> {
-    constexpr static bool value = true;
-};
+/// The struct-level spec inside an attrs tuple; the empty spec when absent.
+template <typename AttrsTuple>
+constexpr const inline struct_spec& struct_spec_of = [] -> const struct_spec& {
+    if constexpr(tuple_any_of_v<AttrsTuple, is_struct_spec_attr>) {
+        return tuple_find_t<AttrsTuple, is_struct_spec_attr>::value;
+    } else {
+        return empty_struct_spec;
+    }
+}();
 
-template <typename T>
-struct is_description_attr {
-    constexpr static bool value = false;
-};
-
-template <fixed_string Text>
-struct is_description_attr<attrs::description<Text>> {
-    constexpr static bool value = true;
-};
-
-/// Unified predicate for all tagged attrs (tagged<...> and tagged<...>::names<...>).
-template <typename T>
-struct is_tagged_attr {
-    constexpr static bool value = requires {
-        { T::field_names } -> std::convertible_to<std::span<const std::string_view>>;
-        { T::has_custom_names } -> std::same_as<const bool&>;
-    };
-};
-
-/// Strategy dispatch based on field_names count.
-enum class tagged_strategy { external = 0, internal = 1, adjacent = 2 };
-
-template <typename TagAttr>
-constexpr tagged_strategy tagged_strategy_of =
-    static_cast<tagged_strategy>(TagAttr::field_names.size());
-
-/// Resolve tag names for variant alternatives.
-/// With ::names, uses the user-provided names (static_assert on count match).
-/// Without ::names, uses meta::type_name<Alt>() for each alternative.
-template <typename TagAttr, typename... Ts>
+/// Resolve wire names for variant alternatives: the annotation's tag_names
+/// when provided (count must match), meta::type_name of each alternative
+/// otherwise.
+template <typename SpecAttr, typename... Ts>
 constexpr auto resolve_tag_names() {
-    if constexpr(TagAttr::has_custom_names) {
-        static_assert(TagAttr::tag_names.size() == sizeof...(Ts),
+    constexpr const struct_spec& spec = SpecAttr::value;
+    if constexpr(spec.tag_names.count != 0) {
+        static_assert(spec.tag_names.count == sizeof...(Ts),
                       "tagged: number of custom names must match variant alternatives");
-        return TagAttr::tag_names;
+        std::array<std::string_view, sizeof...(Ts)> names{};
+        std::ranges::copy_n(spec.tag_names.storage.begin(), sizeof...(Ts), names.begin());
+        return names;
     } else {
         return std::array<std::string_view, sizeof...(Ts)>{type_name<Ts>()...};
     }
 }
-
-/// True for the closed set of schema attributes (field-level + struct-level).
-template <typename T>
-constexpr bool is_schema_attr_v =
-    std::is_same_v<T, attrs::skip> || std::is_same_v<T, attrs::flatten> ||
-    std::is_same_v<T, attrs::default_value> || is_rename_attr<T>::value ||
-    is_alias_attr<T>::value || is_literal_attr<T>::value || is_description_attr<T>::value ||
-    is_specialization_of<attrs::rename_all, T> || std::is_same_v<T, attrs::deny_unknown_fields> ||
-    is_tagged_attr<T>::value;
-
-namespace attrs {
-
-/// Get the canonical (wire) name for field I of struct T.
-template <typename T, std::size_t I>
-    requires reflectable_class<T>
-consteval std::string_view canonical_field_name() {
-    using field_t = field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return field_name<I, T>();
-    } else {
-        using attrs_t = typename field_t::attrs;
-        if constexpr(tuple_any_of_v<attrs_t, is_rename_attr>) {
-            return tuple_find_t<attrs_t, is_rename_attr>::name;
-        } else {
-            return field_name<I, T>();
-        }
-    }
-}
-
-/// True if field I is excluded from direct name matching (skip or flatten).
-template <typename T, std::size_t I>
-    requires reflectable_class<T>
-consteval bool is_field_excluded() {
-    using field_t = field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return false;
-    } else {
-        using attrs_t = typename field_t::attrs;
-        return tuple_has_v<attrs_t, skip> || tuple_has_v<attrs_t, flatten>;
-    }
-}
-
-/// True if field I is skipped.
-template <typename T, std::size_t I>
-    requires reflectable_class<T>
-consteval bool is_field_skipped() {
-    using field_t = field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return false;
-    } else {
-        return tuple_has_v<typename field_t::attrs, skip>;
-    }
-}
-
-/// True if field I is flattened.
-template <typename T, std::size_t I>
-    requires reflectable_class<T>
-consteval bool is_field_flattened() {
-    using field_t = field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return false;
-    } else {
-        return tuple_has_v<typename field_t::attrs, flatten>;
-    }
-}
-
-namespace detail {
-
-template <typename T, std::size_t I>
-consteval bool field_has_alias() {
-    using field_t = field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return false;
-    } else {
-        return tuple_any_of_v<typename field_t::attrs, is_alias_attr>;
-    }
-}
-
-template <typename T, std::size_t I>
-consteval std::size_t alias_count() {
-    if constexpr(!field_has_alias<T, I>()) {
-        return 0;
-    } else {
-        using field_t = field_type<T, I>;
-        using attrs_t = typename field_t::attrs;
-        using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
-        return alias_attr::names.size();
-    }
-}
-
-}  // namespace detail
-
-/// Validate that no two non-excluded fields share the same canonical name
-/// and that aliases don't collide with canonical names.
-template <typename T>
-    requires reflectable_class<T>
-consteval bool validate_field_schema() {
-    constexpr std::size_t N = field_count<T>();
-
-    return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        std::array<std::string_view, sizeof...(Is)> names = {canonical_field_name<T, Is>()...};
-        std::array<bool, sizeof...(Is)> excluded = {is_field_excluded<T, Is>()...};
-
-        // Check: no two non-excluded fields share the same canonical name
-        for(std::size_t i = 0; i < sizeof...(Is); ++i) {
-            if(excluded[i])
-                continue;
-            for(std::size_t j = i + 1; j < sizeof...(Is); ++j) {
-                if(excluded[j])
-                    continue;
-                if(names[i] == names[j]) {
-                    return false;
-                }
-            }
-        }
-
-        // Check: no alias collides with another field's canonical name
-        auto verify_field_aliases = [&]<std::size_t I>() consteval {
-            if(excluded[I])
-                return true;
-            if constexpr(!detail::field_has_alias<T, I>()) {
-                return true;
-            } else {
-                using field_t = field_type<T, I>;
-                using attrs_t = typename field_t::attrs;
-                using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
-                for(auto alias_name: alias_attr::names) {
-                    for(std::size_t j = 0; j < sizeof...(Is); ++j) {
-                        if(j == I || excluded[j])
-                            continue;
-                        if(alias_name == names[j]) {
-                            return false;
-                        }
-                    }
-                }
-                return true;
-            }
-        };
-        if(!(verify_field_aliases.template operator()<Is>() && ...)) {
-            return false;
-        }
-
-        return true;
-    }(std::make_index_sequence<N>{});
-}
-
-template <std::size_t AliasCount>
-struct field_schema {
-    std::string_view canonical_name;
-    std::array<std::string_view, AliasCount> aliases;
-    bool is_skipped = false;
-    bool is_flattened = false;
-};
-
-/// Build a field_schema for field I of struct T.
-template <typename T, std::size_t I>
-    requires reflectable_class<T>
-consteval auto resolve_field() {
-    using field_t = field_type<T, I>;
-    if constexpr(!annotated_type<field_t>) {
-        return field_schema<0>{
-            .canonical_name = field_name<I, T>(),
-            .aliases = {},
-            .is_skipped = false,
-            .is_flattened = false,
-        };
-    } else {
-        using attrs_t = typename field_t::attrs;
-        constexpr std::size_t alias_n = detail::alias_count<T, I>();
-
-        auto get_aliases = []() consteval {
-            if constexpr(alias_n == 0) {
-                return std::array<std::string_view, 0>{};
-            } else {
-                using alias_attr = tuple_find_t<attrs_t, is_alias_attr>;
-                return alias_attr::names;
-            }
-        };
-
-        return field_schema<alias_n>{
-            .canonical_name = canonical_field_name<T, I>(),
-            .aliases = get_aliases(),
-            .is_skipped = is_field_skipped<T, I>(),
-            .is_flattened = is_field_flattened<T, I>(),
-        };
-    }
-}
-
-/// Build the complete field schema tuple for struct T.
-template <typename T>
-    requires reflectable_class<T>
-consteval auto effective_field_schema() {
-    return []<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return std::make_tuple(resolve_field<T, Is>()...);
-    }(std::make_index_sequence<field_count<T>()>{});
-}
-
-}  // namespace attrs
 
 namespace behavior {
 
@@ -498,6 +242,19 @@ struct default_value {
 
 }  // namespace pred
 
+/// Evaluate a built-in skip_when condition against a field value.
+template <skip_when When, typename Value>
+constexpr bool evaluate_skip_when(const Value& value, bool is_serialize) {
+    static_assert(When != skip_when::never);
+    if constexpr(When == skip_when::none) {
+        return pred::optional_none{}(value, is_serialize);
+    } else if constexpr(When == skip_when::empty) {
+        return pred::empty{}(value, is_serialize);
+    } else {
+        return pred::default_value{}(value, is_serialize);
+    }
+}
+
 /// True for the closed set of behavior attributes.
 template <typename T>
 constexpr bool is_behavior_attr_v =
@@ -518,6 +275,13 @@ template <typename AttrsTuple>
 constexpr bool validate_attrs() {
     static_assert(tuple_count_of_v<AttrsTuple, is_behavior_provider> <= 1,
                   "At most one behavior provider (with/as/enum_string) allowed per field");
+    static_assert(tuple_count_of_v<AttrsTuple, is_spec_attr> <= 1,
+                  "At most one annotation spec allowed per field");
+    static_assert(tuple_count_of_v<AttrsTuple, is_struct_spec_attr> <= 1,
+                  "At most one struct annotation spec allowed per type");
+    static_assert(!(spec_of<AttrsTuple>.skip_if != skip_when::never &&
+                    tuple_has_spec_v<AttrsTuple, behavior::skip_if>),
+                  "A built-in skip_if condition and a custom skip_if predicate conflict");
     return true;
 }
 

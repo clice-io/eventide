@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/codec/macro.h"
 #include "kota/codec/toml/decode.h"
 #include "kota/codec/toml/encode.h"
 #include "kota/codec/toml/type.h"

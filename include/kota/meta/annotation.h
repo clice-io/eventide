@@ -121,43 +121,61 @@ constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
 
 namespace rename_policy = naming::rename_policy;
 
-template <typename T>
-using defaulted = annotation<T, attrs::default_value>;
+namespace detail {
 
-template <typename T>
-using skip = annotation<T, attrs::skip>;
+/// Maps a DSL type component to the equivalent behavior attr.
+template <typename Component>
+struct component_attr;
 
-template <typename T>
-using flatten = annotation<T, attrs::flatten>;
+template <typename Target>
+struct component_attr<dsl::type_component<dsl::aspect::as, Target>> {
+    using type = behavior::as<Target>;
+};
 
-template <typename T, fixed_string Name>
-using literal = annotation<T, attrs::literal<Name>>;
+template <typename Adapter>
+struct component_attr<dsl::type_component<dsl::aspect::with, Adapter>> {
+    using type = behavior::with<Adapter>;
+};
 
-template <typename T, fixed_string Text>
-using description = annotation<T, attrs::description<Text>>;
+template <typename Pred>
+struct component_attr<dsl::type_component<dsl::aspect::skip_if, Pred>> {
+    using type = behavior::skip_if<Pred>;
+};
 
-template <typename T, fixed_string Name>
-using rename = annotation<T, attrs::rename<Name>>;
+template <typename Policy>
+struct component_attr<dsl::type_component<dsl::aspect::enum_string, Policy>> {
+    using type = behavior::enum_string<Policy>;
+};
 
-template <typename T, fixed_string Name, fixed_string... AliasNames>
-using rename_alias = annotation<T, attrs::rename<Name>, attrs::alias<AliasNames...>>;
+template <typename T, typename Tag, typename Extras, typename... Extra>
+struct annotated_field;
 
-template <typename T, fixed_string... Names>
-using alias = annotation<T, attrs::alias<Names...>>;
+template <typename T, typename Tag, typename... Cs, typename... Extra>
+struct annotated_field<T, Tag, std::tuple<Cs...>, Extra...> {
+    using type = annotation<T, attrs::spec<Tag>, typename component_attr<Cs>::type..., Extra...>;
+};
 
-template <typename T, typename Pred>
-using skip_if = annotation<T, behavior::skip_if<Pred>>;
+}  // namespace detail
 
-template <typename E, typename Policy = rename_policy::lower_camel>
-using enum_string = annotation<E, behavior::enum_string<Policy>>;
+/// A tag whose spec is a struct-level annotation (made by make_struct_spec)
+/// rather than a field spec.
+template <typename Tag>
+concept struct_spec_tag = std::same_as<std::remove_cv_t<decltype(Tag::spec)>, struct_spec>;
 
-template <typename T>
-using skip_if_none = annotation<std::optional<T>, behavior::skip_if<pred::optional_none>>;
+/// Binds a KOTATSU_ANNOTATE tag to the field type it annotates. Extra type
+/// attrs (behavior, ...) may follow the field type explicitly.
+template <typename Tag>
+struct annotate {
+    template <typename T, typename... Extra>
+    using type = typename detail::
+        annotated_field<T, Tag, typename decltype(Tag::spec)::extras, Extra...>::type;
+};
 
-template <typename T>
-using skip_if_empty = annotation<T, behavior::skip_if<pred::empty>>;
-
-template <typename T>
-using skip_if_default = annotation<T, behavior::skip_if<pred::default_value>, attrs::default_value>;
+/// Binds a make_struct_spec tag to the struct or variant type it annotates.
+template <struct_spec_tag Tag>
+struct annotate<Tag> {
+    template <typename T, typename... Extra>
+    using type = annotation<T, attrs::struct_spec<Tag>, Extra...>;
+};
 
 }  // namespace kota::meta

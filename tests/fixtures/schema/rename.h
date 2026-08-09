@@ -6,6 +6,7 @@
 
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/macro.h"
 
 namespace kota::meta::fixtures {
 
@@ -36,13 +37,13 @@ struct RenameAllTarget {
 };
 
 struct MixedRenameStruct {
-    annotation<int, attrs::rename<"ID">> user_id;
+    KOTATSU_ANNOTATE(rename = "ID")<int> user_id;
     float total_score;
     std::string item_name;
 };
 
 struct AliasRenameAllStruct {
-    annotation<int, attrs::alias<"user_id">> id;
+    KOTATSU_ANNOTATE(alias = {"user_id"})<int> id;
     float total_score;
 };
 

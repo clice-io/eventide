@@ -43,6 +43,7 @@
 #include "fixtures/schema/tagged.h"
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/macro.h"
 
 namespace kota::codec::standard_case {
 
@@ -72,7 +73,7 @@ struct Compound {
 struct Nullables {
     std::optional<int> opt_value;
     std::optional<std::string> opt_empty;
-    defaulted<std::unique_ptr<Basic>> heap_allocated;
+    KOTATSU_ANNOTATE(defaulted = true)<std::unique_ptr<Basic>> heap_allocated;
 
     auto operator==(const Nullables& other) const -> bool {
         if(opt_value != other.opt_value || opt_empty != other.opt_empty) {
@@ -96,7 +97,8 @@ enum class Role : std::uint8_t {
 
 struct ADTs {
     Role role{};
-    defaulted<std::variant<std::monostate, int, std::string, Basic>> multi_variant;
+    KOTATSU_ANNOTATE(
+        defaulted = true)<std::variant<std::monostate, int, std::string, Basic>> multi_variant;
 
     auto operator==(const ADTs&) const -> bool = default;
 };
@@ -169,10 +171,10 @@ inline auto pointer_value_equal(const Ptr& lhs, const Ptr& rhs) -> bool {
 }
 
 struct SmartPointers {
-    defaulted<std::unique_ptr<Basic>> unique_basic;
-    defaulted<std::shared_ptr<Basic>> shared_basic;
-    defaulted<std::shared_ptr<Basic>> shared_empty;
-    defaulted<std::vector<std::shared_ptr<Basic>>> shared_list;
+    KOTATSU_ANNOTATE(defaulted = true)<std::unique_ptr<Basic>> unique_basic;
+    KOTATSU_ANNOTATE(defaulted = true)<std::shared_ptr<Basic>> shared_basic;
+    KOTATSU_ANNOTATE(defaulted = true)<std::shared_ptr<Basic>> shared_empty;
+    KOTATSU_ANNOTATE(defaulted = true)<std::vector<std::shared_ptr<Basic>>> shared_list;
     std::optional<std::shared_ptr<Basic>> opt_shared;
 
     auto operator==(const SmartPointers& other) const -> bool {
@@ -216,11 +218,12 @@ struct AttrProfile {
 
 struct AttrPayload {
     int id{};
-    rename_alias<std::string, "displayName", "name"> display_name;
-    skip<int> internal_id = 1000;
-    skip_if_none<std::string> note;
-    flatten<AttrProfile> profile;
-    enum_string<AccessLevel> level = AccessLevel::viewer;
+    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})<std::string> display_name;
+    KOTATSU_ANNOTATE(skip = true)<int> internal_id = 1000;
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)<std::optional<std::string>> note;
+    KOTATSU_ANNOTATE(flatten = true)<AttrProfile> profile;
+    KOTATSU_ANNOTATE(enum_string = type<rename_policy::lower_camel>)<AccessLevel> level =
+        AccessLevel::viewer;
 
     auto operator==(const AttrPayload&) const -> bool = default;
 };
@@ -232,23 +235,36 @@ struct StructLevelPayload {
     auto operator==(const StructLevelPayload&) const -> bool = default;
 };
 
-using RenamedStructLevelPayload =
-    annotation<StructLevelPayload, attrs::rename_all<rename_policy::lower_camel>>;
-using StrictRenamedStructLevelPayload = annotation<StructLevelPayload,
-                                                   attrs::rename_all<rename_policy::lower_camel>,
-                                                   attrs::deny_unknown_fields>;
+KOTATSU_ANNOTATION(renamed_struct_level_tag, rename_all = casing::lower_camel);
+using RenamedStructLevelPayload = annotate<renamed_struct_level_tag>::type<StructLevelPayload>;
 
-using EnumStringAccess = enum_string<AccessLevel>;
+KOTATSU_ANNOTATION(strict_renamed_struct_level_tag,
+                   rename_all = casing::lower_camel,
+                   deny_unknown_fields = true);
+using StrictRenamedStructLevelPayload =
+    annotate<strict_renamed_struct_level_tag>::type<StructLevelPayload>;
 
+struct enum_string_access_tag {
+    constexpr static auto spec =
+        make_spec(dsl::enum_string = dsl::type<rename_policy::lower_camel>);
+};
+
+using EnumStringAccess = annotate<enum_string_access_tag>::type<AccessLevel>;
+
+KOTATSU_ANNOTATION(tagged_external_tag, tagged = true, tag_names = {"integer", "text", "basic"});
 using TaggedExternalVariant =
-    annotation<std::variant<int, std::string, Basic>,
-               attrs::externally_tagged::names<"integer", "text", "basic">>;
-using TaggedAdjacentVariant =
-    annotation<std::variant<int, std::string, Basic>,
-               attrs::adjacently_tagged<"type", "value">::names<"integer", "text", "basic">>;
+    annotate<tagged_external_tag>::type<std::variant<int, std::string, Basic>>;
 
-using TaggedInternalVariant = annotation<std::variant<TaggedCircle, TaggedRect>,
-                                         attrs::internally_tagged<"kind">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(tagged_adjacent_tag,
+                   tag = "type",
+                   content = "value",
+                   tag_names = {"integer", "text", "basic"});
+using TaggedAdjacentVariant =
+    annotate<tagged_adjacent_tag>::type<std::variant<int, std::string, Basic>>;
+
+KOTATSU_ANNOTATION(tagged_internal_tag, tag = "kind", tag_names = {"circle", "rect"});
+using TaggedInternalVariant =
+    annotate<tagged_internal_tag>::type<std::variant<TaggedCircle, TaggedRect>>;
 
 struct TaggedExternalHolder {
     std::string name;

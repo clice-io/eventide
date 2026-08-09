@@ -21,9 +21,8 @@ using StringHolder = meta::fixtures::StringHolder;
 using Circle = meta::fixtures::Circle;
 using Rect = meta::fixtures::Rect;
 
-using IntTagShape =
-    meta::annotation<std::variant<Circle, Rect>,
-                     meta::attrs::internally_tagged<"type">::names<"circle", "rect">>;
+KOTATSU_ANNOTATION(int_tag_shape_annotation, tag = "type", tag_names = {"circle", "rect"});
+using IntTagShape = meta::annotate<int_tag_shape_annotation>::type<std::variant<Circle, Rect>>;
 
 TEST_SUITE(serde_content_variant) {
 

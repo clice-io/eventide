@@ -43,7 +43,7 @@ struct PlainFlattened {
 
 struct WithSkippedField {
     int first{};
-    annotation<int, attrs::skip> skipped = 77;
+    KOTATSU_ANNOTATE(skip = true)<int> skipped = 77;
     int second{};
 };
 
@@ -55,7 +55,7 @@ struct WithSkipIfField {
 
 struct WithFlattenField {
     int first{};
-    annotation<FlattenInner, attrs::flatten> inner{};
+    KOTATSU_ANNOTATE(flatten = true)<FlattenInner> inner {};
     int third{};
 };
 

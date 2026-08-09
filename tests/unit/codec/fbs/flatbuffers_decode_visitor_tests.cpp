@@ -29,6 +29,11 @@ using fbs::from_flatbuffer;
 using point = meta::fixtures::Point2i;
 using address = meta::fixtures::Address;
 
+struct ext_tag_annotation {
+    constexpr static auto spec =
+        make_struct_spec(dsl::tagged = true, dsl::tag_names = {"integer", "text", "basic"});
+};
+
 struct person {
     std::int32_t id;
     std::string name;
@@ -480,9 +485,7 @@ TEST_CASE(diag_variant_basic) {
 }
 
 TEST_CASE(diag_tagged_ext_variant_int) {
-    using ext_t =
-        meta::annotation<std::variant<int, std::string, Basic>,
-                         meta::attrs::externally_tagged::names<"integer", "text", "basic">>;
+    using ext_t = annotate<ext_tag_annotation>::type<std::variant<int, std::string, Basic>>;
     ext_t input{42};
 
     auto encoded = fbs::to_flatbuffer(input);

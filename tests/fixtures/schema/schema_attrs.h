@@ -1,23 +1,24 @@
 #pragma once
 
-// Schema-attr fixtures — rename / skip / alias / flatten / literal /
-// default_value / deny_unknown_fields.
+// Schema-attr fixtures — rename / skip / alias / flatten / default /
+// deny_unknown_fields.
 
 #include <string>
 
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
+#include "kota/codec/macro.h"
 
 namespace kota::meta::fixtures {
 
 struct AnnotatedStruct {
-    annotation<int, attrs::rename<"id">> user_id;
-    annotation<std::string, attrs::skip> internal;
+    KOTATSU_ANNOTATE(rename = "id")<int> user_id;
+    KOTATSU_ANNOTATE(skip = true)<std::string> internal;
     float value;
 };
 
 struct AliasStruct {
-    annotation<int, attrs::alias<"user_id", "userId">> id;
+    KOTATSU_ANNOTATE(alias = {"user_id", "userId"})<int> id;
     std::string name;
 };
 
@@ -28,14 +29,14 @@ struct Inner {
 
 struct Outer {
     int x;
-    annotation<Inner, attrs::flatten> inner;
+    KOTATSU_ANNOTATE(flatten = true)<Inner> inner;
     int y;
 };
 
 struct FlattenTailStruct {
     int head;
     int neck;
-    annotation<Inner, attrs::flatten> body;
+    KOTATSU_ANNOTATE(flatten = true)<Inner> body;
 };
 
 struct DeepInner {
@@ -45,38 +46,38 @@ struct DeepInner {
 
 struct Middle {
     int m;
-    annotation<DeepInner, attrs::flatten> deep;
+    KOTATSU_ANNOTATE(flatten = true)<DeepInner> deep;
 };
 
 struct DeepOuter {
     int head;
-    annotation<Middle, attrs::flatten> mid;
+    KOTATSU_ANNOTATE(flatten = true)<Middle> mid;
     int tail;
 };
 
 struct FlattenInnerWithSkip {
     int keep_a;
-    annotation<int, attrs::skip> drop_b;
+    KOTATSU_ANNOTATE(skip = true)<int> drop_b;
     int keep_c;
 };
 
 struct FlattenOuterWithChildSkip {
     int head;
-    annotation<FlattenInnerWithSkip, attrs::flatten> inner;
+    KOTATSU_ANNOTATE(flatten = true)<FlattenInnerWithSkip> inner;
 };
 
 struct FlattenInnerWithRename {
-    annotation<int, attrs::rename<"renamed_a">> a;
+    KOTATSU_ANNOTATE(rename = "renamed_a")<int> a;
     int b;
 };
 
 struct FlattenOuterWithChildRename {
-    annotation<FlattenInnerWithRename, attrs::flatten> inner;
+    KOTATSU_ANNOTATE(flatten = true)<FlattenInnerWithRename> inner;
 };
 
-struct DefaultLiteralStruct {
-    annotation<int, attrs::default_value> with_default;
-    annotation<std::string, attrs::literal<"v1">> version;
+struct DefaultStruct {
+    KOTATSU_ANNOTATE(defaulted = true)<int> with_default;
+    std::string version;
     int plain;
 };
 
@@ -85,7 +86,10 @@ struct RenameTarget {
     std::string display_name;
 };
 
-using RenamedRoot = annotation<RenameTarget, attrs::rename_all<rename_policy::lower_camel>>;
-using StrictRoot = annotation<RenameTarget, attrs::deny_unknown_fields>;
+KOTATSU_ANNOTATION(RenameAllCamelTag, rename_all = casing::lower_camel);
+using RenamedRoot = annotate<RenameAllCamelTag>::type<RenameTarget>;
+
+KOTATSU_ANNOTATION(DenyUnknownTag, deny_unknown_fields = true);
+using StrictRoot = annotate<DenyUnknownTag>::type<RenameTarget>;
 
 }  // namespace kota::meta::fixtures

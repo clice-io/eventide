@@ -113,11 +113,10 @@ if has_config("codec") and has_config("codec_simdjson") then
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
-			"include/(kota/codec/json.h)",
+			"include/(kota/codec/macro.h)",
+			"include/(kota/codec/visit/**.h)",
 			"include/(kota/codec/json/**.h)",
-			"include/(kota/codec/dyn.h)",
-			"include/(kota/codec/dyn/**.h)",
-			"include/(kota/codec/dyn/**.inl)"
+			"include/(kota/codec/dyn/**.h)"
 		)
 		add_rules("cl-flags")
 		add_deps("meta")
@@ -129,7 +128,11 @@ if has_config("codec") and has_config("codec_flatbuffers") then
 	target("codec_flatbuffers", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(kota/codec/fbs.h)", "include/(kota/codec/fbs/**.h)")
+		add_headerfiles(
+			"include/(kota/codec/macro.h)",
+			"include/(kota/codec/visit/**.h)",
+			"include/(kota/codec/fbs/**.h)"
+		)
 		add_rules("cl-flags")
 		add_deps("meta")
 		add_packages("flatbuffers", { public = true })
@@ -140,7 +143,11 @@ if has_config("codec") and has_config("codec_toml") then
 	target("codec_toml", function()
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
-		add_headerfiles("include/(kota/codec/toml.h)", "include/(kota/codec/toml/**.h)")
+		add_headerfiles(
+			"include/(kota/codec/macro.h)",
+			"include/(kota/codec/visit/**.h)",
+			"include/(kota/codec/toml/**.h)"
+		)
 		add_rules("cl-flags")
 
 		add_deps("meta")
@@ -157,29 +164,23 @@ if has_config("codec") then
 		set_kind("headeronly")
 		add_includedirs("include", { public = true })
 		add_headerfiles(
-			"include/(kota/codec/bincode.h)",
 			"include/(kota/codec/bincode/**.h)",
 			"include/(kota/codec/debug/**.h)",
+			"include/(kota/codec/visit/**.h)",
 			"include/(kota/codec/*.h)"
 		)
 		add_rules("cl-flags")
 		add_deps("support", "meta")
 		if has_config("codec_simdjson") then
-			add_headerfiles(
-				"include/(kota/codec/json.h)",
-				"include/(kota/codec/json/**.h)",
-				"include/(kota/codec/dyn.h)",
-				"include/(kota/codec/dyn/**.h)",
-				"include/(kota/codec/dyn/**.inl)"
-			)
+			add_headerfiles("include/(kota/codec/json/**.h)", "include/(kota/codec/dyn/**.h)")
 			add_deps("codec_json")
 		end
 		if has_config("codec_flatbuffers") then
-			add_headerfiles("include/(kota/codec/fbs.h)", "include/(kota/codec/fbs/**.h)")
+			add_headerfiles("include/(kota/codec/fbs/**.h)")
 			add_deps("codec_flatbuffers")
 		end
 		if has_config("codec_toml") then
-			add_headerfiles("include/(kota/codec/toml.h)", "include/(kota/codec/toml/**.h)")
+			add_headerfiles("include/(kota/codec/toml/**.h)")
 			add_deps("codec_toml")
 		end
 	end)

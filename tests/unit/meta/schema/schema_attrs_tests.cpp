@@ -38,17 +38,14 @@ TEST_CASE(simple_struct_fields) {
 
     // All flags false for plain struct
     STATIC_EXPECT_FALSE(fields[0].has_default);
-    STATIC_EXPECT_FALSE(fields[0].is_literal);
     STATIC_EXPECT_FALSE(fields[0].has_skip_if);
     STATIC_EXPECT_FALSE(fields[0].has_behavior);
     STATIC_EXPECT_EQ(fields[0].aliases.size(), 0U);
     STATIC_EXPECT_FALSE(fields[1].has_default);
-    STATIC_EXPECT_FALSE(fields[1].is_literal);
     STATIC_EXPECT_FALSE(fields[1].has_skip_if);
     STATIC_EXPECT_FALSE(fields[1].has_behavior);
     STATIC_EXPECT_EQ(fields[1].aliases.size(), 0U);
     STATIC_EXPECT_FALSE(fields[2].has_default);
-    STATIC_EXPECT_FALSE(fields[2].is_literal);
     STATIC_EXPECT_FALSE(fields[2].has_skip_if);
     STATIC_EXPECT_FALSE(fields[2].has_behavior);
     STATIC_EXPECT_EQ(fields[2].aliases.size(), 0U);
@@ -134,19 +131,14 @@ TEST_CASE(deep_flatten) {
     STATIC_EXPECT_TRUE(fields[4].offset > fields[3].offset);
 }
 
-TEST_CASE(default_value_and_literal) {
-    STATIC_EXPECT_EQ(virtual_schema<fx::DefaultLiteralStruct>::count, 3U);
+TEST_CASE(default_value) {
+    STATIC_EXPECT_EQ(virtual_schema<fx::DefaultStruct>::count, 3U);
 
-    constexpr auto& fields = virtual_schema<fx::DefaultLiteralStruct>::fields;
+    constexpr auto& fields = virtual_schema<fx::DefaultStruct>::fields;
 
     STATIC_EXPECT_TRUE(fields[0].has_default);
-    STATIC_EXPECT_FALSE(fields[0].is_literal);
-
-    STATIC_EXPECT_TRUE(fields[1].is_literal);
     STATIC_EXPECT_FALSE(fields[1].has_default);
-
     STATIC_EXPECT_FALSE(fields[2].has_default);
-    STATIC_EXPECT_FALSE(fields[2].is_literal);
 }
 
 TEST_CASE(deny_unknown_default_false) {

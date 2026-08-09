@@ -17,12 +17,30 @@
 
 namespace kota::ipc::protocol {
 
+namespace detail {
+
+struct skip_default_tag {
+    constexpr static auto spec =
+        meta::make_spec(meta::dsl::skip_if = meta::skip_when::default_value,
+                        meta::dsl::defaulted = true);
+};
+
+struct skip_none_tag {
+    constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::skip_when::none);
+};
+
+struct flatten_tag {
+    constexpr static auto spec = meta::make_spec(meta::dsl::flatten = true);
+};
+
+}  // namespace detail
+
 /// For `undefined | bool` .
-using optional_bool = meta::skip_if_default<bool>;
+using optional_bool = meta::annotate<detail::skip_default_tag>::type<bool>;
 
 /// For `undefined | T` .
 template <typename T>
-using optional = meta::skip_if_none<T>;
+using optional = meta::annotate<detail::skip_none_tag>::type<std::optional<T>>;
 
 /// For `a: T | null`
 template <typename T>
@@ -36,7 +54,8 @@ template <typename... Ts>
 using optional_variant = optional<variant<Ts...>>;
 
 /// For multiple inherit.
-using meta::flatten;
+template <typename T>
+using flatten = meta::annotate<detail::flatten_tag>::type<T>;
 
 /// For empty object literal.
 struct LspEmptyObject {};

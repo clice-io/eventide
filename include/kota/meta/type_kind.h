@@ -140,13 +140,6 @@ constexpr bool is_sequence_kind(type_kind k) noexcept {
     return k == type_kind::array || k == type_kind::set || k == type_kind::tuple;
 }
 
-enum class tag_mode : std::uint8_t {
-    none,
-    external,
-    internal,
-    adjacent,
-};
-
 template <typename T>
 constexpr inline bool schema_opaque = false;
 
