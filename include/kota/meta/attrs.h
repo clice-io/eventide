@@ -100,7 +100,7 @@ struct is_spec_attr<attrs::spec<Tag>> {
     constexpr static bool value = true;
 };
 
-constexpr inline field_spec empty_field_spec{};
+[[maybe_unused]] constexpr inline field_spec empty_field_spec{};
 
 /// The value spec inside an attrs tuple; the empty spec when absent.
 template <typename AttrsTuple>
@@ -132,7 +132,7 @@ struct is_struct_spec_attr<attrs::struct_spec<Tag>> {
     constexpr static bool value = true;
 };
 
-constexpr inline struct_spec empty_struct_spec{};
+[[maybe_unused]] constexpr inline struct_spec empty_struct_spec{};
 
 /// The struct-level spec inside an attrs tuple; the empty spec when absent.
 template <typename AttrsTuple>

@@ -225,30 +225,40 @@ struct type_proxy {
     }
 };
 
-constexpr inline value_proxy<aspect::rename, &field_spec::rename, std::string_view> rename{};
-constexpr inline value_proxy<aspect::description, &field_spec::description, std::string_view>
-    description{};
-constexpr inline value_proxy<aspect::idx, &field_spec::idx, std::uint32_t> idx{};
-constexpr inline value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
-constexpr inline value_proxy<aspect::flatten, &field_spec::flatten, bool> flatten{};
-constexpr inline value_proxy<aspect::defaulted, &field_spec::defaulted, bool> defaulted{};
-constexpr inline name_list_proxy<aspect::alias, &field_spec::alias> alias{};
-constexpr inline skip_if_proxy skip_if{};
-constexpr inline type_proxy<aspect::as> as{};
-constexpr inline type_proxy<aspect::with> with{};
-constexpr inline type_proxy<aspect::enum_string> enum_string{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::rename, &field_spec::rename, std::string_view>
+    rename{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::description,
+                                              &field_spec::description,
+                                              std::string_view> description{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::idx, &field_spec::idx, std::uint32_t> idx{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::flatten, &field_spec::flatten, bool>
+    flatten{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::defaulted, &field_spec::defaulted, bool>
+    defaulted{};
+[[maybe_unused]] constexpr inline name_list_proxy<aspect::alias, &field_spec::alias> alias{};
+[[maybe_unused]] constexpr inline skip_if_proxy skip_if{};
+[[maybe_unused]] constexpr inline type_proxy<aspect::as> as{};
+[[maybe_unused]] constexpr inline type_proxy<aspect::with> with{};
+[[maybe_unused]] constexpr inline type_proxy<aspect::enum_string> enum_string{};
 
-constexpr inline value_proxy<aspect::rename_all, &struct_spec::rename_all, naming::casing>
-    rename_all{};
-constexpr inline value_proxy<aspect::deny_unknown_fields, &struct_spec::deny_unknown_fields, bool>
-    deny_unknown_fields{};
-constexpr inline tagged_proxy tagged{};
-constexpr inline value_proxy<aspect::tag, &struct_spec::tag, std::string_view> tag{};
-constexpr inline value_proxy<aspect::content, &struct_spec::content, std::string_view> content{};
-constexpr inline name_list_proxy<aspect::tag_names, &struct_spec::tag_names> tag_names{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::rename_all,
+                                              &struct_spec::rename_all,
+                                              naming::casing> rename_all{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::deny_unknown_fields,
+                                              &struct_spec::deny_unknown_fields,
+                                              bool> deny_unknown_fields{};
+[[maybe_unused]] constexpr inline tagged_proxy tagged{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::tag, &struct_spec::tag, std::string_view>
+    tag{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::content,
+                                              &struct_spec::content,
+                                              std::string_view> content{};
+[[maybe_unused]] constexpr inline name_list_proxy<aspect::tag_names, &struct_spec::tag_names>
+    tag_names{};
 
 template <typename T>
-constexpr inline type_tag<T> type{};
+[[maybe_unused]] constexpr inline type_tag<T> type{};
 
 }  // namespace dsl
 

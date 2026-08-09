@@ -35,12 +35,13 @@ namespace detail {
 
 template <typename Config, typename SpecAttr, typename Vis, typename Var>
 bool encode_tagged_variant(Vis& vis, const Var& var) {
+    // MSVC mis-handles uncaptured constexpr locals inside the nested generic
+    // lambdas below (C3861/ICE), so the spec is read via SpecAttr each time.
     return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-        constexpr const meta::struct_spec& spec = SpecAttr::value;
         constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
         std::string_view tag_name = names[var.index()];
 
-        if constexpr(spec.tagging == meta::tag_mode::external) {
+        if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
             return vis.visit_struct(var, [&](auto& sv) -> bool {
                 return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
                     return std::visit(
@@ -48,32 +49,36 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                         var);
                 });
             });
-        } else if constexpr(spec.tagging == meta::tag_mode::internal) {
+        } else if constexpr(SpecAttr::value.tagging == meta::tag_mode::internal) {
             return std::visit(
                 [&](const auto& alt) -> bool {
                     using alt_t = std::remove_cvref_t<decltype(alt)>;
                     static_assert(meta::reflectable_class<alt_t>,
                                   "internally tagged requires struct alternatives");
                     return vis.visit_struct(alt, [&](auto& sv) -> bool {
-                        KOTA_CODEC_TRY(
-                            sv.visit_field(std::size_t(0), spec.tag, [&](auto& tv) -> bool {
-                                return tv.visit_str(tag_name);
-                            }));
+                        KOTA_CODEC_TRY(sv.visit_field(
+                            std::size_t(0),
+                            SpecAttr::value.tag,
+                            [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
                         return encode_struct_fields<Config>(sv, alt);
                     });
                 },
                 var);
         } else {
-            static_assert(spec.tagging == meta::tag_mode::adjacent);
+            static_assert(SpecAttr::value.tagging == meta::tag_mode::adjacent);
             return vis.visit_struct(var, [&](auto& sv) -> bool {
-                KOTA_CODEC_TRY(sv.visit_field(std::size_t(0), spec.tag, [&](auto& tv) -> bool {
-                    return tv.visit_str(tag_name);
-                }));
-                return sv.visit_field(std::size_t(1), spec.content, [&](auto& cv) -> bool {
-                    return std::visit(
-                        [&](const auto& alt) -> bool { return encode_value<Config>(cv, alt); },
-                        var);
-                });
+                KOTA_CODEC_TRY(
+                    sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
+                        return tv.visit_str(tag_name);
+                    }));
+                return sv.visit_field(
+                    std::size_t(1),
+                    SpecAttr::value.content,
+                    [&](auto& cv) -> bool {
+                        return std::visit(
+                            [&](const auto& alt) -> bool { return encode_value<Config>(cv, alt); },
+                            var);
+                    });
             });
         }
     }(var);
