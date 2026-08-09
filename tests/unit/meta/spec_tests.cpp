@@ -181,6 +181,19 @@ TEST_CASE(make_struct_spec_folds_values_and_derives_tagging) {
     STATIC_EXPECT_TRUE(config.rename_all == naming::casing::lower_camel);
     STATIC_EXPECT_TRUE(config.deny_unknown_fields);
     STATIC_EXPECT_TRUE(config.tagging == tag_mode::none);
+
+    STATIC_EXPECT_TRUE(make_struct_spec(dsl::tagged = false).tagging == tag_mode::none);
+}
+
+TEST_CASE(casing_maps_to_rename_policies) {
+    using naming::casing;
+    using naming::rename_policy_t;
+    namespace policy = naming::rename_policy;
+    STATIC_EXPECT_TRUE((std::is_same_v<rename_policy_t<casing::identity>, policy::identity>));
+    STATIC_EXPECT_TRUE((std::is_same_v<rename_policy_t<casing::lower_snake>, policy::lower_snake>));
+    STATIC_EXPECT_TRUE((std::is_same_v<rename_policy_t<casing::lower_camel>, policy::lower_camel>));
+    STATIC_EXPECT_TRUE((std::is_same_v<rename_policy_t<casing::upper_camel>, policy::upper_camel>));
+    STATIC_EXPECT_TRUE((std::is_same_v<rename_policy_t<casing::upper_snake>, policy::upper_snake>));
 }
 
 TEST_CASE(annotate_attaches_struct_spec) {

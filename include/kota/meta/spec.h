@@ -340,7 +340,7 @@ constexpr auto make_spec(const Cs&... components) {
                   "annotation entries must be assignments, e.g. skip = true");
     static_assert(
         (dsl::spec_component<Cs, field_spec> && ...),
-        "rename_all/deny_unknown_fields/tagged/... are struct-level entries; " "use make_struct_spec");
+        "struct-level entries (rename_all/deny_unknown_fields/tagged/...) cannot be " "mixed with field-level entries in one annotation");
     static_assert(detail::component_kinds_unique<Cs...>(),
                   "annotation: the same attribute appears twice");
 

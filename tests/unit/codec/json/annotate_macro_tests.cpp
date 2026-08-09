@@ -118,6 +118,11 @@ struct shape_holder {
                      tag_names = {"circle", "rect"})<std::variant<circle, rect>> shape;
 };
 
+struct nested_holder {
+    KOTATSU_ANNOTATE(rename_all = casing::upper_snake,
+                     deny_unknown_fields = true)<wide_payload> inner;
+};
+
 TEST_SUITE(serde_annotate_macro) {
 
 TEST_CASE(defaulted_field_may_be_absent) {
@@ -240,6 +245,23 @@ TEST_CASE(field_annotation_accepts_struct_entries) {
     ASSERT_TRUE(status.has_value());
     ASSERT_EQ(parsed.shape.index(), 1u);
     EXPECT_EQ(std::get<rect>(parsed.shape).width, 6.0);
+}
+
+TEST_CASE(field_annotation_merges_struct_config) {
+    nested_holder holder;
+    holder.inner.user_name = "alice";
+    auto encoded = to_json(holder);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"inner":{"USER_NAME":"alice","USER_AGE":0}})");
+
+    nested_holder parsed;
+    auto status = from_json(R"({"inner":{"USER_NAME":"bob","USER_AGE":2}})", parsed);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(parsed.inner.user_name, "bob");
+    EXPECT_EQ(parsed.inner.user_age, 2);
+
+    auto unknown = from_json(R"({"inner":{"USER_NAME":"bob","EXTRA":1}})", parsed);
+    EXPECT_FALSE(unknown.has_value());
 }
 
 TEST_CASE(annotated_and_bare_use_share_type_info) {

@@ -149,6 +149,13 @@ bool encode_one_field(Vis& vis, const T& value) {
                 return encode_tagged_variant<Config, spec_attr>(fv, field_ref);
             });
         }
+    } else if constexpr(meta::reflectable_class<raw_t> &&
+                        (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
+                         meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
+        using merged_config = annotated_config<Config, attrs_t>;
+        ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+            return encode_value<merged_config>(fv, field_ref);
+        });
     } else {
         ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
             return encode_value<Config>(fv, field_ref);

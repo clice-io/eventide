@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <optional>
@@ -153,9 +154,7 @@ constexpr auto resolve_tag_names() {
         static_assert(spec.tag_names.count == sizeof...(Ts),
                       "tagged: number of custom names must match variant alternatives");
         std::array<std::string_view, sizeof...(Ts)> names{};
-        for(std::size_t i = 0; i < names.size(); ++i) {
-            names[i] = spec.tag_names.storage[i];
-        }
+        std::ranges::copy_n(spec.tag_names.storage.begin(), sizeof...(Ts), names.begin());
         return names;
     } else {
         return std::array<std::string_view, sizeof...(Ts)>{type_name<Ts>()...};

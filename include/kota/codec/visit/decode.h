@@ -189,6 +189,11 @@ bool decode_field_inner(Vis& vis, T& out) {
             using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
             return decode_variant<Config, spec_attr>(vis, field_ref);
         }
+    } else if constexpr(meta::reflectable_class<raw_t> &&
+                        (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
+                         meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
+        using merged_config = annotated_config<Config, attrs_t>;
+        return decode_value<merged_config>(vis, field_ref);
     } else {
         return decode_value<Config>(vis, field_ref);
     }

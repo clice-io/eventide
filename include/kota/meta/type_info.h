@@ -18,7 +18,6 @@
 #include "kota/support/naming.h"
 #include "kota/support/ranges.h"
 #include "kota/support/tuple_traits.h"
-#include "kota/support/type_traits.h"
 
 namespace kota::meta {
 
@@ -188,15 +187,16 @@ constexpr bool is_runtime_spec_attr_v<attrs::spec<Tag>> =
     attrs::spec<Tag>::value.defaulted || attrs::spec<Tag>::value.skip_if != skip_when::never;
 
 /// A struct spec whose values matter at encode/decode dispatch: the tagged
-/// variant paths read the tagging mode and names from the slot attrs. A
-/// rename_all/deny_unknown-only spec acts through the merged config instead
-/// and is dropped from slots.
+/// variant paths read the tagging mode and names from the slot attrs, and a
+/// rename_all/deny_unknown spec on a field merges into the config there.
 template <typename Attr>
 constexpr bool is_runtime_struct_spec_attr_v = false;
 
 template <typename Tag>
 constexpr bool is_runtime_struct_spec_attr_v<attrs::struct_spec<Tag>> =
-    attrs::struct_spec<Tag>::value.tagging != tag_mode::none;
+    attrs::struct_spec<Tag>::value.tagging != tag_mode::none ||
+    attrs::struct_spec<Tag>::value.rename_all != naming::casing::identity ||
+    attrs::struct_spec<Tag>::value.deny_unknown_fields;
 
 template <typename Tuple>
 struct filter_runtime_attrs;
