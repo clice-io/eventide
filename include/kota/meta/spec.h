@@ -54,6 +54,8 @@ struct field_spec {
     /// Extra accepted names during deserialization.
     name_list alias = {};
     /// Field ordinal for index-addressed formats (flatbuffers/protobuf).
+    /// Metadata only for now: exposed through field_info, no backend consumes
+    /// it yet.
     std::uint32_t idx = no_idx;
     /// Built-in serialization-skip condition.
     skip_when skip_if = skip_when::never;

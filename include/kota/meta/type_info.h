@@ -98,7 +98,8 @@ struct field_info {
     bool has_skip_if;
     bool has_behavior;
 
-    /// Field ordinal for index-addressed formats; field_spec::no_idx when absent.
+    /// Field ordinal for index-addressed formats; field_spec::no_idx when
+    /// absent. Metadata only for now: no backend consumes it yet.
     std::uint32_t idx = field_spec::no_idx;
 
     /// Documentation text from the annotation, empty when absent.

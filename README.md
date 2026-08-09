@@ -123,7 +123,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `cow_string` — copy-on-write string that can borrow or own its storage
   - `small_vector<T, N>` / `hybrid_vector<T>` — SBO vectors with per-element-size tuned size types
   - `small_string<N>` — SBO string, shares layout with `small_vector<char>`
-- Compile-time string utilities: `fixed_string<N>` (usable as an NTTP), `string_ref`.
+- Compile-time string utilities: `string_ref`.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
