@@ -12,11 +12,12 @@ namespace kota {
 
 namespace detail {
 
-// A type counts as a "map value" if either:
-//  (a) it is tuple-like with exactly two elements (std::pair, std::tuple<K,V>,
-//      llvm::StringMapEntry<V>, ...), or
+// A type counts as a "map value" if one of the following holds:
+//  (a) it is tuple-like with exactly two elements (std::pair, std::tuple<K,V>, ...),
 //  (b) it exposes `.first` / `.second` members — covers types that derive from
-//      std::pair without re-specializing std::tuple_size (e.g. llvm::detail::DenseMapPair).
+//      std::pair without re-specializing std::tuple_size (e.g. llvm::detail::DenseMapPair),
+//  (c) it exposes `getKey()` / `getValue()` accessors (e.g. llvm::StringMapEntry), or
+//  (d) it is a plain two-field aggregate, destructurable via structured bindings.
 template <typename T>
 concept map_entry_tuple_like = requires {
     { std::tuple_size<T>::value } -> std::convertible_to<std::size_t>;
@@ -30,7 +31,69 @@ concept map_entry_pair_like = requires(T& t) {
 };
 
 template <typename T>
-concept map_entry_like = map_entry_tuple_like<T> || map_entry_pair_like<T>;
+concept map_entry_keyed_like = requires(T& t) {
+    t.getKey();
+    t.getValue();
+};
+
+// Implicitly converts to anything but T itself, so aggregate-arity probing
+// below never matches T's copy/move constructor.
+template <typename T>
+struct entry_probe_arg {
+    template <typename U>
+        requires (!std::same_as<std::remove_cvref_t<U>, T>)
+    operator U();
+};
+
+// A two-field aggregate: brace-initializable from exactly two elements.
+template <typename T>
+concept map_entry_aggregate_like =
+    std::is_aggregate_v<T> && !std::is_array_v<T> && !map_entry_tuple_like<T> &&
+    !map_entry_pair_like<T> && !map_entry_keyed_like<T> &&
+    requires { T{entry_probe_arg<T>{}, entry_probe_arg<T>{}}; } &&
+    !requires { T{entry_probe_arg<T>{}, entry_probe_arg<T>{}, entry_probe_arg<T>{}}; };
+
+template <typename T>
+concept map_entry_like = map_entry_tuple_like<T> || map_entry_pair_like<T> ||
+                         map_entry_keyed_like<T> || map_entry_aggregate_like<T>;
+
+/// Access the key of a map entry, regardless of which entry protocol it uses.
+/// Returns a reference for member-based protocols and a value for accessor-based
+/// ones that return by value (e.g. llvm::StringMapEntry::getKey()).
+template <typename E>
+    requires map_entry_like<std::remove_cvref_t<E>>
+constexpr decltype(auto) map_entry_key(E&& e) {
+    using T = std::remove_cvref_t<E>;
+    if constexpr(map_entry_tuple_like<T>) {
+        using std::get;
+        return get<0>(std::forward<E>(e));
+    } else if constexpr(map_entry_pair_like<T>) {
+        return (std::forward<E>(e).first);
+    } else if constexpr(map_entry_keyed_like<T>) {
+        return e.getKey();
+    } else {
+        auto&& [k, v] = e;
+        return (k);
+    }
+}
+
+/// Access the mapped value of a map entry; see map_entry_key.
+template <typename E>
+    requires map_entry_like<std::remove_cvref_t<E>>
+constexpr decltype(auto) map_entry_value(E&& e) {
+    using T = std::remove_cvref_t<E>;
+    if constexpr(map_entry_tuple_like<T>) {
+        using std::get;
+        return get<1>(std::forward<E>(e));
+    } else if constexpr(map_entry_pair_like<T>) {
+        return (std::forward<E>(e).second);
+    } else if constexpr(map_entry_keyed_like<T>) {
+        return e.getValue();
+    } else {
+        auto&& [k, v] = e;
+        return (v);
+    }
+}
 
 }  // namespace detail
 
@@ -44,15 +107,9 @@ template <typename E, typename = void>
 struct map_entry_types;
 
 template <typename E>
-struct map_entry_types<E, std::enable_if_t<map_entry_tuple_like<E>>> {
-    using key_type = std::remove_cvref_t<std::tuple_element_t<0, E>>;
-    using mapped_type = std::remove_cvref_t<std::tuple_element_t<1, E>>;
-};
-
-template <typename E>
-struct map_entry_types<E, std::enable_if_t<!map_entry_tuple_like<E> && map_entry_pair_like<E>>> {
-    using key_type = std::remove_cvref_t<decltype(std::declval<E&>().first)>;
-    using mapped_type = std::remove_cvref_t<decltype(std::declval<E&>().second)>;
+struct map_entry_types<E, std::enable_if_t<map_entry_like<E>>> {
+    using key_type = std::remove_cvref_t<decltype(map_entry_key(std::declval<E&>()))>;
+    using mapped_type = std::remove_cvref_t<decltype(map_entry_value(std::declval<E&>()))>;
 };
 
 }  // namespace detail

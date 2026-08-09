@@ -528,8 +528,8 @@ struct type_instance_impl<WireT, AttrsT, Config, type_kind::tuple> {
 template <typename WireT, typename AttrsT, typename Config>
 struct type_instance_impl<WireT, AttrsT, Config, type_kind::map> {
     using kv_t = std::ranges::range_value_t<WireT>;
-    using key_t = std::remove_const_t<typename kv_t::first_type>;
-    using mapped_t = typename kv_t::second_type;
+    using key_t = kota::map_entry_key_t<kv_t>;
+    using mapped_t = kota::map_entry_mapped_t<kv_t>;
 
     constexpr inline static map_type_info value = {
         {type_kind::map, meta::type_name<WireT>()},

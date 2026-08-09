@@ -554,6 +554,15 @@ constexpr bool compare_ge(const L& lhs, const R& rhs) {
 
 namespace kota::meta {
 
+/// SFINAE-friendly approximation of "meta::lt can order L and R": either an
+/// operator< exists, or both sides are reflectable aggregates whose ordering
+/// meta::lt synthesizes field by field. (meta::lt itself hard-errors on
+/// incomparable operands, so callers that need to *probe* use this concept.)
+template <typename L, typename R>
+concept synthesized_lt_with =
+    lt_comparable_with<L, R> || detail::reflectable_pair<std::remove_cvref_t<L>,
+                                                         std::remove_cvref_t<R>>;
+
 struct eq_t {
     using is_transparent = void;
 

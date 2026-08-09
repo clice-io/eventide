@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/compare.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/common.h"
@@ -642,9 +643,9 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
+        requires meta::synthesized_lt_with<
             proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+            U>
     auto operator[](const U& key) const
         -> proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<V>> {
         using clean_v = proxy_detail::deep_clean_t<V>;
@@ -658,9 +659,9 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
+        requires meta::synthesized_lt_with<
             proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+            U>
     auto find(const U& key) const -> std::optional<tuple_view<K, V>> {
         auto entry = find_entry(key);
         if(!entry.valid()) {
@@ -670,9 +671,9 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
+        requires meta::synthesized_lt_with<
             proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+            U>
     auto contains(const U& key) const -> bool {
         return find_entry(key).valid();
     }
@@ -682,6 +683,9 @@ public:
     }
 
 private:
+    // Binary search under meta::lt — the exact ordering the encoder sorted
+    // entries with (operator< when the key defines one, otherwise the
+    // reflection-synthesized field-by-field order).
     template <typename U>
     auto find_entry(const U& key) const -> proxy_detail::table_view_type {
         using clean_k = proxy_detail::deep_clean_t<K>;
@@ -697,7 +701,7 @@ private:
             const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_view_type(entry),
                                                                proxy_detail::field_slot(0));
-            if(entry_key < key) {
+            if(meta::lt(entry_key, key)) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -711,7 +715,7 @@ private:
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_view_type(entry);
         auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
-        if(entry_key == key) {
+        if(!meta::lt(entry_key, key) && !meta::lt(key, entry_key)) {
             return entry_view;
         }
         return {};

@@ -31,6 +31,11 @@ namespace kota::codec {
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct deserialize_visit {};
 
+/// Declared in visit/encode.h; value-mode specializations (wire_type +
+/// to_wire + from_wire) also drive decoding, see decode_value.
+template <typename Vis, typename T, typename Config, typename>
+struct serialize_visit;
+
 template <typename Config, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out);
 
@@ -724,6 +729,17 @@ bool decode_value(Vis& vis, T& out) {
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
+    } else if constexpr(requires {
+                            serialize_visit<Vis, V, Config, void>::from_wire(
+                                std::declval<
+                                    typename serialize_visit<Vis, V, Config, void>::wire_type>());
+                        }) {
+        // Value-mode serialize_visit specialization: decode the declared
+        // wire_type, then convert back through from_wire.
+        auto wire = typename serialize_visit<Vis, V, Config, void>::wire_type();
+        KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
+        out = serialize_visit<Vis, V, Config, void>::from_wire(std::move(wire));
+        return true;
     } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename V::attrs;
         auto&& inner = meta::annotated_value(out);
@@ -864,7 +880,7 @@ bool decode_value(Vis& vis, T& out) {
                 }
                 std::size_t idx = 0;
                 return vis.visit_seq([&](auto& ev) -> bool {
-                    element_t item{};
+                    auto item = element_t();
                     bool ok = decode_value<Config>(ev, item);
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
@@ -884,7 +900,7 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     std::size_t idx = 0;
                     while(sv.has_element()) {
-                        element_t item{};
+                        auto item = element_t();
                         bool ok = sv.visit_element(
                             [&](auto& ev) -> bool { return decode_value<Config>(ev, item); });
                         if(!ok) {
@@ -957,15 +973,22 @@ bool decode_value(Vis& vis, T& out) {
             }
         } else if constexpr(kind == map) {
             using kv_t = std::ranges::range_value_t<V>;
-            using key_t = std::remove_const_t<typename kv_t::first_type>;
-            using mapped_t = typename kv_t::second_type;
+            // Decode keys into owning storage: entry protocols that hand out
+            // views (string_view, llvm::StringRef, ...) would otherwise decode
+            // into a dangling view before insertion copies it.
+            using raw_key_t = kota::map_entry_key_t<kv_t>;
+            using key_t = std::conditional_t<meta::str_like<raw_key_t> &&
+                                                 !std::same_as<raw_key_t, std::string>,
+                                             std::string,
+                                             raw_key_t>;
+            using mapped_t = kota::map_entry_mapped_t<kv_t>;
             if constexpr(detail::data_driven<Vis>) {
                 if constexpr(requires { out.clear(); }) {
                     out.clear();
                 }
                 std::size_t idx = 0;
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
-                    key_t key{};
+                    auto key = key_t();
                     bool ok = decode_value<Config>(kv, key);
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
@@ -974,7 +997,7 @@ bool decode_value(Vis& vis, T& out) {
                         }
                         return false;
                     }
-                    mapped_t val{};
+                    auto val = mapped_t();
                     ok = decode_value<Config>(vv, val);
                     if(!ok) {
                         if constexpr(Config::detailed_error) {
@@ -994,8 +1017,8 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     std::size_t idx = 0;
                     while(sv.has_entry()) {
-                        key_t key{};
-                        mapped_t val{};
+                        auto key = key_t();
+                        auto val = mapped_t();
                         bool ok = sv.visit_entry(
                             [&](auto& kv) -> bool { return decode_value<Config>(kv, key); },
                             [&](auto& vv) -> bool { return decode_value<Config>(vv, val); });
