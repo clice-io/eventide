@@ -273,12 +273,19 @@ private:
         return dyn::Value(std::move(props));
     }
 
+    /// A field is required only when it always appears on the wire: no decode
+    /// default, no encode-side skip condition (built-in skip_when or custom
+    /// predicate — the decoder accepts absence for both), not nullable.
+    static bool is_required(const meta::field_info& f) {
+        const meta::type_info& ft = f.type();
+        return !f.has_default && !f.has_skip_if && ft.kind != tk::optional &&
+               ft.kind != tk::pointer;
+    }
+
     static void add_required(dyn::Object& target, const meta::struct_type_info* si) {
         dyn::Array required;
         for(const auto& f: si->fields) {
-            const meta::type_info& ft = f.type();
-            bool is_optional = f.has_default || ft.kind == tk::optional || ft.kind == tk::pointer;
-            if(!is_optional) {
+            if(is_required(f)) {
                 required.push_back(dyn::Value(f.name));
             }
         }
@@ -311,9 +318,7 @@ private:
             obj.insert("properties", std::move(props));
             dyn::Array required;
             for(const auto& f: si->fields) {
-                const meta::type_info& ft = f.type();
-                bool is_opt = f.has_default || ft.kind == tk::optional || ft.kind == tk::pointer;
-                if(!is_opt) {
+                if(is_required(f)) {
                     required.push_back(dyn::Value(f.name));
                 }
             }

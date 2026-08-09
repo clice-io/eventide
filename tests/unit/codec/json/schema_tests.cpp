@@ -222,6 +222,22 @@ struct with_rename {
     std::string y;
 };
 
+struct with_skip_when {
+    std::string name;
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)<std::vector<std::int32_t>> tags;
+    KOTATSU_ANNOTATE(skip_if = skip_when::default_value)<std::int32_t> count;
+    KOTATSU_ANNOTATE(skip_if = type<pred::empty>)<std::string> note;
+};
+
+struct casing_child {
+    std::int32_t first_value;
+};
+
+struct repeated_child_annotation {
+    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)<casing_child> left;
+    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)<casing_child> right;
+};
+
 // ---------------------------------------------------------------------------
 // Variant
 // ---------------------------------------------------------------------------
@@ -898,6 +914,24 @@ TEST_CASE(skip_and_default) {
     EXPECT_EQ(
         result,
         R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["name"]})");
+}
+
+// A field the encoder may omit (built-in skip_when or a custom skip_if
+// predicate) is never required — the decoder accepts its absence.
+TEST_CASE(skip_if_fields_not_required) {
+    const auto result = json::schema_string<with_skip_when>().value();
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("tags":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("note":{"type":"string"}},)" R"("required":["name"]})");
+}
+
+// Two KOTATSU_ANNOTATE uses expand to distinct tags; identical untagged
+// struct specs must still collapse to one type_info instance and $defs entry.
+TEST_CASE(repeated_inline_struct_annotation_shares_def) {
+    const auto result = json::schema_string<repeated_child_annotation>().value();
+    EXPECT_EQ(
+        result,
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("left":{"$ref":"#/$defs/casing_child"},)" R"("right":{"$ref":"#/$defs/casing_child"}},)" R"("required":["left","right"],)" R"("$defs":{)" R"("casing_child":{"type":"object",)" R"("properties":{)" R"("firstValue":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["firstValue"]}}})");
 }
 
 // ---------------------------------------------------------------------------

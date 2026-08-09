@@ -222,30 +222,38 @@ struct filter_runtime_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_runtime_attrs_t = typename filter_runtime_attrs<Tuple>::type;
 
-/// Attrs that shape the type-level schema (variant tagging, struct-wide rename,
-/// unknown-field policy). Field-local attrs (rename/description/default/...) are
-/// dropped so annotated and bare uses of the same type share one type_info
-/// instance — and thus one $defs entry in schema output.
-template <typename Tuple>
-struct filter_type_attrs;
-
-template <>
-struct filter_type_attrs<std::tuple<>> {
-    using type = std::tuple<>;
+/// Tag for a struct spec rekeyed by its structural values; see type_attrs_t.
+template <naming::casing RenameAll, bool DenyUnknown>
+struct struct_spec_value_tag {
+    constexpr static struct_spec spec = {.rename_all = RenameAll,
+                                         .deny_unknown_fields = DenyUnknown};
 };
 
-template <typename First, typename... Rest>
-struct filter_type_attrs<std::tuple<First, Rest...>> {
-    using tail = typename filter_type_attrs<std::tuple<Rest...>>::type;
-    constexpr static bool keep = is_struct_spec_attr<First>::value;
-    using type = std::conditional_t<keep,
-                                    decltype(std::tuple_cat(std::declval<std::tuple<First>>(),
-                                                            std::declval<tail>())),
-                                    tail>;
-};
+/// The attrs that shape the type-level schema (variant tagging, struct-wide
+/// rename, unknown-field policy). Field-local attrs (rename/description/
+/// default/...) are dropped so annotated and bare uses of the same type share
+/// one type_info instance — and thus one $defs entry in schema output.
+/// KOTATSU_ANNOTATE also mints a fresh tag per use, making textually identical
+/// annotations distinct types, so an untagged struct spec is rekeyed by its
+/// structural values and equivalent annotations share one instance as well.
+/// Tagged variant specs keep their own tag (the string payloads are not
+/// structural); schema backends emit variants inline rather than as shared
+/// defs, so distinct instances are harmless there.
+template <typename AttrsTuple>
+constexpr auto type_attrs_impl() {
+    constexpr const struct_spec& spec = struct_spec_of<AttrsTuple>;
+    if constexpr(spec.tagging != tag_mode::none) {
+        return std::type_identity<std::tuple<tuple_find_t<AttrsTuple, is_struct_spec_attr>>>{};
+    } else if constexpr(spec.rename_all != naming::casing::identity || spec.deny_unknown_fields) {
+        return std::type_identity<std::tuple<attrs::struct_spec<
+            struct_spec_value_tag<spec.rename_all, spec.deny_unknown_fields>>>>{};
+    } else {
+        return std::type_identity<std::tuple<>>{};
+    }
+}
 
-template <typename Tuple>
-using filter_type_attrs_t = typename filter_type_attrs<Tuple>::type;
+template <typename AttrsTuple>
+using type_attrs_t = typename decltype(type_attrs_impl<AttrsTuple>())::type;
 
 template <typename T>
 constexpr bool has_wire_type_v = requires { typename T::wire_type; };
@@ -318,7 +326,7 @@ template <typename T, typename Config = default_config>
 struct type_instance :
     type_instance_impl<resolve_wire_type_t<typename unwrap_annotated<std::remove_cv_t<T>>::raw_type,
                                            typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
-                       filter_type_attrs_t<typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
+                       type_attrs_t<typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
                        Config> {};
 
 template <typename T, std::size_t I>

@@ -76,6 +76,15 @@ struct config_struct_tag {
                                                   dsl::deny_unknown_fields = true);
 };
 
+struct config_struct_tag_twin {
+    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::casing::lower_camel,
+                                                  dsl::deny_unknown_fields = true);
+};
+
+struct noop_struct_tag {
+    constexpr static auto spec = make_struct_spec(dsl::deny_unknown_fields = false);
+};
+
 struct spec_struct {
     annotate<full_tag>::type<int> user_id;
     annotate<skip_tag>::type<int> internal = 0;
@@ -202,6 +211,19 @@ TEST_CASE(annotate_attaches_struct_spec) {
         (tuple_has_v<typename shape::attrs, attrs::struct_spec<internal_struct_tag>>));
     STATIC_EXPECT_TRUE(&struct_spec_of<typename shape::attrs> == &internal_struct_tag::spec);
     STATIC_EXPECT_TRUE(&struct_spec_of<std::tuple<>> == &empty_struct_spec);
+}
+
+TEST_CASE(equivalent_untagged_struct_specs_share_type_info) {
+    // KOTATSU_ANNOTATE mints a fresh tag per use, so identical untagged
+    // struct specs live on distinct tags; the type_info instance is keyed by
+    // the spec values and must be shared.
+    using lhs = annotate<config_struct_tag>::type<inner_pair>;
+    using rhs = annotate<config_struct_tag_twin>::type<inner_pair>;
+    STATIC_EXPECT_TRUE(&type_info_of<lhs>() == &type_info_of<rhs>());
+
+    // A spec whose values match the defaults collapses to the bare type.
+    using noop = annotate<noop_struct_tag>::type<inner_pair>;
+    STATIC_EXPECT_TRUE(&type_info_of<noop>() == &type_info_of<inner_pair>());
 }
 
 TEST_CASE(variant_type_info_carries_struct_spec) {
