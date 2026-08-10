@@ -107,7 +107,7 @@ using annotated_line_range_wire =
 // Repr whose declared wire type is an annotated tagged variant: the tagging
 // must surface in type_info exactly as the codec writes it.
 struct load_ok {
-    int bytes = 0;
+    int byte_count = 0;
 
     auto operator==(const load_ok&) const -> bool = default;
 };
@@ -300,7 +300,7 @@ struct repr<kota_repr_test::load_result> {
 
     static type to(const kota_repr_test::load_result& r) {
         if(r.ok) {
-            return type{kota_repr_test::load_ok{.bytes = r.bytes}};
+            return type{kota_repr_test::load_ok{.byte_count = r.bytes}};
         }
         return type{kota_repr_test::load_err{.message = r.message}};
     }
@@ -308,7 +308,7 @@ struct repr<kota_repr_test::load_result> {
     static kota_repr_test::load_result from(const type& w) {
         const auto& v = annotated_value(w);
         if(const auto* ok = std::get_if<kota_repr_test::load_ok>(&v)) {
-            return {.ok = true, .bytes = ok->bytes, .message = {}};
+            return {.ok = true, .bytes = ok->byte_count, .message = {}};
         }
         return {.ok = false, .bytes = 0, .message = std::get<kota_repr_test::load_err>(v).message};
     }
@@ -391,6 +391,13 @@ struct range_doc {
     line_range r;
 
     auto operator==(const range_doc&) const -> bool = default;
+};
+
+// Outer structural policy on a repr-backed field whose repr resolves to a
+// tagged wire variant: rename/deny merge into the config and reach the
+// fields of the selected alternative.
+struct strict_report {
+    meta::annotate<kota_repr_test::strict_camel_annotation>::type<load_result> result;
 };
 
 /// Imperative adapter: uppercases on the wire, lowercases back.
@@ -708,6 +715,41 @@ TEST_CASE(tagging_nested_in_repr_wire_type) {
     auto schema = json::schema_string<load_result>();
     ASSERT_TRUE(schema.has_value());
     EXPECT_TRUE(schema->find(R"("status":{"const":"err"})") != std::string::npos);
+}
+
+TEST_CASE(outer_policy_reaches_tagged_repr_alternatives) {
+    // rename_all + deny_unknown_fields on an annotated repr-backed value
+    // merge into the config before the repr's tagged wire variant
+    // re-dispatches, so they apply inside the selected alternative; type_info
+    // and the schema must describe that same document.
+    const strict_report input{.result = {{.ok = true, .bytes = 3, .message = {}}}};
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"result":{"status":"ok","value":{"byteCount":3}}})");
+
+    strict_report output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(meta::annotated_value(output.result), meta::annotated_value(input.result));
+
+    // deny_unknown_fields applies to the fields inside the alternative.
+    EXPECT_FALSE(from_json(R"({"result":{"status":"ok","value":{"byteCount":3,"x":1}}})", output)
+                     .has_value());
+
+    // The alternative's type_info carries the merged policy.
+    const auto& info = meta::type_info_of<decltype(strict_report::result)>();
+    ASSERT_TRUE(info.kind == meta::type_kind::variant);
+    const auto& vi = static_cast<const meta::variant_type_info&>(info);
+    EXPECT_TRUE(vi.tagging == meta::tag_mode::adjacent);
+    const auto& ok_alt = static_cast<const meta::struct_type_info&>(vi.alternatives[0]());
+    EXPECT_TRUE(ok_alt.deny_unknown);
+    ASSERT_TRUE(ok_alt.fields.size() == 1);
+    EXPECT_EQ(ok_alt.fields[0].name, std::string_view("byteCount"));
+
+    auto schema = json::schema_string<strict_report>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("byteCount")") != std::string::npos);
+    EXPECT_TRUE(schema->find(R"("byte_count")") == std::string::npos);
 }
 
 TEST_CASE(adapter_beats_variant_tagging_outside_fields) {
