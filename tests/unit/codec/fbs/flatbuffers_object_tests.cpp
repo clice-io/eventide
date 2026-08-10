@@ -1,5 +1,6 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -259,6 +260,18 @@ struct with_vector_tables {
     std::vector<address> items;
 };
 
+struct with_byte_blobs {
+    std::vector<std::vector<std::byte>> blobs;
+
+    auto operator==(const with_byte_blobs&) const -> bool = default;
+};
+
+struct with_optional_elements {
+    std::vector<std::optional<std::int32_t>> vals;
+
+    auto operator==(const with_optional_elements&) const -> bool = default;
+};
+
 struct outer {
     address inner;
     std::vector<std::int32_t> nums;
@@ -476,10 +489,37 @@ TEST_CASE(variant_struct_alternative) {
     EXPECT_EQ(addr[&address::zip], 100);
 }
 
-// NOTE: vector_of_variants is not tested here because the serializer wraps
-// each variant element in an extra boxed table, so array_view returns the outer
-// box rather than the variant table directly.  This is a known encoding
-// mismatch that would require changes to proxy.h or serializer.h to resolve.
+TEST_CASE(vector_of_variants) {
+    // Variant elements travel as their variant table directly in the vector
+    // (no per-element wrapper): encode, decode and the lazy view agree.
+    with_vector_of_variants input{
+        .items = {std::int32_t{7}, std::string("kotatsu"), std::int32_t{9}}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_vector_of_variants output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output.items, input.items);
+
+    auto root = table_view<with_vector_of_variants>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto items = root[&with_vector_of_variants::items];
+    ASSERT_TRUE(items.valid());
+    ASSERT_EQ(items.size(), 3U);
+
+    auto v0 = items[0];
+    ASSERT_TRUE(v0.valid());
+    EXPECT_EQ(v0.index(), 0U);
+    EXPECT_EQ(v0.get<0>(), 7);
+
+    auto v1 = items[1];
+    ASSERT_TRUE(v1.valid());
+    EXPECT_EQ(v1.index(), 1U);
+    EXPECT_EQ(v1.get<1>(), "kotatsu");
+}
 
 // ======== Tuple / pair tests ========
 
@@ -687,8 +727,11 @@ TEST_CASE(map_key_lookup_string_key) {
 }
 
 TEST_CASE(map_key_lookup_int_key) {
+    // 2 and 10 order differently as numbers and as decimal strings: the
+    // encoder must sort entries by the same numeric order the lazy lookup's
+    // binary search compares by.
     with_map_int_string input{
-        .data = {{10, "ten"}, {20, "twenty"}, {30, "thirty"}}
+        .data = {{2, "two"}, {10, "ten"}, {30, "thirty"}}
     };
 
     auto encoded = to_flatbuffer(input);
@@ -700,8 +743,8 @@ TEST_CASE(map_key_lookup_int_key) {
     auto m = root[&with_map_int_string::data];
     ASSERT_TRUE(m.valid());
 
+    EXPECT_EQ(m[2], "two");
     EXPECT_EQ(m[10], "ten");
-    EXPECT_EQ(m[20], "twenty");
     EXPECT_EQ(m[30], "thirty");
     // Missing key returns default (empty string_view)
     EXPECT_EQ(m[99], "");
@@ -890,6 +933,61 @@ TEST_CASE(deeply_nested) {
     EXPECT_EQ(nums[0], 10);
     EXPECT_EQ(nums[1], 20);
     EXPECT_EQ(nums[2], 30);
+}
+
+TEST_CASE(vector_of_byte_blobs) {
+    // Byte blobs have no direct vector-of-vectors representation: each
+    // element travels boxed in a wrapper table with the byte vector at its
+    // first field, on the wire and in the lazy view.
+    with_byte_blobs input{
+        .blobs = {{std::byte{0xAA}, std::byte{0xBB}}, {}, {std::byte{0x01}}},
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_byte_blobs output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    auto root = table_view<with_byte_blobs>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto blobs = root[&with_byte_blobs::blobs];
+    ASSERT_TRUE(blobs.valid());
+    ASSERT_EQ(blobs.size(), 3U);
+
+    auto b0 = blobs[0];
+    ASSERT_TRUE(b0.valid());
+    ASSERT_EQ(b0.size(), 2U);
+    EXPECT_EQ(b0[0], std::byte{0xAA});
+    EXPECT_EQ(b0[1], std::byte{0xBB});
+    EXPECT_EQ(blobs[1].size(), 0U);
+}
+
+TEST_CASE(vector_of_optional_scalars) {
+    // Nullable elements are boxed per element; the lazy view reads through
+    // the wrapper table and peels absence to the element default.
+    with_optional_elements input{
+        .vals = {5, std::nullopt, 9}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_optional_elements output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    auto root = table_view<with_optional_elements>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto vals = root[&with_optional_elements::vals];
+    ASSERT_TRUE(vals.valid());
+    ASSERT_EQ(vals.size(), 3U);
+    EXPECT_EQ(vals[0], 5);
+    EXPECT_EQ(vals[1], 0);  // absent element reads as the scalar default
+    EXPECT_EQ(vals[2], 9);
 }
 
 TEST_CASE(empty_from_bytes) {

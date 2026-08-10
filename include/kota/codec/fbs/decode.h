@@ -12,7 +12,6 @@
 #include <variant>
 #include <vector>
 
-#include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/proxy.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
@@ -23,42 +22,6 @@
 namespace kota::codec::fbs {
 
 namespace decode_detail {
-
-struct decode_wire_probe {};
-
-template <typename T, typename = void>
-struct has_wire_type : std::false_type {};
-
-template <typename T>
-struct has_wire_type<
-    T,
-    std::void_t<typename serialize_visit<decode_wire_probe, T, default_config<>>::wire_type>> :
-    std::true_type {};
-
-template <typename T>
-constexpr bool has_wire_type_v = has_wire_type<T>::value;
-
-template <typename T, typename = void>
-struct wire_type_of {
-    using type = T;
-};
-
-template <typename T>
-struct wire_type_of<
-    T,
-    std::void_t<typename serialize_visit<decode_wire_probe, T, default_config<>>::wire_type>> {
-    using type = typename serialize_visit<decode_wire_probe, T, default_config<>>::wire_type;
-};
-
-template <typename T>
-using wire_type_of_t = typename wire_type_of<T>::type;
-
-template <typename T>
-consteval bool needs_wrapper_in_vector() {
-    constexpr auto k = meta::kind_of<std::remove_cvref_t<T>>();
-    return k == meta::type_kind::optional || k == meta::type_kind::pointer ||
-           k == meta::type_kind::array || k == meta::type_kind::set || k == meta::type_kind::map;
-}
 
 using fbs::Table;
 using fbs::String;
@@ -75,6 +38,7 @@ struct ScalarReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool& out) {
         out = static_cast<bool>(value);
@@ -119,6 +83,7 @@ struct StringReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename T>
     bool visit_str(T& out) {
@@ -141,6 +106,7 @@ struct TableFieldReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename Idx, typename F>
     bool visit_field(Idx, std::string_view, F&& reader);
@@ -152,12 +118,13 @@ struct TableFieldReader {
 template <typename E>
 struct VecReader {
     using raw_E = std::remove_cvref_t<E>;
-    using clean_E = codec::detail::clean_t<raw_E>;
 
-    constexpr static bool has_wire = has_wire_type_v<clean_E>;
-    using wire_E = std::conditional_t<has_wire, wire_type_of_t<clean_E>, clean_E>;
+    // An element travels as its effective wire shape (behavior attrs, then
+    // chained reprs), so both the wrapper decision and the reader choice must
+    // mirror the encode side (seq_encode_impl dispatches on the same type).
+    using wire_E = proxy_detail::apply_repr_t<raw_E>;
 
-    constexpr static bool is_wrapped = needs_wrapper_in_vector<raw_E>();
+    constexpr static bool is_wrapped = proxy_detail::needs_wrapper_in_vector<wire_E>();
 
     using vec_ptr_t = std::conditional_t<is_wrapped,
                                          const Vector<table_offset_t>*,
@@ -194,6 +161,7 @@ struct FieldReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool peek_null() {
         if(tbl == nullptr)

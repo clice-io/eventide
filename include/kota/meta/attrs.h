@@ -173,8 +173,9 @@ struct skip_if {
     using predicate = Pred;
 };
 
-/// Adapter-based serialization: the adapter fully controls value (de)serialization.
-/// Protocol: Adapter::serialize(S&, const T&) and/or Adapter::deserialize(D&, T&)
+/// Adapter-based serialization. The adapter follows the meta::repr member
+/// protocol (see repr.h), bound per-field instead of per-type; a field's
+/// `with` adapter takes priority over its type's repr.
 template <typename Adapter>
 struct with {
     using adapter = Adapter;

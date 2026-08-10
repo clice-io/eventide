@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tuple>
+#include <type_traits>
 
 #include "type_info.h"
 #include "kota/support/type_list.h"
@@ -23,12 +24,12 @@ template <typename T,
           bool Flattened = field_attr_flags<T, I>::flattened>
 struct single_field_slots {
     using field_t = meta::field_type<T, I>;
-    using unwrap = unwrap_annotated<field_t>;
+    using unwrap = unwrap_annotated<std::remove_cv_t<field_t>>;
     using raw_type = typename unwrap::raw_type;
     using attrs_t = typename unwrap::attrs;
 
     using type = type_list<field_slot<raw_type,
-                                      resolve_wire_type_t<raw_type, attrs_t>,
+                                      resolve_wire_type_t<std::remove_cv_t<field_t>>,
                                       filter_runtime_attrs_t<attrs_t>>>;
 };
 

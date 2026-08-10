@@ -20,6 +20,7 @@
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
+#include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
 #include "kota/meta/struct.h"
 #include "kota/meta/type_info.h"
@@ -27,7 +28,10 @@
 
 namespace kota::codec {
 
-/// User extension point for custom deserialization. Specialize to override default dispatch.
+/// Backend-internal dispatch override for one (visitor, type) pair. Not a
+/// user extension point: declare a type's wire representation via meta::repr,
+/// or per-field via behavior::with — those are visible to schema consumers,
+/// a deserialize_visit specialization is not.
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct deserialize_visit {};
 
@@ -41,6 +45,38 @@ template <typename Config, typename TagAttr, typename Vis, typename Var>
 bool decode_variant(Vis& vis, Var& var);
 
 namespace detail {
+
+/// Decode a value through a wire-shape declaration (a meta::repr
+/// specialization or a behavior::with adapter): declarative from() when
+/// present, the imperative deserialize<Config>() body otherwise.
+template <typename Shape, typename Config, typename Vis, typename V>
+bool wire_decode(Vis& vis, V& out) {
+    using wire_t = meta::wire_shape_t<Shape>;
+    if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
+        static_assert(!is_layout_computed<Vis>(),
+                      "this backend computes wire layout statically and cannot decode a "
+                      "meta::dynamic repr");
+    }
+    if constexpr(requires { Shape::from(std::declval<wire_t>()); }) {
+        static_assert(
+            !requires { Shape::template deserialize<Config>(vis, out); },
+            "wire shape: define from() or deserialize() for decoding, not both");
+        static_assert(
+            requires(wire_t&& w) { out = Shape::from(std::move(w)); },
+            "wire shape: from() must accept the declared wire type and return the "
+            "value type");
+        wire_t wire{};
+        KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
+        out = Shape::from(std::move(wire));
+        return true;
+    } else if constexpr(requires { Shape::template deserialize<Config>(vis, out); }) {
+        return Shape::template deserialize<Config>(vis, out);
+    } else {
+        static_assert(dependent_false<Shape>,
+                      "wire shape has no decode path: define from() or deserialize()");
+        return false;
+    }
+}
 
 /// True when the visitor uses data-driven (push-style) decoding.
 template <typename Vis>
@@ -148,19 +184,7 @@ bool decode_field_inner(Vis& vis, T& out) {
 
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        if constexpr(requires {
-                         adapter::from_wire(std::declval<typename adapter::wire_type>());
-                     }) {
-            using wire_t = typename adapter::wire_type;
-            wire_t wire{};
-            KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
-            field_ref = adapter::from_wire(std::move(wire));
-            return true;
-        } else if constexpr(requires(decltype(vis)& v) { adapter::deserialize(v, field_ref); }) {
-            return adapter::deserialize(vis, field_ref);
-        } else {
-            return decode_value<Config>(vis, field_ref);
-        }
+        return wire_decode<adapter, Config>(vis, field_ref);
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
         using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
         target converted{};
@@ -578,7 +602,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
 }
 
 template <typename T>
-constexpr bool kind_compatible(meta::type_kind src) {
+constexpr bool kind_compatible_impl(meta::type_kind src) {
     using enum meta::type_kind;
     constexpr auto target = meta::kind_of<T>();
 
@@ -608,6 +632,19 @@ constexpr bool kind_compatible(meta::type_kind src) {
         return src == string || src == int64 || src == uint64;
     else
         return true;
+}
+
+template <typename T>
+constexpr bool kind_compatible(meta::type_kind src) {
+    // An alternative arrives as its effective wire shape — behavior attrs on
+    // an annotation first, then (chained) reprs — so compatibility is judged
+    // against that; a dynamic shape can be anything.
+    using wire_t = meta::wire_type_t<T>;
+    if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
+        return true;
+    } else {
+        return kind_compatible_impl<wire_t>(src);
+    }
 }
 
 template <typename Config, typename Vis, typename... Ts>
@@ -728,20 +765,27 @@ bool decode_value(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
+        static_assert(!meta::has_repr<V>,
+                      "type has both a deserialize_visit specialization and a meta::repr; "
+                      "keep exactly one");
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
     } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename V::attrs;
         auto&& inner = meta::annotated_value(out);
         using inner_t = std::remove_cvref_t<decltype(inner)>;
 
-        if constexpr(is_specialization_of<std::variant, inner_t> &&
-                     meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return decode_value<Config>(vis, inner);
-            } else {
-                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-                return decode_variant<Config, spec_attr>(vis, inner);
-            }
+        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+            // Behavior precedence (with > as > enum_string, all above variant
+            // tagging) mirrors decode_field_inner and meta's wire-type
+            // resolver.
+            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
+            return detail::wire_decode<adapter, Config>(vis, inner);
+        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
+            target converted{};
+            KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
+            inner = inner_t(std::move(converted));
+            return true;
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
             using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
             static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
@@ -755,27 +799,14 @@ bool decode_value(Vis& vis, T& out) {
             }
             return scoped_context<typename Vis::error_type>::fail(
                 rich_error(std::string("unknown enum value '") + name_str + "'"));
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            if constexpr(requires {
-                             adapter::from_wire(std::declval<typename adapter::wire_type>());
-                         }) {
-                using wire_t = typename adapter::wire_type;
-                wire_t wire{};
-                KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
-                inner = adapter::from_wire(std::move(wire));
-                return true;
-            } else if constexpr(requires { adapter::deserialize(vis, inner); }) {
-                return adapter::deserialize(vis, inner);
-            } else {
+        } else if constexpr(is_specialization_of<std::variant, inner_t> &&
+                            meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
+            if constexpr(!is_human_readable<Config, Vis>()) {
                 return decode_value<Config>(vis, inner);
+            } else {
+                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
+                return decode_variant<Config, spec_attr>(vis, inner);
             }
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            target converted{};
-            KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
-            inner = inner_t(std::move(converted));
-            return true;
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
@@ -784,6 +815,8 @@ bool decode_value(Vis& vis, T& out) {
         } else {
             return decode_value<Config>(vis, inner);
         }
+    } else if constexpr(meta::has_repr<V>) {
+        return detail::wire_decode<meta::repr<V>, Config>(vis, out);
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;

@@ -15,14 +15,11 @@
 namespace kota::meta::fixtures {
 
 struct IntToStringAdapter {
-    using wire_type = std::string;
+    using type = std::string;
 };
 
-// Adapter with no wire_type — falls back to raw type.
-struct OpaqueAdapter {};
-
 struct BytesAdapter {
-    using wire_type = std::vector<std::byte>;
+    using type = std::vector<std::byte>;
 };
 
 struct BehaviorStruct {
@@ -34,10 +31,6 @@ struct BehaviorStruct {
 struct WithWireTypeStruct {
     annotation<int, behavior::with<IntToStringAdapter>> converted;
     float plain;
-};
-
-struct WithNoWireTypeStruct {
-    annotation<int, behavior::with<OpaqueAdapter>> opaque;
 };
 
 struct WithCompoundWireStruct {

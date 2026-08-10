@@ -13,7 +13,9 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/repr.h"
 #include "kota/meta/type_kind.h"
+#include "kota/codec/fbs/proxy.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
@@ -65,6 +67,7 @@ struct alloc_field_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool) {
         return true;
@@ -134,6 +137,7 @@ struct alloc_table_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
@@ -167,6 +171,7 @@ struct write_field_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         fbb.AddElement<std::uint8_t>(sid, static_cast<std::uint8_t>(v));
@@ -255,6 +260,7 @@ struct write_table_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
@@ -282,6 +288,7 @@ struct scalar_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         elems.push_back(static_cast<T>(v));
@@ -338,6 +345,7 @@ struct string_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename T>
     bool visit_str(const T& v) {
@@ -371,6 +379,7 @@ struct inline_struct_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     // The dispatch calls visit_struct for structures. For inline structs the
     // value is simply copied into the element vector.
@@ -407,6 +416,7 @@ struct table_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     // Scalar no-ops — should not be reached for table elements, but provide
     // stubs to satisfy the visitor concept in edge cases (e.g. variant
@@ -519,6 +529,7 @@ struct byte_collector {
         std::vector<std::uint8_t>& bytes;
         using error_type = rich_error;
         constexpr static bool human_readable = false;
+        constexpr static bool layout_computed = true;
 
         template <typename T>
         bool visit_int(T v) {
@@ -546,32 +557,40 @@ struct byte_collector {
     }
 };
 
+/// Captures a map key as an ordering key matching the comparison
+/// map_view::find_entry applies to the decoded wire keys: numeric wire keys
+/// (including bool, char and enum underlyings) compare by value, strings
+/// lexicographically. All keys of one map share a single wire shape, so two
+/// captured keys always hold the same alternative.
 struct key_capture_visitor {
-    std::string captured;
+    using key_order = std::variant<std::int64_t, std::uint64_t, double, std::string>;
+
+    key_order captured;
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
-        captured = v ? "true" : "false";
+        captured = static_cast<std::int64_t>(v);
         return true;
     }
 
     template <typename T>
     bool visit_int(T v) {
-        captured = std::to_string(static_cast<std::int64_t>(v));
+        captured = static_cast<std::int64_t>(v);
         return true;
     }
 
     template <typename T>
     bool visit_uint(T v) {
-        captured = std::to_string(static_cast<std::uint64_t>(v));
+        captured = static_cast<std::uint64_t>(v);
         return true;
     }
 
     template <typename T>
     bool visit_float(T v) {
-        captured = std::to_string(static_cast<double>(v));
+        captured = static_cast<double>(v);
         return true;
     }
 
@@ -583,14 +602,14 @@ struct key_capture_visitor {
 
     template <typename T>
     bool visit_char(T v) {
-        captured = std::string(1, static_cast<char>(v));
+        captured = static_cast<std::int64_t>(v);
         return true;
     }
 };
 
 struct map_entry_collector {
     builder_t& fbb;
-    std::vector<std::pair<std::string, table_offset_t>> entries;
+    std::vector<std::pair<key_capture_visitor::key_order, table_offset_t>> entries;
 
     template <typename KF, typename VF>
     inline bool visit_entry(KF&& key_fn, VF&& value_fn);
@@ -602,6 +621,7 @@ struct root_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         return box_root_scalar<std::uint8_t>(static_cast<std::uint8_t>(v));
@@ -735,8 +755,53 @@ using element_clean_t = std::remove_cvref_t<std::ranges::range_value_t<Seq>>;
 template <typename Container, typename Body>
 bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t& out_offset) {
     using element_t = element_clean_t<Container>;
+    using wire_t = proxy_detail::apply_repr_t<element_t>;
 
-    if constexpr(std::same_as<element_t, std::byte>) {
+    if constexpr(!std::same_as<wire_t, element_t>) {
+        // Elements travel as their effective wire shape (behavior attrs, then
+        // chained reprs); conversion happens per element in the visit chain,
+        // so the contiguous fast paths never apply. The collector choice
+        // mirrors the plain-element classification below and the VecReader
+        // decode side.
+        if constexpr(meta::str_like<wire_t>) {
+            string_collector coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else if constexpr(proxy_detail::is_scalar_v<wire_t>) {
+            scalar_collector<proxy_detail::scalar_storage_t<wire_t>> coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else if constexpr(meta::kind_of<wire_t>() == meta::type_kind::null ||
+                            meta::kind_of<wire_t>() == meta::type_kind::optional ||
+                            meta::kind_of<wire_t>() == meta::type_kind::pointer ||
+                            meta::kind_of<wire_t>() == meta::type_kind::bytes) {
+            // Nullable and null-like shapes need a per-element table so each
+            // element still occupies a vector entry; byte blobs need one
+            // because flatbuffers has no vector-of-vectors. Nested containers
+            // reach the same wrapper shape through table_elem_visitor below.
+            boxed_table_collector coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
+            inline_struct_collector<wire_t> coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else {
+            table_collector coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        }
+    } else if constexpr(std::same_as<element_t, std::byte>) {
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container>) {
             auto data = reinterpret_cast<const std::uint8_t*>(std::ranges::data(c));
@@ -797,6 +862,19 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         KOTA_CODEC_TRY(coll.finish());
         out_offset = coll.result_offset;
         return true;
+    } else if constexpr(meta::kind_of<element_t>() == meta::type_kind::null ||
+                        meta::kind_of<element_t>() == meta::type_kind::optional ||
+                        meta::kind_of<element_t>() == meta::type_kind::pointer ||
+                        meta::kind_of<element_t>() == meta::type_kind::bytes) {
+        // Same boxing as the wire-substituted branch above: table_elem_visitor
+        // has no visit_bytes payload path, so byte-blob elements go through
+        // the per-element wrapper table, and null-like elements need the
+        // wrapper so each one still occupies a vector entry.
+        boxed_table_collector coll{fbb, {}, 0};
+        KOTA_CODEC_TRY(body(coll));
+        KOTA_CODEC_TRY(coll.finish());
+        out_offset = coll.result_offset;
+        return true;
     } else if constexpr(can_inline_struct_v<element_t> && !codec::tuple_like<element_t>) {
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container>) {
@@ -812,45 +890,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             out_offset = coll.result_offset;
             return true;
         }
-    } else if constexpr(requires {
-                            typename serialize_visit<alloc_field_visitor,
-                                                     element_t,
-                                                     default_config<>>::wire_type;
-                        }) {
-        using wire_t =
-            typename serialize_visit<alloc_field_visitor, element_t, default_config<>>::wire_type;
-        if constexpr(std::same_as<wire_t, std::byte> || meta::bytes_like<wire_t>) {
-            byte_collector coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else if constexpr(meta::str_like<wire_t>) {
-            string_collector coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
-            inline_struct_collector<wire_t> coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else {
-            scalar_collector<wire_t> coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        }
-    } else if constexpr(meta::kind_of<element_t>() == meta::type_kind::optional ||
-                        meta::kind_of<element_t>() == meta::type_kind::pointer) {
-        boxed_table_collector coll{fbb, {}, 0};
-        KOTA_CODEC_TRY(body(coll));
-        KOTA_CODEC_TRY(coll.finish());
-        out_offset = coll.result_offset;
-        return true;
     } else {
         table_collector coll{fbb, {}, 0};
         KOTA_CODEC_TRY(body(coll));

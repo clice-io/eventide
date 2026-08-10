@@ -40,13 +40,13 @@ struct negative_pred {
 
 /// Adapter: encode int on the wire as its decimal string representation.
 struct int_string_adapter {
-    using wire_type = std::string;
+    using type = std::string;
 
-    static auto to_wire(int value) -> std::string {
+    static auto to(int value) -> std::string {
         return std::to_string(value);
     }
 
-    static auto from_wire(std::string wire) -> int {
+    static auto from(std::string wire) -> int {
         return wire.empty() ? 0 : std::stoi(wire);
     }
 };

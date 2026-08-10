@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/common.h"
@@ -85,44 +86,57 @@ constexpr bool is_scalar_v =
     codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T> ||
     codec::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
 
+/// Substitute a type by its effective wire shape: annotation behavior attrs
+/// take precedence over the underlying type's meta::repr, and chained reprs
+/// are followed (meta::wire_type_t); identity when neither applies.
+/// Flatbuffers computes layout statically, so a dynamic wire shape is
+/// rejected here.
 template <typename T>
-struct remove_smart_ptr {
-    using type = T;
-};
-
-template <typename T, typename D>
-struct remove_smart_ptr<std::unique_ptr<T, D>> {
-    using type = typename remove_smart_ptr<T>::type;
-};
-
-template <typename T>
-struct remove_smart_ptr<std::shared_ptr<T>> {
-    using type = typename remove_smart_ptr<T>::type;
-};
-
-template <typename T>
-using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
-
-// Tag type for Vis parameter avoids "forming reference to void" errors in specialization body.
-struct wire_type_probe {};
-
-template <typename T, typename = void>
-struct apply_wire_type {
-    using type = T;
-};
+constexpr auto apply_repr_impl() {
+    using wire_t = meta::wire_type_t<T>;
+    static_assert(!std::is_same_v<wire_t, meta::dynamic>,
+                  "flatbuffers computes layout statically; a meta::dynamic wire shape cannot be "
+                  "used with the fbs backend");
+    return std::type_identity<wire_t>{};
+}
 
 template <typename T>
-struct apply_wire_type<
-    T,
-    std::void_t<typename serialize_visit<wire_type_probe, T, default_config<>>::wire_type>> {
-    using type = typename serialize_visit<wire_type_probe, T, default_config<>>::wire_type;
-};
+using apply_repr_t = typename decltype(apply_repr_impl<T>())::type;
+
+/// The fully resolved view type of a member or element: wire-shape
+/// substitution (behavior attrs, then chained reprs) and nullable-wrapper
+/// peeling (optional, smart pointers) interleave until a fixpoint, in
+/// whatever order they nest.
+template <typename T>
+constexpr auto deep_clean_impl() {
+    using wire_t = apply_repr_t<T>;
+    if constexpr(is_optional_v<wire_t>) {
+        return deep_clean_impl<typename wire_t::value_type>();
+    } else if constexpr(is_specialization_of<std::unique_ptr, wire_t> ||
+                        is_specialization_of<std::shared_ptr, wire_t>) {
+        return deep_clean_impl<typename wire_t::element_type>();
+    } else {
+        return std::type_identity<wire_t>{};
+    }
+}
 
 template <typename T>
-using apply_wire_type_t = typename apply_wire_type<T>::type;
+using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
+/// True when a vector element of this wire shape is boxed in a per-element
+/// wrapper table (value at the table's first field): nullable and null-like
+/// shapes need a table so each element still occupies a vector entry, and
+/// nested containers and byte blobs have no direct vector-of-vectors
+/// representation. Shared by the encode collector choice (seq_encode_impl),
+/// the decode reader (VecReader) and the lazy array_view, which must all
+/// agree on the element storage.
 template <typename T>
-using deep_clean_t = apply_wire_type_t<remove_smart_ptr_t<clean_t<T>>>;
+consteval bool needs_wrapper_in_vector() {
+    constexpr auto k = meta::kind_of<T>();
+    return k == meta::type_kind::null || k == meta::type_kind::optional ||
+           k == meta::type_kind::pointer || k == meta::type_kind::array ||
+           k == meta::type_kind::set || k == meta::type_kind::map || k == meta::type_kind::bytes;
+}
 
 template <typename T>
 struct scalar_storage {
@@ -342,7 +356,9 @@ struct field_return_type<
     std::enable_if_t<!is_string_like_v<T> && !is_scalar_v<T> && !can_inline_struct_v<T> &&
                      !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
                      !is_map_range_v<T> && is_range_like_v<T>>> {
-    using type = array_view<clean_t<std::ranges::range_value_t<T>>>;
+    // The raw element type is kept: array_view itself distinguishes the
+    // effective wire shape (storage classification) from the peeled view type.
+    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>;
 };
 
 template <typename Member,
@@ -359,7 +375,7 @@ struct member_return_impl<Member, CleanMember, true> {
 template <typename Member, typename CleanMember>
     requires (!is_map_range_v<CleanMember>)
 struct member_return_impl<Member, CleanMember, true> {
-    using type = array_view<clean_t<std::ranges::range_value_t<CleanMember>>>;
+    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<CleanMember>>>;
 };
 
 template <typename Member, typename CleanMember>
@@ -429,9 +445,9 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         const auto* vec = table->template GetPointer<const Vector<table_offset_t>*>(field);
         return return_t(vec);
     } else if constexpr(is_range_like_v<T>) {
-        using element_type = clean_t<std::ranges::range_value_t<T>>;
-        using vector_ptr_t = array_vector_ptr_t<element_type>;
-        const auto* value = table->template GetPointer<vector_ptr_t>(field);
+        // array_view owns the storage classification; read with its pointer
+        // type so the two can never diverge.
+        const auto* value = table->template GetPointer<typename return_t::vector_ptr_type>(field);
         return return_t(value);
     } else {
         const auto* nested = table->template GetPointer<const Table*>(field);
@@ -443,10 +459,19 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
 
 template <typename Element>
 class array_view {
+    // The unpeeled effective wire shape decides the vector storage: boxed
+    // elements (nullable wire shapes, nested containers, byte blobs) travel
+    // as per-element wrapper tables, so absence stays representable. Nullable
+    // peeling applies only to the view returned for each element.
+    using wire_type = proxy_detail::apply_repr_t<Element>;
+    constexpr static bool is_boxed = proxy_detail::needs_wrapper_in_vector<wire_type>();
+
 public:
     using element_type = proxy_detail::deep_clean_t<Element>;
     using value_type = proxy_detail::array_element_return_t<element_type>;
-    using vector_ptr_type = proxy_detail::array_vector_ptr_t<element_type>;
+    using vector_ptr_type = std::conditional_t<is_boxed,
+                                               const Vector<table_offset_t>*,
+                                               proxy_detail::array_vector_ptr_t<element_type>>;
 
     constexpr array_view() = default;
 
@@ -477,7 +502,11 @@ public:
             return value_type{};
         }
 
-        if constexpr(std::same_as<element_type, std::byte>) {
+        if constexpr(is_boxed) {
+            const auto* wrapper = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
+            return proxy_detail::read_field<element_type>(proxy_detail::table_view_type(wrapper),
+                                                          detail::first_field);
+        } else if constexpr(std::same_as<element_type, std::byte>) {
             return std::byte{vector->Get(static_cast<uoffset_t>(index))};
         } else if constexpr(std::is_enum_v<element_type>) {
             using storage_t = proxy_detail::scalar_storage_t<element_type>;
