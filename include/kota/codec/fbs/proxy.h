@@ -86,44 +86,44 @@ constexpr bool is_scalar_v =
     codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T> ||
     codec::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
 
-/// Substitute a type by its effective wire shape: annotation behavior attrs
+/// Substitute a type by its resolved representation: annotation behavior attrs
 /// take precedence over the underlying type's meta::repr, and chained reprs
-/// are followed (meta::wire_type_t); identity when neither applies.
-/// Flatbuffers computes layout statically, so a dynamic wire shape is
+/// are followed (meta::resolved_repr_t); identity when neither applies.
+/// Flatbuffers computes layout statically, so a dynamic representation is
 /// rejected here.
 template <typename T>
 constexpr auto apply_repr_impl() {
-    using wire_t = meta::wire_type_t<T>;
-    static_assert(!std::is_same_v<wire_t, meta::dynamic>,
-                  "flatbuffers computes layout statically; a meta::dynamic wire shape cannot be "
+    using repr_t = meta::resolved_repr_t<T>;
+    static_assert(!std::is_same_v<repr_t, meta::dynamic>,
+                  "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
                   "used with the fbs backend");
-    return std::type_identity<wire_t>{};
+    return std::type_identity<repr_t>{};
 }
 
 template <typename T>
 using apply_repr_t = typename decltype(apply_repr_impl<T>())::type;
 
-/// The fully resolved view type of a member or element: wire-shape
+/// The fully resolved view type of a member or element: representation
 /// substitution (behavior attrs, then chained reprs) and nullable-wrapper
 /// peeling (optional, smart pointers) interleave until a fixpoint, in
 /// whatever order they nest.
 template <typename T>
 constexpr auto deep_clean_impl() {
-    using wire_t = apply_repr_t<T>;
-    if constexpr(is_optional_v<wire_t>) {
-        return deep_clean_impl<typename wire_t::value_type>();
-    } else if constexpr(is_specialization_of<std::unique_ptr, wire_t> ||
-                        is_specialization_of<std::shared_ptr, wire_t>) {
-        return deep_clean_impl<typename wire_t::element_type>();
+    using repr_t = apply_repr_t<T>;
+    if constexpr(is_optional_v<repr_t>) {
+        return deep_clean_impl<typename repr_t::value_type>();
+    } else if constexpr(is_specialization_of<std::unique_ptr, repr_t> ||
+                        is_specialization_of<std::shared_ptr, repr_t>) {
+        return deep_clean_impl<typename repr_t::element_type>();
     } else {
-        return std::type_identity<wire_t>{};
+        return std::type_identity<repr_t>{};
     }
 }
 
 template <typename T>
 using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
-/// True when a vector element of this wire shape is boxed in a per-element
+/// True when a vector element of this representation is boxed in a per-element
 /// wrapper table (value at the table's first field): nullable and null-like
 /// shapes need a table so each element still occupies a vector entry, and
 /// nested containers and byte blobs have no direct vector-of-vectors
@@ -357,7 +357,7 @@ struct field_return_type<
                      !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
                      !is_map_range_v<T> && is_range_like_v<T>>> {
     // The raw element type is kept: array_view itself distinguishes the
-    // effective wire shape (storage classification) from the peeled view type.
+    // resolved representation (storage classification) from the peeled view type.
     using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>;
 };
 
@@ -459,12 +459,12 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
 
 template <typename Element>
 class array_view {
-    // The unpeeled effective wire shape decides the vector storage: boxed
-    // elements (nullable wire shapes, nested containers, byte blobs) travel
+    // The unpeeled resolved representation decides the vector storage: boxed
+    // elements (nullable representations, nested containers, byte blobs) travel
     // as per-element wrapper tables, so absence stays representable. Nullable
     // peeling applies only to the view returned for each element.
-    using wire_type = proxy_detail::apply_repr_t<Element>;
-    constexpr static bool is_boxed = proxy_detail::needs_wrapper_in_vector<wire_type>();
+    using repr_type = proxy_detail::apply_repr_t<Element>;
+    constexpr static bool is_boxed = proxy_detail::needs_wrapper_in_vector<repr_type>();
 
 public:
     using element_type = proxy_detail::deep_clean_t<Element>;

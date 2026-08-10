@@ -47,9 +47,9 @@ struct name_list {
 struct field_spec {
     constexpr static std::uint32_t no_idx = 0xFFFF'FFFF;
 
-    /// Wire name replacing the reflected field name; empty means unset.
+    /// Serialized name replacing the reflected field name; empty means unset.
     std::string_view rename = {};
-    /// Documentation exported by schema backends; transparent on the wire.
+    /// Documentation exported by schema backends; transparent in serialized output.
     std::string_view description = {};
     /// Extra accepted names during deserialization.
     name_list alias = {};
@@ -68,7 +68,7 @@ struct field_spec {
     bool defaulted = false;
 };
 
-/// How a variant is tagged on the wire.
+/// How a variant is tagged in serialized form.
 enum class tag_mode : std::uint8_t {
     none,
     /// { "TagName": value }
@@ -81,9 +81,9 @@ enum class tag_mode : std::uint8_t {
 
 /// The value part of a struct or variant annotation. Unlike field_spec, these
 /// values fork the type_info identity of the annotated type (a renamed struct
-/// and its bare form have different wire schemas).
+/// and its bare form have different serialized schemas).
 struct struct_spec {
-    /// Naming policy applied to every field wire name.
+    /// Naming policy applied to every serialized field name.
     naming::casing rename_all = naming::casing::identity;
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
@@ -93,7 +93,7 @@ struct struct_spec {
     std::string_view tag = {};
     /// Content field name (adjacent tagging).
     std::string_view content = {};
-    /// Custom wire names for the variant alternatives, in declaration order;
+    /// Custom serialized names for the variant alternatives, in declaration order;
     /// empty means meta::type_name of each alternative.
     name_list tag_names = {};
 };

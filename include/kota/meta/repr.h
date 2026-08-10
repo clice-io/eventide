@@ -5,10 +5,10 @@
 
 namespace kota::meta {
 
-/// Declares the wire representation of a type: how T travels on every backend
-/// and how it appears to every schema consumer (JSON Schema export,
-/// flatbuffers layout, zero-copy views). Specialize it for your own types;
-/// the primary template is intentionally undefined.
+/// Declares the serialized representation of a type: what the codec reads and
+/// writes for T on every backend, and how T appears to every schema consumer
+/// (JSON Schema export, flatbuffers layout, zero-copy views). Specialize it
+/// for your own types; the primary template is intentionally undefined.
 ///
 /// Declarative form (preferred — works on all backends, full schema support):
 ///
@@ -48,14 +48,14 @@ concept has_repr = requires { sizeof(repr<T>); };
 
 namespace detail {
 
-template <typename Shape>
-constexpr auto wire_shape_impl() {
-    if constexpr(requires { typename Shape::type; }) {
-        return std::type_identity<typename Shape::type>{};
+template <typename Spec>
+constexpr auto declared_repr_impl() {
+    if constexpr(requires { typename Spec::type; }) {
+        return std::type_identity<typename Spec::type>{};
     } else {
-        static_assert(dependent_false<Shape>,
+        static_assert(dependent_false<Spec>,
                       "a meta::repr specialization or behavior::with adapter must declare its "
-                      "wire shape via `using type = ...` (meta::dynamic when only known at "
+                      "representation via `using type = ...` (meta::dynamic when only known at "
                       "runtime)");
         return std::type_identity<void>{};
     }
@@ -63,11 +63,11 @@ constexpr auto wire_shape_impl() {
 
 }  // namespace detail
 
-/// The declared wire shape of a repr specialization or with-adapter; a missing
-/// `type` member is a hard error with the protocol diagnostic.
-/// Declared shapes are not final: meta::wire_type_t follows chained reprs and
-/// annotations nested inside them to the resolved wire shape.
-template <typename Shape>
-using wire_shape_t = typename decltype(detail::wire_shape_impl<Shape>())::type;
+/// The representation a repr specialization or with-adapter declares; a
+/// missing `type` member is a hard error with the protocol diagnostic.
+/// Declared representations are not final: meta::resolved_repr_t follows
+/// chained reprs and annotations nested inside them to the resolved type.
+template <typename Spec>
+using declared_repr_t = typename decltype(detail::declared_repr_impl<Spec>())::type;
 
 }  // namespace kota::meta

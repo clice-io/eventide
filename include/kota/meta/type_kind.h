@@ -143,8 +143,8 @@ constexpr bool is_sequence_kind(type_kind k) noexcept {
 template <typename T>
 constexpr inline bool schema_opaque = false;
 
-/// Wire-shape marker for meta::repr: the representation is only known at
-/// runtime. Maps to type_kind::any, so schema output degrades to "any".
+/// Marker representation for meta::repr: the shape is only known at runtime.
+/// Maps to type_kind::any, so schema output degrades to "any".
 struct dynamic {};
 
 template <typename T>

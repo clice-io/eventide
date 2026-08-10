@@ -53,7 +53,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - struct/variant values (`spec.h`): `rename_all`, `deny_unknown_fields`, variant tagging (`tagged`/`tag`/`content`/`tag_names`) — declared with `KOTATSU_ANNOTATION(name, ...)` and stored in one constexpr `struct_spec` per annotation
   - type attributes: `hint`, and behaviors `enum_string`, `skip_if<Pred>`, `with<Adapter>`, `as<Target>`
   - attach via the macros or the `annotation<T, Attrs...>` wrapper (three kinds: wrap / inherit / inherit-use)
-- Compile-time schema IR (`schema.h`): `virtual_schema<T, Config>` produces `field_slot<RawType, WireType, BehaviorAttrs>` entries that codec backends consume, with flattening and skipping resolved up-front.
+- Compile-time schema IR (`schema.h`): `virtual_schema<T, Config>` produces `field_slot<RawType, ReprType, BehaviorAttrs>` entries that codec backends consume, with flattening and skipping resolved up-front.
 
 ### `codec` (`include/kota/codec/*`)
 

@@ -10,7 +10,7 @@
 
 namespace kota::codec {
 
-/// How enums map to wire format.
+/// How enums map to serialized form.
 enum class enum_repr { Integer, String };
 
 /// How NaN/Infinity float values are serialized.
@@ -57,7 +57,7 @@ struct empty_config_base {};
 template <typename UserConfig = void>
 struct default_config :
     std::conditional_t<std::is_void_v<UserConfig>, detail::empty_config_base, UserConfig> {
-    /// Enum wire representation.
+    /// Enum serialized representation.
     KOTA_CFG_FIELD_(enum_repr, kota::codec::enum_repr::Integer);
 
     /// NaN/Infinity handling.
@@ -93,8 +93,9 @@ struct default_config :
 
 #undef KOTA_CFG_FIELD_
 
-/// True when the visitor computes wire layout statically (flatbuffers). Such
-/// backends cannot carry a meta::dynamic repr: there is no layout to compute.
+/// True when the visitor computes the output layout statically (flatbuffers).
+/// Such backends cannot carry a meta::dynamic repr: there is no layout to
+/// compute.
 template <typename Vis>
 constexpr bool is_layout_computed() {
     if constexpr(requires { Vis::layout_computed; }) {
@@ -117,15 +118,6 @@ constexpr bool is_human_readable() {
 }
 
 template <typename Config>
-std::string apply_field_rename(bool is_serialize, std::string_view name) {
-    if constexpr(requires { typename Config::field_rename; }) {
-        return typename Config::field_rename{}(is_serialize, name);
-    } else {
-        return std::string(name);
-    }
-}
-
-template <typename Config>
 std::string apply_enum_rename(bool is_serialize, std::string_view name) {
     if constexpr(requires { typename Config::enum_rename; }) {
         return typename Config::enum_rename{}(is_serialize, name);
@@ -133,42 +125,5 @@ std::string apply_enum_rename(bool is_serialize, std::string_view name) {
         return std::string(name);
     }
 }
-
-namespace detail {
-
-template <typename BaseConfig,
-          typename Attrs,
-          bool HasRenameAll = meta::struct_spec_of<Attrs>.rename_all != naming::casing::identity,
-          bool HasDenyUnknown = meta::struct_spec_of<Attrs>.deny_unknown_fields>
-struct annotated_config_impl {
-    using type = BaseConfig;
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_config_impl<BaseConfig, Attrs, true, false> {
-    struct type : BaseConfig {
-        using field_rename = naming::rename_policy_t<meta::struct_spec_of<Attrs>.rename_all>;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_config_impl<BaseConfig, Attrs, false, true> {
-    struct type : BaseConfig {
-        constexpr static bool deny_unknown_fields = true;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-struct annotated_config_impl<BaseConfig, Attrs, true, true> {
-    struct type : BaseConfig {
-        using field_rename = naming::rename_policy_t<meta::struct_spec_of<Attrs>.rename_all>;
-        constexpr static bool deny_unknown_fields = true;
-    };
-};
-
-template <typename BaseConfig, typename Attrs>
-using annotated_config = typename annotated_config_impl<BaseConfig, Attrs>::type;
-
-}  // namespace detail
 
 }  // namespace kota::codec

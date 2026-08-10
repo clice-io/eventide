@@ -201,7 +201,7 @@ TEST_CASE(annotated_struct_deny_unknown_fields_applies) {
     EXPECT_TRUE(status.error().message.find("unknown field") != std::string::npos);
 }
 
-TEST_CASE(description_attr_is_wire_transparent) {
+TEST_CASE(description_attr_is_encoding_transparent) {
     documented_payload input{.id = 7, .name = "alice"};
     auto encoded = to_json(input);
     ASSERT_TRUE(encoded.has_value());

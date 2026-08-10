@@ -28,7 +28,7 @@ enum class role : std::int32_t {
     viewer,
 };
 
-// Adapter: encode int on the wire as its decimal string representation.
+// Adapter: encode int as its decimal string representation.
 struct IntStringAdapter {
     using type = std::string;
 
@@ -36,8 +36,8 @@ struct IntStringAdapter {
         return std::to_string(value);
     }
 
-    static auto from(std::string wire) -> int {
-        return wire.empty() ? 0 : std::stoi(wire);
+    static auto from(std::string encoded) -> int {
+        return encoded.empty() ? 0 : std::stoi(encoded);
     }
 };
 
@@ -153,7 +153,7 @@ namespace kota_test_type_traits {
 
 // A value-class wrapping an integer — not trivially reflectable, not an
 // enum, and final (so kota's meta::annotation wrap_type path would apply).
-// The adapter encodes it as a plain uint32_t on the wire.
+// The adapter encodes it as a plain uint32_t.
 class Tag final {
 public:
     Tag() = default;
@@ -209,7 +209,7 @@ private:
 
 // An iterable value class (type_kind::array) with a scalar-string repr — the
 // roaring-bitmap shape. Encode/decode of vector<IdSet> must agree that the
-// element travels unwrapped as its wire string.
+// element travels unwrapped as its repr string.
 class IdSet {
 public:
     IdSet() = default;
@@ -230,9 +230,9 @@ private:
     std::vector<std::uint32_t> ids_;
 };
 
-// A wire shape that must travel as a table: the string member rules out the
+// A repr that must travel as a table: the string member rules out the
 // inline-struct fast path, so vector elements need the table collectors.
-struct EndpointWire {
+struct EndpointRepr {
     std::string host;
     std::uint32_t port = 0;
 };
@@ -258,7 +258,7 @@ private:
     std::uint32_t port_ = 0;
 };
 
-// A nullable wire shape: vector elements must be boxed like plain optionals.
+// A nullable repr: vector elements must be boxed like plain optionals.
 class MaybeId {
 public:
     MaybeId() = default;
@@ -275,7 +275,7 @@ private:
     std::optional<std::uint32_t> value_;
 };
 
-// A unit-like marker whose wire shape is null: elements carry no payload,
+// A unit-like marker whose repr is null: elements carry no payload,
 // but each must still occupy a vector entry.
 class Marker {
 public:
@@ -323,10 +323,10 @@ struct repr<kota_test_type_traits::HexTag> {
 
     template <typename Config>
     static bool deserialize(auto& vis, kota_test_type_traits::HexTag& tag) {
-        std::string wire;
-        if(!vis.visit_str(wire))
+        std::string encoded;
+        if(!vis.visit_str(encoded))
             return false;
-        tag = kota_test_type_traits::HexTag{static_cast<std::uint32_t>(std::stoul(wire))};
+        tag = kota_test_type_traits::HexTag{static_cast<std::uint32_t>(std::stoul(encoded))};
         return true;
     }
 };
@@ -336,23 +336,23 @@ struct repr<kota_test_type_traits::IdSet> {
     using type = std::string;
 
     static type to(const kota_test_type_traits::IdSet& set) {
-        std::string wire;
+        std::string encoded;
         for(auto id: set) {
-            if(!wire.empty())
-                wire += ',';
-            wire += std::to_string(id);
+            if(!encoded.empty())
+                encoded += ',';
+            encoded += std::to_string(id);
         }
-        return wire;
+        return encoded;
     }
 
-    static kota_test_type_traits::IdSet from(const std::string& wire) {
+    static kota_test_type_traits::IdSet from(const std::string& encoded) {
         std::vector<std::uint32_t> ids;
         std::size_t pos = 0;
-        while(pos < wire.size()) {
-            auto comma = wire.find(',', pos);
+        while(pos < encoded.size()) {
+            auto comma = encoded.find(',', pos);
             if(comma == std::string::npos)
-                comma = wire.size();
-            ids.push_back(static_cast<std::uint32_t>(std::stoul(wire.substr(pos, comma - pos))));
+                comma = encoded.size();
+            ids.push_back(static_cast<std::uint32_t>(std::stoul(encoded.substr(pos, comma - pos))));
             pos = comma + 1;
         }
         return kota_test_type_traits::IdSet{std::move(ids)};
@@ -361,14 +361,14 @@ struct repr<kota_test_type_traits::IdSet> {
 
 template <>
 struct repr<kota_test_type_traits::Endpoint> {
-    using type = kota_test_type_traits::EndpointWire;
+    using type = kota_test_type_traits::EndpointRepr;
 
     static type to(const kota_test_type_traits::Endpoint& e) {
         return {.host = e.host(), .port = e.port()};
     }
 
-    static kota_test_type_traits::Endpoint from(type wire) {
-        return {std::move(wire.host), wire.port};
+    static kota_test_type_traits::Endpoint from(type encoded) {
+        return {std::move(encoded.host), encoded.port};
     }
 };
 
@@ -460,33 +460,33 @@ struct OptionalReprField {
     auto operator==(const OptionalReprField&) const -> bool = default;
 };
 
-struct TableWireReprField {
+struct TableReprField {
     std::vector<Endpoint> endpoints;
 
-    auto operator==(const TableWireReprField&) const -> bool = default;
+    auto operator==(const TableReprField&) const -> bool = default;
 };
 
-struct BoxedWireReprField {
+struct BoxedReprField {
     std::vector<MaybeId> ids;
 
-    auto operator==(const BoxedWireReprField&) const -> bool = default;
+    auto operator==(const BoxedReprField&) const -> bool = default;
 };
 
-struct BytesWireReprField {
+struct BytesReprField {
     std::vector<ByteBag> blobs;
 
-    auto operator==(const BytesWireReprField&) const -> bool = default;
+    auto operator==(const BytesReprField&) const -> bool = default;
 };
 
-struct NullWireReprField {
+struct NullReprField {
     std::vector<Marker> markers;
     std::string label;
 
-    auto operator==(const NullWireReprField&) const -> bool = default;
+    auto operator==(const NullReprField&) const -> bool = default;
 };
 
 // Adapter over a repr'd type: the field annotation must win over the type's
-// own repr, on the wire and in the proxy view.
+// own repr, in the encoded bytes and in the proxy view.
 struct TagNameAdapter {
     using type = std::string;
 
@@ -494,8 +494,8 @@ struct TagNameAdapter {
         return std::to_string(t.value());
     }
 
-    static auto from(const std::string& wire) -> Tag {
-        return Tag{static_cast<std::uint32_t>(std::stoul(wire))};
+    static auto from(const std::string& encoded) -> Tag {
+        return Tag{static_cast<std::uint32_t>(std::stoul(encoded))};
     }
 };
 
@@ -561,9 +561,9 @@ TEST_CASE(type_traits_proxy_lazy_scalar_access) {
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
 
-    // Proxy sees the wire type (uint32_t)
-    const std::uint32_t wire_tag = root[&TypeTraitsRoot::root_tag];
-    EXPECT_EQ(wire_tag, 777U);
+    // Proxy sees the repr type (uint32_t)
+    const std::uint32_t encoded_tag = root[&TypeTraitsRoot::root_tag];
+    EXPECT_EQ(encoded_tag, 777U);
 
     const std::string_view content = root[&TypeTraitsRoot::content];
     EXPECT_EQ(content, std::string_view{"lazy"});
@@ -590,7 +590,7 @@ TEST_CASE(type_traits_proxy_lazy_map_value_access) {
     ASSERT_TRUE(blobs.valid());
     EXPECT_EQ(blobs.size(), 2U);
 
-    // map_view<K, ByteBag> — proxy substitutes the repr wire shape
+    // map_view<K, ByteBag> — proxy substitutes the repr
     // (vector<byte>), so operator[] returns an array_view<std::byte>.
     auto blob5 = blobs[5U];
     ASSERT_TRUE(blob5.valid());
@@ -616,16 +616,16 @@ TEST_CASE(imperative_repr_field_roundtrip) {
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 
-    // The wire carries the declared string shape, observable via the proxy.
+    // The encoded table carries the declared string repr, observable via the proxy.
     auto root = fbs::table_view<ImperativeReprField>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
-    const std::string_view wire_tag = root[&ImperativeReprField::tag];
-    EXPECT_EQ(wire_tag, std::string_view{"54321"});
+    const std::string_view encoded_tag = root[&ImperativeReprField::tag];
+    EXPECT_EQ(encoded_tag, std::string_view{"54321"});
 }
 
 TEST_CASE(iterable_repr_element_roundtrip) {
-    // IdSet's raw kind is array; its repr wire shape is a string. Encode and
+    // IdSet's raw kind is array; its repr is a string. Encode and
     // decode of vector<IdSet> must agree the element is unwrapped.
     IterableReprField input;
     input.primary = IdSet{
@@ -663,10 +663,10 @@ TEST_CASE(repr_inside_optional_roundtrip) {
     EXPECT_FALSE(output.maybe_tag.has_value());
 }
 
-TEST_CASE(table_wire_repr_element_roundtrip) {
-    // Endpoint's wire shape is a table; vector elements must travel as table
+TEST_CASE(table_repr_element_roundtrip) {
+    // Endpoint's repr is a table; vector elements must travel as table
     // offsets on both the encode and decode side.
-    TableWireReprField input;
+    TableReprField input;
     input.endpoints = {
         Endpoint{"alpha", 1  },
         Endpoint{"",      0  },
@@ -676,22 +676,22 @@ TEST_CASE(table_wire_repr_element_roundtrip) {
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    TableWireReprField output{};
+    TableReprField output{};
     auto status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
 
-TEST_CASE(nullable_wire_repr_element_roundtrip) {
-    // MaybeId's wire shape is optional; vector elements must be boxed exactly
+TEST_CASE(nullable_repr_element_roundtrip) {
+    // MaybeId's repr is optional; vector elements must be boxed exactly
     // like plain optional elements.
-    BoxedWireReprField input;
+    BoxedReprField input;
     input.ids = {MaybeId{7U}, MaybeId{}, MaybeId{42U}};
 
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    BoxedWireReprField output{};
+    BoxedReprField output{};
     auto status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
@@ -699,18 +699,18 @@ TEST_CASE(nullable_wire_repr_element_roundtrip) {
 
 TEST_CASE(view_reads_boxed_nullable_repr_elements) {
     // Boxed elements are read through their wrapper table; the view peels the
-    // nullable wire shape to the inner scalar, absence reads as its default.
-    BoxedWireReprField input;
+    // nullable repr to the inner scalar, absence reads as its default.
+    BoxedReprField input;
     input.ids = {MaybeId{7U}, MaybeId{}, MaybeId{42U}};
 
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    auto root = fbs::table_view<BoxedWireReprField>::from_bytes(
+    auto root = fbs::table_view<BoxedReprField>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
 
-    auto ids = root[&BoxedWireReprField::ids];
+    auto ids = root[&BoxedReprField::ids];
     ASSERT_TRUE(ids.valid());
     ASSERT_EQ(ids.size(), 3U);
     EXPECT_EQ(ids[0], 7U);
@@ -718,28 +718,28 @@ TEST_CASE(view_reads_boxed_nullable_repr_elements) {
     EXPECT_EQ(ids[2], 42U);
 }
 
-TEST_CASE(null_wire_repr_element_roundtrip) {
-    // Marker's wire shape is null-like; each element must still occupy a
+TEST_CASE(null_repr_element_roundtrip) {
+    // Marker's repr is null-like; each element must still occupy a
     // vector entry (a per-element wrapper table), so the count round-trips.
-    NullWireReprField input;
+    NullReprField input;
     input.markers = {Marker{}, Marker{}, Marker{}};
     input.label = "three";
 
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    NullWireReprField output{};
+    NullReprField output{};
     auto status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output.markers.size(), 3U);
     EXPECT_EQ(output, input);
 }
 
-TEST_CASE(bytes_wire_repr_element_roundtrip) {
-    // ByteBag's wire shape is a byte blob; flatbuffers has no
+TEST_CASE(bytes_repr_element_roundtrip) {
+    // ByteBag's repr is a byte blob; flatbuffers has no
     // vector-of-vectors, so elements travel boxed in per-element wrapper
     // tables, matching plain nested byte containers.
-    BytesWireReprField input;
+    BytesReprField input;
     input.blobs = {ByteBag{{std::byte{0xAA}, std::byte{0xBB}}},
                    ByteBag{},
                    ByteBag{{std::byte{0x01}}}};
@@ -747,16 +747,16 @@ TEST_CASE(bytes_wire_repr_element_roundtrip) {
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    BytesWireReprField output{};
+    BytesReprField output{};
     auto status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 
-    auto root = fbs::table_view<BytesWireReprField>::from_bytes(
+    auto root = fbs::table_view<BytesReprField>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
 
-    auto blobs = root[&BytesWireReprField::blobs];
+    auto blobs = root[&BytesReprField::blobs];
     ASSERT_TRUE(blobs.valid());
     ASSERT_EQ(blobs.size(), 3U);
 
@@ -768,8 +768,8 @@ TEST_CASE(bytes_wire_repr_element_roundtrip) {
     EXPECT_EQ(blobs[1].size(), 0U);
 }
 
-TEST_CASE(adapted_element_travels_as_adapter_wire) {
-    // The element's annotation adapter decides the wire shape (string), so
+TEST_CASE(adapted_element_travels_as_adapter_repr) {
+    // The element's annotation adapter decides the repr (string), so
     // both sides must pick the string collectors, not the raw-int fast path.
     AdaptedElementField input;
     input.vals = {12, -3, 4567};
@@ -788,7 +788,7 @@ TEST_CASE(adapted_element_travels_as_adapter_wire) {
 
 TEST_CASE(view_honors_field_adapter_over_type_repr) {
     // Tag's own repr is uint32, but the field adapter puts a string on the
-    // wire; the proxy view must follow the adapter.
+    // encoded; the proxy view must follow the adapter.
     const AdapterOverReprField input{.tag = Tag{4242}};
 
     auto encoded = fbs::to_flatbuffer(input);
@@ -797,8 +797,8 @@ TEST_CASE(view_honors_field_adapter_over_type_repr) {
     auto root = fbs::table_view<AdapterOverReprField>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
-    const std::string_view wire_tag = root[&AdapterOverReprField::tag];
-    EXPECT_EQ(wire_tag, std::string_view{"4242"});
+    const std::string_view encoded_tag = root[&AdapterOverReprField::tag];
+    EXPECT_EQ(encoded_tag, std::string_view{"4242"});
 
     AdapterOverReprField output{};
     ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
