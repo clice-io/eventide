@@ -83,6 +83,56 @@ struct basis_points {
     auto operator==(const basis_points&) const -> bool = default;
 };
 
+// Repr whose declared wire type is an annotated struct: the annotation's
+// structural attrs (rename_all / deny_unknown_fields) shape the wire
+// document and must surface identically in the exported schema.
+struct line_range {
+    int first = 0;
+    int last = 0;
+
+    auto operator==(const line_range&) const -> bool = default;
+};
+
+struct line_range_wire {
+    int start_line = 0;
+    int line_count = 0;
+};
+
+KOTATSU_ANNOTATION(strict_camel_annotation,
+                   rename_all = casing::lower_camel,
+                   deny_unknown_fields = true);
+using annotated_line_range_wire =
+    kota::meta::annotate<strict_camel_annotation>::type<line_range_wire>;
+
+// Repr whose declared wire type is an annotated tagged variant: the tagging
+// must surface in type_info exactly as the codec writes it.
+struct load_ok {
+    int bytes = 0;
+
+    auto operator==(const load_ok&) const -> bool = default;
+};
+
+struct load_err {
+    std::string message;
+
+    auto operator==(const load_err&) const -> bool = default;
+};
+
+KOTATSU_ANNOTATION(load_result_annotation,
+                   tag = "status",
+                   content = "value",
+                   tag_names = {"ok", "err"});
+using load_result_wire =
+    kota::meta::annotate<load_result_annotation>::type<std::variant<load_ok, load_err>>;
+
+struct load_result {
+    bool ok = true;
+    int bytes = 0;
+    std::string message;
+
+    auto operator==(const load_result&) const -> bool = default;
+};
+
 }  // namespace kota_repr_test
 
 namespace kota::meta {
@@ -228,6 +278,42 @@ struct repr<kota_repr_test::basis_points> {
     }
 };
 
+template <>
+struct repr<kota_repr_test::line_range> {
+    using type = kota_repr_test::annotated_line_range_wire;
+
+    static type to(const kota_repr_test::line_range& r) {
+        return {
+            {.start_line = r.first, .line_count = r.last - r.first}
+        };
+    }
+
+    static kota_repr_test::line_range from(const type& w) {
+        const auto& wire = annotated_value(w);
+        return {.first = wire.start_line, .last = wire.start_line + wire.line_count};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::load_result> {
+    using type = kota_repr_test::load_result_wire;
+
+    static type to(const kota_repr_test::load_result& r) {
+        if(r.ok) {
+            return type{kota_repr_test::load_ok{.bytes = r.bytes}};
+        }
+        return type{kota_repr_test::load_err{.message = r.message}};
+    }
+
+    static kota_repr_test::load_result from(const type& w) {
+        const auto& v = annotated_value(w);
+        if(const auto* ok = std::get_if<kota_repr_test::load_ok>(&v)) {
+            return {.ok = true, .bytes = ok->bytes, .message = {}};
+        }
+        return {.ok = false, .bytes = 0, .message = std::get<kota_repr_test::load_err>(v).message};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
@@ -240,6 +326,8 @@ using kota_repr_test::audit_stamp;
 using kota_repr_test::basis_points;
 using kota_repr_test::hex_id;
 using kota_repr_test::lamport_stamp;
+using kota_repr_test::line_range;
+using kota_repr_test::load_result;
 using kota_repr_test::poly_value;
 using kota_repr_test::relation;
 using kota_repr_test::ticket;
@@ -297,6 +385,12 @@ struct fee_schedule {
     basis_points fee;
 
     auto operator==(const fee_schedule&) const -> bool = default;
+};
+
+struct range_doc {
+    line_range r;
+
+    auto operator==(const range_doc&) const -> bool = default;
 };
 
 /// Imperative adapter: uppercases on the wire, lowercases back.
@@ -563,6 +657,57 @@ TEST_CASE(annotated_repr_alternative_in_untagged_variant) {
     ASSERT_TRUE(from_json(*encoded, output).has_value());
     ASSERT_TRUE(output.index() == 0);
     EXPECT_EQ(meta::annotated_value(std::get<0>(output)), (version{.major = 3, .minor = 14}));
+}
+
+TEST_CASE(structural_attrs_nested_in_repr_wire_type) {
+    // repr<line_range>'s wire struct carries rename_all + deny_unknown_fields;
+    // the codec applies them to the intermediate wire value, and type_info
+    // must describe that same document.
+    const range_doc input{
+        .r = {.first = 3, .last = 7}
+    };
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"r":{"startLine":3,"lineCount":4}})");
+
+    range_doc output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    // deny_unknown_fields on the wire annotation rejects stray keys.
+    EXPECT_FALSE(from_json(R"({"r":{"startLine":3,"lineCount":4,"x":1}})", output).has_value());
+
+    // The schema exposes the renamed properties and the unknown-field policy.
+    auto schema = json::schema_string<range_doc>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("startLine")") != std::string::npos);
+    EXPECT_TRUE(schema->find(R"("start_line")") == std::string::npos);
+    EXPECT_TRUE(schema->find(R"("additionalProperties":false)") != std::string::npos);
+}
+
+TEST_CASE(tagging_nested_in_repr_wire_type) {
+    // repr<load_result>'s wire variant carries an adjacent tagging spec; the
+    // codec writes the tagged object and type_info must carry the tagging.
+    const load_result input{.ok = false, .message = "missing"};
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"status":"err","value":{"message":"missing"}})");
+
+    load_result output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    const auto& info = meta::type_info_of<load_result>();
+    ASSERT_TRUE(info.kind == meta::type_kind::variant);
+    const auto& vi = static_cast<const meta::variant_type_info&>(info);
+    EXPECT_TRUE(vi.tagging == meta::tag_mode::adjacent);
+    EXPECT_EQ(vi.tag_field, std::string_view("status"));
+
+    auto schema = json::schema_string<load_result>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("status":{"const":"err"})") != std::string::npos);
 }
 
 TEST_CASE(adapter_beats_variant_tagging_outside_fields) {

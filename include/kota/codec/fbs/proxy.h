@@ -124,17 +124,18 @@ template <typename T>
 using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
 /// True when a vector element of this wire shape is boxed in a per-element
-/// wrapper table (value at the table's first field): nullable shapes need a
-/// table to represent absence, and nested containers and byte blobs have no
-/// direct vector-of-vectors representation. Shared by the encode collector
-/// choice (seq_encode_impl), the decode reader (VecReader) and the lazy
-/// array_view, which must all agree on the element storage.
+/// wrapper table (value at the table's first field): nullable and null-like
+/// shapes need a table so each element still occupies a vector entry, and
+/// nested containers and byte blobs have no direct vector-of-vectors
+/// representation. Shared by the encode collector choice (seq_encode_impl),
+/// the decode reader (VecReader) and the lazy array_view, which must all
+/// agree on the element storage.
 template <typename T>
 consteval bool needs_wrapper_in_vector() {
     constexpr auto k = meta::kind_of<T>();
-    return k == meta::type_kind::optional || k == meta::type_kind::pointer ||
-           k == meta::type_kind::array || k == meta::type_kind::set || k == meta::type_kind::map ||
-           k == meta::type_kind::bytes;
+    return k == meta::type_kind::null || k == meta::type_kind::optional ||
+           k == meta::type_kind::pointer || k == meta::type_kind::array ||
+           k == meta::type_kind::set || k == meta::type_kind::map || k == meta::type_kind::bytes;
 }
 
 template <typename T>

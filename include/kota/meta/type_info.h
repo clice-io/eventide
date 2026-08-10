@@ -246,21 +246,34 @@ struct struct_spec_value_tag {
 /// Tagged variant specs keep their own tag (the string payloads are not
 /// structural); schema backends emit variants inline rather than as shared
 /// defs, so distinct instances are harmless there.
-template <typename AttrsTuple>
+/// AccRename/AccDeny are structural values accumulated from annotated nodes
+/// the wire-type resolver crossed on the way here; the node's own spec
+/// overrides an accumulated rename, deny is sticky — matching the codec's
+/// annotated_config merge.
+template <typename AttrsTuple,
+          naming::casing AccRename = naming::casing::identity,
+          bool AccDeny = false>
 constexpr auto type_attrs_impl() {
     constexpr const struct_spec& spec = struct_spec_of<AttrsTuple>;
     if constexpr(spec.tagging != tag_mode::none) {
         return std::type_identity<std::tuple<tuple_find_t<AttrsTuple, is_struct_spec_attr>>>{};
-    } else if constexpr(spec.rename_all != naming::casing::identity || spec.deny_unknown_fields) {
-        return std::type_identity<std::tuple<attrs::struct_spec<
-            struct_spec_value_tag<spec.rename_all, spec.deny_unknown_fields>>>>{};
     } else {
-        return std::type_identity<std::tuple<>>{};
+        constexpr naming::casing rename =
+            spec.rename_all != naming::casing::identity ? spec.rename_all : AccRename;
+        constexpr bool deny = spec.deny_unknown_fields || AccDeny;
+        if constexpr(rename != naming::casing::identity || deny) {
+            return std::type_identity<
+                std::tuple<attrs::struct_spec<struct_spec_value_tag<rename, deny>>>>{};
+        } else {
+            return std::type_identity<std::tuple<>>{};
+        }
     }
 }
 
-template <typename AttrsTuple>
-using type_attrs_t = typename decltype(type_attrs_impl<AttrsTuple>())::type;
+template <typename AttrsTuple,
+          naming::casing AccRename = naming::casing::identity,
+          bool AccDeny = false>
+using type_attrs_t = typename decltype(type_attrs_impl<AttrsTuple, AccRename, AccDeny>())::type;
 
 template <typename T>
 struct unwrap_annotated {
@@ -274,35 +287,64 @@ struct unwrap_annotated<T> {
     using attrs = typename T::attrs;
 };
 
+/// A resolved wire shape: the final unwrapped wire type plus the type-level
+/// attrs the codec applies when encoding that wire value.
+template <typename WireT, typename AttrsT>
+struct resolved_wire {
+    using type = WireT;
+    using attrs = AttrsT;
+};
+
 /// Precedence mirrors the codec dispatch (encode_value / encode_one_field):
 /// behavior::with wins over behavior::as, which wins over
 /// behavior::enum_string; the type's repr applies only when no behavior attr
 /// shapes the wire. Every chosen shape re-enters the resolver, so chained
 /// reprs and annotations nested inside representation types resolve to the
 /// final wire shape, matching the codec's recursive re-dispatch on the
-/// converted wire value.
-template <typename T>
+/// converted wire value. Structural attrs (variant tagging, rename_all,
+/// deny_unknown_fields) of the terminal annotation are kept, and rename_all/
+/// deny_unknown_fields of annotated nodes crossed on the way accumulate the
+/// same way the codec merges them into the config, so the resulting
+/// type_info describes the documents the codec actually reads and writes.
+template <typename T, naming::casing AccRename = naming::casing::identity, bool AccDeny = false>
 constexpr auto resolve_wire_type_impl() {
     using raw_t = typename unwrap_annotated<T>::raw_type;
     using attrs_t = typename unwrap_annotated<T>::attrs;
 
     if constexpr(tuple_has_spec_v<attrs_t, behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, behavior::with>::adapter;
-        return resolve_wire_type_impl<wire_shape_t<adapter>>();
+        return resolve_wire_type_impl<wire_shape_t<adapter>, AccRename, AccDeny>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::as>) {
         using target = typename tuple_find_spec_t<attrs_t, behavior::as>::target;
-        return resolve_wire_type_impl<target>();
+        return resolve_wire_type_impl<target, AccRename, AccDeny>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-        return std::type_identity<std::string_view>{};
+        return resolved_wire<std::string_view, std::tuple<>>{};
     } else if constexpr(has_repr<raw_t>) {
-        return resolve_wire_type_impl<wire_shape_t<repr<raw_t>>>();
+        // The codec merges a reflectable annotated node's rename_all /
+        // deny_unknown_fields into the config before re-dispatching on the
+        // wire value (encode_value's annotated branch); mirror that merge,
+        // including its reflectable_class gate.
+        constexpr const struct_spec& spec = struct_spec_of<attrs_t>;
+        if constexpr(reflectable_class<raw_t> &&
+                     (spec.rename_all != naming::casing::identity || spec.deny_unknown_fields)) {
+            constexpr naming::casing rename =
+                spec.rename_all != naming::casing::identity ? spec.rename_all : AccRename;
+            return resolve_wire_type_impl<wire_shape_t<repr<raw_t>>,
+                                          rename,
+                                          AccDeny || spec.deny_unknown_fields>();
+        } else {
+            return resolve_wire_type_impl<wire_shape_t<repr<raw_t>>, AccRename, AccDeny>();
+        }
     } else {
-        return std::type_identity<raw_t>{};
+        return resolved_wire<raw_t, type_attrs_t<attrs_t, AccRename, AccDeny>>{};
     }
 }
 
 template <typename T>
-using resolve_wire_type_t = typename decltype(resolve_wire_type_impl<T>())::type;
+using resolved_wire_t = decltype(resolve_wire_type_impl<T>());
+
+template <typename T>
+using resolve_wire_type_t = typename resolved_wire_t<T>::type;
 
 template <typename BaseConfig,
           typename AttrsTuple,
@@ -326,8 +368,8 @@ struct type_instance_impl;
 
 template <typename T, typename Config = default_config>
 struct type_instance :
-    type_instance_impl<resolve_wire_type_t<std::remove_cv_t<T>>,
-                       type_attrs_t<typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
+    type_instance_impl<typename resolved_wire_t<std::remove_cv_t<T>>::type,
+                       typename resolved_wire_t<std::remove_cv_t<T>>::attrs,
                        Config> {};
 
 template <typename T, std::size_t I>

@@ -275,6 +275,13 @@ private:
     std::optional<std::uint32_t> value_;
 };
 
+// A unit-like marker whose wire shape is null: elements carry no payload,
+// but each must still occupy a vector entry.
+class Marker {
+public:
+    auto operator==(const Marker&) const -> bool = default;
+};
+
 }  // namespace kota_test_type_traits
 
 namespace kota::meta {
@@ -378,6 +385,19 @@ struct repr<kota_test_type_traits::MaybeId> {
     }
 };
 
+template <>
+struct repr<kota_test_type_traits::Marker> {
+    using type = std::nullptr_t;
+
+    static type to(const kota_test_type_traits::Marker&) {
+        return nullptr;
+    }
+
+    static kota_test_type_traits::Marker from(type) {
+        return {};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
@@ -390,6 +410,7 @@ using kota_test_type_traits::HexTag;
 using kota_test_type_traits::IdSet;
 using kota_test_type_traits::Endpoint;
 using kota_test_type_traits::MaybeId;
+using kota_test_type_traits::Marker;
 
 struct TypeTraitsPlainField {
     Tag tag;
@@ -455,6 +476,13 @@ struct BytesWireReprField {
     std::vector<ByteBag> blobs;
 
     auto operator==(const BytesWireReprField&) const -> bool = default;
+};
+
+struct NullWireReprField {
+    std::vector<Marker> markers;
+    std::string label;
+
+    auto operator==(const NullWireReprField&) const -> bool = default;
 };
 
 // Adapter over a repr'd type: the field annotation must win over the type's
@@ -688,6 +716,23 @@ TEST_CASE(view_reads_boxed_nullable_repr_elements) {
     EXPECT_EQ(ids[0], 7U);
     EXPECT_EQ(ids[1], 0U);
     EXPECT_EQ(ids[2], 42U);
+}
+
+TEST_CASE(null_wire_repr_element_roundtrip) {
+    // Marker's wire shape is null-like; each element must still occupy a
+    // vector entry (a per-element wrapper table), so the count round-trips.
+    NullWireReprField input;
+    input.markers = {Marker{}, Marker{}, Marker{}};
+    input.label = "three";
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    NullWireReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.markers.size(), 3U);
+    EXPECT_EQ(output, input);
 }
 
 TEST_CASE(bytes_wire_repr_element_roundtrip) {

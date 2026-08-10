@@ -775,20 +775,21 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
-        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
-            inline_struct_collector<wire_t> coll{fbb, {}, 0};
+        } else if constexpr(meta::kind_of<wire_t>() == meta::type_kind::null ||
+                            meta::kind_of<wire_t>() == meta::type_kind::optional ||
+                            meta::kind_of<wire_t>() == meta::type_kind::pointer ||
+                            meta::kind_of<wire_t>() == meta::type_kind::bytes) {
+            // Nullable and null-like shapes need a per-element table so each
+            // element still occupies a vector entry; byte blobs need one
+            // because flatbuffers has no vector-of-vectors. Nested containers
+            // reach the same wrapper shape through table_elem_visitor below.
+            boxed_table_collector coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
-        } else if constexpr(meta::kind_of<wire_t>() == meta::type_kind::optional ||
-                            meta::kind_of<wire_t>() == meta::type_kind::pointer ||
-                            meta::kind_of<wire_t>() == meta::type_kind::bytes) {
-            // Nullable shapes need a per-element table so absence is
-            // representable; byte blobs need one because flatbuffers has no
-            // vector-of-vectors. Nested containers reach the same wrapper
-            // shape through table_elem_visitor below.
-            boxed_table_collector coll{fbb, {}, 0};
+        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
+            inline_struct_collector<wire_t> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
@@ -861,6 +862,19 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         KOTA_CODEC_TRY(coll.finish());
         out_offset = coll.result_offset;
         return true;
+    } else if constexpr(meta::kind_of<element_t>() == meta::type_kind::null ||
+                        meta::kind_of<element_t>() == meta::type_kind::optional ||
+                        meta::kind_of<element_t>() == meta::type_kind::pointer ||
+                        meta::kind_of<element_t>() == meta::type_kind::bytes) {
+        // Same boxing as the wire-substituted branch above: table_elem_visitor
+        // has no visit_bytes payload path, so byte-blob elements go through
+        // the per-element wrapper table, and null-like elements need the
+        // wrapper so each one still occupies a vector entry.
+        boxed_table_collector coll{fbb, {}, 0};
+        KOTA_CODEC_TRY(body(coll));
+        KOTA_CODEC_TRY(coll.finish());
+        out_offset = coll.result_offset;
+        return true;
     } else if constexpr(can_inline_struct_v<element_t> && !codec::tuple_like<element_t>) {
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container>) {
@@ -876,17 +890,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             out_offset = coll.result_offset;
             return true;
         }
-    } else if constexpr(meta::kind_of<element_t>() == meta::type_kind::optional ||
-                        meta::kind_of<element_t>() == meta::type_kind::pointer ||
-                        meta::kind_of<element_t>() == meta::type_kind::bytes) {
-        // Same boxing as the wire-substituted branch above: table_elem_visitor
-        // has no visit_bytes payload path, so byte-blob elements go through
-        // the per-element wrapper table.
-        boxed_table_collector coll{fbb, {}, 0};
-        KOTA_CODEC_TRY(body(coll));
-        KOTA_CODEC_TRY(coll.finish());
-        out_offset = coll.result_offset;
-        return true;
     } else {
         table_collector coll{fbb, {}, 0};
         KOTA_CODEC_TRY(body(coll));
