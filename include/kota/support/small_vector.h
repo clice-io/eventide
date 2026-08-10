@@ -49,9 +49,9 @@ template <typename T>
 struct default_buffer_size {
     constexpr static std::size_t preferred_size = 64;
 
-    static_assert(
-        sizeof(T) <= 256,
-        "Default small_vector inline storage would be too large. " "Use small_vector<T, N> with an explicit inline capacity.");
+    static_assert(sizeof(T) <= 256,
+                  "Default small_vector inline storage would be too large. "
+                  "Use small_vector<T, N> with an explicit inline capacity.");
 
     constexpr static std::size_t inline_bytes = preferred_size > sizeof(small_vector<T, 0>)
                                                     ? preferred_size - sizeof(small_vector<T, 0>)
@@ -295,9 +295,9 @@ private:
             }
             return new_size <= capacity();
         };
-        assert(
-            safe() &&
-            "Attempting to reference an element of the vector in an operation that " "invalidates it");
+        assert(safe() &&
+               "Attempting to reference an element of the vector in an operation that "
+               "invalidates it");
     }
 
     template <std::ranges::range Range>

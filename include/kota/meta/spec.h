@@ -353,9 +353,9 @@ template <typename... Cs>
 constexpr auto make_spec(const Cs&... components) {
     static_assert((detail::any_component<Cs> && ...),
                   "annotation entries must be assignments, e.g. skip = true");
-    static_assert(
-        (dsl::spec_component<Cs, field_spec> && ...),
-        "struct-level entries (rename_all/deny_unknown_fields/tagged/...) cannot be " "mixed with field-level entries in one annotation");
+    static_assert((dsl::spec_component<Cs, field_spec> && ...),
+                  "struct-level entries (rename_all/deny_unknown_fields/tagged/...) cannot be "
+                  "mixed with field-level entries in one annotation");
     static_assert(detail::component_kinds_unique<Cs...>(),
                   "annotation: the same attribute appears twice");
 

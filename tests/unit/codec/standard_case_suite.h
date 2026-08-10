@@ -73,7 +73,8 @@ struct Compound {
 struct Nullables {
     std::optional<int> opt_value;
     std::optional<std::string> opt_empty;
-    KOTATSU_ANNOTATE(defaulted = true)<std::unique_ptr<Basic>> heap_allocated;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::unique_ptr<Basic>> heap_allocated;
 
     auto operator==(const Nullables& other) const -> bool {
         if(opt_value != other.opt_value || opt_empty != other.opt_empty) {
@@ -97,8 +98,8 @@ enum class Role : std::uint8_t {
 
 struct ADTs {
     Role role{};
-    KOTATSU_ANNOTATE(
-        defaulted = true)<std::variant<std::monostate, int, std::string, Basic>> multi_variant;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::variant<std::monostate, int, std::string, Basic>> multi_variant;
 
     auto operator==(const ADTs&) const -> bool = default;
 };
@@ -171,10 +172,14 @@ inline auto pointer_value_equal(const Ptr& lhs, const Ptr& rhs) -> bool {
 }
 
 struct SmartPointers {
-    KOTATSU_ANNOTATE(defaulted = true)<std::unique_ptr<Basic>> unique_basic;
-    KOTATSU_ANNOTATE(defaulted = true)<std::shared_ptr<Basic>> shared_basic;
-    KOTATSU_ANNOTATE(defaulted = true)<std::shared_ptr<Basic>> shared_empty;
-    KOTATSU_ANNOTATE(defaulted = true)<std::vector<std::shared_ptr<Basic>>> shared_list;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::unique_ptr<Basic>> unique_basic;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::shared_ptr<Basic>> shared_basic;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::shared_ptr<Basic>> shared_empty;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::vector<std::shared_ptr<Basic>>> shared_list;
     std::optional<std::shared_ptr<Basic>> opt_shared;
 
     auto operator==(const SmartPointers& other) const -> bool {
@@ -218,12 +223,16 @@ struct AttrProfile {
 
 struct AttrPayload {
     int id{};
-    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})<std::string> display_name;
-    KOTATSU_ANNOTATE(skip = true)<int> internal_id = 1000;
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)<std::optional<std::string>> note;
-    KOTATSU_ANNOTATE(flatten = true)<AttrProfile> profile;
-    KOTATSU_ANNOTATE(enum_string = type<rename_policy::lower_camel>)<AccessLevel> level =
-        AccessLevel::viewer;
+    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})
+    <std::string> display_name;
+    KOTATSU_ANNOTATE(skip = true)
+    <int> internal_id = 1000;
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    <std::optional<std::string>> note;
+    KOTATSU_ANNOTATE(flatten = true)
+    <AttrProfile> profile;
+    KOTATSU_ANNOTATE(enum_string = type<rename_policy::lower_camel>)
+    <AccessLevel> level = AccessLevel::viewer;
 
     auto operator==(const AttrPayload&) const -> bool = default;
 };

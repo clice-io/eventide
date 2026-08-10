@@ -44,7 +44,8 @@ struct person {
 
 struct with_skip {
     std::int32_t a;
-    KOTATSU_ANNOTATE(skip = true)<std::int32_t> internal;
+    KOTATSU_ANNOTATE(skip = true)
+    <std::int32_t> internal;
     std::int32_t c;
 };
 

@@ -1095,9 +1095,9 @@ public:
         h.data = self;
         if(uv::is_closing(h)) {
             const bool closed_by_loop_cleanup = uv::loop_close_fallback::take(uv::as_handle(h));
-            assert(
-                closed_by_loop_cleanup &&
-                "uv handle destroyed while close is still pending or without loop cleanup " "tracking");
+            assert(closed_by_loop_cleanup &&
+                   "uv handle destroyed while close is still pending or without loop cleanup "
+                   "tracking");
             if(!closed_by_loop_cleanup) {
                 return;
             }

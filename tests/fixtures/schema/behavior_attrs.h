@@ -92,9 +92,10 @@ struct SkipIfCustomStruct {
 };
 
 struct MultiAttrStruct {
-    KOTATSU_ANNOTATE(defaulted = true,
-                     skip_if = type<pred::optional_none>)<std::optional<int>> opt_with_default;
-    KOTATSU_ANNOTATE(rename = "score", as = type<std::string>)<int> renamed_as;
+    KOTATSU_ANNOTATE(defaulted = true, skip_if = type<pred::optional_none>)
+    <std::optional<int>> opt_with_default;
+    KOTATSU_ANNOTATE(rename = "score", as = type<std::string>)
+    <int> renamed_as;
 };
 
 struct SkipIfAsStruct {

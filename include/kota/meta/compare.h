@@ -435,7 +435,8 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
         } else if constexpr(map_range<L> && map_range<R>) {
             static_assert(
                 dependent_false<L>,
-                "meta::lt: unordered/mixed map ranges have no deterministic strict order; " "use meta::eq/meta::ne");
+                "meta::lt: unordered/mixed map ranges have no deterministic strict order; "
+                "use meta::eq/meta::ne");
             return false;
         } else if constexpr((ordered_set_range<L> && ordered_set_range<R>) ||
                             (sequence_range<L> && sequence_range<R>)) {
@@ -443,7 +444,8 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
         } else if constexpr(set_range<L> && set_range<R>) {
             static_assert(
                 dependent_false<L>,
-                "meta::lt: unordered/mixed set ranges have no deterministic strict order; " "use meta::eq/meta::ne");
+                "meta::lt: unordered/mixed set ranges have no deterministic strict order; "
+                "use meta::eq/meta::ne");
             return false;
         } else {
             static_assert(dependent_false<L>,

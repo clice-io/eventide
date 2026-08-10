@@ -911,9 +911,9 @@ public:
         static_assert(sizeof...(Members) > 0,
                       "Command::after requires at least one member pointer.");
         using OptionTy = std::remove_cvref_t<detail::member_path_result_t<T, Members...>>;
-        static_assert(
-            std::derived_from<OptionTy, decl::DecoOptionBase>,
-            "Command::after only supports member pointer paths ending at a deco " "option member.");
+        static_assert(std::derived_from<OptionTy, decl::DecoOptionBase>,
+                      "Command::after only supports member pointer paths ending at a deco "
+                      "option member.");
         using ValueTy = typename OptionTy::result_type;
         using FnTy = std::remove_cvref_t<Fn>;
         if constexpr(!std::is_invocable_r_v<decl::ParseControl, FnTy&, AfterStep<T, ValueTy>&>) {
@@ -1124,9 +1124,9 @@ class SubCommander {
             } else if constexpr(std::is_invocable_v<HandlerTy&, const match_t&>) {
                 handler(match);
             } else {
-                static_assert(
-                    always_false_v<HandlerTy>,
-                    "SubCommander handler must accept std::span<std::string> or " "SubCommandMatch.");
+                static_assert(always_false_v<HandlerTy>,
+                              "SubCommander handler must accept std::span<std::string> or "
+                              "SubCommandMatch.");
             }
         });
     }

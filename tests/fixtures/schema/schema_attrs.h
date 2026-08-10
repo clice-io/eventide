@@ -12,13 +12,16 @@
 namespace kota::meta::fixtures {
 
 struct AnnotatedStruct {
-    KOTATSU_ANNOTATE(rename = "id")<int> user_id;
-    KOTATSU_ANNOTATE(skip = true)<std::string> internal;
+    KOTATSU_ANNOTATE(rename = "id")
+    <int> user_id;
+    KOTATSU_ANNOTATE(skip = true)
+    <std::string> internal;
     float value;
 };
 
 struct AliasStruct {
-    KOTATSU_ANNOTATE(alias = {"user_id", "userId"})<int> id;
+    KOTATSU_ANNOTATE(alias = {"user_id", "userId"})
+    <int> id;
     std::string name;
 };
 
@@ -29,14 +32,16 @@ struct Inner {
 
 struct Outer {
     int x;
-    KOTATSU_ANNOTATE(flatten = true)<Inner> inner;
+    KOTATSU_ANNOTATE(flatten = true)
+    <Inner> inner;
     int y;
 };
 
 struct FlattenTailStruct {
     int head;
     int neck;
-    KOTATSU_ANNOTATE(flatten = true)<Inner> body;
+    KOTATSU_ANNOTATE(flatten = true)
+    <Inner> body;
 };
 
 struct DeepInner {
@@ -46,37 +51,44 @@ struct DeepInner {
 
 struct Middle {
     int m;
-    KOTATSU_ANNOTATE(flatten = true)<DeepInner> deep;
+    KOTATSU_ANNOTATE(flatten = true)
+    <DeepInner> deep;
 };
 
 struct DeepOuter {
     int head;
-    KOTATSU_ANNOTATE(flatten = true)<Middle> mid;
+    KOTATSU_ANNOTATE(flatten = true)
+    <Middle> mid;
     int tail;
 };
 
 struct FlattenInnerWithSkip {
     int keep_a;
-    KOTATSU_ANNOTATE(skip = true)<int> drop_b;
+    KOTATSU_ANNOTATE(skip = true)
+    <int> drop_b;
     int keep_c;
 };
 
 struct FlattenOuterWithChildSkip {
     int head;
-    KOTATSU_ANNOTATE(flatten = true)<FlattenInnerWithSkip> inner;
+    KOTATSU_ANNOTATE(flatten = true)
+    <FlattenInnerWithSkip> inner;
 };
 
 struct FlattenInnerWithRename {
-    KOTATSU_ANNOTATE(rename = "renamed_a")<int> a;
+    KOTATSU_ANNOTATE(rename = "renamed_a")
+    <int> a;
     int b;
 };
 
 struct FlattenOuterWithChildRename {
-    KOTATSU_ANNOTATE(flatten = true)<FlattenInnerWithRename> inner;
+    KOTATSU_ANNOTATE(flatten = true)
+    <FlattenInnerWithRename> inner;
 };
 
 struct DefaultStruct {
-    KOTATSU_ANNOTATE(defaulted = true)<int> with_default;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <int> with_default;
     std::string version;
     int plain;
 };
