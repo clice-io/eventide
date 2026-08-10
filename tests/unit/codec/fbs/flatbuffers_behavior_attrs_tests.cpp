@@ -569,6 +569,32 @@ TEST_CASE(type_traits_proxy_lazy_scalar_access) {
     EXPECT_EQ(content, std::string_view{"lazy"});
 }
 
+TEST_CASE(map_with_repr_key_lookup) {
+    // The ordering key resolves the key's repr first: Tag keys sort and look
+    // up by their uint32 representation.
+    struct tag_rank_map {
+        std::map<Tag, std::int32_t> ranks;
+    };
+
+    tag_rank_map input;
+    input.ranks[Tag{30}] = 3;
+    input.ranks[Tag{7}] = 1;
+    input.ranks[Tag{100}] = 5;
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = fbs::table_view<tag_rank_map>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+
+    auto m = root[&tag_rank_map::ranks];
+    ASSERT_TRUE(m.valid());
+    EXPECT_EQ(m[7U], 1);
+    EXPECT_EQ(m[30U], 3);
+    EXPECT_EQ(m[100U], 5);
+}
+
 TEST_CASE(type_traits_proxy_lazy_map_value_access) {
     TypeTraitsRoot input;
     input.root_tag = Tag{1};

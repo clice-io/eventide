@@ -609,9 +609,9 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     EXPECT_EQ(std::get<2>(output).second, 6.25F);
 
     // Manual decode of element 1 via field_reader directly
-    fbs::decode_detail::FieldReader vr{
-        root,
-        static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step)};
+    fbs::decode_detail::field_reader vr{
+        .tbl = root,
+        .slot = static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step)};
     // This should follow the pointer at slot 6 to get the sub-table
     std::array<int, 3> manual_arr{};
     bool manual_ok = vr.visit_tuple(manual_arr, [&](auto& sv) -> bool {

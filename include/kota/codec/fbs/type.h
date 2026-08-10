@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "kota/codec/visit/common.h"
+#include "kota/codec/visit/context.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"
@@ -44,6 +45,15 @@ template <typename T>
 using object_result_t = std::expected<T, object_error_code>;
 
 namespace detail {
+
+/// Static visitor traits shared by the fbs visitors the codec dispatch
+/// drives: a binary backend whose output layout is computed statically (so
+/// meta::dynamic reprs are rejected at compile time).
+struct visitor_base {
+    using error_type = rich_error;
+    constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
+};
 
 constexpr inline char buffer_identifier[] = "EVTO";
 constexpr voffset_t first_field = 4;
