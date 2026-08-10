@@ -234,6 +234,14 @@ struct with_map_int_string {
     std::map<std::int32_t, std::string> data;
 };
 
+struct with_enum_map {
+    std::map<color, std::int32_t> data;
+};
+
+struct with_long_doubles {
+    std::vector<long double> samples;
+};
+
 struct with_map_string_struct {
     std::map<std::string, address> data;
 };
@@ -748,6 +756,52 @@ TEST_CASE(map_key_lookup_int_key) {
     EXPECT_EQ(m[30], "thirty");
     // Missing key returns default (empty string_view)
     EXPECT_EQ(m[99], "");
+}
+
+TEST_CASE(map_key_lookup_enum_key) {
+    // Enum keys sort by their underlying value on encode; the lazy lookup's
+    // binary search compares decoded enums, which order the same way.
+    with_enum_map input{
+        .data = {{color::blue, 3}, {color::red, 1}, {color::green, 2}}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = table_view<with_enum_map>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto m = root[&with_enum_map::data];
+    ASSERT_TRUE(m.valid());
+    EXPECT_EQ(m[color::red], 1);
+    EXPECT_EQ(m[color::green], 2);
+    EXPECT_EQ(m[color::blue], 3);
+}
+
+TEST_CASE(vector_of_long_double_roundtrips) {
+    // long double cells are written as double (scalar_cell_t), so the
+    // contiguous fast path must not memcpy 16-byte long doubles that the
+    // decode side reads as 8-byte cells.
+    with_long_doubles input{
+        .samples = {1.5L, -2.25L, 1024.0L}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_long_doubles output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_EQ(output.samples.size(), 3U);
+    EXPECT_EQ(output.samples[0], 1.5L);
+    EXPECT_EQ(output.samples[1], -2.25L);
+    EXPECT_EQ(output.samples[2], 1024.0L);
+
+    // The lazy view reads the same double cells.
+    auto root = table_view<with_long_doubles>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    auto arr = root[&with_long_doubles::samples];
+    ASSERT_EQ(arr.size(), 3U);
+    EXPECT_EQ(arr[1], -2.25L);
 }
 
 TEST_CASE(map_find_existing) {

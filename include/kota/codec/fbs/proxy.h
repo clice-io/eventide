@@ -43,11 +43,12 @@ namespace proxy_detail {
 
 using slot_id = voffset_t;
 
-class table_view_type {
+/// A nullable reference to a raw flatbuffers table.
+class table_ref {
 public:
-    table_view_type() = default;
+    table_ref() = default;
 
-    explicit table_view_type(const Table* t) : table(t) {}
+    explicit table_ref(const Table* t) : table(t) {}
 
     auto valid() const -> bool {
         return table != nullptr;
@@ -69,8 +70,6 @@ public:
 private:
     const Table* table = nullptr;
 };
-
-using codec::detail::clean_t;
 
 template <typename T>
 constexpr bool is_string_like_v = codec::str_like<T>;
@@ -123,54 +122,78 @@ constexpr auto deep_clean_impl() {
 template <typename T>
 using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
-/// True when a vector element of this representation is boxed in a per-element
-/// wrapper table (value at the table's first field): nullable and null-like
-/// shapes need a table so each element still occupies a vector entry, and
-/// nested containers and byte blobs have no direct vector-of-vectors
-/// representation. Shared by the encode collector choice (seq_encode_impl),
-/// the decode reader (VecReader) and the lazy array_view, which must all
-/// agree on the element storage.
-template <typename T>
-consteval bool needs_wrapper_in_vector() {
-    constexpr auto k = meta::kind_of<T>();
-    return k == meta::type_kind::null || k == meta::type_kind::optional ||
-           k == meta::type_kind::pointer || k == meta::type_kind::array ||
-           k == meta::type_kind::set || k == meta::type_kind::map || k == meta::type_kind::bytes;
+/// How a vector element is laid out in the buffer.
+enum class element_layout : std::uint8_t {
+    scalar,         ///< vector of scalar cells (scalar_cell_t).
+    string,         ///< vector of string offsets.
+    inline_struct,  ///< vector of the element struct itself (VectorOfStructs).
+    boxed,          ///< per-element wrapper table, value at the table's first field.
+    table,          ///< vector of table offsets to the element's own table.
+};
+
+/// The single classification every consumer of a vector's element layout
+/// consults — encode collector choice (seq_encode_impl), decode reader
+/// (vec_reader), the lazy array_view and its pointer type — so they can never
+/// diverge. Decided on the element's unpeeled resolved representation: boxed
+/// elements travel as wrapper tables because nullable and null-like shapes
+/// need a table for absence to still occupy a vector entry, and nested
+/// containers and byte blobs have no direct vector-of-vectors representation.
+/// Tuple-like elements are tables even when they could inline as structs.
+template <typename Element>
+consteval element_layout element_layout_of() {
+    using repr_t = apply_repr_t<std::remove_cvref_t<Element>>;
+    constexpr auto k = meta::kind_of<repr_t>();
+    if(k == meta::type_kind::null || k == meta::type_kind::optional ||
+       k == meta::type_kind::pointer || k == meta::type_kind::array || k == meta::type_kind::set ||
+       k == meta::type_kind::map || k == meta::type_kind::bytes) {
+        return element_layout::boxed;
+    }
+    if(is_string_like_v<repr_t>) {
+        return element_layout::string;
+    }
+    if(is_scalar_v<repr_t>) {
+        return element_layout::scalar;
+    }
+    if(can_inline_struct_v<repr_t> && !is_tuple_like_v<repr_t>) {
+        return element_layout::inline_struct;
+    }
+    return element_layout::table;
 }
 
+/// The concrete cell type a scalar is written as.
 template <typename T>
-struct scalar_storage {
+struct scalar_cell {
     using type = std::remove_cvref_t<T>;
 };
 
 template <>
-struct scalar_storage<bool> {
+struct scalar_cell<bool> {
     using type = std::uint8_t;
 };
 
 template <>
-struct scalar_storage<char> {
+struct scalar_cell<char> {
     using type = std::int8_t;
 };
 
 template <>
-struct scalar_storage<std::byte> {
+struct scalar_cell<std::byte> {
     using type = std::uint8_t;
 };
 
 template <>
-struct scalar_storage<long double> {
+struct scalar_cell<long double> {
     using type = double;
 };
 
 template <typename T>
     requires std::is_enum_v<T>
-struct scalar_storage<T> {
+struct scalar_cell<T> {
     using type = std::underlying_type_t<T>;
 };
 
 template <typename T>
-using scalar_storage_t = typename scalar_storage<std::remove_cvref_t<T>>::type;
+using scalar_cell_t = typename scalar_cell<std::remove_cvref_t<T>>::type;
 
 template <typename Object>
 consteval std::size_t field_slot_count() {
@@ -212,39 +235,30 @@ inline auto variant_payload_slot(std::size_t index) -> slot_id {
     return r.has_value() ? *r : invalid_slot;
 }
 
-template <typename Element,
-          typename CleanElement = clean_t<Element>,
-          bool IsScalarLike = std::same_as<CleanElement, std::byte> ||
-                              codec::bool_like<CleanElement> || codec::int_like<CleanElement> ||
-                              codec::uint_like<CleanElement> ||
-                              codec::floating_like<CleanElement> ||
-                              codec::char_like<CleanElement> || std::is_enum_v<CleanElement>,
-          bool IsString = is_string_like_v<CleanElement>,
-          bool IsInlineStruct = can_inline_struct_v<CleanElement> && !is_tuple_like_v<CleanElement>>
-struct array_vector_ptr_impl {
+/// The typed flatbuffers vector pointer an element layout is read through;
+/// boxed and table layouts share the table-offset vector shape.
+template <typename Element, element_layout Layout = element_layout_of<Element>()>
+struct element_vector_ptr {
     using type = const Vector<table_offset_t>*;
 };
 
-template <typename Element, typename CleanElement, bool IsString, bool IsInlineStruct>
-struct array_vector_ptr_impl<Element, CleanElement, true, IsString, IsInlineStruct> {
-    using type = const Vector<scalar_storage_t<CleanElement>>*;
+template <typename Element>
+struct element_vector_ptr<Element, element_layout::scalar> {
+    using type = const Vector<scalar_cell_t<deep_clean_t<Element>>>*;
 };
 
-template <typename Element, typename CleanElement, bool IsInlineStruct>
-struct array_vector_ptr_impl<Element, CleanElement, false, true, IsInlineStruct> {
+template <typename Element>
+struct element_vector_ptr<Element, element_layout::string> {
     using type = const Vector<string_offset_t>*;
 };
 
-template <typename Element, typename CleanElement>
-struct array_vector_ptr_impl<Element, CleanElement, false, false, true> {
-    using type = const Vector<const CleanElement*>*;
+template <typename Element>
+struct element_vector_ptr<Element, element_layout::inline_struct> {
+    using type = const Vector<const deep_clean_t<Element>*>*;
 };
 
 template <typename Element>
-struct array_vector_ptr : array_vector_ptr_impl<Element> {};
-
-template <typename Element>
-using array_vector_ptr_t = typename array_vector_ptr<Element>::type;
+using element_vector_ptr_t = typename element_vector_ptr<Element>::type;
 
 template <typename T>
 constexpr bool is_map_range_v = [] {
@@ -357,7 +371,7 @@ struct field_return_type<
                      !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
                      !is_map_range_v<T> && is_range_like_v<T>>> {
     // The raw element type is kept: array_view itself distinguishes the
-    // resolved representation (storage classification) from the peeled view type.
+    // element layout (on the unpeeled representation) from the peeled view type.
     using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>;
 };
 
@@ -403,7 +417,7 @@ using array_element_return_t = typename array_element_return<Element>::type;
 
 // Unchecked read: returns {} on miss rather than reporting errors.
 template <typename T>
-auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
+auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     using return_t = field_return_type_t<T>;
 
     const auto* table = view.raw();
@@ -411,8 +425,8 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
     if constexpr(std::same_as<T, std::byte>) {
         return std::byte{view.template get_scalar<std::uint8_t>(field)};
     } else if constexpr(std::is_enum_v<T>) {
-        using storage_t = std::underlying_type_t<T>;
-        return static_cast<T>(view.template get_scalar<storage_t>(field));
+        using cell_t = std::underlying_type_t<T>;
+        return static_cast<T>(view.template get_scalar<cell_t>(field));
     } else if constexpr(codec::char_like<T>) {
         return static_cast<T>(view.template get_scalar<std::int8_t>(field));
     } else if constexpr(codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T>) {
@@ -431,10 +445,10 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         return std::string_view(text->data(), text->size());
     } else if constexpr(is_specialization_of<std::variant, T>) {
         const auto* nested = table->template GetPointer<const Table*>(field);
-        return return_t(table_view_type(nested));
+        return return_t(table_ref(nested));
     } else if constexpr(is_tuple_like_v<T>) {
         const auto* nested = table->template GetPointer<const Table*>(field);
-        return return_t(table_view_type(nested));
+        return return_t(table_ref(nested));
     } else if constexpr(can_inline_struct_v<T>) {
         const auto* value = table->template GetStruct<const T*>(field);
         if(value == nullptr) {
@@ -445,13 +459,13 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         const auto* vec = table->template GetPointer<const Vector<table_offset_t>*>(field);
         return return_t(vec);
     } else if constexpr(is_range_like_v<T>) {
-        // array_view owns the storage classification; read with its pointer
-        // type so the two can never diverge.
+        // array_view owns the element-layout classification; read with its
+        // pointer type so the two can never diverge.
         const auto* value = table->template GetPointer<typename return_t::vector_ptr_type>(field);
         return return_t(value);
     } else {
         const auto* nested = table->template GetPointer<const Table*>(field);
-        return return_t(table_view_type(nested));
+        return return_t(table_ref(nested));
     }
 }
 
@@ -459,19 +473,14 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
 
 template <typename Element>
 class array_view {
-    // The unpeeled resolved representation decides the vector storage: boxed
-    // elements (nullable representations, nested containers, byte blobs) travel
-    // as per-element wrapper tables, so absence stays representable. Nullable
-    // peeling applies only to the view returned for each element.
-    using repr_type = proxy_detail::apply_repr_t<Element>;
-    constexpr static bool is_boxed = proxy_detail::needs_wrapper_in_vector<repr_type>();
+    // The element layout is decided on the unpeeled resolved representation;
+    // nullable peeling applies only to the view returned for each element.
+    constexpr static auto layout = proxy_detail::element_layout_of<Element>();
 
 public:
     using element_type = proxy_detail::deep_clean_t<Element>;
     using value_type = proxy_detail::array_element_return_t<element_type>;
-    using vector_ptr_type = std::conditional_t<is_boxed,
-                                               const Vector<table_offset_t>*,
-                                               proxy_detail::array_vector_ptr_t<element_type>>;
+    using vector_ptr_type = proxy_detail::element_vector_ptr_t<Element>;
 
     constexpr array_view() = default;
 
@@ -498,38 +507,35 @@ public:
     }
 
     auto at(std::size_t index) const -> value_type {
+        using enum proxy_detail::element_layout;
+
         if(!valid() || index >= size()) {
             return value_type{};
         }
 
-        if constexpr(is_boxed) {
+        if constexpr(layout == boxed) {
             const auto* wrapper = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
-            return proxy_detail::read_field<element_type>(proxy_detail::table_view_type(wrapper),
+            return proxy_detail::read_field<element_type>(proxy_detail::table_ref(wrapper),
                                                           detail::first_field);
-        } else if constexpr(std::same_as<element_type, std::byte>) {
-            return std::byte{vector->Get(static_cast<uoffset_t>(index))};
-        } else if constexpr(std::is_enum_v<element_type>) {
-            using storage_t = proxy_detail::scalar_storage_t<element_type>;
-            return static_cast<element_type>(
-                static_cast<storage_t>(vector->Get(static_cast<uoffset_t>(index))));
-        } else if constexpr(codec::char_like<element_type>) {
-            return static_cast<char>(vector->Get(static_cast<uoffset_t>(index)));
-        } else if constexpr(codec::bool_like<element_type> || codec::int_like<element_type> ||
-                            codec::uint_like<element_type>) {
-            return static_cast<element_type>(vector->Get(static_cast<uoffset_t>(index)));
-        } else if constexpr(codec::floating_like<element_type>) {
-            return static_cast<element_type>(vector->Get(static_cast<uoffset_t>(index)));
-        } else if constexpr(proxy_detail::is_string_like_v<element_type>) {
+        } else if constexpr(layout == scalar) {
+            if constexpr(std::same_as<element_type, std::byte>) {
+                return std::byte{vector->Get(static_cast<uoffset_t>(index))};
+            } else if constexpr(std::is_enum_v<element_type>) {
+                using cell_t = proxy_detail::scalar_cell_t<element_type>;
+                return static_cast<element_type>(
+                    static_cast<cell_t>(vector->Get(static_cast<uoffset_t>(index))));
+            } else if constexpr(codec::char_like<element_type>) {
+                return static_cast<char>(vector->Get(static_cast<uoffset_t>(index)));
+            } else {
+                return static_cast<element_type>(vector->Get(static_cast<uoffset_t>(index)));
+            }
+        } else if constexpr(layout == string) {
             const auto* text = vector->GetAsString(static_cast<uoffset_t>(index));
             if(text == nullptr) {
                 return {};
             }
             return std::string_view(text->data(), text->size());
-        } else if constexpr(proxy_detail::is_tuple_like_v<element_type>) {
-            // tuple-like types (std::array, etc.) are encoded as tables, not inline structs.
-            const auto* nested = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
-            return value_type(proxy_detail::table_view_type(nested));
-        } else if constexpr(can_inline_struct_v<element_type>) {
+        } else if constexpr(layout == inline_struct) {
             const auto* value = vector->Get(static_cast<uoffset_t>(index));
             if(value == nullptr) {
                 return {};
@@ -537,7 +543,7 @@ public:
             return *value;
         } else {
             const auto* nested = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
-            return value_type(proxy_detail::table_view_type(nested));
+            return value_type(proxy_detail::table_ref(nested));
         }
     }
 
@@ -552,7 +558,7 @@ private:
 template <typename... Ts>
 class variant_view {
 public:
-    using view_type = proxy_detail::table_view_type;
+    using view_type = proxy_detail::table_ref;
 
     constexpr variant_view() = default;
 
@@ -600,7 +606,7 @@ private:
 template <typename... Ts>
 class tuple_view {
 public:
-    using view_type = proxy_detail::table_view_type;
+    using view_type = proxy_detail::table_ref;
 
     constexpr tuple_view() = default;
 
@@ -667,7 +673,7 @@ public:
             return {};
         }
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
-        return tuple_view<K, V>(proxy_detail::table_view_type(entry));
+        return tuple_view<K, V>(proxy_detail::table_ref(entry));
     }
 
     template <typename U = K>
@@ -712,7 +718,7 @@ public:
 
 private:
     template <typename U>
-    auto find_entry(const U& key) const -> proxy_detail::table_view_type {
+    auto find_entry(const U& key) const -> proxy_detail::table_ref {
         using clean_k = proxy_detail::deep_clean_t<K>;
 
         if(!valid()) {
@@ -724,7 +730,7 @@ private:
         while(lo < hi) {
             auto mid = lo + (hi - lo) / 2;
             const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
-            auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_view_type(entry),
+            auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_ref(entry),
                                                                proxy_detail::field_slot(0));
             if(entry_key < key) {
                 lo = mid + 1;
@@ -738,7 +744,7 @@ private:
         }
 
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
-        auto entry_view = proxy_detail::table_view_type(entry);
+        auto entry_view = proxy_detail::table_ref(entry);
         auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
         if(entry_key == key) {
             return entry_view;
@@ -753,7 +759,7 @@ template <typename T>
 class table_view {
 public:
     using object_type = std::remove_cvref_t<T>;
-    using view_type = proxy_detail::table_view_type;
+    using view_type = proxy_detail::table_ref;
 
     constexpr table_view() = default;
 
