@@ -17,8 +17,8 @@
 #include "struct.h"
 #include "type_kind.h"
 #include "kota/support/naming.h"
-#include "kota/support/ranges.h"
 #include "kota/support/tuple_traits.h"
+#include "kota/support/type_traits.h"
 
 namespace kota::meta {
 
@@ -360,12 +360,6 @@ using built_fields_t = std::array<field_info, effective_field_count<T>()>;
 template <typename T, typename Config>
 constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset = 0);
 
-template <typename T>
-constexpr bool has_deny_unknown_fields() {
-    using attrs_t = typename unwrap_annotated<T>::attrs;
-    return struct_spec_of<attrs_t>.deny_unknown_fields;
-}
-
 /// Deny policy carried by the config itself — merged there by merged_config_t
 /// on the way down, or set directly on a codec config.
 template <typename Config>
@@ -377,7 +371,7 @@ constexpr bool config_denies_unknown() {
     }
 }
 
-template <typename Variant, typename Config, typename AttrsTuple = std::tuple<>>
+template <typename Variant, typename Config, typename AttrsTuple>
 struct variant_info_node;
 
 template <typename Config, typename AttrsTuple, typename... Ts>
@@ -500,8 +494,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::array> {
 template <typename T, typename AttrsT, typename Config>
 struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
     constexpr static std::size_t count = effective_field_count<T>();
-    constexpr static bool deny_unknown =
-        has_deny_unknown_fields<T>() || config_denies_unknown<Config>();
+    constexpr static bool deny_unknown = config_denies_unknown<Config>();
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
     constexpr inline static built_fields_t<T, Config> fields = build_fields<T, Config>();

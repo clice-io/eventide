@@ -48,12 +48,12 @@ concept has_repr = requires { sizeof(repr<T>); };
 
 namespace detail {
 
-template <typename Spec>
+template <typename Repr>
 constexpr auto declared_repr_impl() {
-    if constexpr(requires { typename Spec::type; }) {
-        return std::type_identity<typename Spec::type>{};
+    if constexpr(requires { typename Repr::type; }) {
+        return std::type_identity<typename Repr::type>{};
     } else {
-        static_assert(dependent_false<Spec>,
+        static_assert(dependent_false<Repr>,
                       "a meta::repr specialization or behavior::with adapter must declare its "
                       "representation via `using type = ...` (meta::dynamic when only known at "
                       "runtime)");
@@ -67,7 +67,7 @@ constexpr auto declared_repr_impl() {
 /// missing `type` member is a hard error with the protocol diagnostic.
 /// Declared representations are not final: meta::resolved_repr_t follows
 /// chained reprs and annotations nested inside them to the resolved type.
-template <typename Spec>
-using declared_repr_t = typename decltype(detail::declared_repr_impl<Spec>())::type;
+template <typename Repr>
+using declared_repr_t = typename decltype(detail::declared_repr_impl<Repr>())::type;
 
 }  // namespace kota::meta

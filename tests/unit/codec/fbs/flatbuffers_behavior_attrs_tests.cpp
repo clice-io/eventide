@@ -787,8 +787,8 @@ TEST_CASE(adapted_element_travels_as_adapter_repr) {
 }
 
 TEST_CASE(view_honors_field_adapter_over_type_repr) {
-    // Tag's own repr is uint32, but the field adapter puts a string on the
-    // encoded; the proxy view must follow the adapter.
+    // Tag's own repr is uint32, but the field adapter declares a string
+    // representation; the proxy view must follow the adapter.
     const AdapterOverReprField input{.tag = Tag{4242}};
 
     auto encoded = fbs::to_flatbuffer(input);

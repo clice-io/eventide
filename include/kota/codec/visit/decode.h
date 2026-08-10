@@ -73,7 +73,7 @@ bool repr_decode(Vis& vis, V& out) {
         return Repr::template deserialize<Config>(vis, out);
     } else {
         static_assert(dependent_false<Repr>,
-                      "repr has no decode path: define from() or deserialize()");
+                      "repr protocol: no decode path — define from() or deserialize()");
         return false;
     }
 }

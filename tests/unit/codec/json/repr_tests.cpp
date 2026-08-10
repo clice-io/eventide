@@ -104,6 +104,29 @@ KOTATSU_ANNOTATION(strict_camel_annotation,
 using annotated_line_range_repr =
     kota::meta::annotate<strict_camel_annotation>::type<line_range_repr>;
 
+// Two resolve chains merging the same policies — one node carrying both,
+// two chained nodes carrying one each — must produce the same config and
+// share one type_info instance: schema export keys $defs by instance
+// identity, so a split is a hard duplicate-name error.
+struct merge_point {
+    int x_val = 0;
+};
+
+KOTATSU_ANNOTATION(camel_only_annotation, rename_all = casing::lower_camel);
+KOTATSU_ANNOTATION(deny_only_annotation, deny_unknown_fields = true);
+
+struct deny_step {
+    int v = 0;
+};
+
+struct chained_policies {
+    int v = 0;
+};
+
+struct flat_policies {
+    int v = 0;
+};
+
 // Repr whose declared encoded type is an annotated tagged variant: the tagging
 // must surface in type_info exactly as the codec writes it.
 struct load_ok {
@@ -295,6 +318,48 @@ struct repr<kota_repr_test::line_range> {
 };
 
 template <>
+struct repr<kota_repr_test::deny_step> {
+    using type = kota::meta::annotate<kota_repr_test::deny_only_annotation>::type<
+        kota_repr_test::merge_point>;
+
+    static type to(const kota_repr_test::deny_step& s) {
+        return {{.x_val = s.v}};
+    }
+
+    static kota_repr_test::deny_step from(const type& w) {
+        return {.v = annotated_value(w).x_val};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::chained_policies> {
+    using type = kota::meta::annotate<kota_repr_test::camel_only_annotation>::type<
+        kota_repr_test::deny_step>;
+
+    static type to(const kota_repr_test::chained_policies& c) {
+        return {{.v = c.v}};
+    }
+
+    static kota_repr_test::chained_policies from(const type& w) {
+        return {.v = annotated_value(w).v};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::flat_policies> {
+    using type = kota::meta::annotate<kota_repr_test::strict_camel_annotation>::type<
+        kota_repr_test::merge_point>;
+
+    static type to(const kota_repr_test::flat_policies& f) {
+        return {{.x_val = f.v}};
+    }
+
+    static kota_repr_test::flat_policies from(const type& w) {
+        return {.v = annotated_value(w).x_val};
+    }
+};
+
+template <>
 struct repr<kota_repr_test::load_result> {
     using type = kota_repr_test::load_result_repr;
 
@@ -401,7 +466,7 @@ struct strict_report {
     meta::annotate<kota_repr_test::strict_camel_annotation>::type<load_result> result;
 };
 
-/// Imperative adapter: uppercases on the encoded, lowercases back.
+/// Imperative adapter: uppercases when encoding, lowercases back.
 struct shout_adapter {
     using type = std::string;
 
@@ -489,7 +554,7 @@ TEST_CASE(repr_reaches_container_elements_and_map_keys) {
     ASSERT_TRUE(from_json(*encoded, parsed_rels).has_value());
     EXPECT_EQ(parsed_rels, rels);
 
-    // A repr with a string repr makes the type usable as a JSON map key.
+    // A repr declared as string makes the type usable as a JSON map key.
     std::map<version, int> by_version{
         {{.major = 1, .minor = 0}, 10},
         {{.major = 2, .minor = 5}, 25},
@@ -630,6 +695,19 @@ TEST_CASE(chained_repr_resolves_to_final_type) {
     EXPECT_TRUE(schema->find(R"("t":{"type":"integer")") != std::string::npos);
 }
 
+TEST_CASE(equivalent_merge_chains_share_type_info) {
+    // "camel then deny" across two chained repr nodes and "camel + deny" on
+    // one node merge to the same effective config, so both routes must share
+    // one type_info instance and describe the same document.
+    const auto& chained = meta::type_info_of<kota_repr_test::chained_policies>();
+    const auto& flat = meta::type_info_of<kota_repr_test::flat_policies>();
+    EXPECT_EQ(&chained, &flat);
+
+    const auto& info = static_cast<const meta::struct_type_info&>(chained);
+    EXPECT_TRUE(info.deny_unknown);
+    EXPECT_EQ(info.fields[0].name, "xVal");
+}
+
 TEST_CASE(annotation_nested_in_repr_resolved_type) {
     // The repr's declared encoded type carries a behavior attr; the resolver
     // must follow it to the annotation's repr, so schema consumers
@@ -683,7 +761,7 @@ TEST_CASE(structural_attrs_nested_in_repr_resolved_type) {
     ASSERT_TRUE(from_json(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 
-    // deny_unknown_fields on the encoded annotation rejects stray keys.
+    // deny_unknown_fields on the declared annotation rejects stray keys.
     EXPECT_FALSE(from_json(R"({"r":{"startLine":3,"lineCount":4,"x":1}})", output).has_value());
 
     // The schema exposes the renamed properties and the unknown-field policy.

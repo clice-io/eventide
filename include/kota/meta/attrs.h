@@ -147,47 +147,65 @@ constexpr const inline struct_spec& struct_spec_of = [] -> const struct_spec& {
 
 namespace detail {
 
+/// One merged policy layer over Base. Each specialization declares only the
+/// members its policies actually set, so an untouched policy keeps shining
+/// through from Base.
 template <typename Base, naming::casing RenameAll, bool DenyUnknown>
-struct merged_config_impl {
-    struct type : Base {
-        using field_rename = naming::rename_policy_t<RenameAll>;
-        constexpr static bool deny_unknown_fields = true;
-    };
-};
-
-template <typename Base>
-struct merged_config_impl<Base, naming::casing::identity, false> {
-    using type = Base;
+struct merged_config : Base {
+    using field_rename = naming::rename_policy_t<RenameAll>;
+    constexpr static bool deny_unknown_fields = DenyUnknown;
 };
 
 template <typename Base, naming::casing RenameAll>
-struct merged_config_impl<Base, RenameAll, false> {
-    struct type : Base {
-        using field_rename = naming::rename_policy_t<RenameAll>;
-    };
+struct merged_config<Base, RenameAll, false> : Base {
+    using field_rename = naming::rename_policy_t<RenameAll>;
 };
 
 template <typename Base>
-struct merged_config_impl<Base, naming::casing::identity, true> {
-    struct type : Base {
-        constexpr static bool deny_unknown_fields = true;
-    };
+struct merged_config<Base, naming::casing::identity, true> : Base {
+    constexpr static bool deny_unknown_fields = true;
+};
+
+template <typename Base, naming::casing RenameAll, bool DenyUnknown>
+struct merge_config_impl {
+    using type = merged_config<Base, RenameAll, DenyUnknown>;
+};
+
+template <typename Base>
+struct merge_config_impl<Base, naming::casing::identity, false> {
+    using type = Base;
+};
+
+/// Merging onto an already-merged base rebuilds a single normalized layer
+/// instead of stacking (deeper rename overrides, deny is sticky), so
+/// equivalent merge chains produce the same config type — type_info instance
+/// sharing (and thus one $defs entry per struct) depends on that.
+template <typename Base, naming::casing R0, bool D0, naming::casing RenameAll, bool DenyUnknown>
+struct merge_config_impl<merged_config<Base, R0, D0>, RenameAll, DenyUnknown> {
+    using type = merged_config<Base,
+                               RenameAll != naming::casing::identity ? RenameAll : R0,
+                               D0 || DenyUnknown>;
+};
+
+template <typename Base, naming::casing R0, bool D0>
+struct merge_config_impl<merged_config<Base, R0, D0>, naming::casing::identity, false> {
+    using type = merged_config<Base, R0, D0>;
 };
 
 }  // namespace detail
 
 /// Base config with an annotated node's rename_all / deny_unknown_fields
 /// layered on top; a spec carrying neither policy leaves Base untouched.
-/// A deeper merge overrides an earlier rename (member shadowing), deny is
-/// sticky: once set it is never merged away. This is the single
-/// implementation of the merge — the codec dispatch applies it when crossing
-/// an annotated reflectable node and meta's repr resolver replays it, so
-/// type_info always describes the documents the codec reads and writes.
+/// A deeper merge overrides an earlier rename, deny is sticky: once set it is
+/// never merged away. This is the single implementation of the merge — the
+/// codec dispatch applies it when crossing an annotated reflectable node and
+/// meta's repr resolver replays it, so type_info always describes the
+/// documents the codec reads and writes.
 template <typename Base, typename AttrsTuple>
 using merged_config_t =
-    typename detail::merged_config_impl<Base,
-                                        struct_spec_of<AttrsTuple>.rename_all,
-                                        struct_spec_of<AttrsTuple>.deny_unknown_fields>::type;
+    typename detail::merge_config_impl<Base,
+                                       struct_spec_of<AttrsTuple>.rename_all,
+                                       struct_spec_of<AttrsTuple>.deny_unknown_fields>::type;
 
 /// Resolve serialized names for variant alternatives: the annotation's
 /// tag_names when provided (count must match), meta::type_name of each

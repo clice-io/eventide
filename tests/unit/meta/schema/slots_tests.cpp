@@ -139,7 +139,7 @@ TEST_CASE(repr_type_slot) {
     namespace ns = ::kota_slots_repr_test;
     using slots = virtual_schema<ns::ReprStruct>::slots;
 
-    // repr substitutes the repr at the slot and type_info level.
+    // repr substitutes the declared representation at the slot and type_info level.
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, ns::RepId);
     EXPECT_TYPE_EQ(slot0::repr_type, std::uint32_t);

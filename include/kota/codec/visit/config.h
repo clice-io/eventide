@@ -6,7 +6,6 @@
 #include <type_traits>
 
 #include "kota/support/naming.h"
-#include "kota/meta/attrs.h"
 
 namespace kota::codec {
 

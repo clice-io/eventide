@@ -58,7 +58,8 @@ bool repr_encode(Vis& vis, const V& value) {
     } else if constexpr(requires { Repr::template serialize<Config>(vis, value); }) {
         return Repr::template serialize<Config>(vis, value);
     } else {
-        static_assert(dependent_false<Repr>, "repr has no encode path: define to() or serialize()");
+        static_assert(dependent_false<Repr>,
+                      "repr protocol: no encode path — define to() or serialize()");
         return false;
     }
 }
