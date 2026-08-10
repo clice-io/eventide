@@ -3,16 +3,15 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <optional>
 #include <ranges>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "kota/support/ranges.h"
 #include "kota/meta/repr.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/proxy.h"
@@ -159,7 +158,7 @@ struct alloc_table_visitor : detail::visitor_base {
 struct write_field_visitor : detail::visitor_base {
     builder_t& fbb;
     slot_id sid;
-    uoffset_t stored_offset;
+    uoffset_t stored_offset = 0;
 
     bool visit_bool(bool v) {
         fbb.AddElement<std::uint8_t>(sid, static_cast<std::uint8_t>(v));
@@ -180,7 +179,9 @@ struct write_field_visitor : detail::visitor_base {
 
     template <typename T>
     bool visit_float(T v) {
-        fbb.AddElement<T>(sid, v);
+        // long double fields store as double cells, matching the decode side.
+        using cell_t = proxy_detail::scalar_cell_t<T>;
+        fbb.AddElement<cell_t>(sid, static_cast<cell_t>(v));
         return true;
     }
 
@@ -507,8 +508,10 @@ template <typename K>
 using ordering_key_t = typename decltype(ordering_key_impl<K>())::type;
 
 /// Captures a map key as the ordering key its entry is sorted by. The events
-/// mirror how the key's resolved representation encodes, so exactly one of
-/// the scalar events or visit_str fires per key.
+/// mirror how the key's resolved representation encodes: scalar keys fire
+/// exactly one scalar event, string keys fire visit_str. The visit_str guard
+/// exists because configs spelling non-finite floats as strings
+/// (nan_repr::String) instantiate visit_str for scalar keys too.
 template <typename Key>
 struct key_capture_visitor : detail::visitor_base {
     Key captured{};
@@ -548,9 +551,7 @@ struct key_capture_visitor : detail::visitor_base {
 private:
     template <typename T>
     bool store(T v) {
-        if constexpr(!std::same_as<Key, std::string>) {
-            captured = static_cast<Key>(v);
-        }
+        captured = static_cast<Key>(v);
         return true;
     }
 };
@@ -584,7 +585,8 @@ struct root_visitor : detail::visitor_base {
 
     template <typename T>
     bool visit_float(T v) {
-        return box_root_scalar<T>(v);
+        using cell_t = proxy_detail::scalar_cell_t<T>;
+        return box_root_scalar<cell_t>(static_cast<cell_t>(v));
     }
 
     template <typename T>
@@ -661,7 +663,7 @@ auto two_pass(builder_t& fbb, Body&& body) -> table_offset_t {
 
 /// The declared key type of a map-kind container.
 template <typename Container>
-using map_key_t = std::remove_const_t<typename std::ranges::range_value_t<Container>::first_type>;
+using map_key_t = kota::map_entry_key_t<std::ranges::range_value_t<Container>>;
 
 template <typename Key, typename Body>
 inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset) {
@@ -729,10 +731,9 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         // Bitwise cell-compatible elements (the cell type itself, plus bool
         // and std::byte, whose cells share their object representation) can
         // be written straight from a contiguous range.
-        constexpr bool cell_compatible =
-            std::same_as<element_t, cell_t> ||
-            ((std::same_as<element_t, bool> || std::same_as<element_t, std::byte>) &&
-             sizeof(element_t) == 1);
+        constexpr bool cell_compatible = std::same_as<element_t, cell_t> ||
+                                         std::same_as<element_t, std::byte> ||
+                                         (std::same_as<element_t, bool> && sizeof(bool) == 1);
         if constexpr(identity && contiguous && cell_compatible) {
             auto data = reinterpret_cast<const cell_t*>(std::ranges::data(c));
             out_offset = fbb.CreateVector(data, std::ranges::size(c)).o;

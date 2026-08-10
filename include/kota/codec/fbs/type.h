@@ -46,9 +46,9 @@ using object_result_t = std::expected<T, object_error_code>;
 
 namespace detail {
 
-/// Static visitor traits shared by every fbs visitor: a binary backend whose
-/// output layout is computed statically (so meta::dynamic reprs are rejected
-/// at compile time).
+/// Static visitor traits shared by the fbs visitors the codec dispatch
+/// drives: a binary backend whose output layout is computed statically (so
+/// meta::dynamic reprs are rejected at compile time).
 struct visitor_base {
     using error_type = rich_error;
     constexpr static bool human_readable = false;

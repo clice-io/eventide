@@ -2,11 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <list>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -235,11 +237,16 @@ struct with_map_int_string {
 };
 
 struct with_enum_map {
-    std::map<color, std::int32_t> data;
+    std::unordered_map<color, std::int32_t> data;
+};
+
+struct with_u64_map {
+    std::unordered_map<std::uint64_t, std::int32_t> data;
 };
 
 struct with_long_doubles {
     std::vector<long double> samples;
+    long double scale = 1.0L;
 };
 
 struct with_map_string_struct {
@@ -739,7 +746,7 @@ TEST_CASE(map_key_lookup_int_key) {
     // encoder must sort entries by the same numeric order the lazy lookup's
     // binary search compares by.
     with_map_int_string input{
-        .data = {{2, "two"}, {10, "ten"}, {30, "thirty"}}
+        .data = {{-7, "minus"}, {2, "two"}, {10, "ten"}, {30, "thirty"}}
     };
 
     auto encoded = to_flatbuffer(input);
@@ -751,6 +758,7 @@ TEST_CASE(map_key_lookup_int_key) {
     auto m = root[&with_map_int_string::data];
     ASSERT_TRUE(m.valid());
 
+    EXPECT_EQ(m[-7], "minus");
     EXPECT_EQ(m[2], "two");
     EXPECT_EQ(m[10], "ten");
     EXPECT_EQ(m[30], "thirty");
@@ -760,7 +768,8 @@ TEST_CASE(map_key_lookup_int_key) {
 
 TEST_CASE(map_key_lookup_enum_key) {
     // Enum keys sort by their underlying value on encode; the lazy lookup's
-    // binary search compares decoded enums, which order the same way.
+    // binary search compares decoded enums, which order the same way. The
+    // unordered input forces the encoder's sort to do real work.
     with_enum_map input{
         .data = {{color::blue, 3}, {color::red, 1}, {color::green, 2}}
     };
@@ -779,11 +788,12 @@ TEST_CASE(map_key_lookup_enum_key) {
 }
 
 TEST_CASE(vector_of_long_double_roundtrips) {
-    // long double cells are written as double (scalar_cell_t), so the
-    // contiguous fast path must not memcpy 16-byte long doubles that the
-    // decode side reads as 8-byte cells.
+    // long double stores as double cells (scalar_cell_t) everywhere: the
+    // vector fast path must not memcpy 16-byte long doubles the decode side
+    // reads as 8-byte cells, and fields must not AddElement 16-byte cells.
     with_long_doubles input{
-        .samples = {1.5L, -2.25L, 1024.0L}
+        .samples = {1.5L, -2.25L, 1024.0L},
+        .scale = 3.5L,
     };
 
     auto encoded = to_flatbuffer(input);
@@ -795,13 +805,62 @@ TEST_CASE(vector_of_long_double_roundtrips) {
     EXPECT_EQ(output.samples[0], 1.5L);
     EXPECT_EQ(output.samples[1], -2.25L);
     EXPECT_EQ(output.samples[2], 1024.0L);
+    EXPECT_EQ(output.scale, 3.5L);
 
     // The lazy view reads the same double cells.
     auto root = table_view<with_long_doubles>::from_bytes(*encoded);
     ASSERT_TRUE(root.valid());
+    EXPECT_EQ(root[&with_long_doubles::scale], 3.5L);
     auto arr = root[&with_long_doubles::samples];
     ASSERT_EQ(arr.size(), 3U);
     EXPECT_EQ(arr[1], -2.25L);
+}
+
+TEST_CASE(map_key_lookup_uint64_key) {
+    // Keys above INT64_MAX must keep unsigned ordering end to end; a signed
+    // ordering key would sort them first and break the binary search.
+    with_u64_map input{
+        .data = {{2U, 1}, {0x8000000000000001ULL, 2}, {42U, 3}}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = table_view<with_u64_map>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto m = root[&with_u64_map::data];
+    ASSERT_TRUE(m.valid());
+    EXPECT_EQ(m[2U], 1);
+    EXPECT_EQ(m[42U], 3);
+    EXPECT_EQ(m[0x8000000000000001ULL], 2);
+}
+
+TEST_CASE(vector_of_trivial_struct_roundtrips_eagerly) {
+    // Inline-struct elements decode through scalar_reader::visit_struct; the
+    // list container also exercises the element-wise collector on encode (no
+    // contiguous fast path).
+    struct route {
+        std::vector<point> points;
+        std::list<point> waypoints;
+    };
+
+    const route input{
+        .points = {{.x = 1, .y = 2}, {.x = 3, .y = 4}},
+        .waypoints = {{.x = 5, .y = 6}, {.x = 7, .y = 8}},
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    route output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_EQ(output.points.size(), 2U);
+    EXPECT_EQ(output.points[1].x, 3);
+    EXPECT_EQ(output.points[1].y, 4);
+    ASSERT_EQ(output.waypoints.size(), 2U);
+    EXPECT_EQ(output.waypoints.back().x, 7);
+    EXPECT_EQ(output.waypoints.back().y, 8);
 }
 
 TEST_CASE(map_find_existing) {

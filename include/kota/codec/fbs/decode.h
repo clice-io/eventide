@@ -105,16 +105,16 @@ struct table_field_reader : detail::visitor_base {
 
 template <typename E>
 struct vec_reader {
-    using raw_E = std::remove_cvref_t<E>;
+    using element_t = std::remove_cvref_t<E>;
 
     // An element travels as its resolved representation (behavior attrs, then
     // chained reprs); the reader choice mirrors the encode side through the
     // shared element_layout classification.
-    using repr_E = proxy_detail::apply_repr_t<raw_E>;
+    using repr_t = proxy_detail::apply_repr_t<element_t>;
 
-    constexpr static auto layout = proxy_detail::element_layout_of<raw_E>();
+    constexpr static auto layout = proxy_detail::element_layout_of<element_t>();
 
-    using vec_ptr_t = proxy_detail::element_vector_ptr_t<raw_E>;
+    using vec_ptr_t = proxy_detail::element_vector_ptr_t<element_t>;
 
     vec_ptr_t vec;
     uoffset_t idx = 0;
@@ -285,7 +285,7 @@ bool table_field_reader::visit_element(F&& reader) {
 }
 
 struct root_reader : field_reader {
-    root_reader(const Table* root) : field_reader{{}, root, detail::first_field} {}
+    root_reader(const Table* root) : field_reader{.tbl = root, .slot = detail::first_field} {}
 
     template <typename U, typename Body>
     bool visit_struct(U&, Body&& body) {
@@ -405,7 +405,7 @@ bool vec_reader<E>::visit_element(F&& reader) {
     } else if constexpr(layout == inline_struct) {
         const auto* ptr = vec->Get(static_cast<uoffset_t>(idx));
         ++idx;
-        scalar_reader<repr_E> sr{.value = ptr ? *ptr : repr_E{}};
+        scalar_reader<repr_t> sr{.value = ptr ? *ptr : repr_t{}};
         return reader(sr);
     } else {
         const auto* child = vec->template GetAs<Table>(static_cast<uoffset_t>(idx));

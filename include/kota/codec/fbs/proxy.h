@@ -14,7 +14,6 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
@@ -138,7 +137,8 @@ enum class element_layout : std::uint8_t {
 /// elements travel as wrapper tables because nullable and null-like shapes
 /// need a table for absence to still occupy a vector entry, and nested
 /// containers and byte blobs have no direct vector-of-vectors representation.
-/// Tuple-like elements are tables even when they could inline as structs.
+/// Tuple-like elements are tables even when they could inline as structs:
+/// they decode through per-slot table access (tuple_view, table_field_reader).
 template <typename Element>
 consteval element_layout element_layout_of() {
     using repr_t = apply_repr_t<std::remove_cvref_t<Element>>;
@@ -200,13 +200,14 @@ consteval std::size_t field_slot_count() {
     return meta::virtual_schema<Object>::fields.size();
 }
 
-// Computes field slot index via union-wrapped storage rather than a live Object,
-// so it works for aggregates whose members have explicit default constructors.
+// Computes the field slot index via union-wrapped uninitialized memory rather
+// than a live Object, so it works for aggregates whose members have explicit
+// default constructors.
 template <typename Object, typename Member>
 auto field_index(Member Object::* member) -> std::size_t {
-    meta::detail::uninitialized<Object> storage;
-    const auto base = reinterpret_cast<std::uintptr_t>(std::addressof(storage.value));
-    const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(storage.value.*member));
+    meta::detail::uninitialized<Object> uninit;
+    const auto base = reinterpret_cast<std::uintptr_t>(std::addressof(uninit.value));
+    const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(uninit.value.*member));
     const auto offset = static_cast<std::size_t>(field - base);
 
     constexpr auto& fields = meta::virtual_schema<Object>::fields;
@@ -244,7 +245,7 @@ struct element_vector_ptr {
 
 template <typename Element>
 struct element_vector_ptr<Element, element_layout::scalar> {
-    using type = const Vector<scalar_cell_t<deep_clean_t<Element>>>*;
+    using type = const Vector<scalar_cell_t<apply_repr_t<Element>>>*;
 };
 
 template <typename Element>
@@ -254,7 +255,7 @@ struct element_vector_ptr<Element, element_layout::string> {
 
 template <typename Element>
 struct element_vector_ptr<Element, element_layout::inline_struct> {
-    using type = const Vector<const deep_clean_t<Element>*>*;
+    using type = const Vector<const apply_repr_t<Element>*>*;
 };
 
 template <typename Element>
@@ -398,22 +399,7 @@ struct member_return_impl<Member, CleanMember, false> {
 };
 
 template <typename Member>
-struct member_return : member_return_impl<Member> {};
-
-template <typename Member>
-using member_return_t = typename member_return<Member>::type;
-
-template <typename Element>
-struct array_element_return {
-private:
-    using clean_element_t = deep_clean_t<Element>;
-
-public:
-    using type = field_return_type_t<clean_element_t>;
-};
-
-template <typename Element>
-using array_element_return_t = typename array_element_return<Element>::type;
+using member_return_t = typename member_return_impl<Member>::type;
 
 // Unchecked read: returns {} on miss rather than reporting errors.
 template <typename T>
@@ -479,7 +465,7 @@ class array_view {
 
 public:
     using element_type = proxy_detail::deep_clean_t<Element>;
-    using value_type = proxy_detail::array_element_return_t<element_type>;
+    using value_type = proxy_detail::field_return_type_t<element_type>;
     using vector_ptr_type = proxy_detail::element_vector_ptr_t<Element>;
 
     constexpr array_view() = default;
