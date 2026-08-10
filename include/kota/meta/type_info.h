@@ -262,30 +262,6 @@ constexpr auto type_attrs_impl() {
 template <typename AttrsTuple>
 using type_attrs_t = typename decltype(type_attrs_impl<AttrsTuple>())::type;
 
-/// Precedence mirrors the codec field dispatch (encode_one_field /
-/// decode_field_inner): behavior::with wins over behavior::as, which wins
-/// over behavior::enum_string; the field type's repr applies only when no
-/// behavior attr shapes the wire. The chosen wire type is then resolved
-/// through chained reprs, matching the codec's recursive re-dispatch on the
-/// converted wire value.
-template <typename RawType, typename AttrsTuple>
-constexpr auto resolve_wire_type_impl() {
-    if constexpr(tuple_has_spec_v<AttrsTuple, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<AttrsTuple, behavior::with>::adapter;
-        return std::type_identity<resolved_repr_t<wire_shape_t<adapter>>>{};
-    } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::as>) {
-        using target = typename tuple_find_spec_t<AttrsTuple, behavior::as>::target;
-        return std::type_identity<resolved_repr_t<target>>{};
-    } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::enum_string>) {
-        return std::type_identity<std::string_view>{};
-    } else {
-        return std::type_identity<resolved_repr_t<RawType>>{};
-    }
-}
-
-template <typename RawType, typename AttrsTuple>
-using resolve_wire_type_t = typename decltype(resolve_wire_type_impl<RawType, AttrsTuple>())::type;
-
 template <typename T>
 struct unwrap_annotated {
     using raw_type = T;
@@ -297,6 +273,36 @@ struct unwrap_annotated<T> {
     using raw_type = typename T::annotated_type;
     using attrs = typename T::attrs;
 };
+
+/// Precedence mirrors the codec dispatch (encode_value / encode_one_field):
+/// behavior::with wins over behavior::as, which wins over
+/// behavior::enum_string; the type's repr applies only when no behavior attr
+/// shapes the wire. Every chosen shape re-enters the resolver, so chained
+/// reprs and annotations nested inside representation types resolve to the
+/// final wire shape, matching the codec's recursive re-dispatch on the
+/// converted wire value.
+template <typename T>
+constexpr auto resolve_wire_type_impl() {
+    using raw_t = typename unwrap_annotated<T>::raw_type;
+    using attrs_t = typename unwrap_annotated<T>::attrs;
+
+    if constexpr(tuple_has_spec_v<attrs_t, behavior::with>) {
+        using adapter = typename tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+        return resolve_wire_type_impl<wire_shape_t<adapter>>();
+    } else if constexpr(tuple_has_spec_v<attrs_t, behavior::as>) {
+        using target = typename tuple_find_spec_t<attrs_t, behavior::as>::target;
+        return resolve_wire_type_impl<target>();
+    } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
+        return std::type_identity<std::string_view>{};
+    } else if constexpr(has_repr<raw_t>) {
+        return resolve_wire_type_impl<wire_shape_t<repr<raw_t>>>();
+    } else {
+        return std::type_identity<raw_t>{};
+    }
+}
+
+template <typename T>
+using resolve_wire_type_t = typename decltype(resolve_wire_type_impl<T>())::type;
 
 template <typename BaseConfig,
           typename AttrsTuple,
@@ -320,8 +326,7 @@ struct type_instance_impl;
 
 template <typename T, typename Config = default_config>
 struct type_instance :
-    type_instance_impl<resolve_wire_type_t<typename unwrap_annotated<std::remove_cv_t<T>>::raw_type,
-                                           typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
+    type_instance_impl<resolve_wire_type_t<std::remove_cv_t<T>>,
                        type_attrs_t<typename unwrap_annotated<std::remove_cv_t<T>>::attrs>,
                        Config> {};
 
@@ -594,11 +599,10 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
 /// The effective wire type of T as the codec dispatch sees it: behavior attrs
 /// on an annotation take precedence over the underlying type's meta::repr,
-/// and chained reprs are followed to their final shape.
+/// and chained reprs and annotations nested inside representation types are
+/// followed to their final shape.
 template <typename T>
-using wire_type_t =
-    detail::resolve_wire_type_t<typename detail::unwrap_annotated<std::remove_cvref_t<T>>::raw_type,
-                                typename detail::unwrap_annotated<std::remove_cvref_t<T>>::attrs>;
+using wire_type_t = detail::resolve_wire_type_t<std::remove_cvref_t<T>>;
 
 template <typename T, typename Config>
 constexpr const type_info& type_info_of() {

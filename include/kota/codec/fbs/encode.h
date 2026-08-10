@@ -557,33 +557,40 @@ struct byte_collector {
     }
 };
 
+/// Captures a map key as an ordering key matching the comparison
+/// map_view::find_entry applies to the decoded wire keys: numeric wire keys
+/// (including bool, char and enum underlyings) compare by value, strings
+/// lexicographically. All keys of one map share a single wire shape, so two
+/// captured keys always hold the same alternative.
 struct key_capture_visitor {
-    std::string captured;
+    using key_order = std::variant<std::int64_t, std::uint64_t, double, std::string>;
+
+    key_order captured;
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
     constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
-        captured = v ? "true" : "false";
+        captured = static_cast<std::int64_t>(v);
         return true;
     }
 
     template <typename T>
     bool visit_int(T v) {
-        captured = std::to_string(static_cast<std::int64_t>(v));
+        captured = static_cast<std::int64_t>(v);
         return true;
     }
 
     template <typename T>
     bool visit_uint(T v) {
-        captured = std::to_string(static_cast<std::uint64_t>(v));
+        captured = static_cast<std::uint64_t>(v);
         return true;
     }
 
     template <typename T>
     bool visit_float(T v) {
-        captured = std::to_string(static_cast<double>(v));
+        captured = static_cast<double>(v);
         return true;
     }
 
@@ -595,14 +602,14 @@ struct key_capture_visitor {
 
     template <typename T>
     bool visit_char(T v) {
-        captured = std::string(1, static_cast<char>(v));
+        captured = static_cast<std::int64_t>(v);
         return true;
     }
 };
 
 struct map_entry_collector {
     builder_t& fbb;
-    std::vector<std::pair<std::string, table_offset_t>> entries;
+    std::vector<std::pair<key_capture_visitor::key_order, table_offset_t>> entries;
 
     template <typename KF, typename VF>
     inline bool visit_entry(KF&& key_fn, VF&& value_fn);

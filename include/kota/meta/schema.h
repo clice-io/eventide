@@ -29,7 +29,7 @@ struct single_field_slots {
     using attrs_t = typename unwrap::attrs;
 
     using type = type_list<field_slot<raw_type,
-                                      resolve_wire_type_t<raw_type, attrs_t>,
+                                      resolve_wire_type_t<std::remove_cv_t<field_t>>,
                                       filter_runtime_attrs_t<attrs_t>>>;
 };
 

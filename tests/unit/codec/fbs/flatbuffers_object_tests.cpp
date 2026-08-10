@@ -489,10 +489,37 @@ TEST_CASE(variant_struct_alternative) {
     EXPECT_EQ(addr[&address::zip], 100);
 }
 
-// NOTE: vector_of_variants is not tested here because the serializer wraps
-// each variant element in an extra boxed table, so array_view returns the outer
-// box rather than the variant table directly.  This is a known encoding
-// mismatch that would require changes to proxy.h or serializer.h to resolve.
+TEST_CASE(vector_of_variants) {
+    // Variant elements travel as their variant table directly in the vector
+    // (no per-element wrapper): encode, decode and the lazy view agree.
+    with_vector_of_variants input{
+        .items = {std::int32_t{7}, std::string("kotatsu"), std::int32_t{9}}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_vector_of_variants output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output.items, input.items);
+
+    auto root = table_view<with_vector_of_variants>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto items = root[&with_vector_of_variants::items];
+    ASSERT_TRUE(items.valid());
+    ASSERT_EQ(items.size(), 3U);
+
+    auto v0 = items[0];
+    ASSERT_TRUE(v0.valid());
+    EXPECT_EQ(v0.index(), 0U);
+    EXPECT_EQ(v0.get<0>(), 7);
+
+    auto v1 = items[1];
+    ASSERT_TRUE(v1.valid());
+    EXPECT_EQ(v1.index(), 1U);
+    EXPECT_EQ(v1.get<1>(), "kotatsu");
+}
 
 // ======== Tuple / pair tests ========
 
@@ -700,8 +727,11 @@ TEST_CASE(map_key_lookup_string_key) {
 }
 
 TEST_CASE(map_key_lookup_int_key) {
+    // 2 and 10 order differently as numbers and as decimal strings: the
+    // encoder must sort entries by the same numeric order the lazy lookup's
+    // binary search compares by.
     with_map_int_string input{
-        .data = {{10, "ten"}, {20, "twenty"}, {30, "thirty"}}
+        .data = {{2, "two"}, {10, "ten"}, {30, "thirty"}}
     };
 
     auto encoded = to_flatbuffer(input);
@@ -713,8 +743,8 @@ TEST_CASE(map_key_lookup_int_key) {
     auto m = root[&with_map_int_string::data];
     ASSERT_TRUE(m.valid());
 
+    EXPECT_EQ(m[2], "two");
     EXPECT_EQ(m[10], "ten");
-    EXPECT_EQ(m[20], "twenty");
     EXPECT_EQ(m[30], "thirty");
     // Missing key returns default (empty string_view)
     EXPECT_EQ(m[99], "");

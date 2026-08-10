@@ -65,27 +65,9 @@ constexpr auto wire_shape_impl() {
 
 /// The declared wire shape of a repr specialization or with-adapter; a missing
 /// `type` member is a hard error with the protocol diagnostic.
+/// Declared shapes are not final: meta::wire_type_t follows chained reprs and
+/// annotations nested inside them to the resolved wire shape.
 template <typename Shape>
 using wire_shape_t = typename decltype(detail::wire_shape_impl<Shape>())::type;
-
-namespace detail {
-
-template <typename T>
-constexpr auto resolved_repr_impl() {
-    if constexpr(has_repr<T>) {
-        return resolved_repr_impl<wire_shape_t<repr<T>>>();
-    } else {
-        return std::type_identity<T>{};
-    }
-}
-
-}  // namespace detail
-
-/// The final wire shape of a value type: chained reprs (a repr whose declared
-/// wire type itself has a repr) are followed to the repr-free end, matching
-/// the codec dispatch, which re-enters encode/decode on the converted wire
-/// value. Identity when T declares no repr.
-template <typename T>
-using resolved_repr_t = typename decltype(detail::resolved_repr_impl<T>())::type;
 
 }  // namespace kota::meta

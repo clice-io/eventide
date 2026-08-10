@@ -75,6 +75,14 @@ struct lamport_stamp {
     auto operator==(const lamport_stamp&) const -> bool = default;
 };
 
+// Repr whose declared wire type is itself annotated: the annotation's
+// behavior attr decides the final wire shape.
+struct basis_points {
+    int v = 0;
+
+    auto operator==(const basis_points&) const -> bool = default;
+};
+
 }  // namespace kota_repr_test
 
 namespace kota::meta {
@@ -207,6 +215,19 @@ struct repr<kota_repr_test::lamport_stamp> {
     }
 };
 
+template <>
+struct repr<kota_repr_test::basis_points> {
+    using type = annotation<int, behavior::as<double>>;
+
+    static type to(const kota_repr_test::basis_points& b) {
+        return b.v;
+    }
+
+    static kota_repr_test::basis_points from(const type& v) {
+        return {.v = annotated_value(v)};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
@@ -216,6 +237,7 @@ namespace {
 using json::from_json;
 using json::to_json;
 using kota_repr_test::audit_stamp;
+using kota_repr_test::basis_points;
 using kota_repr_test::hex_id;
 using kota_repr_test::lamport_stamp;
 using kota_repr_test::poly_value;
@@ -271,6 +293,12 @@ struct stamped {
     auto operator==(const stamped&) const -> bool = default;
 };
 
+struct fee_schedule {
+    basis_points fee;
+
+    auto operator==(const fee_schedule&) const -> bool = default;
+};
+
 /// Imperative adapter: uppercases on the wire, lowercases back.
 struct shout_adapter {
     using type = std::string;
@@ -318,7 +346,7 @@ struct choice_text_adapter {
             std::from_chars(wire.data() + 2, wire.data() + wire.size(), n);
             return n;
         }
-        return wire.substr(2);
+        return wire.starts_with("s:") ? wire.substr(2) : wire;
     }
 };
 
@@ -498,6 +526,25 @@ TEST_CASE(chained_repr_resolves_to_final_wire_shape) {
     auto schema = json::schema_string<chained_holder>();
     ASSERT_TRUE(schema.has_value());
     EXPECT_TRUE(schema->find(R"("t":{"type":"integer")") != std::string::npos);
+}
+
+TEST_CASE(annotation_nested_in_repr_wire_type) {
+    // The repr's declared wire type carries a behavior attr; the resolver
+    // must follow it to the annotation's wire shape, so schema consumers
+    // classify the double the dispatch actually writes.
+    static_assert(std::is_same_v<meta::wire_type_t<basis_points>, double>);
+
+    const fee_schedule input{.fee = {.v = 250}};
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    fee_schedule output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    auto schema = json::schema_string<fee_schedule>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("fee":{"type":"number"})") != std::string::npos);
 }
 
 TEST_CASE(annotated_repr_alternative_in_untagged_variant) {
