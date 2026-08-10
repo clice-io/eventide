@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,7 +12,38 @@
 #include "fixtures/schema/tagged.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
+#include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
+
+namespace kota_slots_repr_test {
+
+struct RepId {
+    std::uint32_t v = 0;
+};
+
+struct DynBlob {};
+
+struct ReprStruct {
+    RepId id;
+    DynBlob blob;
+    int plain = 0;
+};
+
+}  // namespace kota_slots_repr_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_slots_repr_test::RepId> {
+    using type = std::uint32_t;
+};
+
+template <>
+struct repr<kota_slots_repr_test::DynBlob> {
+    using type = dynamic;
+};
+
+}  // namespace kota::meta
 
 namespace kota::meta {
 
@@ -101,6 +133,25 @@ TEST_CASE(with_wire_type_slot) {
 
     EXPECT_TYPE_EQ(slot0::raw_type, int);
     EXPECT_TYPE_EQ(slot0::wire_type, std::string);
+}
+
+TEST_CASE(repr_wire_type_slot) {
+    namespace ns = ::kota_slots_repr_test;
+    using slots = virtual_schema<ns::ReprStruct>::slots;
+
+    // repr substitutes the wire shape at the slot and type_info level.
+    using slot0 = type_list_element_t<0, slots>;
+    EXPECT_TYPE_EQ(slot0::raw_type, ns::RepId);
+    EXPECT_TYPE_EQ(slot0::wire_type, std::uint32_t);
+
+    // A dynamic repr degrades to type_kind::any.
+    using slot1 = type_list_element_t<1, slots>;
+    EXPECT_TYPE_EQ(slot1::wire_type, dynamic);
+
+    constexpr auto& fields = virtual_schema<ns::ReprStruct>::fields;
+    STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::uint32);
+    STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::any);
+    STATIC_EXPECT_EQ(fields[2].type().kind, type_kind::int32);
 }
 
 TEST_CASE(tagged_variant_slot) {

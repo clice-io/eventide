@@ -46,6 +46,7 @@ struct ScalarReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool& out) {
         out = static_cast<bool>(value);
@@ -90,6 +91,7 @@ struct StringReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename T>
     bool visit_str(T& out) {
@@ -112,6 +114,7 @@ struct TableFieldReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename Idx, typename F>
     bool visit_field(Idx, std::string_view, F&& reader);
@@ -127,7 +130,9 @@ struct VecReader {
 
     using wire_E = proxy_detail::apply_repr_t<clean_E>;
 
-    constexpr static bool is_wrapped = needs_wrapper_in_vector<raw_E>();
+    // A repr'd element travels as its wire shape, so the wrapper decision
+    // must mirror the encode side (seq_encode_impl checks repr first).
+    constexpr static bool is_wrapped = !meta::has_repr<raw_E> && needs_wrapper_in_vector<raw_E>();
 
     using vec_ptr_t = std::conditional_t<is_wrapped,
                                          const Vector<table_offset_t>*,
@@ -164,6 +169,7 @@ struct FieldReader {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool peek_null() {
         if(tbl == nullptr)

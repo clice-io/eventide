@@ -189,6 +189,47 @@ private:
     std::vector<std::byte> bytes_;
 };
 
+// An integer id whose repr is imperative: the body drives the visitor, the
+// declared string shape keeps the fbs layout honest.
+class HexTag {
+public:
+    HexTag() = default;
+
+    explicit HexTag(std::uint32_t v) : value_(v) {}
+
+    auto value() const -> std::uint32_t {
+        return value_;
+    }
+
+    auto operator==(const HexTag&) const -> bool = default;
+
+private:
+    std::uint32_t value_ = 0;
+};
+
+// An iterable value class (type_kind::array) with a scalar-string repr — the
+// roaring-bitmap shape. Encode/decode of vector<IdSet> must agree that the
+// element travels unwrapped as its wire string.
+class IdSet {
+public:
+    IdSet() = default;
+
+    explicit IdSet(std::vector<std::uint32_t> ids) : ids_(std::move(ids)) {}
+
+    auto begin() const {
+        return ids_.begin();
+    }
+
+    auto end() const {
+        return ids_.end();
+    }
+
+    auto operator==(const IdSet&) const -> bool = default;
+
+private:
+    std::vector<std::uint32_t> ids_;
+};
+
 }  // namespace kota_test_type_traits
 
 namespace kota::meta {
@@ -219,6 +260,53 @@ struct repr<kota_test_type_traits::ByteBag> {
     }
 };
 
+template <>
+struct repr<kota_test_type_traits::HexTag> {
+    using type = std::string;
+
+    template <typename Config>
+    static bool serialize(auto& vis, const kota_test_type_traits::HexTag& tag) {
+        return vis.visit_str(std::to_string(tag.value()));
+    }
+
+    template <typename Config>
+    static bool deserialize(auto& vis, kota_test_type_traits::HexTag& tag) {
+        std::string wire;
+        if(!vis.visit_str(wire))
+            return false;
+        tag = kota_test_type_traits::HexTag{static_cast<std::uint32_t>(std::stoul(wire))};
+        return true;
+    }
+};
+
+template <>
+struct repr<kota_test_type_traits::IdSet> {
+    using type = std::string;
+
+    static type to(const kota_test_type_traits::IdSet& set) {
+        std::string wire;
+        for(auto id: set) {
+            if(!wire.empty())
+                wire += ',';
+            wire += std::to_string(id);
+        }
+        return wire;
+    }
+
+    static kota_test_type_traits::IdSet from(const std::string& wire) {
+        std::vector<std::uint32_t> ids;
+        std::size_t pos = 0;
+        while(pos < wire.size()) {
+            auto comma = wire.find(',', pos);
+            if(comma == std::string::npos)
+                comma = wire.size();
+            ids.push_back(static_cast<std::uint32_t>(std::stoul(wire.substr(pos, comma - pos))));
+            pos = comma + 1;
+        }
+        return kota_test_type_traits::IdSet{std::move(ids)};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
@@ -227,6 +315,8 @@ namespace {
 
 using kota_test_type_traits::Tag;
 using kota_test_type_traits::ByteBag;
+using kota_test_type_traits::HexTag;
+using kota_test_type_traits::IdSet;
 
 struct TypeTraitsPlainField {
     Tag tag;
@@ -254,6 +344,26 @@ struct TypeTraitsRoot {
     std::string content;
 
     auto operator==(const TypeTraitsRoot&) const -> bool = default;
+};
+
+struct ImperativeReprField {
+    HexTag tag;
+    std::string label;
+
+    auto operator==(const ImperativeReprField&) const -> bool = default;
+};
+
+struct IterableReprField {
+    IdSet primary;
+    std::vector<IdSet> groups;
+
+    auto operator==(const IterableReprField&) const -> bool = default;
+};
+
+struct OptionalReprField {
+    std::optional<Tag> maybe_tag;
+
+    auto operator==(const OptionalReprField&) const -> bool = default;
 };
 
 TEST_SUITE(serde_flatbuffers_type_traits) {
@@ -339,8 +449,8 @@ TEST_CASE(type_traits_proxy_lazy_map_value_access) {
     ASSERT_TRUE(blobs.valid());
     EXPECT_EQ(blobs.size(), 2U);
 
-    // map_view<K, ByteBag> — proxy substitutes wire_type (vector<byte>),
-    // so operator[] returns an array_view<std::byte>.
+    // map_view<K, ByteBag> — proxy substitutes the repr wire shape
+    // (vector<byte>), so operator[] returns an array_view<std::byte>.
     auto blob5 = blobs[5U];
     ASSERT_TRUE(blob5.valid());
     EXPECT_EQ(blob5.size(), 2U);
@@ -352,6 +462,64 @@ TEST_CASE(type_traits_proxy_lazy_map_value_access) {
     EXPECT_EQ(blob9.size(), 2U);
     EXPECT_EQ(blob9[0], std::byte{0xBE});
     EXPECT_EQ(blob9[1], std::byte{0xEF});
+}
+
+TEST_CASE(imperative_repr_field_roundtrip) {
+    const ImperativeReprField input{.tag = HexTag{54321}, .label = "imp"};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    ImperativeReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output, input);
+
+    // The wire carries the declared string shape, observable via the proxy.
+    auto root = fbs::table_view<ImperativeReprField>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+    const std::string_view wire_tag = root[&ImperativeReprField::tag];
+    EXPECT_EQ(wire_tag, std::string_view{"54321"});
+}
+
+TEST_CASE(iterable_repr_element_roundtrip) {
+    // IdSet's raw kind is array; its repr wire shape is a string. Encode and
+    // decode of vector<IdSet> must agree the element is unwrapped.
+    IterableReprField input;
+    input.primary = IdSet{
+        {1, 2, 3}
+    };
+    input.groups = {IdSet{{10, 20}}, IdSet{}, IdSet{{7}}};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    IterableReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(repr_inside_optional_roundtrip) {
+    OptionalReprField input{.maybe_tag = Tag{99}};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    OptionalReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output, input);
+
+    input.maybe_tag.reset();
+    encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    output.maybe_tag = Tag{1};
+    status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_FALSE(output.maybe_tag.has_value());
 }
 
 };  // TEST_SUITE(serde_flatbuffers_type_traits)

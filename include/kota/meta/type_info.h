@@ -264,16 +264,9 @@ constexpr auto resolve_wire_type_impl() {
         return std::type_identity<std::string_view>{};
     } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::with>) {
         using adapter = typename tuple_find_spec_t<AttrsTuple, behavior::with>::adapter;
-        static_assert(
-            requires { typename adapter::type; },
-            "behavior::with adapter must declare its wire shape via `using type = ...`");
-        return std::type_identity<typename adapter::type>{};
+        return std::type_identity<wire_shape_t<adapter>>{};
     } else if constexpr(has_repr<RawType>) {
-        static_assert(
-            requires { typename repr<RawType>::type; },
-            "meta::repr<T> must declare its wire shape via `using type = ...` "
-            "(meta::dynamic when only known at runtime)");
-        return std::type_identity<typename repr<RawType>::type>{};
+        return std::type_identity<wire_shape_t<repr<RawType>>>{};
     } else {
         return std::type_identity<RawType>{};
     }

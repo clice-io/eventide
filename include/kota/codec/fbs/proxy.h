@@ -110,10 +110,7 @@ using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
 template <typename T>
 constexpr auto apply_repr_impl() {
     if constexpr(meta::has_repr<T>) {
-        static_assert(
-            requires { typename meta::repr<T>::type; },
-            "meta::repr<T> must declare its wire shape via `using type = ...`");
-        using wire_t = typename meta::repr<T>::type;
+        using wire_t = meta::wire_shape_t<meta::repr<T>>;
         static_assert(!std::is_same_v<wire_t, meta::dynamic>,
                       "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
                       "used with the fbs backend");

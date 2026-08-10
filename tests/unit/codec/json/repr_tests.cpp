@@ -1,3 +1,4 @@
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <format>
@@ -185,6 +186,42 @@ struct dynamic_holder {
     poly_value v;
 };
 
+struct maybe_version {
+    std::optional<version> v;
+};
+
+/// Imperative adapter: uppercases on the wire, lowercases back.
+struct shout_adapter {
+    using type = std::string;
+
+    template <typename Config>
+    static bool serialize(auto& vis, const std::string& s) {
+        std::string wire = s;
+        for(char& c: wire)
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return vis.visit_str(wire);
+    }
+
+    template <typename Config>
+    static bool deserialize(auto& vis, std::string& s) {
+        std::string wire;
+        if(!vis.visit_str(wire))
+            return false;
+        for(char& c: wire)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        s = std::move(wire);
+        return true;
+    }
+};
+
+struct shouted {
+    meta::annotation<std::string, meta::behavior::with<shout_adapter>> name;
+};
+
+struct string_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+};
+
 TEST_SUITE(serde_json_repr) {
 
 TEST_CASE(declarative_repr_roundtrip) {
@@ -278,6 +315,63 @@ TEST_CASE(dynamic_repr_roundtrip) {
 
     ASSERT_TRUE(from_json(*encoded, output).has_value());
     EXPECT_EQ(output.v, as_str.v);
+}
+
+TEST_CASE(repr_alternative_in_untagged_variant) {
+    // The version alternative arrives as its string wire shape; alternative
+    // pruning must judge compatibility against that, not the raw kind.
+    std::variant<version, int> input = version{.major = 1, .minor = 22};
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("1.22")");
+
+    std::variant<version, int> output;
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    input = 7;
+    encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(repr_inside_optional) {
+    maybe_version input{
+        .v = version{.major = 1, .minor = 5}
+    };
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"v":"1.5"})");
+
+    maybe_version output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output.v, input.v);
+
+    input.v.reset();
+    encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    output.v = version{.major = 9, .minor = 9};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_FALSE(output.v.has_value());
+}
+
+TEST_CASE(repr_beats_enum_string_config) {
+    // The repr'd enum still travels as its declared integer wire shape.
+    auto encoded = to_json<string_enum_config>(relation::references);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "2");
+}
+
+TEST_CASE(imperative_with_adapter_roundtrip) {
+    shouted input{.name = "loud"};
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"name":"LOUD"})");
+
+    shouted output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(meta::annotated_value(output.name), std::string("loud"));
 }
 
 TEST_CASE(schema_follows_repr) {

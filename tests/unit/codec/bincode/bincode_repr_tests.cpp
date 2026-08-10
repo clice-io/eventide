@@ -32,12 +32,13 @@ template <>
 struct repr<kota_bincode_repr_test::flavor> {
     using type = std::uint32_t;
 
+    // Non-identity mapping: bypassing the repr would be byte-visible.
     static type to(kota_bincode_repr_test::flavor f) {
-        return static_cast<type>(f);
+        return static_cast<type>(f) + 100;
     }
 
     static kota_bincode_repr_test::flavor from(type v) {
-        return static_cast<kota_bincode_repr_test::flavor>(v);
+        return static_cast<kota_bincode_repr_test::flavor>(v - 100);
     }
 };
 
@@ -45,13 +46,20 @@ template <>
 struct repr<kota_bincode_repr_test::blob_bag> {
     using type = dynamic;
 
+    // Self-framed: a magic prefix then one length-prefixed byte vector, so a
+    // dispatch regression (struct framing instead) changes the byte count.
     template <typename Config>
     static bool serialize(auto& vis, const kota_bincode_repr_test::blob_bag& b) {
+        if(!codec::encode_value<Config>(vis, std::uint8_t{0x42}))
+            return false;
         return codec::encode_value<Config>(vis, b.bytes);
     }
 
     template <typename Config>
     static bool deserialize(auto& vis, kota_bincode_repr_test::blob_bag& b) {
+        std::uint8_t magic = 0;
+        if(!codec::decode_value<Config>(vis, magic) || magic != 0x42)
+            return false;
         std::vector<std::byte> bytes;
         if(!codec::decode_value<Config>(vis, bytes))
             return false;
@@ -93,6 +101,23 @@ TEST_CASE(declarative_and_dynamic_repr_roundtrip) {
     auto status = bincode::from_bytes(*bytes, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
+}
+
+TEST_CASE(repr_dispatch_is_byte_visible) {
+    // The enum travels as its mapped uint32 wire value, byte-identical to
+    // encoding that wire value directly.
+    auto via_repr = bincode::to_bytes(flavor::spicy);
+    auto wire = bincode::to_bytes(std::uint32_t{101});
+    ASSERT_TRUE(via_repr.has_value());
+    ASSERT_TRUE(wire.has_value());
+    EXPECT_EQ(*via_repr, *wire);
+
+    // magic (u64-widened) + length prefix (u64) + 2 payload bytes.
+    auto blob = bincode::to_bytes(blob_bag{
+        {std::byte{0x01}, std::byte{0x02}}
+    });
+    ASSERT_TRUE(blob.has_value());
+    EXPECT_EQ(blob->size(), 18U);
 }
 
 TEST_CASE(repr_reaches_sequence_elements) {

@@ -93,6 +93,17 @@ struct default_config :
 
 #undef KOTA_CFG_FIELD_
 
+/// True when the visitor computes wire layout statically (flatbuffers). Such
+/// backends cannot carry a meta::dynamic repr: there is no layout to compute.
+template <typename Vis>
+constexpr bool is_layout_computed() {
+    if constexpr(requires { Vis::layout_computed; }) {
+        return Vis::layout_computed;
+    } else {
+        return false;
+    }
+}
+
 /// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
 template <typename Config, typename Vis>
 constexpr bool is_human_readable() {

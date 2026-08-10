@@ -1,6 +1,7 @@
 #pragma once
 
 #include "type_kind.h"
+#include "kota/support/type_traits.h"
 
 namespace kota::meta {
 
@@ -44,5 +45,27 @@ struct repr;
 /// True when repr<T> is specialized (the primary template is never defined).
 template <typename T>
 concept has_repr = requires { sizeof(repr<T>); };
+
+namespace detail {
+
+template <typename Shape>
+constexpr auto wire_shape_impl() {
+    if constexpr(requires { typename Shape::type; }) {
+        return std::type_identity<typename Shape::type>{};
+    } else {
+        static_assert(dependent_false<Shape>,
+                      "a meta::repr specialization or behavior::with adapter must declare its "
+                      "wire shape via `using type = ...` (meta::dynamic when only known at "
+                      "runtime)");
+        return std::type_identity<void>{};
+    }
+}
+
+}  // namespace detail
+
+/// The declared wire shape of a repr specialization or with-adapter; a missing
+/// `type` member is a hard error with the protocol diagnostic.
+template <typename Shape>
+using wire_shape_t = typename decltype(detail::wire_shape_impl<Shape>())::type;
 
 }  // namespace kota::meta

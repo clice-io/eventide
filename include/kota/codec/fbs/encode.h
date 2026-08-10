@@ -67,6 +67,7 @@ struct alloc_field_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool) {
         return true;
@@ -136,6 +137,7 @@ struct alloc_table_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
@@ -169,6 +171,7 @@ struct write_field_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         fbb.AddElement<std::uint8_t>(sid, static_cast<std::uint8_t>(v));
@@ -257,6 +260,7 @@ struct write_table_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename F>
     bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
@@ -284,6 +288,7 @@ struct scalar_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         elems.push_back(static_cast<T>(v));
@@ -340,6 +345,7 @@ struct string_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     template <typename T>
     bool visit_str(const T& v) {
@@ -373,6 +379,7 @@ struct inline_struct_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     // The dispatch calls visit_struct for structures. For inline structs the
     // value is simply copied into the element vector.
@@ -409,6 +416,7 @@ struct table_elem_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     // Scalar no-ops — should not be reached for table elements, but provide
     // stubs to satisfy the visitor concept in edge cases (e.g. variant
@@ -521,6 +529,7 @@ struct byte_collector {
         std::vector<std::uint8_t>& bytes;
         using error_type = rich_error;
         constexpr static bool human_readable = false;
+        constexpr static bool layout_computed = true;
 
         template <typename T>
         bool visit_int(T v) {
@@ -553,6 +562,7 @@ struct key_capture_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         captured = v ? "true" : "false";
@@ -604,6 +614,7 @@ struct root_visitor {
 
     using error_type = rich_error;
     constexpr static bool human_readable = false;
+    constexpr static bool layout_computed = true;
 
     bool visit_bool(bool v) {
         return box_root_scalar<std::uint8_t>(static_cast<std::uint8_t>(v));
