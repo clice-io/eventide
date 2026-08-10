@@ -32,29 +32,39 @@ struct profile_info {
 
 struct builtin_attr_payload {
     int id = 0;
-    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})<std::string> display_name;
-    KOTATSU_ANNOTATE(skip = true)<int> internal_id;
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)<std::optional<std::string>> note;
-    KOTATSU_ANNOTATE(flatten = true)<profile_info> profile;
-    KOTATSU_ANNOTATE(enum_string = type<rename_policy::lower_camel>)<access_level> level;
+    KOTATSU_ANNOTATE(rename = "displayName", alias = {"name"})
+    <std::string> display_name;
+    KOTATSU_ANNOTATE(skip = true)
+    <int> internal_id;
+    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    <std::optional<std::string>> note;
+    KOTATSU_ANNOTATE(flatten = true)
+    <profile_info> profile;
+    KOTATSU_ANNOTATE(enum_string = type<rename_policy::lower_camel>)
+    <access_level> level;
 };
 
 struct custom_rename_payload {
-    KOTATSU_ANNOTATE(rename = "handle")<std::string> nickname;
+    KOTATSU_ANNOTATE(rename = "handle")
+    <std::string> nickname;
 };
 
 struct alias_conflict_payload {
-    KOTATSU_ANNOTATE(alias = {"dup"})<int> left = 0;
-    KOTATSU_ANNOTATE(alias = {"dup"})<int> right = 0;
+    KOTATSU_ANNOTATE(alias = {"dup"})
+    <int> left = 0;
+    KOTATSU_ANNOTATE(alias = {"dup"})
+    <int> right = 0;
 };
 
 struct skip_unsupported_payload {
     int id = 0;
-    KOTATSU_ANNOTATE(skip = true)<int*> raw = nullptr;
+    KOTATSU_ANNOTATE(skip = true)
+    <int*> raw = nullptr;
 };
 
 struct documented_payload {
-    KOTATSU_ANNOTATE(description = "Numeric identifier.")<int> id = 0;
+    KOTATSU_ANNOTATE(description = "Numeric identifier.")
+    <int> id = 0;
     std::string name;
 };
 

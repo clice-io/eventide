@@ -23,7 +23,8 @@ struct protocol_payload {
 };
 
 struct rename_override_payload {
-    KOTATSU_ANNOTATE(rename = "uid")<std::string> user_name;
+    KOTATSU_ANNOTATE(rename = "uid")
+    <std::string> user_name;
     int request_id = 0;
 };
 

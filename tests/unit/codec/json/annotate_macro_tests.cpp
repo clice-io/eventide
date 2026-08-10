@@ -13,12 +13,14 @@
 namespace kotatsu_annotate_downstream {
 
 struct config {
-    KOTATSU_ANNOTATE(rename = "compileCommands")<int> compile_commands = 0;
+    KOTATSU_ANNOTATE(rename = "compileCommands")
+    <int> compile_commands = 0;
 };
 
 template <typename T>
 struct box {
-    KOTATSU_ANNOTATE(alias = {"v"})<T> value;
+    KOTATSU_ANNOTATE(alias = {"v"})
+    <T> value;
 };
 
 }  // namespace kotatsu_annotate_downstream
@@ -70,27 +72,34 @@ struct profile_info {
 struct defaulted_payload {
     int id = 0;
 
-    KOTATSU_ANNOTATE(defaulted = true)<int> retries = 3;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <int> retries = 3;
 };
 
 struct custom_skip_payload {
-    KOTATSU_ANNOTATE(skip_if = type<negative_pred>)<int> score = 0;
+    KOTATSU_ANNOTATE(skip_if = type<negative_pred>)
+    <int> score = 0;
 };
 
 struct builtin_skip_payload {
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)<std::vector<int>> tags;
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <std::vector<int>> tags;
 
-    KOTATSU_ANNOTATE(skip_if = skip_when::default_value)<int> generation = 0;
+    KOTATSU_ANNOTATE(skip_if = skip_when::default_value)
+    <int> generation = 0;
 };
 
 struct adapted_payload {
-    KOTATSU_ANNOTATE(with = type<int_string_adapter>)<int> encoded = 0;
+    KOTATSU_ANNOTATE(with = type<int_string_adapter>)
+    <int> encoded = 0;
 
-    KOTATSU_ANNOTATE(as = type<std::string>)<user_id> owner;
+    KOTATSU_ANNOTATE(as = type<std::string>)
+    <user_id> owner;
 };
 
 struct flattened_payload {
-    KOTATSU_ANNOTATE(flatten = true)<profile_info> profile;
+    KOTATSU_ANNOTATE(flatten = true)
+    <profile_info> profile;
 };
 
 struct circle {
@@ -114,13 +123,13 @@ struct wide_payload {
 using camel_payload = meta::annotate<camel_annotation>::type<wide_payload>;
 
 struct shape_holder {
-    KOTATSU_ANNOTATE(tag = "kind",
-                     tag_names = {"circle", "rect"})<std::variant<circle, rect>> shape;
+    KOTATSU_ANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
+    <std::variant<circle, rect>> shape;
 };
 
 struct nested_holder {
-    KOTATSU_ANNOTATE(rename_all = casing::upper_snake,
-                     deny_unknown_fields = true)<wide_payload> inner;
+    KOTATSU_ANNOTATE(rename_all = casing::upper_snake, deny_unknown_fields = true)
+    <wide_payload> inner;
 };
 
 TEST_SUITE(serde_annotate_macro) {

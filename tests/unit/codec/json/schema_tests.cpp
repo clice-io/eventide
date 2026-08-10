@@ -199,12 +199,14 @@ struct with_shared {
 // ---------------------------------------------------------------------------
 struct with_default {
     std::string name;
-    KOTATSU_ANNOTATE(defaulted = true)<std::int32_t> count;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> count;
 };
 
 struct with_skip {
     std::string visible;
-    KOTATSU_ANNOTATE(skip = true)<std::int32_t> hidden;
+    KOTATSU_ANNOTATE(skip = true)
+    <std::int32_t> hidden;
 };
 
 struct base_fields {
@@ -213,20 +215,25 @@ struct base_fields {
 };
 
 struct with_flatten {
-    KOTATSU_ANNOTATE(flatten = true)<base_fields> base;
+    KOTATSU_ANNOTATE(flatten = true)
+    <base_fields> base;
     std::string extra;
 };
 
 struct with_rename {
-    KOTATSU_ANNOTATE(rename = "my_field")<std::int32_t> x;
+    KOTATSU_ANNOTATE(rename = "my_field")
+    <std::int32_t> x;
     std::string y;
 };
 
 struct with_skip_when {
     std::string name;
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)<std::vector<std::int32_t>> tags;
-    KOTATSU_ANNOTATE(skip_if = skip_when::default_value)<std::int32_t> count;
-    KOTATSU_ANNOTATE(skip_if = type<pred::empty>)<std::string> note;
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <std::vector<std::int32_t>> tags;
+    KOTATSU_ANNOTATE(skip_if = skip_when::default_value)
+    <std::int32_t> count;
+    KOTATSU_ANNOTATE(skip_if = type<pred::empty>)
+    <std::string> note;
 };
 
 struct casing_child {
@@ -234,8 +241,10 @@ struct casing_child {
 };
 
 struct repeated_child_annotation {
-    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)<casing_child> left;
-    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)<casing_child> right;
+    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
+    <casing_child> left;
+    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
+    <casing_child> right;
 };
 
 // ---------------------------------------------------------------------------
@@ -323,14 +332,18 @@ struct all_optional {
 };
 
 struct all_default {
-    KOTATSU_ANNOTATE(defaulted = true)<std::int32_t> x;
-    KOTATSU_ANNOTATE(defaulted = true)<std::string> y;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> x;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::string> y;
 };
 
 struct skip_default {
     std::string name;
-    KOTATSU_ANNOTATE(skip = true)<std::int32_t> hidden;
-    KOTATSU_ANNOTATE(defaulted = true)<std::int32_t> count;
+    KOTATSU_ANNOTATE(skip = true)
+    <std::int32_t> hidden;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> count;
 };
 
 struct base_with_opt {
@@ -339,17 +352,20 @@ struct base_with_opt {
 };
 
 struct flatten_opt {
-    KOTATSU_ANNOTATE(flatten = true)<base_with_opt> base;
+    KOTATSU_ANNOTATE(flatten = true)
+    <base_with_opt> base;
     std::string tag;
 };
 
 struct rename_base {
-    KOTATSU_ANNOTATE(rename = "alpha")<std::int32_t> a;
+    KOTATSU_ANNOTATE(rename = "alpha")
+    <std::int32_t> a;
     std::int32_t b;
 };
 
 struct flatten_rename {
-    KOTATSU_ANNOTATE(flatten = true)<rename_base> inner;
+    KOTATSU_ANNOTATE(flatten = true)
+    <rename_base> inner;
     std::string extra;
 };
 
@@ -474,43 +490,51 @@ struct set_of_struct {
 // ---------------------------------------------------------------------------
 
 struct desc_scalar {
-    KOTATSU_ANNOTATE(description = "Number of worker threads.")<std::int32_t> threads;
+    KOTATSU_ANNOTATE(description = "Number of worker threads.")
+    <std::int32_t> threads;
     std::string name;
 };
 
 struct desc_optional {
-    KOTATSU_ANNOTATE(description = "Optional display label.")<std::optional<std::string>> label;
+    KOTATSU_ANNOTATE(description = "Optional display label.")
+    <std::optional<std::string>> label;
 };
 
 struct desc_struct_ref {
-    KOTATSU_ANNOTATE(description = "Anchor position.")<point2d> anchor;
+    KOTATSU_ANNOTATE(description = "Anchor position.")
+    <point2d> anchor;
 };
 
 struct desc_base {
-    KOTATSU_ANNOTATE(description = "Inherited counter.")<std::int32_t> count;
+    KOTATSU_ANNOTATE(description = "Inherited counter.")
+    <std::int32_t> count;
 };
 
 struct desc_flatten {
-    KOTATSU_ANNOTATE(flatten = true)<desc_base> base;
+    KOTATSU_ANNOTATE(flatten = true)
+    <desc_base> base;
     std::string tag;
 };
 
 struct desc_rename {
-    KOTATSU_ANNOTATE(rename = "max_size",
-                     description = "Maximum size in bytes.")<std::int32_t> size;
+    KOTATSU_ANNOTATE(rename = "max_size", description = "Maximum size in bytes.")
+    <std::int32_t> size;
 };
 
 struct desc_default {
-    KOTATSU_ANNOTATE(defaulted = true, description = "Retry limit.")<std::int32_t> retries;
+    KOTATSU_ANNOTATE(defaulted = true, description = "Retry limit.")
+    <std::int32_t> retries;
 };
 
 struct desc_shared_ref {
     point2d origin;
-    KOTATSU_ANNOTATE(description = "Anchor position.")<point2d> anchor;
+    KOTATSU_ANNOTATE(description = "Anchor position.")
+    <point2d> anchor;
 };
 
 struct desc_tagged_circle {
-    KOTATSU_ANNOTATE(description = "Radius in meters.")<double> radius;
+    KOTATSU_ANNOTATE(description = "Radius in meters.")
+    <double> radius;
 };
 
 struct desc_tagged_rect {
@@ -566,9 +590,9 @@ TEST_SUITE(serde_json_schema) {
 
 TEST_CASE(root_bool) {
     const auto result = json::schema_string<bool>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"boolean"})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"boolean"})");
 }
 
 TEST_CASE(root_integers) {
@@ -591,16 +615,16 @@ TEST_CASE(root_floats) {
 
 TEST_CASE(root_char) {
     const auto result = json::schema_string<char>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"string"})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"string"})");
 }
 
 TEST_CASE(root_string) {
     const auto result = json::schema_string<std::string>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"string"})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"string"})");
 }
 
 // ---------------------------------------------------------------------------
@@ -609,9 +633,12 @@ TEST_CASE(root_string) {
 
 TEST_CASE(scalar_wrapper_bool) {
     const auto result = json::schema_string<s_bool>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"boolean"}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"boolean"}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(scalar_wrapper_integers) {
@@ -634,16 +661,22 @@ TEST_CASE(scalar_wrapper_floats) {
 
 TEST_CASE(scalar_wrapper_char) {
     const auto result = json::schema_string<s_char>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"string"}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"string"}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(scalar_wrapper_str) {
     const auto result = json::schema_string<s_str>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"string"}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"string"}},)"
+              R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -652,37 +685,37 @@ TEST_CASE(scalar_wrapper_str) {
 
 TEST_CASE(root_enum_color_i8) {
     const auto result = json::schema_string<color_i8>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("enum":["red","green","blue"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["red","green","blue"]})");
 }
 
 TEST_CASE(root_enum_single) {
     const auto result = json::schema_string<single_enum>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("enum":["only"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["only"]})");
 }
 
 TEST_CASE(root_enum_status) {
     const auto result = json::schema_string<status>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("enum":["ok","fail","pending"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["ok","fail","pending"]})");
 }
 
 TEST_CASE(root_enum_flag_u8) {
     const auto result = json::schema_string<flag_u8>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("enum":["off","on"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["off","on"]})");
 }
 
 TEST_CASE(root_enum_level_i16) {
     const auto result = json::schema_string<level_i16>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("enum":["low","mid","high"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["low","mid","high"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -691,37 +724,70 @@ TEST_CASE(root_enum_level_i16) {
 
 TEST_CASE(container_vec_i32) {
     const auto result = json::schema_string<s_vec_i32>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(container_set_i32) {
     const auto result = json::schema_string<s_set_i32>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("uniqueItems":true}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("uniqueItems":true}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(container_map_str_i32) {
     const auto result = json::schema_string<s_map_str_i32>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"object",)" R"("additionalProperties":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"object",)"
+              R"("additionalProperties":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(container_vec_vec_i32) {
     const auto result = json::schema_string<s_vec_vec_i32>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("items":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"array",)"
+              R"("items":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(map_str_vec_i32) {
     const auto result = json::schema_string<s_map_str_vec_i32>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"object",)" R"("additionalProperties":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"object",)"
+              R"("additionalProperties":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}}},)"
+              R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -730,30 +796,73 @@ TEST_CASE(map_str_vec_i32) {
 
 TEST_CASE(tuple_pair) {
     const auto result = json::schema_string<s_pair>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("prefixItems":[)" R"({"type":"string"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}],)" R"("items":false,)" R"("minItems":2,"maxItems":2}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"array",)"
+              R"("prefixItems":[)"
+              R"({"type":"string"},)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}],)"
+              R"("items":false,)"
+              R"("minItems":2,"maxItems":2}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(tuple_triple) {
     const auto result = json::schema_string<s_tuple>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("prefixItems":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"},)" R"({"type":"boolean"}],)" R"("items":false,)" R"("minItems":3,"maxItems":3}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"array",)"
+              R"("prefixItems":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"},)"
+              R"({"type":"boolean"}],)"
+              R"("items":false,)"
+              R"("minItems":3,"maxItems":3}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(tuple_pair_in_struct) {
     const auto result = json::schema_string<with_pair_field>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("p":{"type":"array",)" R"("prefixItems":[)" R"({"type":"string"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}],)" R"("items":false,)" R"("minItems":2,"maxItems":2},)" R"("name":{"type":"string"}},)" R"("required":["p","name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("p":{"type":"array",)"
+              R"("prefixItems":[)"
+              R"({"type":"string"},)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}],)"
+              R"("items":false,)"
+              R"("minItems":2,"maxItems":2},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["p","name"]})");
 }
 
 TEST_CASE(tuple_in_struct) {
     const auto result = json::schema_string<with_tuple_field>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("t":{"type":"array",)" R"("prefixItems":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"boolean"}],)" R"("items":false,)" R"("minItems":2,"maxItems":2},)" R"("name":{"type":"string"}},)" R"("required":["t","name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("t":{"type":"array",)"
+              R"("prefixItems":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"boolean"}],)"
+              R"("items":false,)"
+              R"("minItems":2,"maxItems":2},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["t","name"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -762,30 +871,50 @@ TEST_CASE(tuple_in_struct) {
 
 TEST_CASE(struct_empty) {
     const auto result = json::schema_string<empty_struct>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{}})");
 }
 
 TEST_CASE(struct_single_field) {
     const auto result = json::schema_string<single_field>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x"]})");
 }
 
 TEST_CASE(struct_point2d) {
     const auto result = json::schema_string<point2d>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]})");
 }
 
 TEST_CASE(struct_with_string) {
     const auto result = json::schema_string<with_string>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("value":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["name","value"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("value":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["name","value"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -794,30 +923,68 @@ TEST_CASE(struct_with_string) {
 
 TEST_CASE(nested_inner) {
     const auto result = json::schema_string<inner>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["a"]})");
 }
 
 TEST_CASE(nested_middle) {
     const auto result = json::schema_string<middle>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("i":{"$ref":"#/$defs/inner"},)" R"("s":{"type":"string"}},)" R"("required":["i","s"],)" R"("$defs":{)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("i":{"$ref":"#/$defs/inner"},)"
+              R"("s":{"type":"string"}},)"
+              R"("required":["i","s"],)"
+              R"("$defs":{)"
+              R"("inner":{"type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["a"]}}})");
 }
 
 TEST_CASE(nested_outer) {
     const auto result = json::schema_string<outer>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("m":{"$ref":"#/$defs/middle"},)" R"("n":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["m","n"],)" R"("$defs":{)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]},)" R"("middle":{"type":"object",)" R"("properties":{)" R"("i":{"$ref":"#/$defs/inner"},)" R"("s":{"type":"string"}},)" R"("required":["i","s"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("m":{"$ref":"#/$defs/middle"},)"
+              R"("n":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["m","n"],)"
+              R"("$defs":{)"
+              R"("inner":{"type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["a"]},)"
+              R"("middle":{"type":"object",)"
+              R"("properties":{)"
+              R"("i":{"$ref":"#/$defs/inner"},)"
+              R"("s":{"type":"string"}},)"
+              R"("required":["i","s"]}}})");
 }
 
 TEST_CASE(nested_with_enum) {
     const auto result = json::schema_string<with_enum>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("c":{"enum":["red","green","blue"]},)" R"("name":{"type":"string"}},)" R"("required":["c","name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("c":{"enum":["red","green","blue"]},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["c","name"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -826,37 +993,74 @@ TEST_CASE(nested_with_enum) {
 
 TEST_CASE(optional_field) {
     const auto result = json::schema_string<with_optional>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("age":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]}},)" R"("required":["name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("age":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]}},)"
+              R"("required":["name"]})");
 }
 
 TEST_CASE(unique_ptr_field) {
     const auto result = json::schema_string<with_unique>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("ptr":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]}},)" R"("required":["name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("ptr":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]}},)"
+              R"("required":["name"]})");
 }
 
 TEST_CASE(shared_ptr_field) {
     const auto result = json::schema_string<with_shared>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("ptr":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]}},)" R"("required":["name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("ptr":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]}},)"
+              R"("required":["name"]})");
 }
 
 TEST_CASE(all_optional_fields) {
     const auto result = json::schema_string<all_optional>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("a":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]},)" R"("b":{"oneOf":[{"type":"string"},)" R"({"type":"null"}]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("a":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]},)"
+              R"("b":{"oneOf":[{"type":"string"},)"
+              R"({"type":"null"}]}}})");
 }
 
 TEST_CASE(all_ptr_types) {
     const auto result = json::schema_string<with_all_ptr>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("opt":{"oneOf":[{"type":"string"},)" R"({"type":"null"}]},)" R"("uniq":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]},)" R"("shr":{"oneOf":[{"type":"boolean"},)" R"({"type":"null"}]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("opt":{"oneOf":[{"type":"string"},)"
+              R"({"type":"null"}]},)"
+              R"("uniq":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]},)"
+              R"("shr":{"oneOf":[{"type":"boolean"},)"
+              R"({"type":"null"}]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -865,16 +1069,27 @@ TEST_CASE(all_ptr_types) {
 
 TEST_CASE(attr_default_value) {
     const auto result = json::schema_string<with_default>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("count":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["name"]})");
 }
 
 TEST_CASE(all_default_fields) {
     const auto result = json::schema_string<all_default>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"string"}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"string"}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -893,9 +1108,16 @@ TEST_CASE(deny_unknown_struct) {
         {deny_fields,          2            },
     };
     const auto result = json::schema_string(deny_info).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["name","count"],)" R"("additionalProperties":false})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("count":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["name","count"],)"
+              R"("additionalProperties":false})");
 }
 
 // ---------------------------------------------------------------------------
@@ -904,34 +1126,65 @@ TEST_CASE(deny_unknown_struct) {
 
 TEST_CASE(attr_skip) {
     const auto result = json::schema_string<with_skip>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("visible":{"type":"string"}},)" R"("required":["visible"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("visible":{"type":"string"}},)"
+              R"("required":["visible"]})");
 }
 
 TEST_CASE(skip_and_default) {
     const auto result = json::schema_string<skip_default>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("count":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["name"]})");
 }
 
 // A field the encoder may omit (built-in skip_when or a custom skip_if
 // predicate) is never required — the decoder accepts its absence.
 TEST_CASE(skip_if_fields_not_required) {
     const auto result = json::schema_string<with_skip_when>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("tags":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("note":{"type":"string"}},)" R"("required":["name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("tags":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("count":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("note":{"type":"string"}},)"
+              R"("required":["name"]})");
 }
 
 // Two KOTATSU_ANNOTATE uses expand to distinct tags; identical untagged
 // struct specs must still collapse to one type_info instance and $defs entry.
 TEST_CASE(repeated_inline_struct_annotation_shares_def) {
     const auto result = json::schema_string<repeated_child_annotation>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("left":{"$ref":"#/$defs/casing_child"},)" R"("right":{"$ref":"#/$defs/casing_child"}},)" R"("required":["left","right"],)" R"("$defs":{)" R"("casing_child":{"type":"object",)" R"("properties":{)" R"("firstValue":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["firstValue"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("left":{"$ref":"#/$defs/casing_child"},)"
+              R"("right":{"$ref":"#/$defs/casing_child"}},)"
+              R"("required":["left","right"],)"
+              R"("$defs":{)"
+              R"("casing_child":{"type":"object",)"
+              R"("properties":{)"
+              R"("firstValue":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["firstValue"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -940,23 +1193,51 @@ TEST_CASE(repeated_inline_struct_annotation_shares_def) {
 
 TEST_CASE(attr_flatten) {
     const auto result = json::schema_string<with_flatten>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("b":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("extra":{"type":"string"}},)" R"("required":["a","b","extra"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("b":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("extra":{"type":"string"}},)"
+              R"("required":["a","b","extra"]})");
 }
 
 TEST_CASE(flatten_with_optional) {
     const auto result = json::schema_string<flatten_opt>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]},)" R"("tag":{"type":"string"}},)" R"("required":["x","tag"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]},)"
+              R"("tag":{"type":"string"}},)"
+              R"("required":["x","tag"]})");
 }
 
 TEST_CASE(flatten_with_rename) {
     const auto result = json::schema_string<flatten_rename>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("alpha":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("b":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("extra":{"type":"string"}},)" R"("required":["alpha","b","extra"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("alpha":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("b":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("extra":{"type":"string"}},)"
+              R"("required":["alpha","b","extra"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -965,9 +1246,15 @@ TEST_CASE(flatten_with_rename) {
 
 TEST_CASE(attr_rename) {
     const auto result = json::schema_string<with_rename>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("my_field":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"string"}},)" R"("required":["my_field","y"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("my_field":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"string"}},)"
+              R"("required":["my_field","y"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -976,16 +1263,31 @@ TEST_CASE(attr_rename) {
 
 TEST_CASE(variant_untagged) {
     const auto result = json::schema_string<var_none>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"}]}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"}]}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(variant_three_alts) {
     const auto result = json::schema_string<var_three>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"},)" R"({"type":"boolean"}]}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"},)"
+              R"({"type":"boolean"}]}},)"
+              R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,9 +1328,24 @@ TEST_CASE(variant_external_tag) {
         {&ext_field,           1         },
     };
     const auto result = json::schema_string(ext_wrap).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("num":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["num"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("text":{"type":"string"}},)" R"("required":["text"],)" R"("additionalProperties":false}]}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("num":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["num"],)"
+              R"("additionalProperties":false},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("text":{"type":"string"}},)"
+              R"("required":["text"],)"
+              R"("additionalProperties":false}]}},)"
+              R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,9 +1386,23 @@ TEST_CASE(variant_internal_tag) {
         {&int_field,           1         },
     };
     const auto result = json::schema_string(int_wrap).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("x":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("y":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("type":{"const":"point"}},)" R"("required":["x","y","type"]},)" R"({"type":"object",)" R"("properties":{)" R"("a":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("type":{"const":"inner"}},)" R"("required":["a","type"]}]}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"("y":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"("type":{"const":"point"}},)"
+              R"("required":["x","y","type"]},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"("type":{"const":"inner"}},)"
+              R"("required":["a","type"]}]}},)"
+              R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1112,28 +1443,84 @@ TEST_CASE(variant_adjacent_tag) {
         {&adj_field,           1         },
     };
     const auto result = json::schema_string(adj_wrap).value();
-    EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("t":{"const":"num"},)" R"("c":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["t","c"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("t":{"const":"text"},)" R"("c":{"type":"string"}},)" R"("required":["t","c"],)" R"("additionalProperties":false}]}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("t":{"const":"num"},)"
+              R"("c":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["t","c"],)"
+              R"("additionalProperties":false},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("t":{"const":"text"},)"
+              R"("c":{"type":"string"}},)"
+              R"("required":["t","c"],)"
+              R"("additionalProperties":false}]}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(root_external_variant) {
     const auto result = json::schema_string<root_external_variant>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("integer":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["integer"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("text":{"type":"string"}},)" R"("required":["text"],)" R"("additionalProperties":false}]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("integer":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["integer"],)"
+              R"("additionalProperties":false},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("text":{"type":"string"}},)"
+              R"("required":["text"],)"
+              R"("additionalProperties":false}]})");
 }
 
 TEST_CASE(root_internal_variant) {
     const auto result = json::schema_string<root_internal_variant>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("radius":{"type":"number"},)" R"("kind":{"const":"circle"}},)" R"("required":["radius","kind"]},)" R"({"type":"object",)" R"("properties":{)" R"("width":{"type":"number"},)" R"("height":{"type":"number"},)" R"("kind":{"const":"rect"}},)" R"("required":["width","height","kind"]}]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("radius":{"type":"number"},)"
+              R"("kind":{"const":"circle"}},)"
+              R"("required":["radius","kind"]},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("width":{"type":"number"},)"
+              R"("height":{"type":"number"},)"
+              R"("kind":{"const":"rect"}},)"
+              R"("required":["width","height","kind"]}]})");
 }
 
 TEST_CASE(root_adjacent_variant) {
     const auto result = json::schema_string<root_adjacent_variant>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("type":{"const":"integer"},)" R"("value":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["type","value"],)" R"("additionalProperties":false},)" R"({"type":"object",)" R"("properties":{)" R"("type":{"const":"text"},)" R"("value":{"type":"string"}},)" R"("required":["type","value"],)" R"("additionalProperties":false}]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("type":{"const":"integer"},)"
+              R"("value":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["type","value"],)"
+              R"("additionalProperties":false},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("type":{"const":"text"},)"
+              R"("value":{"type":"string"}},)"
+              R"("required":["type","value"],)"
+              R"("additionalProperties":false}]})");
 }
 
 TEST_CASE(opaque_root_returns_error) {
@@ -1159,9 +1546,11 @@ TEST_CASE(any_type_field) {
         {any_fields,           1         },
     };
     const auto result = json::schema_string(any_struct).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{"data":{}},)" R"("required":["data"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{"data":{}},)"
+              R"("required":["data"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1170,70 +1559,153 @@ TEST_CASE(any_type_field) {
 
 TEST_CASE(map_str_struct) {
     const auto result = json::schema_string<map_str_struct>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("entries":{"type":"object",)" R"("additionalProperties":{)" R"("$ref":"#/$defs/point2d"}}},)" R"("required":["entries"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("entries":{"type":"object",)"
+              R"("additionalProperties":{)"
+              R"("$ref":"#/$defs/point2d"}}},)"
+              R"("required":["entries"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(map_str_enum) {
     const auto result = json::schema_string<map_str_enum>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("entries":{"type":"object",)" R"("additionalProperties":{)" R"("enum":["red","green","blue"]}}},)" R"("required":["entries"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("entries":{"type":"object",)"
+              R"("additionalProperties":{)"
+              R"("enum":["red","green","blue"]}}},)"
+              R"("required":["entries"]})");
 }
 
 TEST_CASE(vec_optional_items) {
     const auto result = json::schema_string<vec_optional>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"type":"array",)" R"("items":{"oneOf":[{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"null"}]}}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"type":"array",)"
+              R"("items":{"oneOf":[{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"null"}]}}},)"
+              R"("required":["v"]})");
 }
 
 TEST_CASE(optional_vec_field) {
     const auto result = json::schema_string<optional_vec>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"({"type":"null"}]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"({"type":"null"}]}}})");
 }
 
 TEST_CASE(vec_of_enum) {
     const auto result = json::schema_string<vec_enum>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("colors":{"type":"array",)" R"("items":{)" R"("enum":["red","green","blue"]}}},)" R"("required":["colors"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("colors":{"type":"array",)"
+              R"("items":{)"
+              R"("enum":["red","green","blue"]}}},)"
+              R"("required":["colors"]})");
 }
 
 TEST_CASE(set_of_string) {
     const auto result = json::schema_string<set_string>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("tags":{"type":"array",)" R"("items":{"type":"string"},)" R"("uniqueItems":true}},)" R"("required":["tags"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("tags":{"type":"array",)"
+              R"("items":{"type":"string"},)"
+              R"("uniqueItems":true}},)"
+              R"("required":["tags"]})");
 }
 
 TEST_CASE(vec_of_map) {
     const auto result = json::schema_string<vec_map>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("items":{"type":"array",)" R"("items":{"type":"object",)" R"("additionalProperties":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}}},)" R"("required":["items"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("items":{"type":"array",)"
+              R"("items":{"type":"object",)"
+              R"("additionalProperties":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}}},)"
+              R"("required":["items"]})");
 }
 
 TEST_CASE(map_of_vec_struct) {
     const auto result = json::schema_string<map_vec_struct>().value();
-    EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("groups":{"type":"object",)" R"("additionalProperties":{"type":"array",)" R"("items":{)" R"("$ref":"#/$defs/point2d"}}}},)" R"("required":["groups"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("groups":{"type":"object",)"
+              R"("additionalProperties":{"type":"array",)"
+              R"("items":{)"
+              R"("$ref":"#/$defs/point2d"}}}},)"
+              R"("required":["groups"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(deep_container_field) {
     const auto result = json::schema_string<deep_container>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("data":{"type":"object",)" R"("additionalProperties":{"type":"array",)" R"("items":{"type":"object",)" R"("additionalProperties":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}}}},)" R"("required":["data"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("data":{"type":"object",)"
+              R"("additionalProperties":{"type":"array",)"
+              R"("items":{"type":"object",)"
+              R"("additionalProperties":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}}}},)"
+              R"("required":["data"]})");
 }
 
 TEST_CASE(map_of_map_field) {
     const auto result = json::schema_string<map_of_map>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("m":{"type":"object",)" R"("additionalProperties":{"type":"object",)" R"("additionalProperties":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}}},)" R"("required":["m"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("m":{"type":"object",)"
+              R"("additionalProperties":{"type":"object",)"
+              R"("additionalProperties":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}}},)"
+              R"("required":["m"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1243,13 +1715,47 @@ TEST_CASE(map_of_map_field) {
 TEST_CASE(shared_ptr_to_struct) {
     const auto result = json::schema_string<shared_struct>().value();
     EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("point":{"oneOf":[{)" R"("$ref":"#/$defs/point2d"},)" R"({"type":"null"}]}},)" R"("required":["name"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("point":{"oneOf":[{)"
+              R"("$ref":"#/$defs/point2d"},)"
+              R"({"type":"null"}]}},)"
+              R"("required":["name"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(optional_struct_field) {
     const auto result = json::schema_string<optional_struct>().value();
     EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("point":{"oneOf":[{)" R"("$ref":"#/$defs/point2d"},)" R"({"type":"null"}]},)" R"("name":{"type":"string"}},)" R"("required":["name"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("point":{"oneOf":[{)"
+              R"("$ref":"#/$defs/point2d"},)"
+              R"({"type":"null"}]},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["name"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,9 +1764,28 @@ TEST_CASE(optional_struct_field) {
 
 TEST_CASE(defs_dedup_multi_ref) {
     const auto result = json::schema_string<multi_ref>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("a":{)" R"("$ref":"#/$defs/point2d"},)" R"("b":{)" R"("$ref":"#/$defs/point2d"},)" R"("list":{"type":"array",)" R"("items":{)" R"("$ref":"#/$defs/point2d"}}},)" R"("required":["a","b","list"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("a":{)"
+              R"("$ref":"#/$defs/point2d"},)"
+              R"("b":{)"
+              R"("$ref":"#/$defs/point2d"},)"
+              R"("list":{"type":"array",)"
+              R"("items":{)"
+              R"("$ref":"#/$defs/point2d"}}},)"
+              R"("required":["a","b","list"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,23 +1794,38 @@ TEST_CASE(defs_dedup_multi_ref) {
 
 TEST_CASE(multi_enum_fields) {
     const auto result = json::schema_string<multi_enum>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("c":{"enum":["red","green","blue"]},)" R"("s":{"enum":["ok","fail","pending"]},)" R"("label":{"type":"string"}},)" R"("required":["c","s","label"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("c":{"enum":["red","green","blue"]},)"
+              R"("s":{"enum":["ok","fail","pending"]},)"
+              R"("label":{"type":"string"}},)"
+              R"("required":["c","s","label"]})");
 }
 
 TEST_CASE(with_flag_enum) {
     const auto result = json::schema_string<with_flag>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("f":{"enum":["off","on"]},)" R"("name":{"type":"string"}},)" R"("required":["f","name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("f":{"enum":["off","on"]},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["f","name"]})");
 }
 
 TEST_CASE(with_level_enum) {
     const auto result = json::schema_string<with_level>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("l":{"enum":["low","mid","high"]},)" R"("v":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["l","v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("l":{"enum":["low","mid","high"]},)"
+              R"("v":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["l","v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1294,9 +1834,22 @@ TEST_CASE(with_level_enum) {
 
 TEST_CASE(optional_inner_field) {
     const auto result = json::schema_string<optional_inner>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("i":{"oneOf":[{)" R"("$ref":"#/$defs/inner"},)" R"({"type":"null"}]},)" R"("name":{"type":"string"}},)" R"("required":["name"],)" R"("$defs":{)" R"("inner":{"type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["a"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("i":{"oneOf":[{)"
+              R"("$ref":"#/$defs/inner"},)"
+              R"({"type":"null"}]},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["name"],)"
+              R"("$defs":{)"
+              R"("inner":{"type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["a"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1305,9 +1858,17 @@ TEST_CASE(optional_inner_field) {
 
 TEST_CASE(vec_of_variant) {
     const auto result = json::schema_string<vec_variant>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("items":{"type":"array",)" R"("items":{"oneOf":[)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"}]}}},)" R"("required":["items"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("items":{"type":"array",)"
+              R"("items":{"oneOf":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"}]}}},)"
+              R"("required":["items"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1316,54 +1877,179 @@ TEST_CASE(vec_of_variant) {
 
 TEST_CASE(combo_mixed_fields) {
     const auto result = json::schema_string<combo>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("color":{)" R"("enum":["red","green","blue"]},)" R"("label":{"oneOf":[{"type":"string"},)" R"({"type":"null"}]},)" R"("values":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("attrs":{"type":"object",)" R"("additionalProperties":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}}},)" R"("required":["color","values","attrs"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("color":{)"
+              R"("enum":["red","green","blue"]},)"
+              R"("label":{"oneOf":[{"type":"string"},)"
+              R"({"type":"null"}]},)"
+              R"("values":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("attrs":{"type":"object",)"
+              R"("additionalProperties":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}},)"
+              R"("required":["color","values","attrs"]})");
 }
 
 TEST_CASE(combo_nested_struct_refs) {
     const auto result = json::schema_string<nested_combo>().value();
     EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("point":{)" R"("$ref":"#/$defs/point2d"},)" R"("color":{)" R"("enum":["red","green","blue"]},)" R"("points":{"type":"array",)" R"("items":{)" R"("$ref":"#/$defs/point2d"}},)" R"("named_points":{"type":"object",)" R"("additionalProperties":{)" R"("$ref":"#/$defs/point2d"}}},)" R"("required":[)" R"("point","color","points","named_points"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("point":{)"
+              R"("$ref":"#/$defs/point2d"},)"
+              R"("color":{)"
+              R"("enum":["red","green","blue"]},)"
+              R"("points":{"type":"array",)"
+              R"("items":{)"
+              R"("$ref":"#/$defs/point2d"}},)"
+              R"("named_points":{"type":"object",)"
+              R"("additionalProperties":{)"
+              R"("$ref":"#/$defs/point2d"}}},)"
+              R"("required":[)"
+              R"("point","color","points","named_points"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(combo_vec_of_struct) {
     const auto result = json::schema_string<vec_of_struct>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("items":{"type":"array",)" R"("items":{)" R"("$ref":"#/$defs/point2d"}}},)" R"("required":["items"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("items":{"type":"array",)"
+              R"("items":{)"
+              R"("$ref":"#/$defs/point2d"}}},)"
+              R"("required":["items"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(combo_deep_nesting) {
     const auto result = json::schema_string<deep_outer>().value();
     EXPECT_EQ(result,
-              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("dm":{)" R"("$ref":"#/$defs/deep_middle"},)" R"("n":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["dm","n"],)" R"("$defs":{)" R"("deep_inner":{"type":"object",)" R"("properties":{)" R"("c":{)" R"("enum":["red","green","blue"]},)" R"("v":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["c","v"]},)" R"("deep_middle":{"type":"object",)" R"("properties":{)" R"("di":{)" R"("$ref":"#/$defs/deep_inner"},)" R"("s":{"type":"string"}},)" R"("required":["di","s"]}}})");
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("dm":{)"
+              R"("$ref":"#/$defs/deep_middle"},)"
+              R"("n":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["dm","n"],)"
+              R"("$defs":{)"
+              R"("deep_inner":{"type":"object",)"
+              R"("properties":{)"
+              R"("c":{)"
+              R"("enum":["red","green","blue"]},)"
+              R"("v":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["c","v"]},)"
+              R"("deep_middle":{"type":"object",)"
+              R"("properties":{)"
+              R"("di":{)"
+              R"("$ref":"#/$defs/deep_inner"},)"
+              R"("s":{"type":"string"}},)"
+              R"("required":["di","s"]}}})");
 }
 
 TEST_CASE(combo_multi_map) {
     const auto result = json::schema_string<multi_map>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("a":{"type":"object",)" R"("additionalProperties":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("b":{"type":"object",)" R"("additionalProperties":{"type":"string"}}},)" R"("required":["a","b"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"object",)"
+              R"("additionalProperties":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("b":{"type":"object",)"
+              R"("additionalProperties":{"type":"string"}}},)"
+              R"("required":["a","b"]})");
 }
 
 TEST_CASE(combo_many_fields) {
     const auto result = json::schema_string<many_fields>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("a":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("b":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("c":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("d":{"type":"string"},)" R"("e":{"type":"boolean"},)" R"("f":{"type":"number"}},)" R"("required":["a","b","c","d","e","f"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("a":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("b":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("c":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("d":{"type":"string"},)"
+              R"("e":{"type":"boolean"},)"
+              R"("f":{"type":"number"}},)"
+              R"("required":["a","b","c","d","e","f"]})");
 }
 
 TEST_CASE(combo_set_of_struct) {
     const auto result = json::schema_string<set_of_struct>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("ids":{"type":"array",)" R"("items":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("uniqueItems":true},)" R"("name":{"type":"string"}},)" R"("required":["ids","name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("ids":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("uniqueItems":true},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["ids","name"]})");
 }
 
 TEST_CASE(combo_trivial_nested) {
     const auto result = json::schema_string<trivial_nested>().value();
-    EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("p":{)" R"("$ref":"#/$defs/point2d"},)" R"("z":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["p","z"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("p":{)"
+              R"("$ref":"#/$defs/point2d"},)"
+              R"("z":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["p","z"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,9 +2074,13 @@ TEST_CASE(self_referential_struct) {
     self_info.fields = {self_fields, 2};
 
     const auto result = json::schema_string(self_info).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("next":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)" R"("required":["value"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"("next":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)"
+              R"("required":["value"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1440,9 +2130,13 @@ TEST_CASE(variant_of_variant) {
     };
 
     const auto result = json::schema_string(outer_var).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"({"oneOf":[)" R"({"type":"string"},)" R"({"type":"boolean"}]}]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("oneOf":[)"
+              R"({"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"({"oneOf":[)"
+              R"({"type":"string"},)"
+              R"({"type":"boolean"}]}]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1463,9 +2157,15 @@ TEST_CASE(field_ordering_stability) {
         {ordered_fields,       4               },
     };
     const auto result = json::schema_string(ordered_info).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("zebra":{"type":"string"},)" R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("middle":{"type":"boolean"},)" R"("beta":{"type":"number"}},)" R"("required":["zebra","alpha","middle","beta"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("zebra":{"type":"string"},)"
+              R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"("middle":{"type":"boolean"},)"
+              R"("beta":{"type":"number"}},)"
+              R"("required":["zebra","alpha","middle","beta"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1478,9 +2178,17 @@ struct with_monostate {
 
 TEST_CASE(variant_with_monostate) {
     const auto result = json::schema_string<with_monostate>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("v":{"oneOf":[)" R"({"type":"null"},)" R"({"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"({"type":"string"}]}},)" R"("required":["v"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("v":{"oneOf":[)"
+              R"({"type":"null"},)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"}]}},)"
+              R"("required":["v"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1522,9 +2230,19 @@ TEST_CASE(mutual_recursion) {
     info_b.fields = {fields_b, 2};
 
     const auto result = json::schema_string(info_a).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)" R"("b":{"oneOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)" R"("required":["value"],)" R"("$defs":{)" R"("node_b":{"type":"object",)" R"("properties":{)" R"("name":{"type":"string"},)" R"("a":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)" R"("required":["name"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+              R"("b":{"oneOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
+              R"("required":["value"],)"
+              R"("$defs":{)"
+              R"("node_b":{"type":"object",)"
+              R"("properties":{)"
+              R"("name":{"type":"string"},)"
+              R"("a":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)"
+              R"("required":["name"]}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1543,9 +2261,12 @@ TEST_CASE(bytes_field) {
         {bytes_fields,         1           },
     };
     const auto result = json::schema_string(bytes_struct).value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("data":{"type":"string"}},)" R"("required":["data"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("data":{"type":"string"}},)"
+              R"("required":["data"]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1554,58 +2275,128 @@ TEST_CASE(bytes_field) {
 
 TEST_CASE(description_on_scalar_field) {
     const auto result = json::schema_string<desc_scalar>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("threads":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647,)" R"("description":"Number of worker threads."},)" R"("name":{"type":"string"}},)" R"("required":["threads","name"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("threads":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647,)"
+              R"("description":"Number of worker threads."},)"
+              R"("name":{"type":"string"}},)"
+              R"("required":["threads","name"]})");
 }
 
 TEST_CASE(description_on_optional_field) {
     const auto result = json::schema_string<desc_optional>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("label":{"oneOf":[{"type":"string"},)" R"({"type":"null"}],)" R"("description":"Optional display label."}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("label":{"oneOf":[{"type":"string"},)"
+              R"({"type":"null"}],)"
+              R"("description":"Optional display label."}}})");
 }
 
 TEST_CASE(description_on_struct_ref_field) {
     const auto result = json::schema_string<desc_struct_ref>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("anchor":{"$ref":"#/$defs/point2d",)" R"("description":"Anchor position."}},)" R"("required":["anchor"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("anchor":{"$ref":"#/$defs/point2d",)"
+              R"("description":"Anchor position."}},)"
+              R"("required":["anchor"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(description_through_flatten) {
     const auto result = json::schema_string<desc_flatten>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("count":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647,)" R"("description":"Inherited counter."},)" R"("tag":{"type":"string"}},)" R"("required":["count","tag"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("count":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647,)"
+              R"("description":"Inherited counter."},)"
+              R"("tag":{"type":"string"}},)"
+              R"("required":["count","tag"]})");
 }
 
 TEST_CASE(description_with_rename) {
     const auto result = json::schema_string<desc_rename>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("max_size":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647,)" R"("description":"Maximum size in bytes."}},)" R"("required":["max_size"]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("max_size":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647,)"
+              R"("description":"Maximum size in bytes."}},)"
+              R"("required":["max_size"]})");
 }
 
 TEST_CASE(description_with_default_value) {
     const auto result = json::schema_string<desc_default>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("retries":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647,)" R"("description":"Retry limit."}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("retries":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647,)"
+              R"("description":"Retry limit."}}})");
 }
 
 TEST_CASE(described_and_bare_struct_share_def) {
     const auto result = json::schema_string<desc_shared_ref>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("type":"object",)" R"("properties":{)" R"("origin":{"$ref":"#/$defs/point2d"},)" R"("anchor":{"$ref":"#/$defs/point2d",)" R"("description":"Anchor position."}},)" R"("required":["origin","anchor"],)" R"("$defs":{)" R"("point2d":{"type":"object",)" R"("properties":{)" R"("x":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647},)" R"("y":{"type":"integer",)" R"("minimum":-2147483648,)" R"("maximum":2147483647}},)" R"("required":["x","y"]}}})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("origin":{"$ref":"#/$defs/point2d"},)"
+              R"("anchor":{"$ref":"#/$defs/point2d",)"
+              R"("description":"Anchor position."}},)"
+              R"("required":["origin","anchor"],)"
+              R"("$defs":{)"
+              R"("point2d":{"type":"object",)"
+              R"("properties":{)"
+              R"("x":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"("y":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["x","y"]}}})");
 }
 
 TEST_CASE(description_in_internal_tagged_alternative) {
     const auto result = json::schema_string<desc_internal_variant>().value();
-    EXPECT_EQ(
-        result,
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)" R"("oneOf":[)" R"({"type":"object",)" R"("properties":{)" R"("radius":{"type":"number",)" R"("description":"Radius in meters."},)" R"("kind":{"const":"circle"}},)" R"("required":["radius","kind"]},)" R"({"type":"object",)" R"("properties":{)" R"("width":{"type":"number"},)" R"("height":{"type":"number"},)" R"("kind":{"const":"rect"}},)" R"("required":["width","height","kind"]}]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("oneOf":[)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("radius":{"type":"number",)"
+              R"("description":"Radius in meters."},)"
+              R"("kind":{"const":"circle"}},)"
+              R"("required":["radius","kind"]},)"
+              R"({"type":"object",)"
+              R"("properties":{)"
+              R"("width":{"type":"number"},)"
+              R"("height":{"type":"number"},)"
+              R"("kind":{"const":"rect"}},)"
+              R"("required":["width","height","kind"]}]})");
 }
 
 };  // TEST_SUITE(serde_json_schema)

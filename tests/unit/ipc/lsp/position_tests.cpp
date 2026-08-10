@@ -6,10 +6,11 @@
 namespace kota::ipc::lsp {
 namespace {
 
+// Throughout this suite: 你 is 3 UTF-8 bytes, 🙂 is 4.
 TEST_SUITE(language_position) {
 
 TEST_CASE(utf16_column_counts) {
-    std::string_view content = "a\xe4\xbd\xa0" "b\n";
+    std::string_view content = "a你b\n";
     LineMap map(content, PositionEncoding::UTF16);
 
     auto position = map.to_position(4);
@@ -19,7 +20,7 @@ TEST_CASE(utf16_column_counts) {
 }
 
 TEST_CASE(round_trip_offsets) {
-    std::string_view content = "a\xe4\xbd\xa0" "b\nx\xf0\x9f\x99\x82" "y";
+    std::string_view content = "a你b\nx🙂y";
     constexpr std::uint32_t offsets[] = {0, 1, 4, 5, 6, 7, 11, 12};
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
@@ -35,7 +36,7 @@ TEST_CASE(round_trip_offsets) {
 }
 
 TEST_CASE(position_offset_values) {
-    std::string_view content = "a\xe4\xbd\xa0\xf0\x9f\x99\x82" "b\nx";
+    std::string_view content = "a你🙂b\nx";
 
     struct Sample {
         std::uint32_t offset;
@@ -110,7 +111,7 @@ TEST_CASE(line_bounds_values) {
 }
 
 TEST_CASE(measure_units_encoding) {
-    std::string_view content = "a\xe4\xbd\xa0\xf0\x9f\x99\x82z";
+    std::string_view content = "a你🙂z";
 
     EXPECT_EQ(encoded_length(content, PositionEncoding::UTF8), 9U);
     EXPECT_EQ(encoded_length(content, PositionEncoding::UTF16), 5U);
@@ -118,7 +119,7 @@ TEST_CASE(measure_units_encoding) {
 }
 
 TEST_CASE(roundtrip_multiline_boundaries) {
-    std::string_view content = "a\xe4\xbd\xa0\n\xf0\x9f\x99\x82" "b";
+    std::string_view content = "a你\n🙂b";
     constexpr std::uint32_t boundaries[] = {0, 1, 4, 5, 9, 10};
 
     for(auto encoding: {PositionEncoding::UTF8, PositionEncoding::UTF16, PositionEncoding::UTF32}) {
@@ -231,7 +232,7 @@ TEST_CASE(to_offset_character_out_of_range) {
 }
 
 TEST_CASE(encoding_override) {
-    std::string_view content = "a\xe4\xbd\xa0" "b\n";
+    std::string_view content = "a你b\n";
     LineMap map(content, PositionEncoding::UTF8);
 
     auto p_default = map.to_position(4);

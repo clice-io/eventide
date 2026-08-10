@@ -109,14 +109,15 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
 }  // namespace kota::deco::trait
 
 #define DecoScalarResultErrString                                                                  \
-    "Result type must be a primitive scalar (bool/number/enum/owning string) or provide "        \
-    "into(string_view) or into(string_view, IntoContext). Default deco string parsing "          \
+    "Result type must be a primitive scalar (bool/number/enum/owning string) or provide "          \
+    "into(string_view) or into(string_view, IntoContext). Default deco string parsing "            \
     "does not support borrowing/view result types."
 
 #define DecoVectorResultErrString                                                                  \
-    "Result type must be a vector of primitive scalar values (including enums and owning "       \
-    "strings only) or provide into(vector<string_view>) or into(vector<string_view>, "           \
+    "Result type must be a vector of primitive scalar values (including enums and owning "         \
+    "strings only) or provide into(vector<string_view>) or into(vector<string_view>, "             \
     "IntoContext)."
 
 #define DecoInputResultErrString                                                                   \
-    "Input result type must be a scalar value (including enums and owning strings) or a vector " "of primitive scalar values, or provide a compatible into(...) overload."
+    "Input result type must be a scalar value (including enums and owning strings) or a vector "   \
+    "of primitive scalar values, or provide a compatible into(...) overload."

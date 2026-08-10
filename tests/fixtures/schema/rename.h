@@ -37,13 +37,15 @@ struct RenameAllTarget {
 };
 
 struct MixedRenameStruct {
-    KOTATSU_ANNOTATE(rename = "ID")<int> user_id;
+    KOTATSU_ANNOTATE(rename = "ID")
+    <int> user_id;
     float total_score;
     std::string item_name;
 };
 
 struct AliasRenameAllStruct {
-    KOTATSU_ANNOTATE(alias = {"user_id"})<int> id;
+    KOTATSU_ANNOTATE(alias = {"user_id"})
+    <int> id;
     float total_score;
 };
 

@@ -43,7 +43,8 @@ struct PlainFlattened {
 
 struct WithSkippedField {
     int first{};
-    KOTATSU_ANNOTATE(skip = true)<int> skipped = 77;
+    KOTATSU_ANNOTATE(skip = true)
+    <int> skipped = 77;
     int second{};
 };
 
@@ -55,7 +56,8 @@ struct WithSkipIfField {
 
 struct WithFlattenField {
     int first{};
-    KOTATSU_ANNOTATE(flatten = true)<FlattenInner> inner {};
+    KOTATSU_ANNOTATE(flatten = true)
+    <FlattenInner> inner{};
     int third{};
 };
 
