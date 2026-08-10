@@ -495,7 +495,7 @@ TEST_CASE(diag_tagged_ext_variant_int) {
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(data);
     ASSERT_TRUE(root != nullptr);
 
-    // For non-human-readable, tagged variants use the same wire format as untagged
+    // For non-human-readable, tagged variants use the same encoded format as untagged
     auto tag = root->GetField<std::uint32_t>(fbs::detail::first_field, 0);
     EXPECT_EQ(tag, 0U);  // int is at index 0
 

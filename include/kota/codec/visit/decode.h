@@ -29,7 +29,7 @@
 namespace kota::codec {
 
 /// Backend-internal dispatch override for one (visitor, type) pair. Not a
-/// user extension point: declare a type's wire representation via meta::repr,
+/// user extension point: declare a type's representation via meta::repr,
 /// or per-field via behavior::with — those are visible to schema consumers,
 /// a deserialize_visit specialization is not.
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
@@ -46,34 +46,34 @@ bool decode_variant(Vis& vis, Var& var);
 
 namespace detail {
 
-/// Decode a value through a wire-shape declaration (a meta::repr
+/// Decode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative from() when
 /// present, the imperative deserialize<Config>() body otherwise.
-template <typename Shape, typename Config, typename Vis, typename V>
-bool wire_decode(Vis& vis, V& out) {
-    using wire_t = meta::wire_shape_t<Shape>;
-    if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
+template <typename Repr, typename Config, typename Vis, typename V>
+bool repr_decode(Vis& vis, V& out) {
+    using declared_t = meta::declared_repr_t<Repr>;
+    if constexpr(std::is_same_v<declared_t, meta::dynamic>) {
         static_assert(!is_layout_computed<Vis>(),
-                      "this backend computes wire layout statically and cannot decode a "
+                      "this backend computes the output layout statically and cannot decode a "
                       "meta::dynamic repr");
     }
-    if constexpr(requires { Shape::from(std::declval<wire_t>()); }) {
+    if constexpr(requires { Repr::from(std::declval<declared_t>()); }) {
         static_assert(
-            !requires { Shape::template deserialize<Config>(vis, out); },
-            "wire shape: define from() or deserialize() for decoding, not both");
+            !requires { Repr::template deserialize<Config>(vis, out); },
+            "repr protocol: define from() or deserialize() for decoding, not both");
         static_assert(
-            requires(wire_t&& w) { out = Shape::from(std::move(w)); },
-            "wire shape: from() must accept the declared wire type and return the "
-            "value type");
-        wire_t wire{};
-        KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
-        out = Shape::from(std::move(wire));
+            requires(declared_t&& d) { out = Repr::from(std::move(d)); },
+            "repr protocol: from() must accept the declared representation type and return "
+            "the value type");
+        declared_t declared{};
+        KOTA_CODEC_TRY(decode_value<Config>(vis, declared));
+        out = Repr::from(std::move(declared));
         return true;
-    } else if constexpr(requires { Shape::template deserialize<Config>(vis, out); }) {
-        return Shape::template deserialize<Config>(vis, out);
+    } else if constexpr(requires { Repr::template deserialize<Config>(vis, out); }) {
+        return Repr::template deserialize<Config>(vis, out);
     } else {
-        static_assert(dependent_false<Shape>,
-                      "wire shape has no decode path: define from() or deserialize()");
+        static_assert(dependent_false<Repr>,
+                      "repr protocol: no decode path — define from() or deserialize()");
         return false;
     }
 }
@@ -184,7 +184,7 @@ bool decode_field_inner(Vis& vis, T& out) {
 
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        return wire_decode<adapter, Config>(vis, field_ref);
+        return repr_decode<adapter, Config>(vis, field_ref);
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
         using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
         target converted{};
@@ -216,8 +216,7 @@ bool decode_field_inner(Vis& vis, T& out) {
     } else if constexpr(meta::reflectable_class<raw_t> &&
                         (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                          meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-        using merged_config = annotated_config<Config, attrs_t>;
-        return decode_value<merged_config>(vis, field_ref);
+        return decode_value<meta::merged_config_t<Config, attrs_t>>(vis, field_ref);
     } else {
         return decode_value<Config>(vis, field_ref);
     }
@@ -233,7 +232,7 @@ bool decode_field_value(Vis& vis, T& out) {
     using raw_t = std::remove_cv_t<typename slot_t::raw_type>;
     using attrs_t = typename slot_t::attrs;
 
-    std::string_view wire_name = schema::fields[I].name;
+    std::string_view name = schema::fields[I].name;
 
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
         constexpr std::size_t offset = schema::fields[I].offset;
@@ -254,7 +253,7 @@ bool decode_field_value(Vis& vis, T& out) {
     if constexpr(Config::detailed_error) {
         if(!ok) {
             if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(wire_name);
+                e->prepend_field(name);
         }
     }
     return ok;
@@ -636,14 +635,14 @@ constexpr bool kind_compatible_impl(meta::type_kind src) {
 
 template <typename T>
 constexpr bool kind_compatible(meta::type_kind src) {
-    // An alternative arrives as its effective wire shape — behavior attrs on
-    // an annotation first, then (chained) reprs — so compatibility is judged
-    // against that; a dynamic shape can be anything.
-    using wire_t = meta::wire_type_t<T>;
-    if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
+    // An alternative arrives as its resolved representation — behavior attrs
+    // on an annotation first, then (chained) reprs — so compatibility is
+    // judged against that; a dynamic representation can be anything.
+    using resolved_t = meta::resolved_repr_t<T>;
+    if constexpr(std::is_same_v<resolved_t, meta::dynamic>) {
         return true;
     } else {
-        return kind_compatible_impl<wire_t>(src);
+        return kind_compatible_impl<resolved_t>(src);
     }
 }
 
@@ -692,7 +691,7 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
 }
 
 /// Decode a single struct field, applying behavior transforms if present.
-/// Mirrors encode_one_field: wraps the decode in vis.visit_field(idx, wire_name, ...).
+/// Mirrors encode_one_field: wraps the decode in vis.visit_field(idx, name, ...).
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_one_field(Vis& vis, T& out) {
     using schema = meta::virtual_schema<T, Config>;
@@ -702,7 +701,7 @@ bool decode_one_field(Vis& vis, T& out) {
     using attrs_t = typename slot_t::attrs;
 
     constexpr auto idx = std::integral_constant<std::size_t, I>{};
-    std::string_view wire_name = schema::fields[I].name;
+    std::string_view name = schema::fields[I].name;
 
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::skip_if>) {
         constexpr std::size_t offset = schema::fields[I].offset;
@@ -711,20 +710,20 @@ bool decode_one_field(Vis& vis, T& out) {
         using pred = typename tuple_find_spec_t<attrs_t, meta::behavior::skip_if>::predicate;
         if(meta::evaluate_skip_predicate<pred>(field_ref, false)) {
             raw_t discard{};
-            return vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+            return vis.visit_field(idx, name, [&](auto& fv) -> bool {
                 return decode_value<Config>(fv, discard);
             });
         }
     }
 
-    bool ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+    bool ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
         return decode_field_inner<Config, I>(fv, out);
     });
 
     if constexpr(Config::detailed_error) {
         if(!ok) {
             if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(wire_name);
+                e->prepend_field(name);
         }
     }
     return ok;
@@ -776,10 +775,9 @@ bool decode_value(Vis& vis, T& out) {
 
         if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
             // Behavior precedence (with > as > enum_string, all above variant
-            // tagging) mirrors decode_field_inner and meta's wire-type
-            // resolver.
+            // tagging) mirrors decode_field_inner and meta's repr resolver.
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return detail::wire_decode<adapter, Config>(vis, inner);
+            return detail::repr_decode<adapter, Config>(vis, inner);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
             using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
             target converted{};
@@ -810,13 +808,12 @@ bool decode_value(Vis& vis, T& out) {
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-            using merged_config = detail::annotated_config<Config, attrs_t>;
-            return decode_value<merged_config>(vis, inner);
+            return decode_value<meta::merged_config_t<Config, attrs_t>>(vis, inner);
         } else {
             return decode_value<Config>(vis, inner);
         }
     } else if constexpr(meta::has_repr<V>) {
-        return detail::wire_decode<meta::repr<V>, Config>(vis, out);
+        return detail::repr_decode<meta::repr<V>, Config>(vis, out);
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;

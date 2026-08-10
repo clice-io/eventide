@@ -761,7 +761,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
         }                                                                                          \
     }
 
-#define SERDE_STANDARD_TEST_CASES_POINTERS_WIRE_SAFE(rt)                                           \
+#define SERDE_STANDARD_TEST_CASES_POINTERS_FORMAT_SAFE(rt)                                         \
     TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
         SERDE_STANDARD_ASSERT_ROUNDTRIP(rt, standard_case::make_smart_pointers());                 \
         {                                                                                          \
@@ -789,7 +789,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS_TEXT_SAFE(rt)                                           \
-    SERDE_STANDARD_TEST_CASES_POINTERS_WIRE_SAFE(rt)
+    SERDE_STANDARD_TEST_CASES_POINTERS_FORMAT_SAFE(rt)
 
 #define SERDE_STANDARD_TEST_CASES_POINTERS_TOML_SAFE(rt)                                           \
     TEST_CASE(standard_smart_pointers_roundtrip) {                                                 \
@@ -952,7 +952,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
             nested_variant_t{standard_case::make_basic(false, -9, -1.25, "nested")});              \
     }
 
-#define SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)                                            \
+#define SERDE_STANDARD_TEST_CASES_VARIANT_FORMAT_SAFE(rt)                                          \
     TEST_CASE(standard_variant_roundtrip) {                                                        \
         using basic_t = standard_case::Basic;                                                      \
         using primary_variant_t = std::variant<std::monostate, int, double, std::string, basic_t>; \
@@ -979,7 +979,7 @@ inline auto make_tagged_internal_holder() -> TaggedInternalHolder {
     }
 
 #define SERDE_STANDARD_TEST_CASES_VARIANT_TEXT_SAFE(rt)                                            \
-    SERDE_STANDARD_TEST_CASES_VARIANT_WIRE_SAFE(rt)
+    SERDE_STANDARD_TEST_CASES_VARIANT_FORMAT_SAFE(rt)
 
 #define SERDE_STANDARD_TEST_CASES_STL_CONTAINERS(rt)                                               \
     SERDE_STANDARD_TEST_CASES_TUPLE_LIKE(rt)                                                       \

@@ -938,7 +938,7 @@ TEST_CASE(deeply_nested) {
 TEST_CASE(vector_of_byte_blobs) {
     // Byte blobs have no direct vector-of-vectors representation: each
     // element travels boxed in a wrapper table with the byte vector at its
-    // first field, on the wire and in the lazy view.
+    // first field, in the encoded bytes and in the lazy view.
     with_byte_blobs input{
         .blobs = {{std::byte{0xAA}, std::byte{0xBB}}, {}, {std::byte{0x01}}},
     };

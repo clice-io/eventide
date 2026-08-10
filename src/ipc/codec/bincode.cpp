@@ -96,9 +96,9 @@ Result<std::string> BincodeCodec::encode_success_response(const protocol::Reques
 
 Result<std::string> BincodeCodec::encode_error_response(const protocol::RequestID& id,
                                                         const Error& error) {
-    std::optional<protocol::RequestID> wire_id = id;
+    std::optional<protocol::RequestID> encoded_id = id;
     return encode_envelope(bincode_error{
-        wire_id,
+        encoded_id,
         static_cast<std::int32_t>(error.code),
         error.message,
         codec::RawValue{},

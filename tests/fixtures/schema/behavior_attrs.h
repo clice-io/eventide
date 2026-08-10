@@ -28,12 +28,12 @@ struct BehaviorStruct {
     float plain;
 };
 
-struct WithWireTypeStruct {
+struct WithReprStruct {
     annotation<int, behavior::with<IntToStringAdapter>> converted;
     float plain;
 };
 
-struct WithCompoundWireStruct {
+struct WithCompoundReprStruct {
     annotation<int, behavior::with<BytesAdapter>> chunk;
 };
 

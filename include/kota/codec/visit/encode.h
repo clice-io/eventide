@@ -23,9 +23,9 @@
 namespace kota::codec {
 
 /// Backend-internal dispatch override for one (visitor, type) pair. Not a
-/// user extension point: declare a type's wire representation via meta::repr,
-/// or per-field via behavior::with — those are visible to schema consumers,
-/// a serialize_visit specialization is not.
+/// user extension point: declare a type's representation via meta::repr, or
+/// per-field via behavior::with — those are visible to schema consumers, a
+/// serialize_visit specialization is not.
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct serialize_visit {};
 
@@ -37,29 +37,29 @@ bool encode_struct_fields(Vis& vis, const T& value);
 
 namespace detail {
 
-/// Encode a value through a wire-shape declaration (a meta::repr
+/// Encode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative to() when
 /// present, the imperative serialize<Config>() body otherwise.
-template <typename Shape, typename Config, typename Vis, typename V>
-bool wire_encode(Vis& vis, const V& value) {
-    using wire_t = meta::wire_shape_t<Shape>;
-    if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
+template <typename Repr, typename Config, typename Vis, typename V>
+bool repr_encode(Vis& vis, const V& value) {
+    using declared_t = meta::declared_repr_t<Repr>;
+    if constexpr(std::is_same_v<declared_t, meta::dynamic>) {
         static_assert(!is_layout_computed<Vis>(),
-                      "this backend computes wire layout statically and cannot encode a "
+                      "this backend computes the output layout statically and cannot encode a "
                       "meta::dynamic repr");
     }
-    if constexpr(requires { Shape::to(value); }) {
+    if constexpr(requires { Repr::to(value); }) {
         static_assert(
-            !requires { Shape::template serialize<Config>(vis, value); },
-            "wire shape: define to() or serialize() for encoding, not both");
-        static_assert(std::is_same_v<std::remove_cvref_t<decltype(Shape::to(value))>, wire_t>,
-                      "wire shape: to() must return the declared wire type");
-        return encode_value<Config>(vis, Shape::to(value));
-    } else if constexpr(requires { Shape::template serialize<Config>(vis, value); }) {
-        return Shape::template serialize<Config>(vis, value);
+            !requires { Repr::template serialize<Config>(vis, value); },
+            "repr protocol: define to() or serialize() for encoding, not both");
+        static_assert(std::is_same_v<std::remove_cvref_t<decltype(Repr::to(value))>, declared_t>,
+                      "repr protocol: to() must return the declared representation type");
+        return encode_value<Config>(vis, Repr::to(value));
+    } else if constexpr(requires { Repr::template serialize<Config>(vis, value); }) {
+        return Repr::template serialize<Config>(vis, value);
     } else {
-        static_assert(dependent_false<Shape>,
-                      "wire shape has no encode path: define to() or serialize()");
+        static_assert(dependent_false<Repr>,
+                      "repr protocol: no encode path — define to() or serialize()");
         return false;
     }
 }
@@ -141,18 +141,18 @@ bool encode_one_field(Vis& vis, const T& value) {
     }
 
     constexpr auto idx = std::integral_constant<std::size_t, I>{};
-    std::string_view wire_name = schema::fields[I].name;
+    std::string_view name = schema::fields[I].name;
 
     bool ok;
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
-            return wire_encode<adapter, Config>(fv, field_ref);
+        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
+            return repr_encode<adapter, Config>(fv, field_ref);
         });
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
         using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
         target converted(field_ref);
-        ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
             return encode_value<Config>(fv, converted);
         });
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
@@ -160,29 +160,28 @@ bool encode_one_field(Vis& vis, const T& value) {
         static_assert(std::is_enum_v<raw_t>, "behavior::enum_string requires an enum type");
         auto renamed = policy{}(true, meta::enum_name(field_ref));
         std::string_view sv(renamed);
-        ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool { return fv.visit_str(sv); });
+        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool { return fv.visit_str(sv); });
     } else if constexpr(meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
         static_assert(meta::kind_of<raw_t>() == meta::type_kind::variant,
                       "tagged attribute requires a variant type");
         if constexpr(!is_human_readable<Config, Vis>()) {
-            ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+            ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, field_ref);
             });
         } else {
             using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-            ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+            ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
                 return encode_tagged_variant<Config, spec_attr>(fv, field_ref);
             });
         }
     } else if constexpr(meta::reflectable_class<raw_t> &&
                         (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                          meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-        using merged_config = annotated_config<Config, attrs_t>;
-        ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
-            return encode_value<merged_config>(fv, field_ref);
+        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
+            return encode_value<meta::merged_config_t<Config, attrs_t>>(fv, field_ref);
         });
     } else {
-        ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
+        ok = vis.visit_field(idx, name, [&](auto& fv) -> bool {
             return encode_value<Config>(fv, field_ref);
         });
     }
@@ -190,7 +189,7 @@ bool encode_one_field(Vis& vis, const T& value) {
     if constexpr(Config::detailed_error) {
         if(!ok) {
             if(auto* e = scoped_context<typename Vis::error_type>::try_current())
-                e->prepend_field(wire_name);
+                e->prepend_field(name);
         }
     }
     return ok;
@@ -216,9 +215,9 @@ bool encode_value(Vis& vis, const T& value) {
 
         if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
             // Behavior precedence (with > as > enum_string, all above variant
-            // tagging) mirrors encode_one_field and meta's wire-type resolver.
+            // tagging) mirrors encode_one_field and meta's repr resolver.
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return detail::wire_encode<adapter, Config>(vis, inner);
+            return detail::repr_encode<adapter, Config>(vis, inner);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
             using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
             target converted(inner);
@@ -240,13 +239,12 @@ bool encode_value(Vis& vis, const T& value) {
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
-            using merged_config = detail::annotated_config<Config, attrs_t>;
-            return encode_value<merged_config>(vis, inner);
+            return encode_value<meta::merged_config_t<Config, attrs_t>>(vis, inner);
         } else {
             return encode_value<Config>(vis, inner);
         }
     } else if constexpr(meta::has_repr<V>) {
-        return detail::wire_encode<meta::repr<V>, Config>(vis, value);
+        return detail::repr_encode<meta::repr<V>, Config>(vis, value);
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;

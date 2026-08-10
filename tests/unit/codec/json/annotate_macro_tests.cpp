@@ -38,7 +38,7 @@ struct negative_pred {
     }
 };
 
-/// Adapter: encode int on the wire as its decimal string representation.
+/// Adapter: encode int as its decimal string representation.
 struct int_string_adapter {
     using type = std::string;
 
@@ -46,8 +46,8 @@ struct int_string_adapter {
         return std::to_string(value);
     }
 
-    static auto from(std::string wire) -> int {
-        return wire.empty() ? 0 : std::stoi(wire);
+    static auto from(std::string encoded) -> int {
+        return encoded.empty() ? 0 : std::stoi(encoded);
     }
 };
 
@@ -121,6 +121,9 @@ struct wide_payload {
 };
 
 using camel_payload = meta::annotate<camel_annotation>::type<wide_payload>;
+
+KOTATSU_ANNOTATION(camel_choice_annotation, rename_all = casing::lower_camel);
+using camel_choice = meta::annotate<camel_choice_annotation>::type<std::variant<wide_payload, int>>;
 
 struct shape_holder {
     KOTATSU_ANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
@@ -240,6 +243,24 @@ TEST_CASE(named_annotation_renames_and_denies_unknown) {
 
     auto unknown = from_json(R"({"userName":"bob","extra":1})", parsed);
     EXPECT_FALSE(unknown.has_value());
+}
+
+TEST_CASE(rename_all_on_untagged_variant_is_inert) {
+    // The codec merges rename_all into the config only when crossing a
+    // reflectable annotated node; an untagged variant is not one, so its
+    // alternatives encode with their declared names — and type_info must
+    // describe exactly that.
+    camel_choice input{
+        wide_payload{.user_name = "alice", .user_age = 1}
+    };
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"user_name":"alice","user_age":1})");
+
+    const auto& info =
+        static_cast<const meta::variant_type_info&>(meta::type_info_of<camel_choice>());
+    const auto& alt = static_cast<const meta::struct_type_info&>(info.alternatives[0]());
+    EXPECT_EQ(alt.fields[0].name, "user_name");
 }
 
 TEST_CASE(field_annotation_accepts_struct_entries) {

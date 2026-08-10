@@ -558,10 +558,10 @@ struct byte_collector {
 };
 
 /// Captures a map key as an ordering key matching the comparison
-/// map_view::find_entry applies to the decoded wire keys: numeric wire keys
-/// (including bool, char and enum underlyings) compare by value, strings
-/// lexicographically. All keys of one map share a single wire shape, so two
-/// captured keys always hold the same alternative.
+/// map_view::find_entry applies to the decoded keys: numeric keys (including
+/// bool, char and enum underlyings) compare by value, strings
+/// lexicographically. All keys of one map share a single representation, so
+/// two captured keys always hold the same alternative.
 struct key_capture_visitor {
     using key_order = std::variant<std::int64_t, std::uint64_t, double, std::string>;
 
@@ -755,30 +755,30 @@ using element_clean_t = std::remove_cvref_t<std::ranges::range_value_t<Seq>>;
 template <typename Container, typename Body>
 bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t& out_offset) {
     using element_t = element_clean_t<Container>;
-    using wire_t = proxy_detail::apply_repr_t<element_t>;
+    using repr_t = proxy_detail::apply_repr_t<element_t>;
 
-    if constexpr(!std::same_as<wire_t, element_t>) {
-        // Elements travel as their effective wire shape (behavior attrs, then
-        // chained reprs); conversion happens per element in the visit chain,
-        // so the contiguous fast paths never apply. The collector choice
-        // mirrors the plain-element classification below and the VecReader
-        // decode side.
-        if constexpr(meta::str_like<wire_t>) {
+    if constexpr(!std::same_as<repr_t, element_t>) {
+        // Elements travel as their resolved representation (behavior attrs,
+        // then chained reprs); conversion happens per element in the visit
+        // chain, so the contiguous fast paths never apply. The collector
+        // choice mirrors the plain-element classification below and the
+        // VecReader decode side.
+        if constexpr(meta::str_like<repr_t>) {
             string_collector coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
-        } else if constexpr(proxy_detail::is_scalar_v<wire_t>) {
-            scalar_collector<proxy_detail::scalar_storage_t<wire_t>> coll{fbb, {}, 0};
+        } else if constexpr(proxy_detail::is_scalar_v<repr_t>) {
+            scalar_collector<proxy_detail::scalar_storage_t<repr_t>> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
-        } else if constexpr(meta::kind_of<wire_t>() == meta::type_kind::null ||
-                            meta::kind_of<wire_t>() == meta::type_kind::optional ||
-                            meta::kind_of<wire_t>() == meta::type_kind::pointer ||
-                            meta::kind_of<wire_t>() == meta::type_kind::bytes) {
+        } else if constexpr(meta::kind_of<repr_t>() == meta::type_kind::null ||
+                            meta::kind_of<repr_t>() == meta::type_kind::optional ||
+                            meta::kind_of<repr_t>() == meta::type_kind::pointer ||
+                            meta::kind_of<repr_t>() == meta::type_kind::bytes) {
             // Nullable and null-like shapes need a per-element table so each
             // element still occupies a vector entry; byte blobs need one
             // because flatbuffers has no vector-of-vectors. Nested containers
@@ -788,8 +788,8 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
-        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
-            inline_struct_collector<wire_t> coll{fbb, {}, 0};
+        } else if constexpr(can_inline_struct_v<repr_t> && !codec::tuple_like<repr_t>) {
+            inline_struct_collector<repr_t> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
@@ -834,16 +834,16 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         }
     } else if constexpr(meta::int_like<element_t> || meta::uint_like<element_t> ||
                         meta::floating_like<element_t> || meta::char_like<element_t>) {
-        using wire_t = std::conditional_t<meta::char_like<element_t>, std::int8_t, element_t>;
+        using storage_t = std::conditional_t<meta::char_like<element_t>, std::int8_t, element_t>;
         if constexpr(std::ranges::contiguous_range<Container> &&
-                     std::ranges::sized_range<Container> && std::same_as<element_t, wire_t>) {
+                     std::ranges::sized_range<Container> && std::same_as<element_t, storage_t>) {
             auto data = std::ranges::data(c);
             auto len = std::ranges::size(c);
             auto off = fbb.CreateVector(data, len);
             out_offset = off.o;
             return true;
         } else {
-            scalar_collector<wire_t> coll{fbb, {}, 0};
+            scalar_collector<storage_t> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
@@ -866,7 +866,7 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
                         meta::kind_of<element_t>() == meta::type_kind::optional ||
                         meta::kind_of<element_t>() == meta::type_kind::pointer ||
                         meta::kind_of<element_t>() == meta::type_kind::bytes) {
-        // Same boxing as the wire-substituted branch above: table_elem_visitor
+        // Same boxing as the repr-substituted branch above: table_elem_visitor
         // has no visit_bytes payload path, so byte-blob elements go through
         // the per-element wrapper table, and null-like elements need the
         // wrapper so each one still occupies a vector entry.
@@ -1065,7 +1065,7 @@ namespace kota::codec {
 
 // std::monostate is reflectable_class (aggregate with 0 fields), so the old
 // arena encoder wrote it as an empty table.  The decoder expects a table
-// reference at the payload slot, so we must match that wire format.
+// reference at the payload slot, so we must match that layout.
 template <typename Config>
 struct serialize_visit<fbs::encode_detail::alloc_field_visitor, std::monostate, Config> {
     static bool visit(fbs::encode_detail::alloc_field_visitor& vis, const std::monostate&) {

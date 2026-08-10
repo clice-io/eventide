@@ -28,7 +28,7 @@ enum class relation : std::uint8_t {
     references,
 };
 
-// A value class with a textual wire form ("major.minor").
+// A value class with a textual encoded form ("major.minor").
 struct version {
     int major = 0;
     int minor = 0;
@@ -41,7 +41,7 @@ struct audit_stamp {
     std::uint64_t at = 0;
 };
 
-// Imperative form: the body drives the visitor, wire shape stays declared.
+// Imperative form: the body drives the visitor, repr stays declared.
 struct hex_id {
     std::uint32_t v = 0;
 
@@ -68,23 +68,23 @@ struct ticket {
     auto operator==(const ticket&) const -> bool = default;
 };
 
-// A non-nullable value with a nullable wire shape (zero travels as null).
+// A non-nullable value with a nullable repr (zero travels as null).
 struct lamport_stamp {
     std::uint32_t tick = 0;
 
     auto operator==(const lamport_stamp&) const -> bool = default;
 };
 
-// Repr whose declared wire type is itself annotated: the annotation's
-// behavior attr decides the final wire shape.
+// Repr whose declared encoded type is itself annotated: the annotation's
+// behavior attr decides the final repr.
 struct basis_points {
     int v = 0;
 
     auto operator==(const basis_points&) const -> bool = default;
 };
 
-// Repr whose declared wire type is an annotated struct: the annotation's
-// structural attrs (rename_all / deny_unknown_fields) shape the wire
+// Repr whose declared encoded type is an annotated struct: the annotation's
+// structural attrs (rename_all / deny_unknown_fields) shape the encoded
 // document and must surface identically in the exported schema.
 struct line_range {
     int first = 0;
@@ -93,7 +93,7 @@ struct line_range {
     auto operator==(const line_range&) const -> bool = default;
 };
 
-struct line_range_wire {
+struct line_range_repr {
     int start_line = 0;
     int line_count = 0;
 };
@@ -101,10 +101,33 @@ struct line_range_wire {
 KOTATSU_ANNOTATION(strict_camel_annotation,
                    rename_all = casing::lower_camel,
                    deny_unknown_fields = true);
-using annotated_line_range_wire =
-    kota::meta::annotate<strict_camel_annotation>::type<line_range_wire>;
+using annotated_line_range_repr =
+    kota::meta::annotate<strict_camel_annotation>::type<line_range_repr>;
 
-// Repr whose declared wire type is an annotated tagged variant: the tagging
+// Two resolve chains merging the same policies — one node carrying both,
+// two chained nodes carrying one each — must produce the same config and
+// share one type_info instance: schema export keys $defs by instance
+// identity, so a split is a hard duplicate-name error.
+struct merge_point {
+    int x_val = 0;
+};
+
+KOTATSU_ANNOTATION(camel_only_annotation, rename_all = casing::lower_camel);
+KOTATSU_ANNOTATION(deny_only_annotation, deny_unknown_fields = true);
+
+struct deny_step {
+    int v = 0;
+};
+
+struct chained_policies {
+    int v = 0;
+};
+
+struct flat_policies {
+    int v = 0;
+};
+
+// Repr whose declared encoded type is an annotated tagged variant: the tagging
 // must surface in type_info exactly as the codec writes it.
 struct load_ok {
     int byte_count = 0;
@@ -122,7 +145,7 @@ KOTATSU_ANNOTATION(load_result_annotation,
                    tag = "status",
                    content = "value",
                    tag_names = {"ok", "err"});
-using load_result_wire =
+using load_result_repr =
     kota::meta::annotate<load_result_annotation>::type<std::variant<load_ok, load_err>>;
 
 struct load_result {
@@ -158,15 +181,15 @@ struct repr<kota_repr_test::version> {
         return std::format("{}.{}", v.major, v.minor);
     }
 
-    static kota_repr_test::version from(const std::string& wire) {
+    static kota_repr_test::version from(const std::string& encoded) {
         kota_repr_test::version v;
-        auto dot = wire.find('.');
+        auto dot = encoded.find('.');
         if(dot == std::string::npos) {
-            std::from_chars(wire.data(), wire.data() + wire.size(), v.major);
+            std::from_chars(encoded.data(), encoded.data() + encoded.size(), v.major);
             return v;
         }
-        std::from_chars(wire.data(), wire.data() + dot, v.major);
-        std::from_chars(wire.data() + dot + 1, wire.data() + wire.size(), v.minor);
+        std::from_chars(encoded.data(), encoded.data() + dot, v.major);
+        std::from_chars(encoded.data() + dot + 1, encoded.data() + encoded.size(), v.minor);
         return v;
     }
 };
@@ -280,7 +303,7 @@ struct repr<kota_repr_test::basis_points> {
 
 template <>
 struct repr<kota_repr_test::line_range> {
-    using type = kota_repr_test::annotated_line_range_wire;
+    using type = kota_repr_test::annotated_line_range_repr;
 
     static type to(const kota_repr_test::line_range& r) {
         return {
@@ -289,14 +312,56 @@ struct repr<kota_repr_test::line_range> {
     }
 
     static kota_repr_test::line_range from(const type& w) {
-        const auto& wire = annotated_value(w);
-        return {.first = wire.start_line, .last = wire.start_line + wire.line_count};
+        const auto& encoded = annotated_value(w);
+        return {.first = encoded.start_line, .last = encoded.start_line + encoded.line_count};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::deny_step> {
+    using type = kota::meta::annotate<kota_repr_test::deny_only_annotation>::type<
+        kota_repr_test::merge_point>;
+
+    static type to(const kota_repr_test::deny_step& s) {
+        return {{.x_val = s.v}};
+    }
+
+    static kota_repr_test::deny_step from(const type& w) {
+        return {.v = annotated_value(w).x_val};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::chained_policies> {
+    using type = kota::meta::annotate<kota_repr_test::camel_only_annotation>::type<
+        kota_repr_test::deny_step>;
+
+    static type to(const kota_repr_test::chained_policies& c) {
+        return {{.v = c.v}};
+    }
+
+    static kota_repr_test::chained_policies from(const type& w) {
+        return {.v = annotated_value(w).v};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::flat_policies> {
+    using type = kota::meta::annotate<kota_repr_test::strict_camel_annotation>::type<
+        kota_repr_test::merge_point>;
+
+    static type to(const kota_repr_test::flat_policies& f) {
+        return {{.x_val = f.v}};
+    }
+
+    static kota_repr_test::flat_policies from(const type& w) {
+        return {.v = annotated_value(w).x_val};
     }
 };
 
 template <>
 struct repr<kota_repr_test::load_result> {
-    using type = kota_repr_test::load_result_wire;
+    using type = kota_repr_test::load_result_repr;
 
     static type to(const kota_repr_test::load_result& r) {
         if(r.ok) {
@@ -348,8 +413,9 @@ struct version_as_int_adapter {
         return static_cast<std::uint32_t>(v.major * 1000 + v.minor);
     }
 
-    static version from(std::uint32_t wire) {
-        return {.major = static_cast<int>(wire / 1000), .minor = static_cast<int>(wire % 1000)};
+    static version from(std::uint32_t encoded) {
+        return {.major = static_cast<int>(encoded / 1000),
+                .minor = static_cast<int>(encoded % 1000)};
     }
 };
 
@@ -394,32 +460,32 @@ struct range_doc {
 };
 
 // Outer structural policy on a repr-backed field whose repr resolves to a
-// tagged wire variant: rename/deny merge into the config and reach the
+// tagged encoded variant: rename/deny merge into the config and reach the
 // fields of the selected alternative.
 struct strict_report {
     meta::annotate<kota_repr_test::strict_camel_annotation>::type<load_result> result;
 };
 
-/// Imperative adapter: uppercases on the wire, lowercases back.
+/// Imperative adapter: uppercases when encoding, lowercases back.
 struct shout_adapter {
     using type = std::string;
 
     template <typename Config>
     static bool serialize(auto& vis, const std::string& s) {
-        std::string wire = s;
-        for(char& c: wire)
+        std::string encoded = s;
+        for(char& c: encoded)
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        return vis.visit_str(wire);
+        return vis.visit_str(encoded);
     }
 
     template <typename Config>
     static bool deserialize(auto& vis, std::string& s) {
-        std::string wire;
-        if(!vis.visit_str(wire))
+        std::string encoded;
+        if(!vis.visit_str(encoded))
             return false;
-        for(char& c: wire)
+        for(char& c: encoded)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        s = std::move(wire);
+        s = std::move(encoded);
         return true;
     }
 };
@@ -429,7 +495,7 @@ struct shouted {
 };
 
 // One annotation carrying both a variant tagging spec and a with-adapter: the
-// adapter decides the wire shape (as in meta::wire_type_t), the tagging spec
+// adapter decides the repr (as in meta::resolved_repr_t), the tagging spec
 // is inert.
 struct choice_text_adapter {
     using type = std::string;
@@ -441,13 +507,13 @@ struct choice_text_adapter {
         return std::format("s:{}", std::get<std::string>(v));
     }
 
-    static auto from(const std::string& wire) -> std::variant<int, std::string> {
-        if(wire.starts_with("i:")) {
+    static auto from(const std::string& encoded) -> std::variant<int, std::string> {
+        if(encoded.starts_with("i:")) {
             int n = 0;
-            std::from_chars(wire.data() + 2, wire.data() + wire.size(), n);
+            std::from_chars(encoded.data() + 2, encoded.data() + encoded.size(), n);
             return n;
         }
-        return wire.starts_with("s:") ? wire.substr(2) : wire;
+        return encoded.starts_with("s:") ? encoded.substr(2) : encoded;
     }
 };
 
@@ -488,7 +554,7 @@ TEST_CASE(repr_reaches_container_elements_and_map_keys) {
     ASSERT_TRUE(from_json(*encoded, parsed_rels).has_value());
     EXPECT_EQ(parsed_rels, rels);
 
-    // A repr with a string wire shape makes the type usable as a JSON map key.
+    // A repr declared as string makes the type usable as a JSON map key.
     std::map<version, int> by_version{
         {{.major = 1, .minor = 0}, 10},
         {{.major = 2, .minor = 5}, 25},
@@ -556,7 +622,7 @@ TEST_CASE(dynamic_repr_roundtrip) {
 }
 
 TEST_CASE(repr_alternative_in_untagged_variant) {
-    // The version alternative arrives as its string wire shape; alternative
+    // The version alternative arrives as its string repr; alternative
     // pruning must judge compatibility against that, not the raw kind.
     std::variant<version, int> input = version{.major = 1, .minor = 22};
     auto encoded = to_json(input);
@@ -595,7 +661,7 @@ TEST_CASE(repr_inside_optional) {
 }
 
 TEST_CASE(repr_beats_enum_string_config) {
-    // The repr'd enum still travels as its declared integer wire shape.
+    // The repr'd enum still travels as its declared integer repr.
     auto encoded = to_json<string_enum_config>(relation::references);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, "2");
@@ -612,7 +678,7 @@ TEST_CASE(imperative_with_adapter_roundtrip) {
     EXPECT_EQ(meta::annotated_value(output.name), std::string("loud"));
 }
 
-TEST_CASE(chained_repr_resolves_to_final_wire_shape) {
+TEST_CASE(chained_repr_resolves_to_final_type) {
     const chained_holder input{.t = {.id = {.v = 7}}};
 
     auto encoded = to_json(input);
@@ -629,11 +695,24 @@ TEST_CASE(chained_repr_resolves_to_final_wire_shape) {
     EXPECT_TRUE(schema->find(R"("t":{"type":"integer")") != std::string::npos);
 }
 
-TEST_CASE(annotation_nested_in_repr_wire_type) {
-    // The repr's declared wire type carries a behavior attr; the resolver
-    // must follow it to the annotation's wire shape, so schema consumers
+TEST_CASE(equivalent_merge_chains_share_type_info) {
+    // "camel then deny" across two chained repr nodes and "camel + deny" on
+    // one node merge to the same effective config, so both routes must share
+    // one type_info instance and describe the same document.
+    const auto& chained = meta::type_info_of<kota_repr_test::chained_policies>();
+    const auto& flat = meta::type_info_of<kota_repr_test::flat_policies>();
+    EXPECT_EQ(&chained, &flat);
+
+    const auto& info = static_cast<const meta::struct_type_info&>(chained);
+    EXPECT_TRUE(info.deny_unknown);
+    EXPECT_EQ(info.fields[0].name, "xVal");
+}
+
+TEST_CASE(annotation_nested_in_repr_resolved_type) {
+    // The repr's declared encoded type carries a behavior attr; the resolver
+    // must follow it to the annotation's repr, so schema consumers
     // classify the double the dispatch actually writes.
-    static_assert(std::is_same_v<meta::wire_type_t<basis_points>, double>);
+    static_assert(std::is_same_v<meta::resolved_repr_t<basis_points>, double>);
 
     const fee_schedule input{.fee = {.v = 250}};
     auto encoded = to_json(input);
@@ -649,7 +728,7 @@ TEST_CASE(annotation_nested_in_repr_wire_type) {
 }
 
 TEST_CASE(annotated_repr_alternative_in_untagged_variant) {
-    // The adapter, not version's own string repr, decides the wire shape, so
+    // The adapter, not version's own string repr, decides the repr, so
     // alternative pruning must keep the numeric alternative on number input.
     using packed_ver = meta::annotation<version, meta::behavior::with<version_as_int_adapter>>;
     std::variant<packed_ver, std::string> input = packed_ver{
@@ -666,9 +745,9 @@ TEST_CASE(annotated_repr_alternative_in_untagged_variant) {
     EXPECT_EQ(meta::annotated_value(std::get<0>(output)), (version{.major = 3, .minor = 14}));
 }
 
-TEST_CASE(structural_attrs_nested_in_repr_wire_type) {
-    // repr<line_range>'s wire struct carries rename_all + deny_unknown_fields;
-    // the codec applies them to the intermediate wire value, and type_info
+TEST_CASE(structural_attrs_nested_in_repr_resolved_type) {
+    // repr<line_range>'s encoded struct carries rename_all + deny_unknown_fields;
+    // the codec applies them to the intermediate encoded value, and type_info
     // must describe that same document.
     const range_doc input{
         .r = {.first = 3, .last = 7}
@@ -682,7 +761,7 @@ TEST_CASE(structural_attrs_nested_in_repr_wire_type) {
     ASSERT_TRUE(from_json(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 
-    // deny_unknown_fields on the wire annotation rejects stray keys.
+    // deny_unknown_fields on the declared annotation rejects stray keys.
     EXPECT_FALSE(from_json(R"({"r":{"startLine":3,"lineCount":4,"x":1}})", output).has_value());
 
     // The schema exposes the renamed properties and the unknown-field policy.
@@ -693,8 +772,8 @@ TEST_CASE(structural_attrs_nested_in_repr_wire_type) {
     EXPECT_TRUE(schema->find(R"("additionalProperties":false)") != std::string::npos);
 }
 
-TEST_CASE(tagging_nested_in_repr_wire_type) {
-    // repr<load_result>'s wire variant carries an adjacent tagging spec; the
+TEST_CASE(tagging_nested_in_repr_resolved_type) {
+    // repr<load_result>'s encoded variant carries an adjacent tagging spec; the
     // codec writes the tagged object and type_info must carry the tagging.
     const load_result input{.ok = false, .message = "missing"};
 
@@ -719,7 +798,7 @@ TEST_CASE(tagging_nested_in_repr_wire_type) {
 
 TEST_CASE(outer_policy_reaches_tagged_repr_alternatives) {
     // rename_all + deny_unknown_fields on an annotated repr-backed value
-    // merge into the config before the repr's tagged wire variant
+    // merge into the config before the repr's tagged encoded variant
     // re-dispatches, so they apply inside the selected alternative; type_info
     // and the schema must describe that same document.
     const strict_report input{.result = {{.ok = true, .bytes = 3, .message = {}}}};
@@ -753,10 +832,10 @@ TEST_CASE(outer_policy_reaches_tagged_repr_alternatives) {
 }
 
 TEST_CASE(adapter_beats_variant_tagging_outside_fields) {
-    // The wire-type resolver gives the adapter precedence over the tagging
+    // The encoded-type resolver gives the adapter precedence over the tagging
     // spec; the top-level value dispatch must agree with it (and with the
     // field-level dispatch), not emit a tagged object.
-    static_assert(std::is_same_v<meta::wire_type_t<adapted_tagged_choice>, std::string>);
+    static_assert(std::is_same_v<meta::resolved_repr_t<adapted_tagged_choice>, std::string>);
 
     adapted_tagged_choice input{7};
     auto encoded = to_json(input);
@@ -768,8 +847,8 @@ TEST_CASE(adapter_beats_variant_tagging_outside_fields) {
     EXPECT_EQ(std::get<int>(meta::annotated_value(output)), 7);
 }
 
-TEST_CASE(nullable_wire_shape_keeps_field_required) {
-    // The wire value may be null, but the property itself must be present:
+TEST_CASE(nullable_repr_keeps_field_required) {
+    // The encoded value may be null, but the property itself must be present:
     // requiredness follows the declared field type, which decode enforces.
     auto schema = json::schema_string<stamped>();
     ASSERT_TRUE(schema.has_value());
@@ -792,7 +871,7 @@ TEST_CASE(schema_follows_repr) {
     auto schema = json::schema_string<symbol>();
     ASSERT_TRUE(schema.has_value());
 
-    // relation surfaces as its uint32 wire shape, version as a string.
+    // relation surfaces as its uint32 repr, version as a string.
     EXPECT_TRUE(schema->find(R"("rel":{"type":"integer")") != std::string::npos);
     EXPECT_TRUE(schema->find(R"("ver":{"type":"string"})") != std::string::npos);
     EXPECT_TRUE(schema->find("enum") == std::string::npos);

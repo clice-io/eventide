@@ -45,7 +45,7 @@ namespace kota::codec::roundtrip {
 
 enum class cap : std::uint32_t {
     None = 0,
-    /// uint64 values above int64::max survive the wire format
+    /// uint64 values above int64::max survive the encoded format
     Uint64Full = 1U << 0,
     /// null-like elements (nullopt / null pointer) inside sequences and maps
     NullInSeq = 1U << 1,

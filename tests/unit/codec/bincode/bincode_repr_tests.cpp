@@ -104,13 +104,13 @@ TEST_CASE(declarative_and_dynamic_repr_roundtrip) {
 }
 
 TEST_CASE(repr_dispatch_is_byte_visible) {
-    // The enum travels as its mapped uint32 wire value, byte-identical to
-    // encoding that wire value directly.
+    // The enum travels as its mapped uint32 encoded value, byte-identical to
+    // encoding that encoded value directly.
     auto via_repr = bincode::to_bytes(flavor::spicy);
-    auto wire = bincode::to_bytes(std::uint32_t{101});
+    auto encoded = bincode::to_bytes(std::uint32_t{101});
     ASSERT_TRUE(via_repr.has_value());
-    ASSERT_TRUE(wire.has_value());
-    EXPECT_EQ(*via_repr, *wire);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*via_repr, *encoded);
 
     // magic (u64-widened) + length prefix (u64) + 2 payload bytes.
     auto blob = bincode::to_bytes(blob_bag{

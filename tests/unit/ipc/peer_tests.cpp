@@ -1037,7 +1037,7 @@ TEST_CASE(request_params_result) {
     ASSERT_EQ(transport_ptr->outgoing().size(), 1U);
     const auto& raw = transport_ptr->outgoing().front();
 
-    // Wire format must use camelCase
+    // Serialized form must use camelCase
     EXPECT_TRUE(raw.find(R"("computedSum":30)") != std::string::npos);
     EXPECT_TRUE(raw.find("computed_sum") == std::string::npos);
 }

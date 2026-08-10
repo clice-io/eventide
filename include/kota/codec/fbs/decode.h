@@ -119,16 +119,16 @@ template <typename E>
 struct VecReader {
     using raw_E = std::remove_cvref_t<E>;
 
-    // An element travels as its effective wire shape (behavior attrs, then
+    // An element travels as its resolved representation (behavior attrs, then
     // chained reprs), so both the wrapper decision and the reader choice must
     // mirror the encode side (seq_encode_impl dispatches on the same type).
-    using wire_E = proxy_detail::apply_repr_t<raw_E>;
+    using repr_E = proxy_detail::apply_repr_t<raw_E>;
 
-    constexpr static bool is_wrapped = proxy_detail::needs_wrapper_in_vector<wire_E>();
+    constexpr static bool is_wrapped = proxy_detail::needs_wrapper_in_vector<repr_E>();
 
     using vec_ptr_t = std::conditional_t<is_wrapped,
                                          const Vector<table_offset_t>*,
-                                         proxy_detail::array_vector_ptr_t<wire_E>>;
+                                         proxy_detail::array_vector_ptr_t<repr_E>>;
 
     vec_ptr_t vec;
     uoffset_t idx = 0;
@@ -404,12 +404,12 @@ bool VecReader<E>::visit_element(F&& reader) {
         ++idx;
         FieldReader fr{wrapper, detail::first_field};
         return reader(fr);
-    } else if constexpr(proxy_detail::is_scalar_v<wire_E>) {
+    } else if constexpr(proxy_detail::is_scalar_v<repr_E>) {
         auto val = vec->Get(idx);
         ++idx;
         ScalarReader<decltype(val)> sr{val};
         return reader(sr);
-    } else if constexpr(proxy_detail::is_string_like_v<wire_E>) {
+    } else if constexpr(proxy_detail::is_string_like_v<repr_E>) {
         const auto* text = vec->GetAsString(static_cast<uoffset_t>(idx));
         ++idx;
         std::string_view sv;
@@ -418,17 +418,17 @@ bool VecReader<E>::visit_element(F&& reader) {
         }
         StringReader sr{sv};
         return reader(sr);
-    } else if constexpr(proxy_detail::is_tuple_like_v<wire_E>) {
+    } else if constexpr(proxy_detail::is_tuple_like_v<repr_E>) {
         // tuple-like types (std::array, std::pair, std::tuple) are encoded as tables,
         // even if they also satisfy can_inline_struct_v.
         const auto* child = vec->template GetAs<Table>(static_cast<uoffset_t>(idx));
         ++idx;
         FieldReader fr{child, 0};
         return reader(fr);
-    } else if constexpr(can_inline_struct_v<wire_E>) {
+    } else if constexpr(can_inline_struct_v<repr_E>) {
         const auto* ptr = vec->Get(static_cast<uoffset_t>(idx));
         ++idx;
-        ScalarReader<wire_E> sr{ptr ? *ptr : wire_E{}};
+        ScalarReader<repr_E> sr{ptr ? *ptr : repr_E{}};
         return reader(sr);
     } else {
         const auto* child = vec->template GetAs<Table>(static_cast<uoffset_t>(idx));

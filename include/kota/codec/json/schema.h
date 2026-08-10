@@ -273,11 +273,11 @@ private:
         return dyn::Value(std::move(props));
     }
 
-    /// A field is required only when it always appears on the wire: no decode
+    /// A field is required only when it always appears in the output: no decode
     /// default, no encode-side skip condition (built-in skip_when or custom
     /// predicate — the decoder accepts absence for both), not nullable. The
-    /// declared field type decides nullability, not the wire shape: a repr or
-    /// behavior attr with a nullable wire type still rejects an absent
+    /// declared field type decides nullability, not the representation: a repr or
+    /// behavior attr with a nullable representation still rejects an absent
     /// property on decode.
     static bool is_required(const meta::field_info& f) {
         return !f.has_default && !f.has_skip_if && !f.nullable;
