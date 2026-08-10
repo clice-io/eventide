@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/common.h"
@@ -103,26 +104,30 @@ struct remove_smart_ptr<std::shared_ptr<T>> {
 template <typename T>
 using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
 
-// Tag type for Vis parameter avoids "forming reference to void" errors in specialization body.
-struct wire_type_probe {};
-
-template <typename T, typename = void>
-struct apply_wire_type {
-    using type = T;
-};
+/// Substitute a type by its meta::repr wire shape; identity when none is
+/// declared. Flatbuffers computes layout statically, so a dynamic repr is
+/// rejected here.
+template <typename T>
+constexpr auto apply_repr_impl() {
+    if constexpr(meta::has_repr<T>) {
+        static_assert(
+            requires { typename meta::repr<T>::type; },
+            "meta::repr<T> must declare its wire shape via `using type = ...`");
+        using wire_t = typename meta::repr<T>::type;
+        static_assert(!std::is_same_v<wire_t, meta::dynamic>,
+                      "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
+                      "used with the fbs backend");
+        return std::type_identity<wire_t>{};
+    } else {
+        return std::type_identity<T>{};
+    }
+}
 
 template <typename T>
-struct apply_wire_type<
-    T,
-    std::void_t<typename serialize_visit<wire_type_probe, T, default_config<>>::wire_type>> {
-    using type = typename serialize_visit<wire_type_probe, T, default_config<>>::wire_type;
-};
+using apply_repr_t = typename decltype(apply_repr_impl<T>())::type;
 
 template <typename T>
-using apply_wire_type_t = typename apply_wire_type<T>::type;
-
-template <typename T>
-using deep_clean_t = apply_wire_type_t<remove_smart_ptr_t<clean_t<T>>>;
+using deep_clean_t = apply_repr_t<remove_smart_ptr_t<clean_t<T>>>;
 
 template <typename T>
 struct scalar_storage {

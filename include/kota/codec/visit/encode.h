@@ -14,6 +14,7 @@
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
+#include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
 #include "kota/meta/struct.h"
 #include "kota/meta/type_info.h"
@@ -21,7 +22,10 @@
 
 namespace kota::codec {
 
-/// User extension point for custom serialization. Specialize to override default dispatch.
+/// Backend-internal dispatch override for one (visitor, type) pair. Not a
+/// user extension point: declare a type's wire representation via meta::repr,
+/// or per-field via behavior::with — those are visible to schema consumers,
+/// a serialize_visit specialization is not.
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct serialize_visit {};
 
@@ -115,19 +119,30 @@ bool encode_one_field(Vis& vis, const T& value) {
     bool ok;
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        if constexpr(requires { adapter::to_wire(field_ref); }) {
-            auto wire = adapter::to_wire(field_ref);
+        static_assert(
+            requires { typename adapter::type; },
+            "behavior::with adapter must declare its wire shape via `using type = ...`");
+        if constexpr(requires { adapter::to(field_ref); }) {
+            static_assert(
+                !requires(Vis& v) { adapter::template serialize<Config>(v, field_ref); },
+                "behavior::with adapter: define to() or serialize() for encoding, "
+                "not both");
+            static_assert(
+                std::convertible_to<decltype(adapter::to(field_ref)), typename adapter::type>,
+                "behavior::with adapter: to() must return the declared wire type");
+            auto wire = adapter::to(field_ref);
             ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
                 return encode_value<Config>(fv, wire);
             });
-        } else if constexpr(requires(decltype(vis)& v) { adapter::serialize(v, field_ref); }) {
+        } else if constexpr(requires(Vis& v) {
+                                adapter::template serialize<Config>(v, field_ref);
+                            }) {
             ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
-                return adapter::serialize(fv, field_ref);
+                return adapter::template serialize<Config>(fv, field_ref);
             });
         } else {
-            ok = vis.visit_field(idx, wire_name, [&](auto& fv) -> bool {
-                return encode_value<Config>(fv, field_ref);
-            });
+            static_assert(dependent_false<adapter>,
+                          "behavior::with adapter has no encode path: define to() or serialize()");
         }
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
         using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
@@ -185,6 +200,9 @@ bool encode_value(Vis& vis, const T& value) {
     if constexpr(requires(Vis& v, const V& val) {
                      serialize_visit<Vis, V, Config>::visit(v, val);
                  }) {
+        static_assert(!meta::has_repr<V>,
+                      "type has both a serialize_visit specialization and a meta::repr; "
+                      "keep exactly one");
         return serialize_visit<Vis, V, Config>::visit(vis, value);
     } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename V::attrs;
@@ -207,13 +225,27 @@ bool encode_value(Vis& vis, const T& value) {
             return vis.visit_str(sv);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            if constexpr(requires { adapter::to_wire(inner); }) {
-                auto wire = adapter::to_wire(inner);
+            static_assert(
+                requires { typename adapter::type; },
+                "behavior::with adapter must declare its wire shape via "
+                "`using type = ...`");
+            if constexpr(requires { adapter::to(inner); }) {
+                static_assert(
+                    !requires { adapter::template serialize<Config>(vis, inner); },
+                    "behavior::with adapter: define to() or serialize() for encoding, "
+                    "not both");
+                static_assert(
+                    std::convertible_to<decltype(adapter::to(inner)), typename adapter::type>,
+                    "behavior::with adapter: to() must return the declared wire type");
+                auto wire = adapter::to(inner);
                 return encode_value<Config>(vis, wire);
-            } else if constexpr(requires { adapter::serialize(vis, inner); }) {
-                return adapter::serialize(vis, inner);
+            } else if constexpr(requires { adapter::template serialize<Config>(vis, inner); }) {
+                return adapter::template serialize<Config>(vis, inner);
             } else {
-                return encode_value<Config>(vis, inner);
+                static_assert(dependent_false<adapter>,
+                              "behavior::with adapter has no encode path: define to() or "
+                              "serialize()");
+                return false;
             }
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
             using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
@@ -226,6 +258,26 @@ bool encode_value(Vis& vis, const T& value) {
             return encode_value<merged_config>(vis, inner);
         } else {
             return encode_value<Config>(vis, inner);
+        }
+    } else if constexpr(meta::has_repr<V>) {
+        using R = meta::repr<V>;
+        static_assert(
+            requires { typename R::type; },
+            "meta::repr<T> must declare its wire shape via `using type = ...` "
+            "(meta::dynamic when only known at runtime)");
+        if constexpr(requires { R::to(value); }) {
+            static_assert(
+                !requires(Vis& v) { R::template serialize<Config>(v, value); },
+                "meta::repr<T>: define to() or serialize() for encoding, not both");
+            static_assert(std::convertible_to<decltype(R::to(value)), typename R::type>,
+                          "meta::repr<T>::to must return the declared wire type");
+            return encode_value<Config>(vis, R::to(value));
+        } else if constexpr(requires(Vis& v) { R::template serialize<Config>(v, value); }) {
+            return R::template serialize<Config>(vis, value);
+        } else {
+            static_assert(dependent_false<V>,
+                          "meta::repr<T> has no encode path: define to() or serialize()");
+            return false;
         }
     } else {
         constexpr auto kind = meta::kind_of<V>();

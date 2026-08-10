@@ -46,7 +46,7 @@ TEST_CASE(skip_if_and_as) {
 TEST_CASE(with_wire_type) {
     constexpr auto& fields = virtual_schema<fx::WithWireTypeStruct>::fields;
 
-    // Adapter declares wire_type = std::string
+    // Adapter declares type = std::string
     STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::string);
     STATIC_EXPECT_TRUE(fields[0].has_behavior);
 
@@ -59,20 +59,6 @@ TEST_CASE(with_wire_type) {
     // plain float is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::float32);
     STATIC_EXPECT_FALSE(fields[1].has_behavior);
-}
-
-TEST_CASE(with_no_wire_type) {
-    constexpr auto& fields = virtual_schema<fx::WithNoWireTypeStruct>::fields;
-
-    // Adapter has no wire_type, falls back to raw type (int -> int32)
-    STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::int32);
-    STATIC_EXPECT_TRUE(fields[0].has_behavior);
-
-    // Slot raw_type == wire_type when adapter lacks wire_type
-    using slots = virtual_schema<fx::WithNoWireTypeStruct>::slots;
-    using slot0 = type_list_element_t<0, slots>;
-    EXPECT_TYPE_EQ(slot0::raw_type, int);
-    EXPECT_TYPE_EQ(slot0::wire_type, int);
 }
 
 TEST_CASE(enum_string) {

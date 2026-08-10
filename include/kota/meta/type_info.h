@@ -13,6 +13,7 @@
 
 #include "annotation.h"
 #include "enum.h"
+#include "repr.h"
 #include "struct.h"
 #include "type_kind.h"
 #include "kota/support/naming.h"
@@ -255,33 +256,24 @@ constexpr auto type_attrs_impl() {
 template <typename AttrsTuple>
 using type_attrs_t = typename decltype(type_attrs_impl<AttrsTuple>())::type;
 
-template <typename T>
-constexpr bool has_wire_type_v = requires { typename T::wire_type; };
-
-template <typename AttrsTuple>
-constexpr bool has_with_wire_type_v = [] {
-    if constexpr(!tuple_has_spec_v<AttrsTuple, behavior::with>) {
-        return false;
-    } else {
-        using with_attr = tuple_find_spec_t<AttrsTuple, behavior::with>;
-        return has_wire_type_v<typename with_attr::adapter>;
-    }
-}();
-
-template <typename AttrsTuple>
-struct extract_with_wire_type {
-    using with_attr = tuple_find_spec_t<AttrsTuple, behavior::with>;
-    using type = typename with_attr::adapter::wire_type;
-};
-
 template <typename RawType, typename AttrsTuple>
 constexpr auto resolve_wire_type_impl() {
     if constexpr(tuple_has_spec_v<AttrsTuple, behavior::as>) {
         return std::type_identity<typename tuple_find_spec_t<AttrsTuple, behavior::as>::target>{};
     } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::enum_string>) {
         return std::type_identity<std::string_view>{};
-    } else if constexpr(has_with_wire_type_v<AttrsTuple>) {
-        return std::type_identity<typename extract_with_wire_type<AttrsTuple>::type>{};
+    } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::with>) {
+        using adapter = typename tuple_find_spec_t<AttrsTuple, behavior::with>::adapter;
+        static_assert(
+            requires { typename adapter::type; },
+            "behavior::with adapter must declare its wire shape via `using type = ...`");
+        return std::type_identity<typename adapter::type>{};
+    } else if constexpr(has_repr<RawType>) {
+        static_assert(
+            requires { typename repr<RawType>::type; },
+            "meta::repr<T> must declare its wire shape via `using type = ...` "
+            "(meta::dynamic when only known at runtime)");
+        return std::type_identity<typename repr<RawType>::type>{};
     } else {
         return std::type_identity<RawType>{};
     }

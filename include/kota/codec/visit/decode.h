@@ -20,6 +20,7 @@
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/enum.h"
+#include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
 #include "kota/meta/struct.h"
 #include "kota/meta/type_info.h"
@@ -27,7 +28,10 @@
 
 namespace kota::codec {
 
-/// User extension point for custom deserialization. Specialize to override default dispatch.
+/// Backend-internal dispatch override for one (visitor, type) pair. Not a
+/// user extension point: declare a type's wire representation via meta::repr,
+/// or per-field via behavior::with — those are visible to schema consumers,
+/// a deserialize_visit specialization is not.
 template <typename Vis, typename T, typename Config = default_config<>, typename = void>
 struct deserialize_visit {};
 
@@ -148,18 +152,32 @@ bool decode_field_inner(Vis& vis, T& out) {
 
     if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-        if constexpr(requires {
-                         adapter::from_wire(std::declval<typename adapter::wire_type>());
-                     }) {
-            using wire_t = typename adapter::wire_type;
+        static_assert(
+            requires { typename adapter::type; },
+            "behavior::with adapter must declare its wire shape via `using type = ...`");
+        if constexpr(requires { adapter::from(std::declval<typename adapter::type>()); }) {
+            static_assert(
+                !requires(Vis& v) { adapter::template deserialize<Config>(v, field_ref); },
+                "behavior::with adapter: define from() or deserialize() for decoding, "
+                "not both");
+            using wire_t = typename adapter::type;
+            static_assert(
+                requires(wire_t&& w) { field_ref = adapter::from(std::move(w)); },
+                "behavior::with adapter: from() must accept the declared wire type "
+                "and return the field type");
             wire_t wire{};
             KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
-            field_ref = adapter::from_wire(std::move(wire));
+            field_ref = adapter::from(std::move(wire));
             return true;
-        } else if constexpr(requires(decltype(vis)& v) { adapter::deserialize(v, field_ref); }) {
-            return adapter::deserialize(vis, field_ref);
+        } else if constexpr(requires(Vis& v) {
+                                adapter::template deserialize<Config>(v, field_ref);
+                            }) {
+            return adapter::template deserialize<Config>(vis, field_ref);
         } else {
-            return decode_value<Config>(vis, field_ref);
+            static_assert(dependent_false<adapter>,
+                          "behavior::with adapter has no decode path: define from() or "
+                          "deserialize()");
+            return false;
         }
     } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
         using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
@@ -728,6 +746,9 @@ bool decode_value(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
+        static_assert(!meta::has_repr<V>,
+                      "type has both a deserialize_visit specialization and a meta::repr; "
+                      "keep exactly one");
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
     } else if constexpr(meta::annotated_type<V>) {
         using attrs_t = typename V::attrs;
@@ -757,18 +778,31 @@ bool decode_value(Vis& vis, T& out) {
                 rich_error(std::string("unknown enum value '") + name_str + "'"));
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            if constexpr(requires {
-                             adapter::from_wire(std::declval<typename adapter::wire_type>());
-                         }) {
-                using wire_t = typename adapter::wire_type;
+            static_assert(
+                requires { typename adapter::type; },
+                "behavior::with adapter must declare its wire shape via "
+                "`using type = ...`");
+            if constexpr(requires { adapter::from(std::declval<typename adapter::type>()); }) {
+                static_assert(
+                    !requires { adapter::template deserialize<Config>(vis, inner); },
+                    "behavior::with adapter: define from() or deserialize() for "
+                    "decoding, not both");
+                using wire_t = typename adapter::type;
+                static_assert(
+                    requires(wire_t&& w) { inner = adapter::from(std::move(w)); },
+                    "behavior::with adapter: from() must accept the declared wire "
+                    "type and return the field type");
                 wire_t wire{};
                 KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
-                inner = adapter::from_wire(std::move(wire));
+                inner = adapter::from(std::move(wire));
                 return true;
-            } else if constexpr(requires { adapter::deserialize(vis, inner); }) {
-                return adapter::deserialize(vis, inner);
+            } else if constexpr(requires { adapter::template deserialize<Config>(vis, inner); }) {
+                return adapter::template deserialize<Config>(vis, inner);
             } else {
-                return decode_value<Config>(vis, inner);
+                static_assert(dependent_false<adapter>,
+                              "behavior::with adapter has no decode path: define from() or "
+                              "deserialize()");
+                return false;
             }
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
             using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
@@ -783,6 +817,31 @@ bool decode_value(Vis& vis, T& out) {
             return decode_value<merged_config>(vis, inner);
         } else {
             return decode_value<Config>(vis, inner);
+        }
+    } else if constexpr(meta::has_repr<V>) {
+        using R = meta::repr<V>;
+        static_assert(
+            requires { typename R::type; },
+            "meta::repr<T> must declare its wire shape via `using type = ...` "
+            "(meta::dynamic when only known at runtime)");
+        if constexpr(requires { R::from(std::declval<typename R::type>()); }) {
+            static_assert(
+                !requires(Vis& v) { R::template deserialize<Config>(v, out); },
+                "meta::repr<T>: define from() or deserialize() for decoding, not both");
+            using wire_t = typename R::type;
+            static_assert(
+                requires(wire_t&& w) { out = R::from(std::move(w)); },
+                "meta::repr<T>::from must accept the declared wire type and return T");
+            wire_t wire{};
+            KOTA_CODEC_TRY(decode_value<Config>(vis, wire));
+            out = R::from(std::move(wire));
+            return true;
+        } else if constexpr(requires(Vis& v) { R::template deserialize<Config>(v, out); }) {
+            return R::template deserialize<Config>(vis, out);
+        } else {
+            static_assert(dependent_false<V>,
+                          "meta::repr<T> has no decode path: define from() or deserialize()");
+            return false;
         }
     } else {
         constexpr auto kind = meta::kind_of<V>();

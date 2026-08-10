@@ -30,13 +30,13 @@ enum class role : std::int32_t {
 
 // Adapter: encode int on the wire as its decimal string representation.
 struct IntStringAdapter {
-    using wire_type = std::string;
+    using type = std::string;
 
-    static auto to_wire(int value) -> std::string {
+    static auto to(int value) -> std::string {
         return std::to_string(value);
     }
 
-    static auto from_wire(std::string wire) -> int {
+    static auto from(std::string wire) -> int {
         return wire.empty() ? 0 : std::stoi(wire);
     }
 };
@@ -146,7 +146,7 @@ TEST_CASE(with_adapter_roundtrip_empty_optional) {
 }  // namespace kota::codec
 
 // ============================================================================
-// Type-level traits tests: serialize_visit / deserialize_visit
+// Type-level traits tests: meta::repr
 // ============================================================================
 
 namespace kota_test_type_traits {
@@ -191,49 +191,35 @@ private:
 
 }  // namespace kota_test_type_traits
 
-namespace kota::codec {
+namespace kota::meta {
 
-template <typename Vis, typename Config>
-struct deserialize_visit<Vis, kota_test_type_traits::Tag, Config> {
-    static bool visit(Vis& vis, kota_test_type_traits::Tag& tag) {
-        std::uint32_t v = 0;
-        if(!vis.visit_uint(v))
-            return false;
-        tag = kota_test_type_traits::Tag{v};
-        return true;
+template <>
+struct repr<kota_test_type_traits::Tag> {
+    using type = std::uint32_t;
+
+    static type to(const kota_test_type_traits::Tag& tag) {
+        return tag.value();
+    }
+
+    static kota_test_type_traits::Tag from(type v) {
+        return kota_test_type_traits::Tag{v};
     }
 };
 
-template <typename Vis, typename Config>
-struct deserialize_visit<Vis, kota_test_type_traits::ByteBag, Config> {
-    static bool visit(Vis& vis, kota_test_type_traits::ByteBag& bag) {
-        std::vector<std::byte> bytes;
-        if(!vis.visit_bytes(bytes))
-            return false;
-        bag = kota_test_type_traits::ByteBag{std::move(bytes)};
-        return true;
+template <>
+struct repr<kota_test_type_traits::ByteBag> {
+    using type = std::vector<std::byte>;
+
+    const static type& to(const kota_test_type_traits::ByteBag& bag) {
+        return bag.bytes();
+    }
+
+    static kota_test_type_traits::ByteBag from(type bytes) {
+        return kota_test_type_traits::ByteBag{std::move(bytes)};
     }
 };
 
-template <typename Vis, typename Config>
-struct serialize_visit<Vis, kota_test_type_traits::Tag, Config> {
-    using wire_type = std::uint32_t;
-
-    static bool visit(Vis& vis, const kota_test_type_traits::Tag& tag) {
-        return vis.visit_uint(tag.value());
-    }
-};
-
-template <typename Vis, typename Config>
-struct serialize_visit<Vis, kota_test_type_traits::ByteBag, Config> {
-    using wire_type = std::vector<std::byte>;
-
-    static bool visit(Vis& vis, const kota_test_type_traits::ByteBag& bag) {
-        return vis.visit_bytes(bag.bytes());
-    }
-};
-
-}  // namespace kota::codec
+}  // namespace kota::meta
 
 namespace kota::codec {
 

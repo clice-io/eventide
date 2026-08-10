@@ -143,6 +143,10 @@ constexpr bool is_sequence_kind(type_kind k) noexcept {
 template <typename T>
 constexpr inline bool schema_opaque = false;
 
+/// Wire-shape marker for meta::repr: the representation is only known at
+/// runtime. Maps to type_kind::any, so schema output degrades to "any".
+struct dynamic {};
+
 template <typename T>
 consteval type_kind kind_of() {
     if constexpr(!std::is_same_v<T, std::remove_cv_t<T>>) {
@@ -151,6 +155,8 @@ consteval type_kind kind_of() {
         return kind_of<typename T::annotated_type>();
     } else if constexpr(schema_opaque<T>) {
         return type_kind::unknown;
+    } else if constexpr(std::is_same_v<T, dynamic>) {
+        return type_kind::any;
     } else if constexpr(std::is_enum_v<T>) {
         return type_kind::enumeration;
     } else if constexpr(bool_like<T>) {

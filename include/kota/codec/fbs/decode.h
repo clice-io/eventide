@@ -24,35 +24,6 @@ namespace kota::codec::fbs {
 
 namespace decode_detail {
 
-struct decode_wire_probe {};
-
-template <typename T, typename = void>
-struct has_wire_type : std::false_type {};
-
-template <typename T>
-struct has_wire_type<
-    T,
-    std::void_t<typename serialize_visit<decode_wire_probe, T, default_config<>>::wire_type>> :
-    std::true_type {};
-
-template <typename T>
-constexpr bool has_wire_type_v = has_wire_type<T>::value;
-
-template <typename T, typename = void>
-struct wire_type_of {
-    using type = T;
-};
-
-template <typename T>
-struct wire_type_of<
-    T,
-    std::void_t<typename serialize_visit<decode_wire_probe, T, default_config<>>::wire_type>> {
-    using type = typename serialize_visit<decode_wire_probe, T, default_config<>>::wire_type;
-};
-
-template <typename T>
-using wire_type_of_t = typename wire_type_of<T>::type;
-
 template <typename T>
 consteval bool needs_wrapper_in_vector() {
     constexpr auto k = meta::kind_of<std::remove_cvref_t<T>>();
@@ -154,8 +125,7 @@ struct VecReader {
     using raw_E = std::remove_cvref_t<E>;
     using clean_E = codec::detail::clean_t<raw_E>;
 
-    constexpr static bool has_wire = has_wire_type_v<clean_E>;
-    using wire_E = std::conditional_t<has_wire, wire_type_of_t<clean_E>, clean_E>;
+    using wire_E = proxy_detail::apply_repr_t<clean_E>;
 
     constexpr static bool is_wrapped = needs_wrapper_in_vector<raw_E>();
 

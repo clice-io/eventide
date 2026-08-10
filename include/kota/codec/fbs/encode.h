@@ -13,7 +13,9 @@
 #include <variant>
 #include <vector>
 
+#include "kota/meta/repr.h"
 #include "kota/meta/type_kind.h"
+#include "kota/codec/fbs/proxy.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
@@ -736,7 +738,36 @@ template <typename Container, typename Body>
 bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t& out_offset) {
     using element_t = element_clean_t<Container>;
 
-    if constexpr(std::same_as<element_t, std::byte>) {
+    if constexpr(meta::has_repr<element_t>) {
+        // Elements travel as their repr wire shape; conversion happens per
+        // element in the visit chain, so the contiguous fast paths never apply.
+        using wire_t = proxy_detail::apply_repr_t<element_t>;
+        if constexpr(std::same_as<wire_t, std::byte> || meta::bytes_like<wire_t>) {
+            byte_collector coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else if constexpr(meta::str_like<wire_t>) {
+            string_collector coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
+            inline_struct_collector<wire_t> coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        } else {
+            scalar_collector<wire_t> coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
+        }
+    } else if constexpr(std::same_as<element_t, std::byte>) {
         if constexpr(std::ranges::contiguous_range<Container> &&
                      std::ranges::sized_range<Container>) {
             auto data = reinterpret_cast<const std::uint8_t*>(std::ranges::data(c));
@@ -807,38 +838,6 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             return true;
         } else {
             inline_struct_collector<element_t> coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        }
-    } else if constexpr(requires {
-                            typename serialize_visit<alloc_field_visitor,
-                                                     element_t,
-                                                     default_config<>>::wire_type;
-                        }) {
-        using wire_t =
-            typename serialize_visit<alloc_field_visitor, element_t, default_config<>>::wire_type;
-        if constexpr(std::same_as<wire_t, std::byte> || meta::bytes_like<wire_t>) {
-            byte_collector coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else if constexpr(meta::str_like<wire_t>) {
-            string_collector coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
-            inline_struct_collector<wire_t> coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else {
-            scalar_collector<wire_t> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
