@@ -774,17 +774,10 @@ bool decode_value(Vis& vis, T& out) {
         auto&& inner = meta::annotated_value(out);
         using inner_t = std::remove_cvref_t<decltype(inner)>;
 
-        if constexpr(is_specialization_of<std::variant, inner_t> &&
-                     meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return decode_value<Config>(vis, inner);
-            } else {
-                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-                return decode_variant<Config, spec_attr>(vis, inner);
-            }
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            // Behavior precedence (with > as > enum_string) mirrors
-            // decode_field_inner and meta's wire-type resolver.
+        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+            // Behavior precedence (with > as > enum_string, all above variant
+            // tagging) mirrors decode_field_inner and meta's wire-type
+            // resolver.
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
             return detail::wire_decode<adapter, Config>(vis, inner);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
@@ -806,6 +799,14 @@ bool decode_value(Vis& vis, T& out) {
             }
             return scoped_context<typename Vis::error_type>::fail(
                 rich_error(std::string("unknown enum value '") + name_str + "'"));
+        } else if constexpr(is_specialization_of<std::variant, inner_t> &&
+                            meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
+            if constexpr(!is_human_readable<Config, Vis>()) {
+                return decode_value<Config>(vis, inner);
+            } else {
+                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
+                return decode_variant<Config, spec_attr>(vis, inner);
+            }
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {

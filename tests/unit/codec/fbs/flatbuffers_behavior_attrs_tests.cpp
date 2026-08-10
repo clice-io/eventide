@@ -451,6 +451,12 @@ struct BoxedWireReprField {
     auto operator==(const BoxedWireReprField&) const -> bool = default;
 };
 
+struct BytesWireReprField {
+    std::vector<ByteBag> blobs;
+
+    auto operator==(const BytesWireReprField&) const -> bool = default;
+};
+
 // Adapter over a repr'd type: the field annotation must win over the type's
 // own repr, on the wire and in the proxy view.
 struct TagNameAdapter {
@@ -661,6 +667,60 @@ TEST_CASE(nullable_wire_repr_element_roundtrip) {
     auto status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
+}
+
+TEST_CASE(view_reads_boxed_nullable_repr_elements) {
+    // Boxed elements are read through their wrapper table; the view peels the
+    // nullable wire shape to the inner scalar, absence reads as its default.
+    BoxedWireReprField input;
+    input.ids = {MaybeId{7U}, MaybeId{}, MaybeId{42U}};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = fbs::table_view<BoxedWireReprField>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+
+    auto ids = root[&BoxedWireReprField::ids];
+    ASSERT_TRUE(ids.valid());
+    ASSERT_EQ(ids.size(), 3U);
+    EXPECT_EQ(ids[0], 7U);
+    EXPECT_EQ(ids[1], 0U);
+    EXPECT_EQ(ids[2], 42U);
+}
+
+TEST_CASE(bytes_wire_repr_element_roundtrip) {
+    // ByteBag's wire shape is a byte blob; flatbuffers has no
+    // vector-of-vectors, so elements travel boxed in per-element wrapper
+    // tables, matching plain nested byte containers.
+    BytesWireReprField input;
+    input.blobs = {ByteBag{{std::byte{0xAA}, std::byte{0xBB}}},
+                   ByteBag{},
+                   ByteBag{{std::byte{0x01}}}};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    BytesWireReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output, input);
+
+    auto root = fbs::table_view<BytesWireReprField>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+
+    auto blobs = root[&BytesWireReprField::blobs];
+    ASSERT_TRUE(blobs.valid());
+    ASSERT_EQ(blobs.size(), 3U);
+
+    auto b0 = blobs[0];
+    ASSERT_TRUE(b0.valid());
+    ASSERT_EQ(b0.size(), 2U);
+    EXPECT_EQ(b0[0], std::byte{0xAA});
+    EXPECT_EQ(b0[1], std::byte{0xBB});
+    EXPECT_EQ(blobs[1].size(), 0U);
 }
 
 TEST_CASE(adapted_element_travels_as_adapter_wire) {

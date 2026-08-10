@@ -12,7 +12,6 @@
 #include <variant>
 #include <vector>
 
-#include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/proxy.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/config.h"
@@ -23,13 +22,6 @@
 namespace kota::codec::fbs {
 
 namespace decode_detail {
-
-template <typename T>
-consteval bool needs_wrapper_in_vector() {
-    constexpr auto k = meta::kind_of<std::remove_cvref_t<T>>();
-    return k == meta::type_kind::optional || k == meta::type_kind::pointer ||
-           k == meta::type_kind::array || k == meta::type_kind::set || k == meta::type_kind::map;
-}
 
 using fbs::Table;
 using fbs::String;
@@ -132,7 +124,7 @@ struct VecReader {
     // mirror the encode side (seq_encode_impl dispatches on the same type).
     using wire_E = proxy_detail::apply_repr_t<raw_E>;
 
-    constexpr static bool is_wrapped = needs_wrapper_in_vector<wire_E>();
+    constexpr static bool is_wrapped = proxy_detail::needs_wrapper_in_vector<wire_E>();
 
     using vec_ptr_t = std::conditional_t<is_wrapped,
                                          const Vector<table_offset_t>*,

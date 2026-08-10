@@ -214,17 +214,9 @@ bool encode_value(Vis& vis, const T& value) {
         auto&& inner = meta::annotated_value(value);
         using inner_t = std::remove_cvref_t<decltype(inner)>;
 
-        if constexpr(is_specialization_of<std::variant, inner_t> &&
-                     meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return encode_value<Config>(vis, inner);
-            } else {
-                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
-                return detail::encode_tagged_variant<Config, spec_attr>(vis, inner);
-            }
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            // Behavior precedence (with > as > enum_string) mirrors
-            // encode_one_field and meta's wire-type resolver.
+        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+            // Behavior precedence (with > as > enum_string, all above variant
+            // tagging) mirrors encode_one_field and meta's wire-type resolver.
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
             return detail::wire_encode<adapter, Config>(vis, inner);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
@@ -237,6 +229,14 @@ bool encode_value(Vis& vis, const T& value) {
             auto renamed = policy{}(true, meta::enum_name(inner));
             std::string_view sv(renamed);
             return vis.visit_str(sv);
+        } else if constexpr(is_specialization_of<std::variant, inner_t> &&
+                            meta::struct_spec_of<attrs_t>.tagging != meta::tag_mode::none) {
+            if constexpr(!is_human_readable<Config, Vis>()) {
+                return encode_value<Config>(vis, inner);
+            } else {
+                using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
+                return detail::encode_tagged_variant<Config, spec_attr>(vis, inner);
+            }
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {

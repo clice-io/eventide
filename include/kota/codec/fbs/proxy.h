@@ -123,6 +123,20 @@ constexpr auto deep_clean_impl() {
 template <typename T>
 using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
+/// True when a vector element of this wire shape is boxed in a per-element
+/// wrapper table (value at the table's first field): nullable shapes need a
+/// table to represent absence, and nested containers and byte blobs have no
+/// direct vector-of-vectors representation. Shared by the encode collector
+/// choice (seq_encode_impl), the decode reader (VecReader) and the lazy
+/// array_view, which must all agree on the element storage.
+template <typename T>
+consteval bool needs_wrapper_in_vector() {
+    constexpr auto k = meta::kind_of<T>();
+    return k == meta::type_kind::optional || k == meta::type_kind::pointer ||
+           k == meta::type_kind::array || k == meta::type_kind::set || k == meta::type_kind::map ||
+           k == meta::type_kind::bytes;
+}
+
 template <typename T>
 struct scalar_storage {
     using type = std::remove_cvref_t<T>;
@@ -341,7 +355,9 @@ struct field_return_type<
     std::enable_if_t<!is_string_like_v<T> && !is_scalar_v<T> && !can_inline_struct_v<T> &&
                      !is_specialization_of<std::variant, T> && !is_tuple_like_v<T> &&
                      !is_map_range_v<T> && is_range_like_v<T>>> {
-    using type = array_view<clean_t<std::ranges::range_value_t<T>>>;
+    // The raw element type is kept: array_view itself distinguishes the
+    // effective wire shape (storage classification) from the peeled view type.
+    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<T>>>;
 };
 
 template <typename Member,
@@ -358,7 +374,7 @@ struct member_return_impl<Member, CleanMember, true> {
 template <typename Member, typename CleanMember>
     requires (!is_map_range_v<CleanMember>)
 struct member_return_impl<Member, CleanMember, true> {
-    using type = array_view<clean_t<std::ranges::range_value_t<CleanMember>>>;
+    using type = array_view<std::remove_cvref_t<std::ranges::range_value_t<CleanMember>>>;
 };
 
 template <typename Member, typename CleanMember>
@@ -428,9 +444,9 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
         const auto* vec = table->template GetPointer<const Vector<table_offset_t>*>(field);
         return return_t(vec);
     } else if constexpr(is_range_like_v<T>) {
-        using element_type = clean_t<std::ranges::range_value_t<T>>;
-        using vector_ptr_t = array_vector_ptr_t<element_type>;
-        const auto* value = table->template GetPointer<vector_ptr_t>(field);
+        // array_view owns the storage classification; read with its pointer
+        // type so the two can never diverge.
+        const auto* value = table->template GetPointer<typename return_t::vector_ptr_type>(field);
         return return_t(value);
     } else {
         const auto* nested = table->template GetPointer<const Table*>(field);
@@ -442,10 +458,19 @@ auto read_field(table_view_type view, slot_id field) -> field_return_type_t<T> {
 
 template <typename Element>
 class array_view {
+    // The unpeeled effective wire shape decides the vector storage: boxed
+    // elements (nullable wire shapes, nested containers, byte blobs) travel
+    // as per-element wrapper tables, so absence stays representable. Nullable
+    // peeling applies only to the view returned for each element.
+    using wire_type = proxy_detail::apply_repr_t<Element>;
+    constexpr static bool is_boxed = proxy_detail::needs_wrapper_in_vector<wire_type>();
+
 public:
     using element_type = proxy_detail::deep_clean_t<Element>;
     using value_type = proxy_detail::array_element_return_t<element_type>;
-    using vector_ptr_type = proxy_detail::array_vector_ptr_t<element_type>;
+    using vector_ptr_type = std::conditional_t<is_boxed,
+                                               const Vector<table_offset_t>*,
+                                               proxy_detail::array_vector_ptr_t<element_type>>;
 
     constexpr array_view() = default;
 
@@ -476,7 +501,11 @@ public:
             return value_type{};
         }
 
-        if constexpr(std::same_as<element_type, std::byte>) {
+        if constexpr(is_boxed) {
+            const auto* wrapper = vector->template GetAs<Table>(static_cast<uoffset_t>(index));
+            return proxy_detail::read_field<element_type>(proxy_detail::table_view_type(wrapper),
+                                                          detail::first_field);
+        } else if constexpr(std::same_as<element_type, std::byte>) {
             return std::byte{vector->Get(static_cast<uoffset_t>(index))};
         } else if constexpr(std::is_enum_v<element_type>) {
             using storage_t = proxy_detail::scalar_storage_t<element_type>;

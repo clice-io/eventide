@@ -5,6 +5,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -12,8 +13,10 @@
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/meta/repr.h"
+#include "kota/meta/type_info.h"
 #include "kota/codec/json/json.h"
 #include "kota/codec/json/schema.h"
+#include "kota/codec/macro.h"
 
 namespace kota_repr_test {
 
@@ -296,6 +299,34 @@ struct shouted {
     meta::annotation<std::string, meta::behavior::with<shout_adapter>> name;
 };
 
+// One annotation carrying both a variant tagging spec and a with-adapter: the
+// adapter decides the wire shape (as in meta::wire_type_t), the tagging spec
+// is inert.
+struct choice_text_adapter {
+    using type = std::string;
+
+    static auto to(const std::variant<int, std::string>& v) -> std::string {
+        if(const auto* n = std::get_if<int>(&v)) {
+            return std::format("i:{}", *n);
+        }
+        return std::format("s:{}", std::get<std::string>(v));
+    }
+
+    static auto from(const std::string& wire) -> std::variant<int, std::string> {
+        if(wire.starts_with("i:")) {
+            int n = 0;
+            std::from_chars(wire.data() + 2, wire.data() + wire.size(), n);
+            return n;
+        }
+        return wire.substr(2);
+    }
+};
+
+KOTATSU_ANNOTATION(tagged_choice_annotation, tag = "t", content = "c", tag_names = {"num", "text"});
+using adapted_tagged_choice =
+    meta::annotate<tagged_choice_annotation>::type<std::variant<int, std::string>,
+                                                   meta::behavior::with<choice_text_adapter>>;
+
 struct string_enum_config {
     [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
 };
@@ -485,6 +516,22 @@ TEST_CASE(annotated_repr_alternative_in_untagged_variant) {
     ASSERT_TRUE(from_json(*encoded, output).has_value());
     ASSERT_TRUE(output.index() == 0);
     EXPECT_EQ(meta::annotated_value(std::get<0>(output)), (version{.major = 3, .minor = 14}));
+}
+
+TEST_CASE(adapter_beats_variant_tagging_outside_fields) {
+    // The wire-type resolver gives the adapter precedence over the tagging
+    // spec; the top-level value dispatch must agree with it (and with the
+    // field-level dispatch), not emit a tagged object.
+    static_assert(std::is_same_v<meta::wire_type_t<adapted_tagged_choice>, std::string>);
+
+    adapted_tagged_choice input{7};
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("i:7")");
+
+    adapted_tagged_choice output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(std::get<int>(meta::annotated_value(output)), 7);
 }
 
 TEST_CASE(nullable_wire_shape_keeps_field_required) {

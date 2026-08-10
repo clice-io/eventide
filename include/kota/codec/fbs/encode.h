@@ -756,13 +756,7 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
         // so the contiguous fast paths never apply. The collector choice
         // mirrors the plain-element classification below and the VecReader
         // decode side.
-        if constexpr(meta::bytes_like<wire_t>) {
-            byte_collector coll{fbb, {}, 0};
-            KOTA_CODEC_TRY(body(coll));
-            KOTA_CODEC_TRY(coll.finish());
-            out_offset = coll.result_offset;
-            return true;
-        } else if constexpr(meta::str_like<wire_t>) {
+        if constexpr(meta::str_like<wire_t>) {
             string_collector coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
@@ -781,7 +775,12 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             out_offset = coll.result_offset;
             return true;
         } else if constexpr(meta::kind_of<wire_t>() == meta::type_kind::optional ||
-                            meta::kind_of<wire_t>() == meta::type_kind::pointer) {
+                            meta::kind_of<wire_t>() == meta::type_kind::pointer ||
+                            meta::kind_of<wire_t>() == meta::type_kind::bytes) {
+            // Nullable shapes need a per-element table so absence is
+            // representable; byte blobs need one because flatbuffers has no
+            // vector-of-vectors. Nested containers reach the same wrapper
+            // shape through table_elem_visitor below.
             boxed_table_collector coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
@@ -871,7 +870,11 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             return true;
         }
     } else if constexpr(meta::kind_of<element_t>() == meta::type_kind::optional ||
-                        meta::kind_of<element_t>() == meta::type_kind::pointer) {
+                        meta::kind_of<element_t>() == meta::type_kind::pointer ||
+                        meta::kind_of<element_t>() == meta::type_kind::bytes) {
+        // Same boxing as the wire-substituted branch above: table_elem_visitor
+        // has no visit_bytes payload path, so byte-blob elements go through
+        // the per-element wrapper table.
         boxed_table_collector coll{fbb, {}, 0};
         KOTA_CODEC_TRY(body(coll));
         KOTA_CODEC_TRY(coll.finish());

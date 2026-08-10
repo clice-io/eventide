@@ -1,5 +1,6 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -257,6 +258,18 @@ struct with_vector_strings {
 
 struct with_vector_tables {
     std::vector<address> items;
+};
+
+struct with_byte_blobs {
+    std::vector<std::vector<std::byte>> blobs;
+
+    auto operator==(const with_byte_blobs&) const -> bool = default;
+};
+
+struct with_optional_elements {
+    std::vector<std::optional<std::int32_t>> vals;
+
+    auto operator==(const with_optional_elements&) const -> bool = default;
 };
 
 struct outer {
@@ -890,6 +903,61 @@ TEST_CASE(deeply_nested) {
     EXPECT_EQ(nums[0], 10);
     EXPECT_EQ(nums[1], 20);
     EXPECT_EQ(nums[2], 30);
+}
+
+TEST_CASE(vector_of_byte_blobs) {
+    // Byte blobs have no direct vector-of-vectors representation: each
+    // element travels boxed in a wrapper table with the byte vector at its
+    // first field, on the wire and in the lazy view.
+    with_byte_blobs input{
+        .blobs = {{std::byte{0xAA}, std::byte{0xBB}}, {}, {std::byte{0x01}}},
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_byte_blobs output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    auto root = table_view<with_byte_blobs>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto blobs = root[&with_byte_blobs::blobs];
+    ASSERT_TRUE(blobs.valid());
+    ASSERT_EQ(blobs.size(), 3U);
+
+    auto b0 = blobs[0];
+    ASSERT_TRUE(b0.valid());
+    ASSERT_EQ(b0.size(), 2U);
+    EXPECT_EQ(b0[0], std::byte{0xAA});
+    EXPECT_EQ(b0[1], std::byte{0xBB});
+    EXPECT_EQ(blobs[1].size(), 0U);
+}
+
+TEST_CASE(vector_of_optional_scalars) {
+    // Nullable elements are boxed per element; the lazy view reads through
+    // the wrapper table and peels absence to the element default.
+    with_optional_elements input{
+        .vals = {5, std::nullopt, 9}
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_optional_elements output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    auto root = table_view<with_optional_elements>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+
+    auto vals = root[&with_optional_elements::vals];
+    ASSERT_TRUE(vals.valid());
+    ASSERT_EQ(vals.size(), 3U);
+    EXPECT_EQ(vals[0], 5);
+    EXPECT_EQ(vals[1], 0);  // absent element reads as the scalar default
+    EXPECT_EQ(vals[2], 9);
 }
 
 TEST_CASE(empty_from_bytes) {
