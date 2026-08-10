@@ -126,13 +126,13 @@ struct TableFieldReader {
 template <typename E>
 struct VecReader {
     using raw_E = std::remove_cvref_t<E>;
-    using clean_E = codec::detail::clean_t<raw_E>;
 
-    using wire_E = proxy_detail::apply_repr_t<clean_E>;
+    // An element travels as its effective wire shape (behavior attrs, then
+    // chained reprs), so both the wrapper decision and the reader choice must
+    // mirror the encode side (seq_encode_impl dispatches on the same type).
+    using wire_E = proxy_detail::apply_repr_t<raw_E>;
 
-    // A repr'd element travels as its wire shape, so the wrapper decision
-    // must mirror the encode side (seq_encode_impl checks repr first).
-    constexpr static bool is_wrapped = !meta::has_repr<raw_E> && needs_wrapper_in_vector<raw_E>();
+    constexpr static bool is_wrapped = needs_wrapper_in_vector<wire_E>();
 
     using vec_ptr_t = std::conditional_t<is_wrapped,
                                          const Vector<table_offset_t>*,

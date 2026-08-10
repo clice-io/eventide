@@ -230,6 +230,51 @@ private:
     std::vector<std::uint32_t> ids_;
 };
 
+// A wire shape that must travel as a table: the string member rules out the
+// inline-struct fast path, so vector elements need the table collectors.
+struct EndpointWire {
+    std::string host;
+    std::uint32_t port = 0;
+};
+
+class Endpoint {
+public:
+    Endpoint() = default;
+
+    Endpoint(std::string host, std::uint32_t port) : host_(std::move(host)), port_(port) {}
+
+    auto host() const -> const std::string& {
+        return host_;
+    }
+
+    auto port() const -> std::uint32_t {
+        return port_;
+    }
+
+    auto operator==(const Endpoint&) const -> bool = default;
+
+private:
+    std::string host_;
+    std::uint32_t port_ = 0;
+};
+
+// A nullable wire shape: vector elements must be boxed like plain optionals.
+class MaybeId {
+public:
+    MaybeId() = default;
+
+    explicit MaybeId(std::optional<std::uint32_t> v) : value_(v) {}
+
+    auto value() const -> std::optional<std::uint32_t> {
+        return value_;
+    }
+
+    auto operator==(const MaybeId&) const -> bool = default;
+
+private:
+    std::optional<std::uint32_t> value_;
+};
+
 }  // namespace kota_test_type_traits
 
 namespace kota::meta {
@@ -307,6 +352,32 @@ struct repr<kota_test_type_traits::IdSet> {
     }
 };
 
+template <>
+struct repr<kota_test_type_traits::Endpoint> {
+    using type = kota_test_type_traits::EndpointWire;
+
+    static type to(const kota_test_type_traits::Endpoint& e) {
+        return {.host = e.host(), .port = e.port()};
+    }
+
+    static kota_test_type_traits::Endpoint from(type wire) {
+        return {std::move(wire.host), wire.port};
+    }
+};
+
+template <>
+struct repr<kota_test_type_traits::MaybeId> {
+    using type = std::optional<std::uint32_t>;
+
+    static type to(const kota_test_type_traits::MaybeId& m) {
+        return m.value();
+    }
+
+    static kota_test_type_traits::MaybeId from(type v) {
+        return kota_test_type_traits::MaybeId{v};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
@@ -317,6 +388,8 @@ using kota_test_type_traits::Tag;
 using kota_test_type_traits::ByteBag;
 using kota_test_type_traits::HexTag;
 using kota_test_type_traits::IdSet;
+using kota_test_type_traits::Endpoint;
+using kota_test_type_traits::MaybeId;
 
 struct TypeTraitsPlainField {
     Tag tag;
@@ -364,6 +437,40 @@ struct OptionalReprField {
     std::optional<Tag> maybe_tag;
 
     auto operator==(const OptionalReprField&) const -> bool = default;
+};
+
+struct TableWireReprField {
+    std::vector<Endpoint> endpoints;
+
+    auto operator==(const TableWireReprField&) const -> bool = default;
+};
+
+struct BoxedWireReprField {
+    std::vector<MaybeId> ids;
+
+    auto operator==(const BoxedWireReprField&) const -> bool = default;
+};
+
+// Adapter over a repr'd type: the field annotation must win over the type's
+// own repr, on the wire and in the proxy view.
+struct TagNameAdapter {
+    using type = std::string;
+
+    static auto to(const Tag& t) -> std::string {
+        return std::to_string(t.value());
+    }
+
+    static auto from(const std::string& wire) -> Tag {
+        return Tag{static_cast<std::uint32_t>(std::stoul(wire))};
+    }
+};
+
+struct AdapterOverReprField {
+    meta::annotation<Tag, meta::behavior::with<TagNameAdapter>> tag;
+};
+
+struct AdaptedElementField {
+    std::vector<meta::annotation<int, meta::behavior::with<IntStringAdapter>>> vals;
 };
 
 TEST_SUITE(serde_flatbuffers_type_traits) {
@@ -520,6 +627,77 @@ TEST_CASE(repr_inside_optional_roundtrip) {
     status = fbs::from_flatbuffer(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_FALSE(output.maybe_tag.has_value());
+}
+
+TEST_CASE(table_wire_repr_element_roundtrip) {
+    // Endpoint's wire shape is a table; vector elements must travel as table
+    // offsets on both the encode and decode side.
+    TableWireReprField input;
+    input.endpoints = {
+        Endpoint{"alpha", 1  },
+        Endpoint{"",      0  },
+        Endpoint{"beta",  443}
+    };
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    TableWireReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(nullable_wire_repr_element_roundtrip) {
+    // MaybeId's wire shape is optional; vector elements must be boxed exactly
+    // like plain optional elements.
+    BoxedWireReprField input;
+    input.ids = {MaybeId{7U}, MaybeId{}, MaybeId{42U}};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    BoxedWireReprField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(adapted_element_travels_as_adapter_wire) {
+    // The element's annotation adapter decides the wire shape (string), so
+    // both sides must pick the string collectors, not the raw-int fast path.
+    AdaptedElementField input;
+    input.vals = {12, -3, 4567};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    AdaptedElementField output{};
+    auto status = fbs::from_flatbuffer(*encoded, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output.vals.size() == 3U);
+    EXPECT_EQ(meta::annotated_value(output.vals[0]), 12);
+    EXPECT_EQ(meta::annotated_value(output.vals[1]), -3);
+    EXPECT_EQ(meta::annotated_value(output.vals[2]), 4567);
+}
+
+TEST_CASE(view_honors_field_adapter_over_type_repr) {
+    // Tag's own repr is uint32, but the field adapter puts a string on the
+    // wire; the proxy view must follow the adapter.
+    const AdapterOverReprField input{.tag = Tag{4242}};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = fbs::table_view<AdapterOverReprField>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+    const std::string_view wire_tag = root[&AdapterOverReprField::tag];
+    EXPECT_EQ(wire_tag, std::string_view{"4242"});
+
+    AdapterOverReprField output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(meta::annotated_value(output.tag), Tag{4242});
 }
 
 };  // TEST_SUITE(serde_flatbuffers_type_traits)

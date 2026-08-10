@@ -636,17 +636,14 @@ constexpr bool kind_compatible_impl(meta::type_kind src) {
 
 template <typename T>
 constexpr bool kind_compatible(meta::type_kind src) {
-    // A repr'd alternative arrives as its wire shape, so compatibility is
-    // judged against that; a dynamic shape can be anything.
-    if constexpr(meta::has_repr<T>) {
-        using wire_t = meta::wire_shape_t<meta::repr<T>>;
-        if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
-            return true;
-        } else {
-            return kind_compatible_impl<wire_t>(src);
-        }
+    // An alternative arrives as its effective wire shape — behavior attrs on
+    // an annotation first, then (chained) reprs — so compatibility is judged
+    // against that; a dynamic shape can be anything.
+    using wire_t = meta::wire_type_t<T>;
+    if constexpr(std::is_same_v<wire_t, meta::dynamic>) {
+        return true;
     } else {
-        return kind_compatible_impl<T>(src);
+        return kind_compatible_impl<wire_t>(src);
     }
 }
 
@@ -785,6 +782,17 @@ bool decode_value(Vis& vis, T& out) {
                 using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
                 return decode_variant<Config, spec_attr>(vis, inner);
             }
+        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+            // Behavior precedence (with > as > enum_string) mirrors
+            // decode_field_inner and meta's wire-type resolver.
+            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
+            return detail::wire_decode<adapter, Config>(vis, inner);
+        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
+            target converted{};
+            KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
+            inner = inner_t(std::move(converted));
+            return true;
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
             using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
             static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
@@ -798,15 +806,6 @@ bool decode_value(Vis& vis, T& out) {
             }
             return scoped_context<typename Vis::error_type>::fail(
                 rich_error(std::string("unknown enum value '") + name_str + "'"));
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return detail::wire_decode<adapter, Config>(vis, inner);
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            target converted{};
-            KOTA_CODEC_TRY(decode_value<Config>(vis, converted));
-            inner = inner_t(std::move(converted));
-            return true;
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {

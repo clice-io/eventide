@@ -2068,8 +2068,13 @@ TEST_CASE(self_referential_struct) {
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>,                    false, false, false},
-        {"next",  {}, 0, 1, []() -> const type_info& { return opt_self; }, false, false, false},
+        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false},
+        {"next",
+         {},
+         0, 1,
+         []() -> const type_info& { return opt_self; },
+         false, false,
+         false, true},
     };
     self_info.fields = {self_fields, 2};
 
@@ -2219,12 +2224,12 @@ TEST_CASE(mutual_recursion) {
     };
 
     const static field_info fields_a[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>,                 false, false, false},
-        {"b",     {}, 0, 1, []() -> const type_info& { return opt_b; }, false, false, false},
+        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false},
+        {"b", {}, 0, 1, []() -> const type_info& { return opt_b; }, false, false, false, true},
     };
     const static field_info fields_b[] = {
-        {"name", {}, 0, 0, type_info_of<std::string>,                  false, false, false},
-        {"a",    {}, 0, 1, []() -> const type_info& { return opt_a; }, false, false, false},
+        {"name", {}, 0, 0, type_info_of<std::string>, false, false, false},
+        {"a", {}, 0, 1, []() -> const type_info& { return opt_a; }, false, false, false, true},
     };
     info_a.fields = {fields_a, 2};
     info_b.fields = {fields_b, 2};

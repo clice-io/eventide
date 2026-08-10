@@ -99,6 +99,12 @@ struct field_info {
     bool has_skip_if;
     bool has_behavior;
 
+    /// True when the declared (pre-wire-substitution) field type is nullable
+    /// (optional/pointer/null). Decode accepts absence only for these, so
+    /// schema requiredness follows the raw type even when a repr or behavior
+    /// attr gives the field a nullable wire shape.
+    bool nullable = false;
+
     /// Field ordinal for index-addressed formats; field_spec::no_idx when
     /// absent. Metadata only for now: no backend consumes it yet.
     std::uint32_t idx = field_spec::no_idx;
@@ -256,19 +262,24 @@ constexpr auto type_attrs_impl() {
 template <typename AttrsTuple>
 using type_attrs_t = typename decltype(type_attrs_impl<AttrsTuple>())::type;
 
+/// Precedence mirrors the codec field dispatch (encode_one_field /
+/// decode_field_inner): behavior::with wins over behavior::as, which wins
+/// over behavior::enum_string; the field type's repr applies only when no
+/// behavior attr shapes the wire. The chosen wire type is then resolved
+/// through chained reprs, matching the codec's recursive re-dispatch on the
+/// converted wire value.
 template <typename RawType, typename AttrsTuple>
 constexpr auto resolve_wire_type_impl() {
-    if constexpr(tuple_has_spec_v<AttrsTuple, behavior::as>) {
-        return std::type_identity<typename tuple_find_spec_t<AttrsTuple, behavior::as>::target>{};
+    if constexpr(tuple_has_spec_v<AttrsTuple, behavior::with>) {
+        using adapter = typename tuple_find_spec_t<AttrsTuple, behavior::with>::adapter;
+        return std::type_identity<resolved_repr_t<wire_shape_t<adapter>>>{};
+    } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::as>) {
+        using target = typename tuple_find_spec_t<AttrsTuple, behavior::as>::target;
+        return std::type_identity<resolved_repr_t<target>>{};
     } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::enum_string>) {
         return std::type_identity<std::string_view>{};
-    } else if constexpr(tuple_has_spec_v<AttrsTuple, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<AttrsTuple, behavior::with>::adapter;
-        return std::type_identity<wire_shape_t<adapter>>{};
-    } else if constexpr(has_repr<RawType>) {
-        return std::type_identity<wire_shape_t<repr<RawType>>>{};
     } else {
-        return std::type_identity<RawType>{};
+        return std::type_identity<resolved_repr_t<RawType>>{};
     }
 }
 
@@ -527,6 +538,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
     using attrs_t = typename unwrap_annotated<field_t>::attrs;
     constexpr const field_spec& spec = field_spec_of<field_t>;
+    constexpr type_kind raw_kind = kind_of<typename unwrap_annotated<field_t>::raw_type>();
 
     return field_info{
         .name = resolve_wire_name<T, I, Config>(),
@@ -538,6 +550,8 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .has_skip_if =
             spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
         .has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>,
+        .nullable = raw_kind == type_kind::optional || raw_kind == type_kind::pointer ||
+                    raw_kind == type_kind::null,
         .idx = spec.idx,
         .description = spec.description,
     };
@@ -577,6 +591,14 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 }
 
 }  // namespace detail
+
+/// The effective wire type of T as the codec dispatch sees it: behavior attrs
+/// on an annotation take precedence over the underlying type's meta::repr,
+/// and chained reprs are followed to their final shape.
+template <typename T>
+using wire_type_t =
+    detail::resolve_wire_type_t<typename detail::unwrap_annotated<std::remove_cvref_t<T>>::raw_type,
+                                typename detail::unwrap_annotated<std::remove_cvref_t<T>>::attrs>;
 
 template <typename T, typename Config>
 constexpr const type_info& type_info_of() {

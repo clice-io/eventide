@@ -86,45 +86,42 @@ constexpr bool is_scalar_v =
     codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T> ||
     codec::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
 
-template <typename T>
-struct remove_smart_ptr {
-    using type = T;
-};
-
-template <typename T, typename D>
-struct remove_smart_ptr<std::unique_ptr<T, D>> {
-    using type = typename remove_smart_ptr<T>::type;
-};
-
-template <typename T>
-struct remove_smart_ptr<std::shared_ptr<T>> {
-    using type = typename remove_smart_ptr<T>::type;
-};
-
-template <typename T>
-using remove_smart_ptr_t = typename remove_smart_ptr<T>::type;
-
-/// Substitute a type by its meta::repr wire shape; identity when none is
-/// declared. Flatbuffers computes layout statically, so a dynamic repr is
+/// Substitute a type by its effective wire shape: annotation behavior attrs
+/// take precedence over the underlying type's meta::repr, and chained reprs
+/// are followed (meta::wire_type_t); identity when neither applies.
+/// Flatbuffers computes layout statically, so a dynamic wire shape is
 /// rejected here.
 template <typename T>
 constexpr auto apply_repr_impl() {
-    if constexpr(meta::has_repr<T>) {
-        using wire_t = meta::wire_shape_t<meta::repr<T>>;
-        static_assert(!std::is_same_v<wire_t, meta::dynamic>,
-                      "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
-                      "used with the fbs backend");
-        return std::type_identity<wire_t>{};
-    } else {
-        return std::type_identity<T>{};
-    }
+    using wire_t = meta::wire_type_t<T>;
+    static_assert(!std::is_same_v<wire_t, meta::dynamic>,
+                  "flatbuffers computes layout statically; a meta::dynamic wire shape cannot be "
+                  "used with the fbs backend");
+    return std::type_identity<wire_t>{};
 }
 
 template <typename T>
 using apply_repr_t = typename decltype(apply_repr_impl<T>())::type;
 
+/// The fully resolved view type of a member or element: wire-shape
+/// substitution (behavior attrs, then chained reprs) and nullable-wrapper
+/// peeling (optional, smart pointers) interleave until a fixpoint, in
+/// whatever order they nest.
 template <typename T>
-using deep_clean_t = apply_repr_t<remove_smart_ptr_t<clean_t<T>>>;
+constexpr auto deep_clean_impl() {
+    using wire_t = apply_repr_t<T>;
+    if constexpr(is_optional_v<wire_t>) {
+        return deep_clean_impl<typename wire_t::value_type>();
+    } else if constexpr(is_specialization_of<std::unique_ptr, wire_t> ||
+                        is_specialization_of<std::shared_ptr, wire_t>) {
+        return deep_clean_impl<typename wire_t::element_type>();
+    } else {
+        return std::type_identity<wire_t>{};
+    }
+}
+
+template <typename T>
+using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
 template <typename T>
 struct scalar_storage {

@@ -748,12 +748,15 @@ using element_clean_t = std::remove_cvref_t<std::ranges::range_value_t<Seq>>;
 template <typename Container, typename Body>
 bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t& out_offset) {
     using element_t = element_clean_t<Container>;
+    using wire_t = proxy_detail::apply_repr_t<element_t>;
 
-    if constexpr(meta::has_repr<element_t>) {
-        // Elements travel as their repr wire shape; conversion happens per
-        // element in the visit chain, so the contiguous fast paths never apply.
-        using wire_t = proxy_detail::apply_repr_t<element_t>;
-        if constexpr(std::same_as<wire_t, std::byte> || meta::bytes_like<wire_t>) {
+    if constexpr(!std::same_as<wire_t, element_t>) {
+        // Elements travel as their effective wire shape (behavior attrs, then
+        // chained reprs); conversion happens per element in the visit chain,
+        // so the contiguous fast paths never apply. The collector choice
+        // mirrors the plain-element classification below and the VecReader
+        // decode side.
+        if constexpr(meta::bytes_like<wire_t>) {
             byte_collector coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
@@ -765,14 +768,27 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
+        } else if constexpr(proxy_detail::is_scalar_v<wire_t>) {
+            scalar_collector<proxy_detail::scalar_storage_t<wire_t>> coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
         } else if constexpr(can_inline_struct_v<wire_t> && !codec::tuple_like<wire_t>) {
             inline_struct_collector<wire_t> coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;
             return true;
+        } else if constexpr(meta::kind_of<wire_t>() == meta::type_kind::optional ||
+                            meta::kind_of<wire_t>() == meta::type_kind::pointer) {
+            boxed_table_collector coll{fbb, {}, 0};
+            KOTA_CODEC_TRY(body(coll));
+            KOTA_CODEC_TRY(coll.finish());
+            out_offset = coll.result_offset;
+            return true;
         } else {
-            scalar_collector<wire_t> coll{fbb, {}, 0};
+            table_collector coll{fbb, {}, 0};
             KOTA_CODEC_TRY(body(coll));
             KOTA_CODEC_TRY(coll.finish());
             out_offset = coll.result_offset;

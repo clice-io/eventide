@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <format>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -51,6 +52,26 @@ struct poly_value {
     auto operator==(const poly_value&) const -> bool = default;
 };
 
+// Chained repr: ticket travels as step_id, whose own repr is uint32.
+struct step_id {
+    std::uint32_t v = 0;
+
+    auto operator==(const step_id&) const -> bool = default;
+};
+
+struct ticket {
+    step_id id;
+
+    auto operator==(const ticket&) const -> bool = default;
+};
+
+// A non-nullable value with a nullable wire shape (zero travels as null).
+struct lamport_stamp {
+    std::uint32_t tick = 0;
+
+    auto operator==(const lamport_stamp&) const -> bool = default;
+};
+
 }  // namespace kota_repr_test
 
 namespace kota::meta {
@@ -79,6 +100,10 @@ struct repr<kota_repr_test::version> {
     static kota_repr_test::version from(const std::string& wire) {
         kota_repr_test::version v;
         auto dot = wire.find('.');
+        if(dot == std::string::npos) {
+            std::from_chars(wire.data(), wire.data() + wire.size(), v.major);
+            return v;
+        }
         std::from_chars(wire.data(), wire.data() + dot, v.major);
         std::from_chars(wire.data() + dot + 1, wire.data() + wire.size(), v.minor);
         return v;
@@ -140,6 +165,45 @@ struct repr<kota_repr_test::poly_value> {
     }
 };
 
+template <>
+struct repr<kota_repr_test::step_id> {
+    using type = std::uint32_t;
+
+    static type to(kota_repr_test::step_id s) {
+        return s.v;
+    }
+
+    static kota_repr_test::step_id from(type v) {
+        return {.v = v};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::ticket> {
+    using type = kota_repr_test::step_id;
+
+    static type to(const kota_repr_test::ticket& t) {
+        return t.id;
+    }
+
+    static kota_repr_test::ticket from(type id) {
+        return {.id = id};
+    }
+};
+
+template <>
+struct repr<kota_repr_test::lamport_stamp> {
+    using type = std::optional<std::uint32_t>;
+
+    static type to(const kota_repr_test::lamport_stamp& s) {
+        return s.tick == 0 ? type{} : type{s.tick};
+    }
+
+    static kota_repr_test::lamport_stamp from(type v) {
+        return {.tick = v.value_or(0)};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
@@ -150,8 +214,10 @@ using json::from_json;
 using json::to_json;
 using kota_repr_test::audit_stamp;
 using kota_repr_test::hex_id;
+using kota_repr_test::lamport_stamp;
 using kota_repr_test::poly_value;
 using kota_repr_test::relation;
+using kota_repr_test::ticket;
 using kota_repr_test::version;
 
 struct symbol {
@@ -188,6 +254,18 @@ struct dynamic_holder {
 
 struct maybe_version {
     std::optional<version> v;
+};
+
+struct chained_holder {
+    ticket t;
+
+    auto operator==(const chained_holder&) const -> bool = default;
+};
+
+struct stamped {
+    lamport_stamp s;
+
+    auto operator==(const stamped&) const -> bool = default;
 };
 
 /// Imperative adapter: uppercases on the wire, lowercases back.
@@ -372,6 +450,61 @@ TEST_CASE(imperative_with_adapter_roundtrip) {
     shouted output{};
     ASSERT_TRUE(from_json(*encoded, output).has_value());
     EXPECT_EQ(meta::annotated_value(output.name), std::string("loud"));
+}
+
+TEST_CASE(chained_repr_resolves_to_final_wire_shape) {
+    const chained_holder input{.t = {.id = {.v = 7}}};
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"t":7})");
+
+    chained_holder output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    // The schema follows the chain to the final integer shape.
+    auto schema = json::schema_string<chained_holder>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("t":{"type":"integer")") != std::string::npos);
+}
+
+TEST_CASE(annotated_repr_alternative_in_untagged_variant) {
+    // The adapter, not version's own string repr, decides the wire shape, so
+    // alternative pruning must keep the numeric alternative on number input.
+    using packed_ver = meta::annotation<version, meta::behavior::with<version_as_int_adapter>>;
+    std::variant<packed_ver, std::string> input = packed_ver{
+        {.major = 3, .minor = 14}
+    };
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "3014");
+
+    std::variant<packed_ver, std::string> output;
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    ASSERT_TRUE(output.index() == 0);
+    EXPECT_EQ(meta::annotated_value(std::get<0>(output)), (version{.major = 3, .minor = 14}));
+}
+
+TEST_CASE(nullable_wire_shape_keeps_field_required) {
+    // The wire value may be null, but the property itself must be present:
+    // requiredness follows the declared field type, which decode enforces.
+    auto schema = json::schema_string<stamped>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("required":["s"])") != std::string::npos);
+
+    const stamped input{};  // tick == 0 travels as null
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"s":null})");
+
+    stamped output{.s = {.tick = 9}};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+
+    // An absent property is rejected, matching the schema.
+    EXPECT_FALSE(from_json("{}", output).has_value());
 }
 
 TEST_CASE(schema_follows_repr) {

@@ -222,19 +222,21 @@ bool encode_value(Vis& vis, const T& value) {
                 using spec_attr = tuple_find_t<attrs_t, meta::is_struct_spec_attr>;
                 return detail::encode_tagged_variant<Config, spec_attr>(vis, inner);
             }
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-            using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
-            static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
-            auto renamed = policy{}(true, meta::enum_name(inner));
-            std::string_view sv(renamed);
-            return vis.visit_str(sv);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+            // Behavior precedence (with > as > enum_string) mirrors
+            // encode_one_field and meta's wire-type resolver.
             using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
             return detail::wire_encode<adapter, Config>(vis, inner);
         } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
             using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
             target converted(inner);
             return encode_value<Config>(vis, converted);
+        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
+            using policy = typename tuple_find_spec_t<attrs_t, meta::behavior::enum_string>::policy;
+            static_assert(std::is_enum_v<inner_t>, "behavior::enum_string requires an enum type");
+            auto renamed = policy{}(true, meta::enum_name(inner));
+            std::string_view sv(renamed);
+            return vis.visit_str(sv);
         } else if constexpr(meta::reflectable_class<inner_t> &&
                             (meta::struct_spec_of<attrs_t>.rename_all != naming::casing::identity ||
                              meta::struct_spec_of<attrs_t>.deny_unknown_fields)) {
