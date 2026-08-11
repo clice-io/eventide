@@ -223,6 +223,34 @@ TEST_CASE(nested_variant_before_int) {
     EXPECT_EQ(std::get<std::string>(std::get<0>(out)), "x");
 }
 
+TEST_CASE(nested_widening_defers_to_outer_exact_match) {
+    // The exact pass admits the nested variant through its int8_t branch;
+    // when that narrowing fails, the nested double must not widen ahead of
+    // the outer int64_t, which matches the input exactly.
+    using V = std::variant<std::variant<std::int8_t, double>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    // Values that fit int8_t still land on the nested exact branch.
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)), 7);
+}
+
+TEST_CASE(nested_widening_still_reachable_in_widen_pass) {
+    // With no outer exact alternative left, the widen pass re-probes the
+    // nested variant and its double claims the value the int8_t rejected.
+    using V = std::variant<std::variant<std::int8_t, double>, std::string>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<0>(out)), 1000.0);
+}
+
 TEST_CASE(tagged_nested_variant_keeps_object_shape) {
     // A tagged nested variant is classified by its object document shape,
     // not by its scalar alternatives: {"num":1} engages ExtSimple's tagged

@@ -2527,6 +2527,31 @@ TEST_CASE(schema_agrees_with_encoder_on_nan_string) {
               R"({"enum":["NaN","Infinity","-Infinity"]}]})");
 }
 
+struct nan_error_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Error;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
+    // A finite long double beyond double's range narrows to infinity in the
+    // document, so the nan_repr policy judges the narrowed value: String
+    // spells it, Error rejects it — never a null the schema does not admit.
+    constexpr long double big = std::numeric_limits<long double>::max();
+    if constexpr(big > static_cast<long double>(std::numeric_limits<double>::max())) {
+        const auto spelled = json::to_json<nan_string_config>(big);
+        ASSERT_TRUE(spelled.has_value());
+        EXPECT_EQ(*spelled, R"("Infinity")");
+
+        const auto negative = json::to_json<nan_string_config>(-big);
+        ASSERT_TRUE(negative.has_value());
+        EXPECT_EQ(*negative, R"("-Infinity")");
+
+        EXPECT_FALSE(json::to_json<nan_error_config>(big).has_value());
+    } else {
+        // long double is double: the value stays a finite number.
+        EXPECT_TRUE(json::to_json<nan_error_config>(big).has_value());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // human_readable config
 // ---------------------------------------------------------------------------

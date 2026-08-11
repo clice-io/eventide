@@ -164,6 +164,25 @@ TEST_CASE(nested_variant_before_int) {
     EXPECT_EQ(std::get<double>(std::get<0>(out.num)), 3.14);
 }
 
+TEST_CASE(nested_widening_defers_to_outer_exact_match) {
+    // The exact pass admits the nested variant through its int8_t branch;
+    // when that narrowing fails, the nested double must not widen ahead of
+    // the outer int64_t, which matches the input exactly.
+    using V = std::variant<std::variant<std::int8_t, double>, std::int64_t>;
+
+    struct Holder {
+        V num;
+    };
+
+    auto tbl = ::toml::table{
+        {"num", 1000}
+    };
+    Holder out{};
+    ASSERT_TRUE(from_toml_table(tbl, out).has_value());
+    EXPECT_EQ(out.num.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out.num), 1000);
+}
+
 TEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
 

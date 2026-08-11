@@ -259,13 +259,18 @@ bool encode_value(Vis& vis, const T& value) {
             return vis.visit_uint(value);
         } else if constexpr(kind == float32 || kind == float64) {
             if constexpr(Config::nan_repr != nan_repr::Passthrough) {
-                if(std::isnan(value) || std::isinf(value)) {
+                // Judge the document's value, not the in-memory one: every
+                // writer narrows to double, so a finite long double beyond
+                // double's range lands in the document as infinity and must
+                // take the non-finite path here.
+                double narrowed = static_cast<double>(value);
+                if(std::isnan(narrowed) || std::isinf(narrowed)) {
                     if constexpr(Config::nan_repr == nan_repr::Null) {
                         return vis.visit_null();
                     } else if constexpr(Config::nan_repr == nan_repr::String) {
-                        return vis.visit_str(std::isnan(value) ? "NaN"
-                                             : value > 0       ? "Infinity"
-                                                               : "-Infinity");
+                        return vis.visit_str(std::isnan(narrowed) ? "NaN"
+                                             : narrowed > 0       ? "Infinity"
+                                                                  : "-Infinity");
                     } else if constexpr(Config::nan_repr == nan_repr::Error) {
                         return scoped_context<typename Vis::error_type>::fail(
                             rich_error("NaN or Infinity is not allowed"));

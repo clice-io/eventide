@@ -688,38 +688,73 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     }
 }
 
+/// True when this alternative decodes through decode_untagged_variant itself —
+/// no dispatch override, no repr, a bare std::variant — so probing it re-enters
+/// the pass structure below and the outer pass level must flow into it.
+template <typename Config, typename Vis, typename T>
+constexpr bool probes_as_untagged_variant() {
+    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); })
+        return false;
+    else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>)
+        return false;
+    else
+        return is_specialization_of<std::variant, T>;
+}
+
+/// One admission pass over an untagged variant's alternatives at the given
+/// widen level, each candidate probed through a fork. A bare nested variant
+/// re-enters this pass at the same level instead of running its full decode,
+/// so an outer exact pass never triggers inner widening: decoding 1000 into
+/// variant<variant<int8_t, double>, int64_t> must reach the outer int64_t
+/// before any pass hands 1000 to the inner double. The widen pass re-admits
+/// such a nested alternative even when it strict-claimed — its exact branch
+/// failing (a narrowing int8_t) says nothing about its widening branch —
+/// while any other alternative that strict-claimed is skipped: its retry
+/// would just repeat the failure.
+template <typename Config, typename Vis, typename... Ts>
+bool untagged_variant_pass(Vis& vis,
+                           std::variant<Ts...>& out,
+                           meta::type_kind src_kind,
+                           bool widen) {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+        return (([&] {
+                    using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
+                    constexpr bool nested = probes_as_untagged_variant<Config, Vis, alt_t>();
+                    bool strict = kind_compatible<Config, Vis, alt_t>(src_kind, false);
+                    bool admit = widen ? (nested || !strict) &&
+                                             kind_compatible<Config, Vis, alt_t>(src_kind, true)
+                                       : strict;
+                    if(!admit)
+                        return false;
+                    return vis.try_read([&](auto& fork) -> bool {
+                        if constexpr(nested) {
+                            return untagged_variant_pass<Config>(fork,
+                                                                 out.template emplace<Is>(),
+                                                                 src_kind,
+                                                                 widen);
+                        } else {
+                            return construct_and_visit<Config>(fork, out, Is);
+                        }
+                    });
+                }()) ||
+                ...);
+    }(std::index_sequence_for<Ts...>{});
+}
+
 template <typename Config, typename Vis, typename... Ts>
 bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
     if constexpr(has_try_read<Vis>) {
         if constexpr(has_peek_kind<Vis>) {
+            // Exact-kind pass first, so an integer picks an int alternative
+            // over an earlier float one; the widening pass then admits the
+            // conversions the decoders themselves perform (visit_float from
+            // integer input). The last alternative runs once more on the real
+            // visitor so its error surfaces when nothing claims the value.
             auto src_kind = vis.peek_kind();
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                constexpr std::size_t last = sizeof...(Ts) - 1;
-                // Exact-kind pass first, so an integer picks an int
-                // alternative over an earlier float one; the widening pass
-                // then admits the conversions the decoders themselves perform
-                // (visit_float from integer input). The last alternative runs
-                // once more on the real visitor so its error surfaces when
-                // nothing claims the value.
-                auto attempt = [&](bool widen) -> bool {
-                    return (([&] {
-                                using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                                bool strict = kind_compatible<Config, Vis, alt_t>(src_kind, false);
-                                bool admit =
-                                    widen ? !strict &&
-                                                kind_compatible<Config, Vis, alt_t>(src_kind, true)
-                                          : strict;
-                                if(!admit)
-                                    return false;
-                                return vis.try_read([&](auto& fork) -> bool {
-                                    return construct_and_visit<Config>(fork, out, Is);
-                                });
-                            }()) ||
-                            ...);
-                };
-                return attempt(false) || attempt(true) ||
-                       construct_and_visit<Config>(vis, out, last);
-            }(std::index_sequence_for<Ts...>{});
+            constexpr std::size_t last = sizeof...(Ts) - 1;
+            return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
+                   untagged_variant_pass<Config>(vis, out, src_kind, true) ||
+                   construct_and_visit<Config>(vis, out, last);
         } else {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
