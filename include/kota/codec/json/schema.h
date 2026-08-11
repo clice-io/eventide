@@ -24,6 +24,11 @@
 
 namespace kota::codec::json {
 
+/// Config::enum_rename as a plain function: the schema emitter runs
+/// type-erased, so the typed entry points pass apply_enum_rename<Config> down
+/// as a pointer and the emitter applies it the way the encoder does.
+using enum_rename_fn = std::string (*)(bool is_serialize, std::string_view name);
+
 namespace detail {
 
 class SchemaEmitter {
@@ -31,7 +36,8 @@ class SchemaEmitter {
     using result_t = std::expected<dyn::Value, error>;
 
 public:
-    explicit SchemaEmitter(enum_repr enums) : enum_as_names(enums == enum_repr::String) {}
+    SchemaEmitter(enum_repr enums, enum_rename_fn rename) :
+        enum_as_names(enums == enum_repr::String), rename(rename) {}
 
     result_t emit(const meta::type_info& root) {
         root_ti = unwrap(&root);
@@ -220,7 +226,7 @@ private:
         dyn::Array values;
         if(enum_as_names) {
             for(const auto& name: ei->member_names) {
-                values.push_back(dyn::Value(name));
+                values.push_back(dyn::Value(rename(true, name)));
             }
         } else {
             // enum_repr::Integer: the document holds the numeric values.
@@ -467,6 +473,7 @@ private:
     }
 
     bool enum_as_names;
+    enum_rename_fn rename;
     std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const meta::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
@@ -486,21 +493,24 @@ struct schema_config : default_config<Config> {
 }  // namespace detail
 
 inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
-                                               enum_repr enums = default_config<>::enum_repr) {
-    return detail::SchemaEmitter{enums}.emit(root);
+                                               enum_repr enums = default_config<>::enum_repr,
+                                               enum_rename_fn rename = apply_enum_rename<void>) {
+    return detail::SchemaEmitter{enums, rename}.emit(root);
 }
 
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
     return schema(meta::type_info_of<T, detail::schema_config<Config>>(),
-                  default_config<Config>::enum_repr);
+                  default_config<Config>::enum_repr,
+                  apply_enum_rename<default_config<Config>>);
 }
 
 inline std::expected<std::string, error>
     schema_string(const meta::type_info& root,
                   bool pretty = false,
-                  enum_repr enums = default_config<>::enum_repr) {
-    KOTA_EXPECTED_TRY_V(auto value, schema(root, enums));
+                  enum_repr enums = default_config<>::enum_repr,
+                  enum_rename_fn rename = apply_enum_rename<void>) {
+    KOTA_EXPECTED_TRY_V(auto value, schema(root, enums, rename));
     KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
     if(!pretty) {
         return compact;
@@ -512,7 +522,8 @@ template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
     return schema_string(meta::type_info_of<T, detail::schema_config<Config>>(),
                          pretty,
-                         default_config<Config>::enum_repr);
+                         default_config<Config>::enum_repr,
+                         apply_enum_rename<default_config<Config>>);
 }
 
 }  // namespace kota::codec::json

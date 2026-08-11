@@ -2433,6 +2433,24 @@ TEST_CASE(schema_agrees_with_encoder_on_enums) {
     EXPECT_TRUE(schema.find(R"("c":{"enum":[0,1,2]})") != std::string::npos);
 }
 
+struct renamed_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+    using enum_rename = naming::rename_policy::upper_snake;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
+    // The schema lists the spellings the encoder writes under the same
+    // config, not the raw reflected names.
+    const auto encoded = json::to_json<renamed_enum_config>(color_i8::green);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("GREEN")");
+
+    const auto result = json::schema_string<color_i8, renamed_enum_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["RED","GREEN","BLUE"]})");
+}
+
 // ---------------------------------------------------------------------------
 // metadata config forwarding
 // ---------------------------------------------------------------------------

@@ -622,6 +622,16 @@ template <typename T, typename Format = void>
 using resolved_repr_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
+/// True when T resolves to a std::variant whose tagging spec survived
+/// resolution: external, internal, and adjacent tagging all give the value an
+/// object document shape in the human-readable codecs, regardless of the
+/// alternatives behind it.
+template <typename T, typename Format = void>
+constexpr bool resolves_to_tagged_variant =
+    !std::is_same_v<typename decltype(detail::resolve_repr<std::remove_cvref_t<T>,
+                                                           format_config<Format>>())::tag_attrs,
+                    std::tuple<>>;
+
 template <typename T, typename Config>
 constexpr const type_info& type_info_of() {
     return detail::type_instance<T, Config>::value;

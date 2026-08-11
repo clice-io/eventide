@@ -665,6 +665,11 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     using resolved_t = meta::resolved_repr_t<T, Format>;
     if constexpr(std::is_same_v<resolved_t, meta::dynamic>) {
         return true;
+    } else if constexpr(meta::resolves_to_tagged_variant<T, Format>) {
+        // A tagging spec survived resolution: the tagged decoders read an
+        // object ({tag: value}, {tag, content}, or tag-in-fields), so the
+        // alternatives' own kinds never face the input directly.
+        return src == meta::type_kind::unknown || src == meta::type_kind::structure;
     } else {
         return kind_compatible_impl<resolved_t, Format>(src, widen);
     }

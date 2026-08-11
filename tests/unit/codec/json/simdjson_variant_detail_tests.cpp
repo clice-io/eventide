@@ -219,6 +219,35 @@ TEST_CASE(nested_variant_before_int) {
     EXPECT_EQ(std::get<std::string>(std::get<0>(out)), "x");
 }
 
+TEST_CASE(tagged_nested_variant_keeps_object_shape) {
+    // A tagged nested variant is classified by its object document shape,
+    // not by its scalar alternatives: {"num":1} engages ExtSimple's tagged
+    // decoder, while a bare scalar skips it and lands on int.
+    using V = std::variant<ExtSimple, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"num":1})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<int>(std::get<ExtSimple>(out)), 1);
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 7);
+}
+
+TEST_CASE(adjacently_tagged_nested_variant_keeps_object_shape) {
+    using V = std::variant<AdjSimple, std::string>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"t":"str","v":"inner"})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::string>(std::get<AdjSimple>(out)), "inner");
+
+    ASSERT_TRUE(from_json(R"("plain")", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::string>(out), "plain");
+}
+
 TEST_CASE(monostate_matches_null) {
     using V = std::variant<std::monostate, int, std::string>;
 
