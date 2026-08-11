@@ -503,30 +503,34 @@ private:
 /// "required") with a `default` — the value decode leaves behind when the
 /// property is absent. Required properties must always appear, so a default
 /// annotation would be a lie; they are skipped, as are properties the default
-/// document does not carry (encode-side skip conditions). Struct $refs
-/// recurse so defaults land on the leaf fields inside $defs; a $def shared by
-/// several sites keeps the values of its first visit.
+/// document does not carry (encode-side skip conditions). Property-level
+/// struct $refs recurse so defaults land on the leaf fields inside $defs; a
+/// $def shared by several sites keeps the values of its first visit. An
+/// anyOf wrapper (optional/pointer field) is a leaf: it takes the whole
+/// encoded value as its default, so a $def reachable only through nullable
+/// fields stays unannotated.
 class DefaultAnnotator {
 public:
-    explicit DefaultAnnotator(dyn::Object& root) : root(root) {
+    explicit DefaultAnnotator(dyn::Object& root) {
         if(auto* d = root.find("$defs")) {
             defs = d->get_object();
         }
-        visited.insert(&root);
     }
 
     void annotate(dyn::Object& body, const dyn::Value& value) {
         auto* props_entry = body.find("properties");
-        const auto* doc = value.get_object();
-        if(props_entry == nullptr || doc == nullptr) {
+        if(props_entry == nullptr) {
             return;
         }
+        // A body with "properties" is a struct schema, so its paired
+        // document is a struct encoding — always an object.
+        const auto& doc = *value.get_object();
         const dyn::Array* required = nullptr;
         if(const auto* r = body.find("required")) {
             required = r->get_array();
         }
         for(auto& [name, prop]: *props_entry->get_object()) {
-            if(const auto* v = doc->find(name)) {
+            if(const auto* v = doc.find(name)) {
                 annotate_property(prop, *v, is_required(required, name));
             }
         }
@@ -544,35 +548,28 @@ private:
     /// A $ref recurses whether or not its property is required: the section
     /// itself may always appear while its leaves carry decode defaults.
     void annotate_property(dyn::Value& prop, const dyn::Value& value, bool required) {
-        auto* obj = prop.get_object();
-        if(obj == nullptr) {
-            return;
-        }
-        if(const auto* ref = obj->find("$ref")) {
-            if(auto* target = resolve(*ref->get_string());
-               target != nullptr && visited.insert(target).second) {
-                annotate(*target, value);
+        auto& obj = *prop.get_object();
+        if(const auto* ref = obj.find("$ref")) {
+            if(auto& target = resolve(*ref->get_string()); visited.insert(&target).second) {
+                annotate(target, value);
             }
             return;
         }
         if(!required) {
-            obj->insert("default", value);
+            obj.insert("default", value);
         }
     }
 
-    dyn::Object* resolve(std::string_view ref) {
-        if(ref == "#") {
-            return &root;
-        }
+    /// Only $defs references reach the walk at property level: a by-value
+    /// self-reference ($ref "#") would make the type infinite, and
+    /// pointer/optional self-references sit inside an anyOf wrapper, which
+    /// the walk treats as a leaf. The emitter inserted "$defs" and the named
+    /// body before it emitted the reference.
+    dyn::Object& resolve(std::string_view ref) {
         constexpr std::string_view prefix = "#/$defs/";
-        if(!ref.starts_with(prefix) || defs == nullptr) {
-            return nullptr;
-        }
-        auto* def = defs->find(ref.substr(prefix.size()));
-        return def != nullptr ? def->get_object() : nullptr;
+        return *defs->find(ref.substr(prefix.size()))->get_object();
     }
 
-    dyn::Object& root;
     dyn::Object* defs = nullptr;
     std::unordered_set<const dyn::Object*> visited;
 };
@@ -607,13 +604,29 @@ inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
     return detail::SchemaEmitter{options}.emit(root);
 }
 
-/// When T is default-initializable and encodable, the schema also carries
-/// `default` annotations: a default-constructed instance is encoded through
-/// the real JSON encoder under Config and parsed back into a document, so the
-/// values match what to_string emits byte for byte (enum renames, nan
-/// handling, format-scoped reprs included). Types the codec rejects
-/// (kind_of == unknown, e.g. schema_opaque) skip the annotation pass so the
-/// encoder is never instantiated; schema emission reports the error at
+namespace detail {
+
+inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty) {
+    KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
+    if(!pretty) {
+        return compact;
+    }
+    return prettify(compact);
+}
+
+}  // namespace detail
+
+/// When T is default-initializable, the schema also carries `default`
+/// annotations: a default-constructed instance is encoded through the real
+/// JSON encoder under Config and parsed back into a document, so the values
+/// match what to_string emits byte for byte (enum renames, nan handling,
+/// format-scoped reprs included). Two consequences of riding the real
+/// encoder: T{} must encode under Config — a default instance the encoder
+/// rejects (a NaN member under nan_repr::Error, an enum value without a
+/// reflected name under enum_repr::String) fails schema generation with that
+/// error — and a T whose fields the codec cannot serialize fails to compile,
+/// exactly like to_string itself. Only an opaque root (kind_of == unknown)
+/// skips the pass at compile time and keeps reporting the emission error at
 /// runtime.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
@@ -633,21 +646,13 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
                                                        bool pretty = false,
                                                        const schema_options& options = {}) {
     KOTA_EXPECTED_TRY_V(auto value, schema(root, options));
-    KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
-    if(!pretty) {
-        return compact;
-    }
-    return prettify(compact);
+    return detail::stringify(std::move(value), pretty);
 }
 
 template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
     KOTA_EXPECTED_TRY_V(auto value, (schema<T, Config>()));
-    KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
-    if(!pretty) {
-        return compact;
-    }
-    return prettify(compact);
+    return detail::stringify(std::move(value), pretty);
 }
 
 }  // namespace kota::codec::json

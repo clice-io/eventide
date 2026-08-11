@@ -583,6 +583,23 @@ struct defaults_with_enum {
     <defaults_level> log_level = defaults_level::High;
 };
 
+struct defaults_shared_override {
+    defaults_leaf pool;
+    defaults_leaf mirror = {.threads = 9};
+};
+
+struct defaults_engaged {
+    std::optional<std::int32_t> limit = 5;
+    std::optional<defaults_leaf> anchor = defaults_leaf{};
+};
+
+struct defaults_node {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> depth = 1;
+
+    std::unique_ptr<defaults_node> next;
+};
+
 namespace json = kota::codec::json;
 
 template <typename T>
@@ -2684,7 +2701,37 @@ TEST_CASE(defaults_skip_condition) {
     // The empty vector triggers skip_if at encode time, so the default
     // document has no such property to annotate from.
     const auto result = json::schema_string<defaults_skipped>().value();
+    EXPECT_TRUE(result.find(R"("tags")") != std::string::npos);
     EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
+}
+
+TEST_CASE(defaults_shared_def_first_visit_wins) {
+    // The two sites default-construct differently (mirror overrides threads
+    // via its member initializer), but the shared $def keeps the values of
+    // the first visit; the override appears nowhere.
+    const auto result = json::schema_string<defaults_shared_override>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_engaged_optional) {
+    // An engaged optional lands its whole encoded value as the default on
+    // the anyOf wrapper; the walk does not descend through anyOf, so the
+    // struct's $def stays annotation-free.
+    const auto result = json::schema_string<defaults_engaged>().value();
+    EXPECT_TRUE(result.find(R"("default":5)") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":{"threads":4,"name":"worker"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string"}})") != std::string::npos);
+}
+
+TEST_CASE(defaults_recursive_root) {
+    // A self-referential root terminates: the pointer self-reference sits
+    // inside an anyOf wrapper, which is a leaf for the walk, and carries the
+    // disengaged pointer's null.
+    const auto result = json::schema_string<defaults_node>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":1})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}],"default":null})") !=
+                std::string::npos);
 }
 
 struct defaults_enum_config {
