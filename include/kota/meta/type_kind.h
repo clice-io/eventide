@@ -85,9 +85,17 @@ template <typename T>
 concept tuple_like = requires { typename std::tuple_size<std::remove_cvref_t<T>>::type; } &&
                      detail::tuple_gettable<std::remove_cvref_t<T>>();
 
+/// The shape a type presents to the serialization layer. `kind_of<T>()` maps
+/// every type onto exactly one kind; codec visitor dispatch, schema
+/// generation, and each backend's lowering rules key on it. How a kind lands
+/// in concrete output is documented per backend on its `format` tag (see the
+/// `# Lowerings` sections in `codec/<backend>/type.h`).
 enum class type_kind : std::uint8_t {
+    /// Value-less types: std::nullptr_t, std::nullopt_t, std::monostate.
     null = 0,
     boolean,
+    // Fixed-width integers, classified by signedness and sizeof. signed char
+    // and unsigned char land here (int8/uint8); plain char is `character`.
     int8,
     int16,
     int32,
@@ -97,22 +105,40 @@ enum class type_kind : std::uint8_t {
     uint32,
     uint64,
     float32,
+    /// double — and long double, which backends narrow to double on encode.
     float64,
+    /// Plain `char` only: a single text code unit, never a small integer.
     character,
+    /// Anything convertible to std::string_view.
     string,
+    /// Anything convertible to std::span<const std::byte>.
     bytes,
+    /// enum / enum class; serialized form follows Config's enum_repr.
     enumeration,
 
+    /// Homogeneous sequence ranges (vector, span, list, ...). std::array is
+    /// tuple-gettable and classifies as `tuple`, not `array`.
     array,
+    /// Set-shaped ranges (std::set, std::unordered_set, ...).
     set,
+    /// Key-value ranges (std::map, std::unordered_map, ...).
     map,
+    /// Fixed-arity products readable via std::get: std::tuple, std::pair,
+    /// std::array.
     tuple,
+    /// Reflectable aggregates; fields enumerate via static reflection.
     structure,
+    /// std::variant and std::expected: an alternative index plus its payload.
     variant,
+    /// std::optional.
     optional,
+    /// Nullable indirection: std::unique_ptr / shared_ptr / weak_ptr,
+    /// encoded like optional.
     pointer,
 
+    /// Not classifiable (or explicitly schema_opaque); codecs reject it.
     unknown = 254,
+    /// meta::dynamic — shape known only at runtime; schemas degrade to "any".
     any = 255,
 };
 

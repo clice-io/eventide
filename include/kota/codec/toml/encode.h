@@ -231,6 +231,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return value_fn(vw);
 }
 
+/// Encodes `value` as a toml::Table DOM (to_string renders it as text).
 template <typename Config = void, typename T>
 auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     using V = T;
@@ -285,6 +286,7 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     }
 }
 
+/// Encodes `value` as TOML text (to_toml rendered through toml++).
 template <typename Config = void, typename T>
 auto to_string(const T& value) -> std::expected<std::string, error> {
     auto table = to_toml<Config>(value);

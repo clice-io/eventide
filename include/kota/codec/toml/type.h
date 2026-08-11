@@ -31,6 +31,32 @@ namespace kota::codec::toml {
 
 /// Format tag: scopes a meta::repr specialization to the TOML backend
 /// (meta::repr<T, codec::toml::format>).
+///
+/// # Lowerings
+///
+/// Human-readable text backend over toml++. TOML has no null and requires a
+/// table at the root; both constraints drive the special cases below:
+/// - root: values whose resolved repr is table-shaped (structure, map, raw
+///   Table) become the root table; every other kind is boxed under the
+///   `__value` key (detail::boxed_root_key); a null root is the empty
+///   document. An engaged nullable root that serializes to an empty table
+///   fails loudly — it would decode back as null.
+/// - null: inside a table the key is omitted; inside an array it fails
+///   (TOML arrays cannot hold null)
+/// - integers → TOML integer (int64); a uint64 above int64::max fails
+/// - float32/float64 → TOML float; nan_repr::Passthrough hands the raw
+///   value to toml++ (TOML has nan/inf literals)
+/// - character → one-character string
+/// - string → TOML string
+/// - bytes → array of integer octets; decode range-checks each into [0, 255]
+/// - enumeration → underlying integer, or the renamed name under
+///   enum_repr::String
+/// - array/set/tuple → TOML array
+/// - map → table; non-string keys go through MapKeyWriter/MapKeyReader as
+///   their decimal string form
+/// - structure → table keyed by (renamed) field names
+/// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
+///   visit/encode.h); untagged variants emit the bare payload
 struct format {};
 
 using Table = ::toml::table;

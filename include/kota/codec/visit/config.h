@@ -7,10 +7,29 @@
 namespace kota::codec {
 
 /// How enums map to serialized form.
-enum class enum_repr { Integer, String };
+enum class enum_repr {
+    /// The underlying integer value, unchecked against declared enumerators.
+    Integer,
+    /// The declared enumerator name (through Config::enum_rename when
+    /// present); encoding a value with no declared name fails.
+    String,
+};
 
-/// How NaN/Infinity float values are serialized.
-enum class nan_repr { Passthrough, Null, String, Error };
+/// How non-finite floats (NaN, ±Infinity) are serialized. The check runs
+/// after narrowing to double, upstream of the backend visitor.
+enum class nan_repr {
+    /// Hand the raw value to the backend. Binary backends store the bit
+    /// pattern and TOML has non-finite literals, but JSON does not — its
+    /// writer emits `null` for non-finite values even in this mode.
+    Passthrough,
+    /// Encode as null.
+    Null,
+    /// Encode as the strings "NaN" / "Infinity" / "-Infinity". Encode-side
+    /// only: decoding those strings back into a float is not implemented.
+    String,
+    /// Fail encoding with an error.
+    Error,
+};
 
 namespace detail {
 

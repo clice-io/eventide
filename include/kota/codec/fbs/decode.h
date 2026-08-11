@@ -430,6 +430,9 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 
 }  // namespace decode_detail
 
+/// Decodes a buffer produced by to_bytes with the same T and Config, after
+/// checking the "EVTO" identifier and verifying the root table.
+/// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
     if(buf.empty()) {

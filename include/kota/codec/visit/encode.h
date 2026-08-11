@@ -66,6 +66,14 @@ bool repr_encode(Vis& vis, const V& value) {
     }
 }
 
+/// Encodes a variant in one of the three tagged shapes selected by the
+/// spec's meta::tag_mode (tag names resolve through resolve_tag_names):
+/// - external:  { "TagName": payload }
+/// - internal:  { "<tag>": "TagName", ...payload fields } — requires every
+///   alternative to be a struct, whose fields are spliced in after the tag
+/// - adjacent:  { "<tag>": "TagName", "<content>": payload }
+/// Tagging only applies on human-readable backends; binary backends encode
+/// the alternative index instead (see the backend's visit_variant).
 template <typename Config, typename SpecAttr, typename Vis, typename Var>
 bool encode_tagged_variant(Vis& vis, const Var& var) {
     // MSVC mis-handles uncaptured constexpr locals inside the nested generic

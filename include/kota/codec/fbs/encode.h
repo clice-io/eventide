@@ -897,6 +897,8 @@ bool RootVisitor::visit_variant(std::size_t index, Body&& body) {
 
 }  // namespace encode_detail
 
+/// Encodes `value` as a finished FlatBuffers buffer (root table + "EVTO"
+/// identifier), readable by from_bytes or zero-copy via table_view.
 template <typename Config = void, typename T>
 auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::vector<std::uint8_t>, rich_error> {

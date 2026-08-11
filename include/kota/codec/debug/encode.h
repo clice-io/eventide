@@ -15,6 +15,12 @@
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
 
+// The debug backend renders Rust-Debug-style text for humans and logs —
+// struct `TypeName { field: value }`, enum `TypeName::MemberName`, bytes as
+// hex — and is encode-only: nothing parses it back. It is deliberately
+// format-agnostic (no `format` tag), so format-scoped meta::repr
+// specializations never apply; what you see is the format-neutral shape.
+
 namespace kota::codec::debug {
 
 using error = rich_error;
@@ -351,6 +357,8 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return value_fn(vw);
 }
 
+/// Renders `value` as Rust-Debug-style text; `pretty` switches from
+/// single-line output to 4-space-indented multiline.
 template <typename Config = void, typename T>
 auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, error> {
     rich_error err;

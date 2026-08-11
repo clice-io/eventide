@@ -14,6 +14,12 @@
 #include "kota/codec/visit/encode.h"
 #include "kota/codec/visit/map_key.h"
 
+// The dyn backend is deliberately format-agnostic: its visitors declare no
+// `format` tag, so format-scoped meta::repr specializations never apply here
+// — only the format-neutral repr<T>. dyn::Value is the interchange DOM that
+// other backends convert through, and a concrete format's repr leaking into
+// it would bake that format's shape into every conversion.
+
 namespace kota::codec::dyn {
 
 struct ValueWriter;
@@ -184,6 +190,8 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return true;
 }
 
+/// Encodes `value` as a dyn::Value DOM tree (the format-neutral
+/// interchange representation; see the header comment).
 template <typename Config = void, typename T>
 auto to_content(const T& value) -> std::expected<dyn::Value, rich_error> {
     rich_error err;

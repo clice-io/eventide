@@ -327,6 +327,8 @@ private:
     }
 };
 
+/// Parses TOML text into a raw toml::Table DOM without decoding into any
+/// type; from_toml consumes the result.
 inline auto parse_table(std::string_view text) -> std::expected<Table, rich_error> {
     // toml++ is pinned to TOML_EXCEPTIONS=0 (see toml/type.h), so parsing
     // always reports failures through toml::parse_result — a single code path
@@ -348,6 +350,8 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
     return std::move(parsed).table();
 }
 
+/// Decodes a toml::Table DOM into `out`, routing the root the same way
+/// to_toml produced it (root table vs boxed `__value` key).
 template <typename Config = void, typename T>
 auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
     using V = std::remove_const_t<T>;
@@ -364,6 +368,8 @@ auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
     return {};
 }
 
+/// Decodes TOML text into `out` (or, in the value-returning overload, into a
+/// default-constructed T): parse_table followed by from_toml.
 template <typename Config = void, typename T>
 auto from_string(std::string_view text, T& out) -> std::expected<void, rich_error> {
     auto table = parse_table(text);

@@ -10,6 +10,13 @@
 
 namespace kota::codec::bincode {
 
+/// Streams values into `buf` in bincode's fixed little-endian layout (see
+/// the `# Lowerings` table on bincode::format in type.h). Everything is
+/// widened before writing — ints to int64/uint64, floats to double — so a
+/// value's wire size never depends on its declared width; Reader narrows
+/// back with range checks. Containers write only a u64 element count and
+/// structs write nothing at all, which is what makes the format
+/// non-self-describing.
 struct Writer {
     std::vector<std::byte>& buf;
     using error_type = rich_error;
@@ -137,6 +144,8 @@ struct Writer {
     }
 };
 
+/// Encodes `value` as a bincode byte buffer. Decode requires the same T and
+/// Config — the format carries no self-description.
 template <typename Config = void, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::error> {
     rich_error err;

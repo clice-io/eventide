@@ -436,6 +436,8 @@ bool Reader::try_read(F&& fn) {
     return false;
 }
 
+/// Decodes JSON text into `out` (or, in the value-returning overload, into a
+/// default-constructed T).
 template <typename Config = void, typename T>
 auto from_string(std::string_view json, T& out) -> std::expected<void, rich_error> {
     padded_string padded(json);

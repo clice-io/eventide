@@ -240,6 +240,8 @@ private:
     }
 };
 
+/// Decodes a dyn::Value DOM tree into `out` (or, in the value-returning
+/// overload, into a default-constructed T).
 template <typename Config = void, typename T>
 auto from_content(const Value& value, T& out) -> std::expected<void, rich_error> {
     rich_error err;

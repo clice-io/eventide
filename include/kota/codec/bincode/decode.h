@@ -42,6 +42,13 @@ struct MapAccess {
     bool visit_entry(KF&& key_reader, VF&& value_reader);
 };
 
+/// Mirror of Writer: consumes `data` front to back in bincode's fixed
+/// little-endian layout, failing with UnexpectedEof / TypeMismatch /
+/// NumberOutOfRange through the scoped error context. Every read is
+/// length-checked via check_remaining before touching the buffer; integers
+/// are read at their widened 8-byte size and narrowed back into the target
+/// type with a range check. from_bytes additionally rejects buffers with
+/// bytes left over after the root value (TrailingBytes).
 struct Reader {
     std::span<const std::byte> data;
     std::size_t pos = 0;
@@ -249,6 +256,9 @@ bool MapAccess::visit_entry(KF&& key_reader, VF&& value_reader) {
     return true;
 }
 
+/// Decodes a bincode buffer produced by to_bytes with the same T and Config.
+/// The whole buffer must be consumed; leftover bytes are an error.
+/// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, bincode::error> {
     rich_error err;
