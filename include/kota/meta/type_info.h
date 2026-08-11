@@ -384,11 +384,11 @@ struct field_attr_flags {
     constexpr static bool flattened = field_spec_of<meta::field_type<T, I>>.flatten;
 };
 
-template <typename T, typename Config>
+template <typename T>
 using built_fields_t = std::array<field_info, effective_field_count<T>()>;
 
 template <typename T, typename Config>
-constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset = 0);
+constexpr built_fields_t<T> build_fields(std::size_t base_offset = 0);
 
 /// Deny policy carried by the config itself — merged there by merged_config_t
 /// on the way down, or set directly on a codec config.
@@ -527,7 +527,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
     constexpr static bool deny_unknown = config_denies_unknown<Config>();
     constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
-    constexpr inline static built_fields_t<T, Config> fields = build_fields<T, Config>();
+    constexpr inline static built_fields_t<T> fields = build_fields<T, Config>();
 
     constexpr inline static struct_type_info value = {
         {type_kind::structure, meta::type_name<T>()},
@@ -579,8 +579,8 @@ constexpr field_info make_field_info(std::size_t base_offset) {
 }
 
 template <typename T, typename Config>
-constexpr built_fields_t<T, Config> build_fields(std::size_t base_offset) {
-    built_fields_t<T, Config> result{};
+constexpr built_fields_t<T> build_fields(std::size_t base_offset) {
+    built_fields_t<T> result{};
     std::size_t out = 0;
 
     constexpr std::size_t N = meta::field_count<T>();

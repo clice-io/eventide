@@ -17,8 +17,8 @@
 
 #include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
+#include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/type.h"
-#include "kota/codec/visit/common.h"
 #include "kota/codec/visit/encode.h"
 
 namespace kota::codec::fbs {
@@ -71,18 +71,18 @@ private:
 };
 
 template <typename T>
-constexpr bool is_string_like_v = codec::str_like<T>;
+constexpr bool is_string_like_v = meta::str_like<T>;
 
 template <typename T>
 constexpr bool is_range_like_v = std::ranges::input_range<T> && !is_string_like_v<T>;
 
 template <typename T>
-constexpr bool is_tuple_like_v = codec::tuple_like<T>;
+constexpr bool is_tuple_like_v = meta::tuple_like<T>;
 
 template <typename T>
 constexpr bool is_scalar_v =
-    codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T> ||
-    codec::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
+    meta::bool_like<T> || meta::int_like<T> || meta::uint_like<T> || meta::floating_like<T> ||
+    meta::char_like<T> || std::is_enum_v<T> || std::same_as<T, std::byte>;
 
 /// Substitute a type by its resolved representation: annotation behavior attrs
 /// take precedence over the underlying type's meta::repr, and chained reprs
@@ -416,11 +416,11 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     } else if constexpr(std::is_enum_v<T>) {
         using cell_t = std::underlying_type_t<T>;
         return static_cast<T>(view.template get_scalar<cell_t>(field));
-    } else if constexpr(codec::char_like<T>) {
+    } else if constexpr(meta::char_like<T>) {
         return static_cast<T>(view.template get_scalar<std::int8_t>(field));
-    } else if constexpr(codec::bool_like<T> || codec::int_like<T> || codec::uint_like<T>) {
+    } else if constexpr(meta::bool_like<T> || meta::int_like<T> || meta::uint_like<T>) {
         return view.template get_scalar<T>(field);
-    } else if constexpr(codec::floating_like<T>) {
+    } else if constexpr(meta::floating_like<T>) {
         if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
             return view.template get_scalar<T>(field);
         } else {
@@ -432,10 +432,10 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
             return {};
         }
         return std::string_view(text->data(), text->size());
-    } else if constexpr(is_specialization_of<std::variant, T>) {
-        const auto* nested = table->template GetPointer<const Table*>(field);
-        return return_t(table_ref(nested));
-    } else if constexpr(is_tuple_like_v<T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || is_tuple_like_v<T>) {
+        // Table-shaped like the trailing else, but ordered before the range
+        // branch: std::array is both tuple-like and range-like and must read
+        // as a table.
         const auto* nested = table->template GetPointer<const Table*>(field);
         return return_t(table_ref(nested));
     } else if constexpr(can_inline_struct_v<T>) {
@@ -513,7 +513,7 @@ public:
                 using cell_t = proxy_detail::scalar_cell_t<element_type>;
                 return static_cast<element_type>(
                     static_cast<cell_t>(vector->Get(static_cast<uoffset_t>(index))));
-            } else if constexpr(codec::char_like<element_type>) {
+            } else if constexpr(meta::char_like<element_type>) {
                 return static_cast<char>(vector->Get(static_cast<uoffset_t>(index)));
             } else {
                 return static_cast<element_type>(vector->Get(static_cast<uoffset_t>(index)));

@@ -50,11 +50,11 @@ TEST_CASE(with_repr_type) {
     STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::string);
     STATIC_EXPECT_TRUE(fields[0].has_behavior);
 
-    // Verify slot repr_type at compile time
+    // The slot keeps the raw field type; repr resolution is pinned by the
+    // field's type_info kind above.
     using slots = virtual_schema<fx::WithReprStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, int);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::string);
 
     // plain float is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::float32);
@@ -72,7 +72,6 @@ TEST_CASE(enum_string) {
     using slots = virtual_schema<fx::EnumStringStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, fx::Color);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::string_view);
 
     // plain int is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::int32);
@@ -87,8 +86,6 @@ TEST_CASE(tagged_variant) {
     using slots = virtual_schema<fx::TaggedVariantStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, std::variant<int, std::string>);
-    // repr_type stays as variant (tagged is a schema attr, not a type transform)
-    EXPECT_TYPE_EQ(slot0::repr_type, std::variant<int, std::string>);
 }
 
 TEST_CASE(multi_attr_combination) {
@@ -114,7 +111,7 @@ TEST_CASE(skip_if_combined_with_behavior) {
         STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::string);
     }
 
-    // skip_if + with: both flags present, repr_type = string (from adapter)
+    // skip_if + with: both flags present, encoded type = string (from adapter)
     {
         constexpr auto& fields = virtual_schema<fx::SkipIfWithStruct>::fields;
         STATIC_EXPECT_TRUE(fields[0].has_skip_if);

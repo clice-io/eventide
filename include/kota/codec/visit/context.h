@@ -91,16 +91,8 @@ struct rich_error {
         return rich_error(std::format("unknown field '{}'", name));
     }
 
-    static rich_error duplicate_field(std::string_view name) {
-        return rich_error(std::format("duplicate field '{}'", name));
-    }
-
     static rich_error invalid_type(std::string_view expected, std::string_view got) {
         return rich_error(std::format("invalid type: expected {}, got {}", expected, got));
-    }
-
-    static rich_error invalid_length(std::size_t expected, std::size_t got) {
-        return rich_error(std::format("invalid length: expected {}, got {}", expected, got));
     }
 };
 
@@ -123,10 +115,6 @@ public:
 
     scoped_context(const scoped_context&) = delete;
     scoped_context& operator=(const scoped_context&) = delete;
-
-    static T& current() {
-        return *active;
-    }
 
     static T* try_current() {
         return active;

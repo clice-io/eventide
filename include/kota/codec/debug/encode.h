@@ -243,8 +243,6 @@ struct SeqWriter {
     inline bool visit_element(F&& writer);
 };
 
-using SetWriter = SeqWriter;
-
 struct TupleWriter {
     Formatter& fmt;
     bool first = true;
@@ -294,7 +292,7 @@ bool ValueWriter::visit_struct(const T&, Body&& body) {
 template <typename Container, typename Body>
 bool ValueWriter::visit_seq(const Container&, Body&& body) {
     if constexpr(meta::kind_of<Container>() == meta::type_kind::set) {
-        return fmt.write_block<SetWriter>('{', '}', std::forward<Body>(body));
+        return fmt.write_block<SeqWriter>('{', '}', std::forward<Body>(body));
     } else {
         return fmt.write_block<SeqWriter>('[', ']', std::forward<Body>(body));
     }

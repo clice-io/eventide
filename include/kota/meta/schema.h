@@ -8,17 +8,15 @@
 
 namespace kota::meta {
 
-template <typename RawType, typename ReprType = RawType, typename BehaviorAttrs = std::tuple<>>
+template <typename RawType, typename BehaviorAttrs = std::tuple<>>
 struct field_slot {
     using raw_type = RawType;
-    using repr_type = ReprType;
     using attrs = BehaviorAttrs;
 };
 
 namespace detail {
 
 template <typename T,
-          typename Config,
           std::size_t I,
           bool Skipped = field_attr_flags<T, I>::skipped,
           bool Flattened = field_attr_flags<T, I>::flattened>
@@ -28,36 +26,37 @@ struct single_field_slots {
     using raw_type = typename unwrap::raw_type;
     using attrs_t = typename unwrap::attrs;
 
-    using type = type_list<field_slot<raw_type,
-                                      resolved_repr_t<field_t, format_of_t<Config>>,
-                                      filter_runtime_attrs_t<attrs_t>>>;
+    using type = type_list<field_slot<raw_type, filter_runtime_attrs_t<attrs_t>>>;
 };
 
-template <typename T, typename Config, std::size_t I, bool Flattened>
-struct single_field_slots<T, Config, I, /*Skipped=*/true, Flattened> {
+template <typename T, std::size_t I, bool Flattened>
+struct single_field_slots<T, I, /*Skipped=*/true, Flattened> {
     using type = type_list<>;
 };
 
-template <typename T, typename Config, std::size_t I>
-struct single_field_slots<T, Config, I, /*Skipped=*/false, /*Flattened=*/true>;
-
-template <typename T, typename Config, typename Seq>
+template <typename T, typename Seq>
 struct build_slots_from_seq;
 
-template <typename T, typename Config, std::size_t... Is>
-struct build_slots_from_seq<T, Config, std::index_sequence<Is...>> {
-    using type = type_list_concat_t<typename single_field_slots<T, Config, Is>::type...>;
+template <typename T, std::size_t... Is>
+struct build_slots_from_seq<T, std::index_sequence<Is...>> {
+    using type = type_list_concat_t<typename single_field_slots<T, Is>::type...>;
 };
 
-template <typename T, typename Config>
-struct build_slots_from_seq<T, Config, std::index_sequence<>> {
+template <typename T>
+struct build_slots_from_seq<T, std::index_sequence<>> {
     using type = type_list<>;
 };
 
-template <typename T, typename Config>
+template <typename T>
 using build_slots_t =
-    typename build_slots_from_seq<T, Config, std::make_index_sequence<meta::field_count<T>()>>::
-        type;
+    typename build_slots_from_seq<T, std::make_index_sequence<meta::field_count<T>()>>::type;
+
+template <typename T, std::size_t I>
+struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
+    using field_t = meta::field_type<T, I>;
+    using inner_t = typename unwrap_annotated<field_t>::raw_type;
+    using type = build_slots_t<inner_t>;
+};
 
 }  // namespace detail
 
@@ -77,21 +76,10 @@ struct virtual_schema {
     constexpr static std::span<const field_info> fields =
         static_cast<const struct_type_info&>(type_info_of<T, Config>()).fields;
 
-    using slots = detail::build_slots_t<T, Config>;
+    using slots = detail::build_slots_t<T>;
     constexpr static bool is_trivially_copyable =
         detail::type_instance<T, Config>::is_trivially_copyable;
     constexpr static bool deny_unknown = detail::type_instance<T, Config>::deny_unknown;
 };
-
-namespace detail {
-
-template <typename T, typename Config, std::size_t I>
-struct single_field_slots<T, Config, I, /*Skipped=*/false, /*Flattened=*/true> {
-    using field_t = meta::field_type<T, I>;
-    using inner_t = typename unwrap_annotated<field_t>::raw_type;
-    using type = typename virtual_schema<inner_t, Config>::slots;
-};
-
-}  // namespace detail
 
 }  // namespace kota::meta
