@@ -7,15 +7,21 @@
 #include <expected>
 #include <format>
 #include <limits>
+#include <ranges>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "kota/support/expected_try.h"
 #include "kota/support/naming.h"
+#include "kota/support/type_list.h"
+#include "kota/meta/schema.h"
 #include "kota/meta/type_info.h"
 #include "kota/codec/dyn/decode.h"
 #include "kota/codec/dyn/document.h"
@@ -45,12 +51,22 @@ struct schema_options {
 
 namespace detail {
 
+/// An internal-tagged struct branch is the one schema site whose struct body
+/// is inlined rather than $def'd (the tag property must merge into the
+/// struct's own properties). When the typed entry point will run the
+/// default-annotation pass, the emitter stamps each such branch with the
+/// alternative's normalized type name under this key so the pass can pair
+/// the branch with the fresh document of its type; the pass strips every
+/// marker it meets, so no returned schema ever carries one.
+constexpr inline std::string_view alternative_marker = "x-kota-alternative";
+
 class SchemaEmitter {
     using tk = meta::type_kind;
     using result_t = std::expected<dyn::Value, error>;
 
 public:
-    explicit SchemaEmitter(const schema_options& opts) : opts(opts) {}
+    explicit SchemaEmitter(const schema_options& opts, bool mark_alternatives = false) :
+        opts(opts), mark_alternatives(mark_alternatives) {}
 
     result_t emit(const meta::type_info& root) {
         root_ti = unwrap(&root);
@@ -402,6 +418,10 @@ private:
             });
             dyn::Object obj;
             obj.insert("type", "object");
+            if(mark_alternatives) {
+                obj.insert(std::string(alternative_marker),
+                           kota::naming::normalize_identifier(ti->type_name));
+            }
             obj.insert("properties", std::move(props));
             dyn::Array required;
             for(const auto& f: si->fields) {
@@ -491,6 +511,7 @@ private:
     }
 
     schema_options opts;
+    bool mark_alternatives;
     std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const meta::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
@@ -498,103 +519,49 @@ private:
     const meta::type_info* root_ti = nullptr;
 };
 
-/// Walks the emitted schema alongside the document a default-constructed
-/// instance encodes to, annotating optional properties (those absent from
-/// "required") with a `default` — the value decode leaves behind when the
-/// property is absent. Required properties must always appear, so a default
-/// annotation would be a lie; they are skipped, as are properties the default
-/// document does not carry (encode-side skip conditions). Property-level
-/// struct $refs recurse so defaults land on the leaf fields inside $defs; a
-/// container schema descends alongside its encoded elements — each tuple
-/// slot against its prefix schema, every array element and map entry
-/// against the shared element schema — so a struct reachable only through a
-/// container still annotates its $def leaves. A
-/// $def shared by several sites keeps the values of its first visit, while
-/// each non-required ref site also carries its whole encoded object as its
-/// own default, so per-site member initializers survive the sharing. A
-/// tagged variant (a oneOf) descends into the branch whose tag constraints
-/// the document satisfies — the encoded alternative — so its members keep
-/// their decode defaults. An anyOf wrapper (optional/pointer field, untagged
-/// variant) is a leaf: it takes the whole encoded value as its default, so a
-/// $def reachable only through nullable fields stays unannotated.
+/// Annotates the emitted schema with `default` values — the value decode
+/// leaves behind when a property is absent. Two sources feed the pass,
+/// matching the two ways decode arrives at a value it must default:
+///
+/// - Site defaults. Decode assigns struct fields in place on the enclosing
+///   instance, so an absent optional property keeps whatever the enclosing
+///   default instance carries — member initializers on the enclosing type
+///   included. Each schema body is paired with a document of its own type
+///   (the root body with the encoded default-constructed root) and every
+///   non-required property copies its encoded value onto its schema as
+///   `default`; a non-required struct $ref thus carries its whole encoded
+///   object, so per-site member initializers survive the $def sharing.
+///   Required properties must always appear, so a default would be a lie;
+///   they are skipped, as are properties the document does not carry
+///   (encode-side skip conditions, the null a nullable root encodes to).
+///
+/// - Fresh defaults. Decode value-initializes sequence and set elements, map
+///   values, and selected variant alternatives before reading their fields,
+///   so inside a shared $def the enclosing instance's contents are
+///   meaningless — a member initializer that overrides an element's fields
+///   must not leak into the element type's own defaults. Every $def body is
+///   therefore paired with the document a freshly constructed instance of
+///   its own type encodes to (FreshDefaults), and so is every
+///   internal-tagged variant branch — the one schema site whose struct body
+///   is inlined rather than $def'd — via the emitter's alternative marker,
+///   which the sweep consumes and strips. A type that cannot be freshly
+///   constructed and encoded leaves its body unannotated rather than
+///   guessing.
 class DefaultAnnotator {
 public:
-    explicit DefaultAnnotator(dyn::Object& root) {
-        if(auto* d = root.find("$defs")) {
-            defs = d->get_object();
-        }
-    }
+    explicit DefaultAnnotator(std::unordered_map<std::string, dyn::Value> fresh) :
+        fresh(std::move(fresh)) {}
 
-    void annotate(dyn::Object& body, const dyn::Value& value) {
-        // An array document pairs with a container schema: a tuple walks
-        // each prefix schema against its slot (the emitter and encoder
-        // agree on the arity), an array/set walks the shared item schema
-        // against every element. A tuple also carries "items": false to
-        // close the prefix, so prefixItems decides first.
-        if(const auto* elems = value.get_array()) {
-            if(auto* prefix = body.find("prefixItems")) {
-                auto& schemas = *prefix->get_array();
-                for(std::size_t i = 0; i < elems->size(); ++i) {
-                    descend(schemas[i], (*elems)[i]);
-                }
-            } else if(auto* items = body.find("items")) {
-                for(const auto& elem: *elems) {
-                    descend(*items, elem);
-                }
-            }
-            return;
-        }
-        // Every other walked body pairs with an object document: a struct
-        // schema with a struct encoding, a map with its entries, a tagged
-        // variant whose tagged forms are all objects — unless the root
-        // type is a nullable wrapper (the emitter unwraps optional/pointer
-        // roots to the inner body, but a default-constructed wrapper
-        // encodes to null). Null carries no property values, so there is
-        // nothing to annotate from.
-        const auto* doc = value.get_object();
-        if(doc == nullptr) {
-            return;
-        }
-        // A map schema constrains every entry through one value schema —
-        // walk it against each encoded entry. additionalProperties also
-        // spells a deny-unknown struct's `false`, which get_object rejects.
-        if(auto* extra = body.find("additionalProperties")) {
-            if(extra->get_object() != nullptr) {
-                for(const auto& entry: *doc) {
-                    descend(*extra, entry.second);
+    void run(dyn::Object& root, const dyn::Value& root_doc) {
+        annotate_properties(root, root_doc);
+        if(auto* defs = root.find("$defs")) {
+            for(auto& [name, body]: *defs->get_object()) {
+                if(auto it = fresh.find(name); it != fresh.end()) {
+                    annotate_properties(*body.get_object(), it->second);
                 }
             }
         }
-        if(auto* props = body.find("properties")) {
-            const dyn::Array* required = nullptr;
-            if(const auto* r = body.find("required")) {
-                required = r->get_array();
-            }
-            for(auto& [name, prop]: *props->get_object()) {
-                if(const auto* v = doc->find(name)) {
-                    annotate_property(prop, *v, is_required(required, name));
-                }
-            }
-        }
-        // A oneOf is a tagged variant: its branches are disjoint by tag, so
-        // the branch accepting the document describes the encoded
-        // alternative — descend so its members keep their decode defaults.
-        if(auto* one_of = body.find("oneOf")) {
-            auto& alts = *one_of->get_array();
-            auto it = std::ranges::find_if(alts, [&](const dyn::Value& alt) {
-                return branch_matches(*alt.get_object(), *doc);
-            });
-            if(it != alts.end()) {
-                annotate(*it->get_object(), value);
-            }
-        }
-        // An internal-tagged non-struct branch spreads its schema and tag
-        // constraint over allOf parts; walk each against the same document.
-        if(auto* all_of = body.find("allOf")) {
-            for(auto& part: *all_of->get_array()) {
-                annotate(*part.get_object(), value);
-            }
-        }
+        sweep(root);
     }
 
 private:
@@ -606,82 +573,72 @@ private:
                                    [&](const dyn::Value& v) { return v.get_string() == name; });
     }
 
-    /// Whether a oneOf branch accepts the document: every required property
-    /// present and every property `const` matched. These are exactly the
-    /// constraints the emitter places on a tagged branch — external tagging
-    /// requires the alternative's name, internal and adjacent tagging pin
-    /// the tag property to a const — so the encoded alternative's branch,
-    /// and only it, matches.
-    static bool branch_matches(const dyn::Object& branch, const dyn::Object& doc) {
-        if(const auto* r = branch.find("required")) {
-            auto present = [&](const dyn::Value& name) {
-                return doc.contains(*name.get_string());
-            };
-            if(!std::ranges::all_of(*r->get_array(), present)) {
-                return false;
+    static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
+        // A non-struct root pairs with a non-object document (an array, a
+        // scalar, the null a default-constructed nullable root encodes to);
+        // it has no properties to annotate from.
+        const auto* doc = doc_value.get_object();
+        if(doc == nullptr) {
+            return;
+        }
+        auto* props = body.find("properties");
+        if(props == nullptr) {
+            return;
+        }
+        const dyn::Array* required = nullptr;
+        if(const auto* r = body.find("required")) {
+            required = r->get_array();
+        }
+        for(auto& [name, prop]: *props->get_object()) {
+            const auto* v = doc->find(name);
+            if(v != nullptr && !is_required(required, name)) {
+                prop.get_object()->insert("default", *v);
             }
         }
-        if(const auto* props = branch.find("properties")) {
-            for(const auto& [name, schema]: *props->get_object()) {
-                if(const auto* c = schema.get_object()->find("const")) {
-                    const auto* v = doc.find(name);
-                    if(v == nullptr || *v != *c) {
-                        return false;
-                    }
+    }
+
+    /// Walks every subschema position looking for marked internal-tagged
+    /// branches; a marked branch takes its site defaults from the fresh
+    /// document of its alternative type, and drops the marker either way.
+    /// Only keys whose values are schemas are entered — never `default`,
+    /// `enum`, or `const`, whose contents are documents, not schemas.
+    void sweep(dyn::Object& schema) {
+        if(const auto* marker = schema.find(alternative_marker)) {
+            if(auto it = fresh.find(std::string(*marker->get_string())); it != fresh.end()) {
+                annotate_properties(schema, it->second);
+            }
+            schema.remove(alternative_marker);
+        }
+        for(std::string_view key: {"items", "additionalProperties"}) {
+            if(auto* sub = schema.find(key)) {
+                sweep_value(*sub);
+            }
+        }
+        for(std::string_view key: {"prefixItems", "oneOf", "anyOf", "allOf"}) {
+            if(auto* subs = schema.find(key)) {
+                for(auto& sub: *subs->get_array()) {
+                    sweep_value(sub);
                 }
             }
         }
-        if(const auto* all_of = branch.find("allOf")) {
-            return std::ranges::all_of(*all_of->get_array(), [&](const dyn::Value& part) {
-                return branch_matches(*part.get_object(), doc);
-            });
-        }
-        return true;
-    }
-
-    /// A $ref recurses whether or not its property is required: the section
-    /// itself may always appear while its leaves carry decode defaults — and
-    /// so does any other schema shape, which annotate walks (a tagged
-    /// variant through its encoded branch) or ignores (a leaf, an anyOf
-    /// wrapper). A non-required property additionally takes the whole
-    /// encoded value as its own default — the shared $def keeps first-visit
-    /// leaf values, so the ref site is the only place a per-site member
-    /// initializer survives.
-    void annotate_property(dyn::Value& prop, const dyn::Value& value, bool required) {
-        descend(prop, value);
-        if(!required) {
-            prop.get_object()->insert("default", value);
-        }
-    }
-
-    /// Routes the walk through one schema site — a property or a container
-    /// element: a $ref hops to its $def, on the first visit only, while any
-    /// inline shape annotates in place.
-    void descend(dyn::Value& schema, const dyn::Value& value) {
-        auto& obj = *schema.get_object();
-        if(const auto* ref = obj.find("$ref")) {
-            if(auto& target = resolve(*ref->get_string()); visited.insert(&target).second) {
-                annotate(target, value);
+        for(std::string_view key: {"properties", "$defs"}) {
+            if(auto* subs = schema.find(key)) {
+                for(auto& [_, sub]: *subs->get_object()) {
+                    sweep_value(sub);
+                }
             }
-        } else {
-            annotate(obj, value);
         }
     }
 
-    /// Only $defs references reach the walk: a root self-reference ($ref
-    /// "#") under a property or a tuple slot would make the type infinite,
-    /// the dynamic containers that could otherwise close the cycle (vector,
-    /// map, set) default-construct empty — no element document to descend
-    /// with — and pointer/optional self-references sit inside an anyOf
-    /// wrapper, which the walk treats as a leaf. The emitter inserted
-    /// "$defs" and the named body before it emitted the reference.
-    dyn::Object& resolve(std::string_view ref) {
-        constexpr std::string_view prefix = "#/$defs/";
-        return *defs->find(ref.substr(prefix.size()))->get_object();
+    /// A tuple schema closes its prefix with "items": false — not a schema
+    /// object, nothing to enter.
+    void sweep_value(dyn::Value& sub) {
+        if(auto* obj = sub.get_object()) {
+            sweep(*obj);
+        }
     }
 
-    dyn::Object* defs = nullptr;
-    std::unordered_set<const dyn::Object*> visited;
+    std::unordered_map<std::string, dyn::Value> fresh;
 };
 
 /// Metadata resolution config for schema generation: the user's config
@@ -707,6 +664,83 @@ schema_options options_of() {
     };
 }
 
+/// The fresh documents the default-annotation pass pairs $defs and marked
+/// variant branches with: for every default-initializable struct reachable
+/// through the resolved type structure, the document a value-initialized
+/// instance encodes to under Config, keyed by the normalized name the
+/// emitter gives the type's $def. collect_fresh mirrors the emitter's reach
+/// — struct fields (flattened included, skipped excluded), optional and
+/// pointer inners, sequence and set elements, map values (keys encode as
+/// object keys and carry no schema), tuple elements, variant alternatives.
+/// Field-level behavior attrs (`with`, `as`) are not followed, and a fresh
+/// instance the encoder rejects (a NaN member under nan_repr::Error, an
+/// unnamed enum value under enum_repr::String) records no document: both
+/// leave their subtrees unannotated rather than annotated wrongly.
+struct FreshDefaults {
+    std::unordered_map<std::string, dyn::Value> docs;
+    std::unordered_set<std::string> claimed;
+    std::unordered_set<const meta::type_info*> seen;
+};
+
+template <typename T, typename Config>
+void collect_fresh(FreshDefaults& out);
+
+template <typename Config, typename... Slots>
+void collect_fresh_slots(FreshDefaults& out, kota::type_list<Slots...>) {
+    (collect_fresh<typename Slots::raw_type, Config>(out), ...);
+}
+
+template <typename Config, typename... Ts>
+void collect_fresh_alternatives(FreshDefaults& out, std::type_identity<std::variant<Ts...>>) {
+    (collect_fresh<Ts, Config>(out), ...);
+}
+
+template <typename T, typename Config>
+void collect_fresh(FreshDefaults& out) {
+    using tk = meta::type_kind;
+    using resolved = meta::resolved_repr_t<T, format>;
+    constexpr tk kind = meta::kind_of<resolved>();
+    if constexpr(kind == tk::structure) {
+        const meta::type_info& ti = meta::type_info_of<T, schema_config<Config>>();
+        if(!out.seen.insert(&ti).second) {
+            return;
+        }
+        auto name = kota::naming::normalize_identifier(ti.type_name);
+        if(!out.claimed.insert(name).second) {
+            // Two distinct types under one normalized name: the emitter
+            // rejects the collision for $def'd types, but an inlined
+            // internal-tagged alternative shares the namespace silently —
+            // annotate neither rather than pair one with the other's
+            // document.
+            out.docs.erase(name);
+        } else if constexpr(std::default_initializable<T>) {
+            if(auto text = to_string<Config>(T{})) {
+                if(auto doc = from_string<dyn::Value>(*text)) {
+                    out.docs.emplace(std::move(name), std::move(*doc));
+                }
+            }
+        }
+        collect_fresh_slots<Config>(
+            out,
+            typename meta::virtual_schema<resolved, schema_config<Config>>::slots{});
+    } else if constexpr(kind == tk::optional) {
+        collect_fresh<typename resolved::value_type, Config>(out);
+    } else if constexpr(kind == tk::pointer) {
+        collect_fresh<typename resolved::element_type, Config>(out);
+    } else if constexpr(kind == tk::array || kind == tk::set) {
+        collect_fresh<std::ranges::range_value_t<resolved>, Config>(out);
+    } else if constexpr(kind == tk::map) {
+        collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Config>(out);
+    } else if constexpr(kind == tk::tuple) {
+        [&out]<std::size_t... Is>(std::index_sequence<Is...>) {
+            (collect_fresh<std::tuple_element_t<Is, resolved>, Config>(out), ...);
+        }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
+    } else if constexpr(kind == tk::variant) {
+        collect_fresh_alternatives<Config>(out, std::type_identity<resolved>{});
+    }
+    // Scalars, enums, bytes, any: leaves without annotatable structure.
+}
+
 }  // namespace detail
 
 inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
@@ -727,29 +761,38 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 }  // namespace detail
 
 /// When T is default-initializable, the schema also carries `default`
-/// annotations: a default-constructed instance is encoded through the real
-/// JSON encoder under Config and parsed back into a document, so the values
-/// match what to_string emits byte for byte (enum renames, nan handling,
-/// format-scoped reprs included). Two consequences of riding the real
-/// encoder: T{} must encode under Config — a default instance the encoder
-/// rejects (a NaN member under nan_repr::Error, an enum value without a
-/// reflected name under enum_repr::String) fails schema generation with that
-/// error — and a T whose fields the codec cannot serialize fails to compile,
-/// exactly like to_string itself. Only an opaque root — one whose
-/// JSON-resolved representation still reflects as kind unknown, so a
-/// repr-backed root joins the pass through its representation — skips it at
-/// compile time and keeps reporting the emission error at runtime.
+/// annotations: default instances are encoded through the real JSON encoder
+/// under Config and parsed back into documents, so the values match what
+/// to_string emits byte for byte (enum renames, nan handling, format-scoped
+/// reprs included). Root properties take the values of a default-constructed
+/// T; each $def and inlined variant branch takes the values of a freshly
+/// constructed instance of its own type — what decode's fresh constructions
+/// (sequence elements, map values, emplaced alternatives) actually produce —
+/// while a nested type that cannot be freshly constructed or encoded stays
+/// unannotated. Two consequences of riding the real encoder: T{} must encode
+/// under Config — a default instance the encoder rejects (a NaN member under
+/// nan_repr::Error, an enum value without a reflected name under
+/// enum_repr::String) fails schema generation with that error — and a T
+/// whose fields the codec cannot serialize fails to compile, exactly like
+/// to_string itself. Only an opaque root — one whose JSON-resolved
+/// representation still reflects as kind unknown, so a repr-backed root
+/// joins the pass through its representation — skips it at compile time and
+/// keeps reporting the emission error at runtime.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
-    KOTA_EXPECTED_TRY_V(auto result,
-                        schema(meta::type_info_of<T, detail::schema_config<Config>>(),
-                               detail::options_of<Config>()));
-    if constexpr(std::default_initializable<T> &&
-                 meta::kind_of<meta::resolved_repr_t<T, format>>() != meta::type_kind::unknown) {
+    constexpr bool annotate_defaults =
+        std::default_initializable<T> &&
+        meta::kind_of<meta::resolved_repr_t<T, format>>() != meta::type_kind::unknown;
+    KOTA_EXPECTED_TRY_V(
+        auto result,
+        (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
+            meta::type_info_of<T, detail::schema_config<Config>>())));
+    if constexpr(annotate_defaults) {
         KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
-        auto& root = *result.get_object();
-        detail::DefaultAnnotator{root}.annotate(root, doc);
+        detail::FreshDefaults fresh;
+        detail::collect_fresh<T, Config>(fresh);
+        detail::DefaultAnnotator{std::move(fresh.docs)}.run(*result.get_object(), doc);
     }
     return result;
 }

@@ -690,6 +690,25 @@ struct defaults_containers {
     };
 };
 
+struct defaults_seq_override {
+    std::vector<defaults_leaf> workers = {{.threads = 9}};
+};
+
+struct defaults_variant_override {
+    defaults_internal_variant shape{
+        defaults_alt_a{.depth = 8, .name = {}}
+    };
+};
+
+struct defaults_cyclic {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> depth = 1;
+
+    std::vector<defaults_cyclic> kids = {
+        {.depth = 2, .kids = {}}
+    };
+};
+
 namespace json = kota::codec::json;
 
 template <typename T>
@@ -2795,11 +2814,12 @@ TEST_CASE(defaults_skip_condition) {
     EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
 }
 
-TEST_CASE(defaults_shared_def_first_visit_wins) {
+TEST_CASE(defaults_shared_def_fresh_values) {
     // The two sites default-construct differently (mirror overrides threads
-    // via its member initializer), but both are required — no site default —
-    // and the shared $def keeps the values of the first visit; the override
-    // appears nowhere.
+    // via its member initializer), but the shared $def describes a freshly
+    // constructed defaults_leaf, so it carries the type's own initializers;
+    // both sites are required — no site default — and the override appears
+    // nowhere.
     const auto result = json::schema_string<defaults_shared_override>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
@@ -2808,7 +2828,7 @@ TEST_CASE(defaults_shared_def_first_visit_wins) {
 TEST_CASE(defaults_non_required_ref_sites) {
     // Non-required refs to a shared $def each carry their whole encoded
     // object as the property default, so the per-site member initializer
-    // survives even though the $def keeps first-visit leaf values.
+    // survives even though the $def keeps fresh-instance leaf values.
     const auto result = json::schema_string<defaults_ref_sites>().value();
     EXPECT_TRUE(
         result.find(
@@ -2835,12 +2855,12 @@ TEST_CASE(defaults_nullable_root) {
 
 TEST_CASE(defaults_engaged_optional) {
     // An engaged optional lands its whole encoded value as the default on
-    // the anyOf wrapper; the walk does not descend through anyOf, so the
-    // struct's $def stays annotation-free.
+    // the anyOf wrapper, and the struct's $def — reachable only through the
+    // nullable field — still carries the fresh instance's own defaults.
     const auto result = json::schema_string<defaults_engaged>().value();
     EXPECT_TRUE(result.find(R"("default":5)") != std::string::npos);
     EXPECT_TRUE(result.find(R"("default":{"threads":4,"name":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("name":{"type":"string"}})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
 }
 
 TEST_CASE(defaults_recursive_root) {
@@ -2854,46 +2874,43 @@ TEST_CASE(defaults_recursive_root) {
 }
 
 TEST_CASE(defaults_internal_tagged_variant_member) {
-    // A required tagged-variant property is no leaf: the walk follows the
-    // oneOf branch whose tag constraint the default document satisfies, so
-    // the encoded alternative's defaulted member keeps its initializer while
-    // the unselected branch stays bare.
+    // Every internal-tagged branch takes its defaults from a freshly
+    // constructed alternative — what decode emplaces before reading fields —
+    // so selected and unselected alternatives alike keep their own
+    // initializers.
     const auto result = json::schema_string<defaults_variant_holder>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
 }
 
 TEST_CASE(defaults_tagged_variant_root) {
-    // The same walk applies to a tagged variant at the root, whose oneOf is
+    // The same applies to a tagged variant at the root, whose oneOf is
     // merged into the top-level schema object.
     const auto result = json::schema_string<defaults_internal_variant>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
 }
 
 TEST_CASE(defaults_adjacent_tagged_variant) {
-    // Adjacent tagging routes the alternative behind the content property, a
-    // struct $ref: the matched branch recurses into its $def, while the
-    // unselected alternative's $def stays annotation-free.
+    // Adjacent tagging routes each alternative behind the content property,
+    // a struct $ref: both alternatives' $defs carry their fresh defaults.
     const auto result = json::schema_string<defaults_adjacent_variant>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
 }
 
 TEST_CASE(defaults_external_tagged_variant) {
-    // External tagging carries no tag const; the branch requiring the
-    // encoded alternative's name matches, and the $ref under it recurses.
+    // External tagging nests each alternative's schema behind its name; the
+    // struct $defs under both branches carry their fresh defaults.
     const auto result = json::schema_string<defaults_external_variant>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") != std::string::npos);
 }
 
 TEST_CASE(defaults_container_elements) {
-    // Required containers carry no site default, but the walk descends
-    // alongside their encoded elements — each tuple slot against its prefix
-    // schema, every array element and map entry against the shared element
-    // schema — so struct $defs reachable only through containers keep their
-    // leaf defaults.
+    // Required containers carry no site default, but struct $defs reachable
+    // only through containers — array elements, tuple slots, map values —
+    // still carry the fresh defaults of their own types.
     const auto result = json::schema_string<defaults_containers>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":7})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("beta":{"type":"string","default":"cell"})") != std::string::npos);
@@ -2906,10 +2923,39 @@ TEST_CASE(defaults_container_elements) {
 
 TEST_CASE(defaults_container_root) {
     // A container root merges its schema shape (std::array reflects as a
-    // tuple: prefixItems) into the top-level object; the walk pairs it with
-    // the encoded array document and still reaches the element $def.
+    // tuple: prefixItems) into the top-level object; the element $def still
+    // carries its fresh defaults.
     const auto result = json::schema_string<std::array<defaults_elem_a, 2>>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":7})") != std::string::npos);
+}
+
+TEST_CASE(defaults_sequence_element_override_stays_local) {
+    // decode value-initializes every sequence element before reading its
+    // fields, so the shared $def carries defaults_leaf's own initializers —
+    // the root's per-element override must not leak into it.
+    const auto result = json::schema_string<defaults_seq_override>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_variant_holder_override_stays_local) {
+    // decode emplaces a fresh alternative before reading its fields, so the
+    // branch carries defaults_alt_a's own initializer — the holder's member
+    // initializer must not leak into the branch default.
+    const auto result = json::schema_string<defaults_variant_override>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":8)") == std::string::npos);
+}
+
+TEST_CASE(defaults_recursive_root_with_elements) {
+    // A default instance may carry elements of the root type itself (the
+    // element initializer bottoms out by overriding kids to empty); the
+    // pass never follows the emitted root self-reference, so it terminates
+    // and the per-element override leaks into no default.
+    const auto result = json::schema_string<defaults_cyclic>().value();
+    EXPECT_TRUE(result.find(R"("$ref":"#")") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":1})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":2)") == std::string::npos);
 }
 
 TEST_CASE(defaults_repr_backed_root) {
