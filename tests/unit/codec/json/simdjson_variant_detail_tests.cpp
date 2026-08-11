@@ -13,6 +13,35 @@
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
 
+namespace kota_variant_repr_test {
+
+// An alternative whose declared representation is itself an untagged
+// variant: the outer pass level must flow through the repr into it.
+struct boxed_scalar {
+    std::variant<std::int8_t, double> v;
+
+    auto operator==(const boxed_scalar&) const -> bool = default;
+};
+
+}  // namespace kota_variant_repr_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_variant_repr_test::boxed_scalar> {
+    using type = std::variant<std::int8_t, double>;
+
+    static type to(const kota_variant_repr_test::boxed_scalar& b) {
+        return b.v;
+    }
+
+    static kota_variant_repr_test::boxed_scalar from(type v) {
+        return {.v = std::move(v)};
+    }
+};
+
+}  // namespace kota::meta
+
 namespace kota::codec {
 
 using namespace meta;
@@ -67,6 +96,10 @@ KOTATSU_ANNOTATION(int_tag_tri_shape_annotation,
                    tag_names = {"circle", "rect", "triangle"});
 using IntTagTriShape =
     annotate<int_tag_tri_shape_annotation>::type<std::variant<Circle, Rect, Triangle>>;
+
+struct non_hr_config {
+    constexpr static bool human_readable = false;
+};
 
 struct ExtHolder {
     std::string label;
@@ -138,6 +171,281 @@ TEST_CASE(double_before_int) {
     ASSERT_TRUE(from_json("3.14", out).has_value());
     EXPECT_EQ(out.index(), 0U);
     EXPECT_EQ(std::get<double>(out), 3.14);
+}
+
+TEST_CASE(double_from_integer_input) {
+    // No integer alternative exists: the widening pass lets the double
+    // alternative claim integer input instead of failing outright.
+    using V = std::variant<double, std::string>;
+
+    V out{};
+    ASSERT_TRUE(from_json("5", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(out), 5.0);
+
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(out), 3.14);
+
+    ASSERT_TRUE(from_json(R"("x")", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::string>(out), "x");
+}
+
+TEST_CASE(widening_when_float_family_is_last) {
+    // The widen pass claims the value through a fork even when the float
+    // alternative is last (previously only the unconditional fallback did).
+    using V = std::variant<std::string, double>;
+    V out;
+    ASSERT_TRUE(from_json("5", out).has_value());
+    ASSERT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<double>(out), 5.0);
+
+    ASSERT_TRUE(from_json(R"("x")", out).has_value());
+    ASSERT_EQ(out.index(), 0U);
+}
+
+TEST_CASE(float32_alternative_from_integer_input) {
+    using V = std::variant<float, std::string>;
+    V out;
+    ASSERT_TRUE(from_json("5", out).has_value());
+    ASSERT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<float>(out), 5.0F);
+}
+
+TEST_CASE(optional_wrapper_before_int) {
+    // A nullable wrapper is judged by its wrapped type: integer input lands
+    // on the exact int alternative, not the earlier optional<double>. Null
+    // still engages the wrapper itself.
+    using V = std::variant<std::optional<double>, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json("42", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 42);
+
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::optional<double>>(out), 3.14);
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<std::optional<double>>(out).has_value());
+}
+
+TEST_CASE(nested_variant_before_int) {
+    // A nested variant is as compatible as its alternatives: integer input
+    // skips variant<double, string> in the exact pass and lands on int.
+    using V = std::variant<std::variant<double, std::string>, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json("42", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 42);
+
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<0>(out)), 3.14);
+
+    ASSERT_TRUE(from_json(R"("x")", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::string>(std::get<0>(out)), "x");
+}
+
+TEST_CASE(nested_widening_defers_to_outer_exact_match) {
+    // The exact pass admits the nested variant through its int8_t branch;
+    // when that narrowing fails, the nested double must not widen ahead of
+    // the outer int64_t, which matches the input exactly.
+    using V = std::variant<std::variant<std::int8_t, double>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    // Values that fit int8_t still land on the nested exact branch.
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)), 7);
+}
+
+TEST_CASE(wrapped_nested_widening_defers_to_outer_exact_match) {
+    // The outer pass level flows through nullable wrappers: the double nested
+    // under optional must not widen ahead of the outer int64_t, while null
+    // still engages the wrapper itself.
+    using V = std::variant<std::optional<std::variant<std::int8_t, double>>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(*std::get<0>(out)), 7);
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<0>(out).has_value());
+}
+
+TEST_CASE(pointer_wrapped_nested_widening_defers_to_outer_exact_match) {
+    // Same pass propagation through a smart-pointer wrapper, and the widen
+    // pass still reaches the wrapped double when no exact match remains.
+    using nested_t = std::variant<std::int8_t, double>;
+    using V = std::variant<std::unique_ptr<nested_t>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    using W = std::variant<std::unique_ptr<nested_t>, std::string>;
+    W wide{};
+    ASSERT_TRUE(from_json("1000", wide).has_value());
+    EXPECT_EQ(wide.index(), 0U);
+    EXPECT_EQ(std::get<double>(*std::get<0>(wide)), 1000.0);
+}
+
+TEST_CASE(repr_nested_widening_defers_to_outer_exact_match) {
+    // An alternative whose meta::repr declares an untagged variant re-enters
+    // the outer pass level like a bare nested variant: its double must not
+    // widen ahead of the outer int64_t, which matches the input exactly.
+    using Box = kota_variant_repr_test::boxed_scalar;
+    using V = std::variant<Box, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    // Values that fit int8_t still land on the repr's exact branch.
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(std::get<Box>(out).v), 7);
+
+    // With no outer exact alternative left, the widen pass still reaches the
+    // repr's double.
+    using W = std::variant<Box, std::string>;
+    W wide{};
+    ASSERT_TRUE(from_json("1000", wide).has_value());
+    EXPECT_EQ(wide.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<Box>(wide).v), 1000.0);
+}
+
+TEST_CASE(wrapped_repr_nested_widening_defers_to_outer_exact_match) {
+    // The pass level flows through nullable wrappers into the repr chain,
+    // while null still engages the wrapper itself.
+    using Box = kota_variant_repr_test::boxed_scalar;
+    using V = std::variant<std::optional<Box>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)->v), 7);
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<0>(out).has_value());
+}
+
+TEST_CASE(nested_widening_still_reachable_in_widen_pass) {
+    // With no outer exact alternative left, the widen pass re-probes the
+    // nested variant and its double claims the value the int8_t rejected.
+    using V = std::variant<std::variant<std::int8_t, double>, std::string>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<0>(out)), 1000.0);
+}
+
+TEST_CASE(tagged_nested_variant_keeps_object_shape) {
+    // A tagged nested variant is classified by its object document shape,
+    // not by its scalar alternatives: {"num":1} engages ExtSimple's tagged
+    // decoder, while a bare scalar skips it and lands on int.
+    using V = std::variant<ExtSimple, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"num":1})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<int>(std::get<ExtSimple>(out)), 1);
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 7);
+}
+
+TEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
+    // A non-human-readable config skips the tagged decoders and reads the
+    // underlying variant directly, so the kind probe must classify ExtSimple
+    // by its alternatives' kinds rather than as an object.
+    using V = std::variant<ExtSimple, bool>;
+
+    V v = ExtSimple{1};
+    auto encoded = to_json<non_hr_config>(v);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "1");
+
+    V out{};
+    ASSERT_TRUE(from_json<non_hr_config>("1", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<int>(std::get<ExtSimple>(out)), 1);
+
+    ASSERT_TRUE(from_json<non_hr_config>("true", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<bool>(out), true);
+}
+
+TEST_CASE(custom_decoder_alternative_probed_for_any_kind) {
+    // RawValue decodes through a deserialize_visit override that accepts any
+    // JSON value, so the kind probe must not judge it by its declared struct
+    // shape — even when it is neither first nor last.
+    using V = std::variant<int, RawValue, bool>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"("text")", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<RawValue>(out).data, R"("text")");
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<int>(out), 7);
+}
+
+TEST_CASE(custom_decoder_wrapped_in_optional_probed_for_any_kind) {
+    // The wrapper recursion must surface the wrapped type's dispatch
+    // override, not its declared shape: a string still reaches
+    // optional<RawValue> instead of falling through to int and failing.
+    using V = std::variant<std::optional<RawValue>, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"("text")", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    auto& opt = std::get<std::optional<RawValue>>(out);
+    ASSERT_TRUE(opt.has_value());
+    EXPECT_EQ(opt->data, R"("text")");
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<std::optional<RawValue>>(out).has_value());
+}
+
+TEST_CASE(adjacently_tagged_nested_variant_keeps_object_shape) {
+    using V = std::variant<AdjSimple, std::string>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"({"t":"str","v":"inner"})", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::string>(std::get<AdjSimple>(out)), "inner");
+
+    ASSERT_TRUE(from_json(R"("plain")", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::string>(out), "plain");
 }
 
 TEST_CASE(monostate_matches_null) {

@@ -1,9 +1,12 @@
 #if __has_include(<toml++/toml.hpp>)
 
 #include <array>
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -27,6 +30,16 @@ using person = meta::fixtures::PersonWithScores;
 struct payload_with_extra {
     int id = 0;
     ::toml::table extra;
+};
+
+/// Reflectable, yet str-like — kind_of classifies it as a string, so the
+/// codec serializes it as one.
+struct str_like_aggregate {
+    std::string value;
+
+    operator std::string_view() const {
+        return value;
+    }
 };
 
 TEST_SUITE(serde_toml) {
@@ -129,6 +142,162 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     auto decode_none_status = from_toml_table(*encoded_none, decoded_none);
     ASSERT_TRUE(decode_none_status.has_value());
     EXPECT_FALSE(decoded_none.has_value());
+}
+
+TEST_CASE(shared_ptr_root_roundtrip) {
+    const auto input = std::make_shared<person>(person{
+        .id = 3,
+        .name = "carol",
+        .scores = {9, 9},
+        .active = false,
+    });
+
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+
+    std::shared_ptr<person> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, *input);
+}
+
+TEST_CASE(null_shared_ptr_root) {
+    const std::shared_ptr<person> input;
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_TRUE(dom->empty());
+
+    auto output = std::make_shared<person>();
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_TRUE(output == nullptr);
+}
+
+TEST_CASE(unique_ptr_root_roundtrip) {
+    auto input = std::make_unique<person>(person{
+        .id = 8,
+        .name = "dave",
+        .scores = {1},
+        .active = true,
+    });
+
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+
+    std::unique_ptr<person> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, *input);
+}
+
+TEST_CASE(optional_root_present_roundtrip) {
+    const std::optional<person> input = person{
+        .id = 4,
+        .name = "erin",
+        .scores = {7, 8},
+        .active = true,
+    };
+
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_FALSE(dom->contains("__value"));
+
+    std::optional<person> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, *input);
+}
+
+TEST_CASE(pointer_to_scalar_root_boxes) {
+    // A scalar pointee routes through the boxed root key, same as a bare
+    // scalar root.
+    const auto input = std::make_shared<int>(7);
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_TRUE(dom->contains("__value"));
+
+    std::shared_ptr<int> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, 7);
+}
+
+TEST_CASE(str_like_reflectable_root_boxes) {
+    // str-like wins over reflection in the codec's kind test, so this
+    // aggregate encodes as a string and the root boxes it — the decode-side
+    // routing must classify by the same kind, not by reflection alone,
+    // both for a bare root and through a pointer root.
+    const str_like_aggregate input{.value = "abc"};
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_TRUE(dom->contains("__value"));
+
+    str_like_aggregate output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.value, "abc");
+
+    const auto boxed = std::make_shared<str_like_aggregate>(input);
+    auto ptr_dom = to_toml(boxed);
+    ASSERT_TRUE(ptr_dom.has_value());
+    EXPECT_TRUE(ptr_dom->contains("__value"));
+
+    std::shared_ptr<str_like_aggregate> ptr_output;
+    auto ptr_status = from_toml_table(*ptr_dom, ptr_output);
+    ASSERT_TRUE(ptr_status.has_value());
+    ASSERT_TRUE(ptr_output != nullptr);
+    EXPECT_EQ(ptr_output->value, "abc");
+}
+
+TEST_CASE(nullable_root_engaged_empty_table_rejected) {
+    // TOML has no null: a null root is the empty document, so an engaged
+    // pointer whose pointee serializes to an empty table has no
+    // representation of its own — encoding fails loudly instead of
+    // roundtripping back as null.
+    using map_t = std::map<std::string, int>;
+
+    const auto empty_map = std::make_shared<map_t>();
+    EXPECT_FALSE(to_toml(empty_map).has_value());
+
+    const auto filled = std::make_shared<map_t>(map_t{
+        {"a", 1}
+    });
+    auto dom = to_toml(filled);
+    ASSERT_TRUE(dom.has_value());
+
+    std::shared_ptr<map_t> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, *filled);
+
+    // The empty document stays reserved for the null pointer.
+    output = std::make_shared<map_t>();
+    status = from_toml_table(::toml::table{}, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_TRUE(output == nullptr);
+}
+
+TEST_CASE(table_root_symmetry) {
+    ::toml::table input;
+    input.insert_or_assign("city", "shanghai");
+    input.insert_or_assign("zip", 200000);
+
+    // A raw table root becomes the document root itself, not a boxed value.
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_FALSE(dom->contains("__value"));
+    EXPECT_EQ((*dom)["city"].value<std::string_view>().value_or(""), "shanghai");
+    EXPECT_EQ((*dom)["zip"].value<std::int64_t>().value_or(0), 200000);
+
+    ::toml::table output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_TRUE(output == input);
 }
 
 TEST_CASE(tuple_length_errors) {

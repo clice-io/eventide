@@ -267,7 +267,17 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     if constexpr(std::is_same_v<resolved_t, V> &&
                  (kind == meta::type_kind::optional || kind == meta::type_kind::pointer)) {
         if(value) {
-            return to_toml<Config>(*value);
+            auto engaged = to_toml<Config>(*value);
+            // A null root is the empty document (TOML has no null), so an
+            // engaged pointee that serializes to an empty table — a non-null
+            // pointer to an empty map, say — would decode back as null. Fail
+            // loudly instead of losing the engaged state silently.
+            if(engaged && engaged->empty()) {
+                return std::unexpected(
+                    rich_error("engaged nullable root serializes to an empty TOML document, "
+                               "indistinguishable from null"));
+            }
+            return engaged;
         }
         return Table{};
     } else {
@@ -277,7 +287,11 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
         Table root;
 
         bool ok;
-        if constexpr(kind == meta::type_kind::structure || kind == meta::type_kind::map) {
+        // Table-shaped values become the root table itself — including a raw
+        // toml::Table, whose serialize_visit emits it verbatim (its range
+        // kind would otherwise box it while the decode side reads the root).
+        if constexpr(kind == meta::type_kind::structure || kind == meta::type_kind::map ||
+                     std::same_as<resolved_t, Table>) {
             ValueWriter<RootSink> vw{{root}};
             ok = encode_value<Cfg>(vw, value);
         } else {

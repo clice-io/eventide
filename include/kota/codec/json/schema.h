@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
@@ -17,8 +18,27 @@
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/json.h"
+#include "kota/codec/visit/config.h"
 
 namespace kota::codec::json {
+
+/// Config::enum_rename as a plain function: the schema emitter runs
+/// type-erased, so the typed entry points pass apply_enum_rename<Config> down
+/// as a pointer and the emitter applies it the way the encoder does.
+using enum_rename_fn = std::string (*)(bool is_serialize, std::string_view name);
+
+/// The config knobs that shape the documents the encoder emits — and thus the
+/// schema. The typed entry points derive them from the codec config; the
+/// type-erased ones default to the codec defaults.
+struct schema_options {
+    codec::enum_repr enums = default_config<>::enum_repr;
+    enum_rename_fn rename = apply_enum_rename<void>;
+    codec::nan_repr nan = default_config<>::nan_repr;
+    /// A non-human-readable config bypasses variant tagging and encodes the
+    /// underlying untagged variant (the is_human_readable gate in
+    /// encode_value), so the schema must drop the tag shape the same way.
+    bool human_readable = true;
+};
 
 namespace detail {
 
@@ -27,6 +47,8 @@ class SchemaEmitter {
     using result_t = std::expected<dyn::Value, error>;
 
 public:
+    explicit SchemaEmitter(const schema_options& opts) : opts(opts) {}
+
     result_t emit(const meta::type_info& root) {
         root_ti = unwrap(&root);
         if(root_ti->kind == tk::structure) {
@@ -83,8 +105,11 @@ private:
     result_t make_nullable(const meta::type_info* ti) {
         auto* inner = unwrap(ti);
         KOTA_EXPECTED_TRY_V(auto schema, make_schema(inner));
+        // anyOf, not oneOf: the inner schema may itself admit null (a
+        // monostate alternative, an unconstrained any), and a null document
+        // must not fail by matching both branches.
         return dyn::Value{
-            {"oneOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
+            {"anyOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
         };
     }
 
@@ -104,31 +129,27 @@ private:
                 };
             case tk::character:
             case tk::string:
-            case tk::bytes:
                 return dyn::Value{
                     {"type", "string"}
                 };
-            case tk::float32:
-            case tk::float64:
+            case tk::bytes: {
+                // visit_bytes emits an array of octets, not a string.
+                KOTA_EXPECTED_TRY_V(auto items, make_integer(0, 255));
                 return dyn::Value{
-                    {"type", "number"}
+                    {"type",  "array"         },
+                    {"items", std::move(items)},
                 };
+            }
+            case tk::float32:
+            case tk::float64: return make_float();
             case tk::int8:
-                return make_integer(std::numeric_limits<std::int8_t>::min(),
-                                    std::numeric_limits<std::int8_t>::max());
             case tk::int16:
-                return make_integer(std::numeric_limits<std::int16_t>::min(),
-                                    std::numeric_limits<std::int16_t>::max());
             case tk::int32:
-                return make_integer(std::numeric_limits<std::int32_t>::min(),
-                                    std::numeric_limits<std::int32_t>::max());
             case tk::int64:
-                return make_integer(std::numeric_limits<std::int64_t>::min(),
-                                    std::numeric_limits<std::int64_t>::max());
-            case tk::uint8: return make_unsigned(std::numeric_limits<std::uint8_t>::max());
-            case tk::uint16: return make_unsigned(std::numeric_limits<std::uint16_t>::max());
-            case tk::uint32: return make_unsigned(std::numeric_limits<std::uint32_t>::max());
-            case tk::uint64: return make_unsigned(std::numeric_limits<std::uint64_t>::max());
+            case tk::uint8:
+            case tk::uint16:
+            case tk::uint32:
+            case tk::uint64: return make_integer_kind(ti->kind);
             case tk::enumeration: return make_enum(ti);
             case tk::array:
             case tk::set: return make_array(ti);
@@ -186,11 +207,73 @@ private:
         };
     }
 
-    static result_t make_enum(const meta::type_info* ti) {
+    static result_t make_integer_kind(meta::type_kind kind) {
+        switch(kind) {
+            case tk::int8:
+                return make_integer(std::numeric_limits<std::int8_t>::min(),
+                                    std::numeric_limits<std::int8_t>::max());
+            case tk::int16:
+                return make_integer(std::numeric_limits<std::int16_t>::min(),
+                                    std::numeric_limits<std::int16_t>::max());
+            case tk::int32:
+                return make_integer(std::numeric_limits<std::int32_t>::min(),
+                                    std::numeric_limits<std::int32_t>::max());
+            case tk::int64:
+                return make_integer(std::numeric_limits<std::int64_t>::min(),
+                                    std::numeric_limits<std::int64_t>::max());
+            case tk::uint8: return make_unsigned(std::numeric_limits<std::uint8_t>::max());
+            case tk::uint16: return make_unsigned(std::numeric_limits<std::uint16_t>::max());
+            case tk::uint32: return make_unsigned(std::numeric_limits<std::uint32_t>::max());
+            case tk::uint64: return make_unsigned(std::numeric_limits<std::uint64_t>::max());
+            default:
+                // char/bool/extended-char underlying: still a number in the
+                // document, but without portable bounds here.
+                return dyn::Value{
+                    {"type", "integer"}
+                };
+        }
+    }
+
+    /// The encoder's non-finite handling is part of the document contract:
+    /// nan_repr::Null encodes NaN/Infinity as null — and so does Passthrough,
+    /// which forwards the value to the JSON writer, whose only spelling for a
+    /// non-finite number is null. nan_repr::String encodes one of three fixed
+    /// strings. Only Error never emits a non-finite value, so it alone keeps
+    /// the plain number.
+    result_t make_float() const {
+        dyn::Value number{
+            {"type", "number"}
+        };
+        switch(opts.nan) {
+            case nan_repr::Passthrough:
+            case nan_repr::Null:
+                return dyn::Value{
+                    {"anyOf", dyn::Array{std::move(number), dyn::Value{{"type", "null"}}}},
+                };
+            case nan_repr::String:
+                return dyn::Value{
+                    {"anyOf",
+                     dyn::Array{std::move(number),
+                                dyn::Value{{"enum", dyn::Array{"NaN", "Infinity", "-Infinity"}}}}},
+                };
+            default: return number;  // Error: no non-finite document exists.
+        }
+    }
+
+    result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
+        if(opts.enums != enum_repr::String) {
+            // enum_repr::Integer: the codec casts through the underlying type
+            // without checking membership, and name reflection only covers a
+            // limited scan range — values outside it still encode. The honest
+            // constraint is the underlying integer's range, not a value list.
+            return make_integer_kind(ei->underlying_kind);
+        }
+        // Exhaustive: a value without a reflected member name has no string
+        // spelling, so the encoder rejects it instead of emitting one.
         dyn::Array values;
         for(const auto& name: ei->member_names) {
-            values.push_back(dyn::Value(name));
+            values.push_back(dyn::Value(opts.rename(true, name)));
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -342,20 +425,21 @@ private:
 
     result_t make_variant(const meta::type_info* ti) {
         auto* vi = static_cast<const meta::variant_type_info*>(ti);
-        dyn::Array one_of;
+        auto tagging = opts.human_readable ? vi->tagging : meta::tag_mode::none;
+        dyn::Array alts;
 
         for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
-            switch(vi->tagging) {
+            switch(tagging) {
                 case meta::tag_mode::none: {
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back(std::move(schema));
+                    alts.push_back(std::move(schema));
                     break;
                 }
 
                 case meta::tag_mode::external: {
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back({
+                    alts.push_back({
                         {"type",                 "object"                        },
                         {"properties",           {{alt_name, std::move(schema)}} },
                         {"required",             dyn::Array{dyn::Value(alt_name)}},
@@ -369,14 +453,14 @@ private:
                     KOTA_EXPECTED_TRY_V(
                         auto schema,
                         make_internal_tagged(&vi->alternatives[i](), vi->tag_field, alt_name));
-                    one_of.push_back(std::move(schema));
+                    alts.push_back(std::move(schema));
                     break;
                 }
 
                 case meta::tag_mode::adjacent: {
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back({
+                    alts.push_back({
                         {"type",                 "object"},
                         {"properties",
                          dyn::Object{
@@ -395,11 +479,15 @@ private:
             }
         }
 
+        // Untagged alternatives can overlap — a numeric enum's underlying
+        // range next to an integer both match the same document — so only the
+        // tagged forms, disjoint by their tag, claim exactly-one semantics.
         return dyn::Value{
-            {"oneOf", std::move(one_of)}
+            {tagging == meta::tag_mode::none ? "anyOf" : "oneOf", std::move(alts)},
         };
     }
 
+    schema_options opts;
     std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const meta::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
@@ -407,20 +495,46 @@ private:
     const meta::type_info* root_ti = nullptr;
 };
 
-}  // namespace detail
+/// Metadata resolution config for schema generation: the user's config
+/// (field_rename, deny_unknown_fields, ...) merged over defaults — the same
+/// merge the codec dispatch applies — tagged with the JSON format so
+/// format-scoped meta::repr specializations resolve the way to_json does.
+template <typename Config>
+struct schema_config : default_config<Config> {
+    using format = json::format;
+};
 
-inline std::expected<dyn::Value, error> schema(const meta::type_info& root) {
-    return detail::SchemaEmitter{}.emit(root);
+/// schema_options as a codec config declares them. No visitor participates
+/// here, so is_human_readable sees only the config override — matching
+/// to_json, whose ValueWriter is human-readable.
+template <typename Config>
+schema_options options_of() {
+    using merged = default_config<Config>;
+    return {
+        .enums = merged::enum_repr,
+        .rename = apply_enum_rename<merged>,
+        .nan = merged::nan_repr,
+        .human_readable = is_human_readable<merged, void>(),
+    };
 }
 
-template <typename T>
+}  // namespace detail
+
+inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
+                                               const schema_options& options = {}) {
+    return detail::SchemaEmitter{options}.emit(root);
+}
+
+template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
-    return schema(meta::type_info_of<T, meta::format_config<format>>());
+    return schema(meta::type_info_of<T, detail::schema_config<Config>>(),
+                  detail::options_of<Config>());
 }
 
 inline std::expected<std::string, error> schema_string(const meta::type_info& root,
-                                                       bool pretty = false) {
-    KOTA_EXPECTED_TRY_V(auto value, schema(root));
+                                                       bool pretty = false,
+                                                       const schema_options& options = {}) {
+    KOTA_EXPECTED_TRY_V(auto value, schema(root, options));
     KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
     if(!pretty) {
         return compact;
@@ -428,9 +542,11 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
     return prettify(compact);
 }
 
-template <typename T>
+template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
-    return schema_string(meta::type_info_of<T, meta::format_config<format>>(), pretty);
+    return schema_string(meta::type_info_of<T, detail::schema_config<Config>>(),
+                         pretty,
+                         detail::options_of<Config>());
 }
 
 }  // namespace kota::codec::json

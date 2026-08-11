@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include "kota/support/numeric.h"
@@ -274,6 +276,12 @@ struct Reader {
         std::size_t cp_len = (cp < 0x80) ? 1 : (cp < 0x800) ? 2 : (cp < 0x10000) ? 3 : 4;
         if(sv.size() != cp_len) {
             return fail_located(rich_error::invalid_type("single character", "multi-char string"));
+        }
+        constexpr auto max_cp =
+            static_cast<char32_t>((std::numeric_limits<std::make_unsigned_t<T>>::max)());
+        if(cp > max_cp) {
+            return fail_located(
+                rich_error("character codepoint does not fit the target character type"));
         }
         out = static_cast<T>(cp);
         return true;

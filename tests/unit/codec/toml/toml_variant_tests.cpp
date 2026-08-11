@@ -96,6 +96,93 @@ TEST_CASE(int_before_double) {
     EXPECT_EQ(std::get<double>(out.num), 3.14);
 }
 
+TEST_CASE(double_from_integer_input) {
+    // No integer alternative exists: the widening pass lets the double
+    // alternative claim integer input instead of failing outright.
+    using V = std::variant<double, std::string>;
+
+    struct Holder {
+        V num;
+    };
+
+    auto tbl = ::toml::table{
+        {"num", 42}
+    };
+    Holder out{};
+    ASSERT_TRUE(from_toml_table(tbl, out).has_value());
+    EXPECT_EQ(out.num.index(), 0U);
+    EXPECT_EQ(std::get<double>(out.num), 42.0);
+}
+
+TEST_CASE(optional_wrapper_before_int) {
+    // A nullable wrapper is judged by its wrapped type: integer input lands
+    // on the exact int alternative, not the earlier optional<double>.
+    using V = std::variant<std::optional<double>, int>;
+
+    struct Holder {
+        V num;
+    };
+
+    auto tbl = ::toml::table{
+        {"num", 42}
+    };
+    Holder out{};
+    ASSERT_TRUE(from_toml_table(tbl, out).has_value());
+    EXPECT_EQ(out.num.index(), 1U);
+    EXPECT_EQ(std::get<int>(out.num), 42);
+
+    auto tbl_f = ::toml::table{
+        {"num", 3.14}
+    };
+    ASSERT_TRUE(from_toml_table(tbl_f, out).has_value());
+    EXPECT_EQ(out.num.index(), 0U);
+    EXPECT_EQ(std::get<std::optional<double>>(out.num), 3.14);
+}
+
+TEST_CASE(nested_variant_before_int) {
+    // A nested variant is as compatible as its alternatives: integer input
+    // skips variant<double, string> in the exact pass and lands on int.
+    using V = std::variant<std::variant<double, std::string>, int>;
+
+    struct Holder {
+        V num;
+    };
+
+    auto tbl = ::toml::table{
+        {"num", 42}
+    };
+    Holder out{};
+    ASSERT_TRUE(from_toml_table(tbl, out).has_value());
+    EXPECT_EQ(out.num.index(), 1U);
+    EXPECT_EQ(std::get<int>(out.num), 42);
+
+    auto tbl_f = ::toml::table{
+        {"num", 3.14}
+    };
+    ASSERT_TRUE(from_toml_table(tbl_f, out).has_value());
+    EXPECT_EQ(out.num.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<0>(out.num)), 3.14);
+}
+
+TEST_CASE(nested_widening_defers_to_outer_exact_match) {
+    // The exact pass admits the nested variant through its int8_t branch;
+    // when that narrowing fails, the nested double must not widen ahead of
+    // the outer int64_t, which matches the input exactly.
+    using V = std::variant<std::variant<std::int8_t, double>, std::int64_t>;
+
+    struct Holder {
+        V num;
+    };
+
+    auto tbl = ::toml::table{
+        {"num", 1000}
+    };
+    Holder out{};
+    ASSERT_TRUE(from_toml_table(tbl, out).has_value());
+    EXPECT_EQ(out.num.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out.num), 1000);
+}
+
 TEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
 

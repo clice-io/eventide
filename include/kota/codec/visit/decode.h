@@ -600,8 +600,11 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     }
 }
 
-template <typename T>
-constexpr bool kind_compatible_impl(meta::type_kind src) {
+template <typename Config, typename Vis, typename T>
+constexpr bool kind_compatible(meta::type_kind src, bool widen);
+
+template <typename Config, typename Vis, typename T>
+constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
     using enum meta::type_kind;
     constexpr auto target = meta::kind_of<T>();
 
@@ -612,62 +615,191 @@ constexpr bool kind_compatible_impl(meta::type_kind src) {
     else if constexpr(meta::int_like<T> || meta::uint_like<T>)
         return src == int64 || src == uint64;
     else if constexpr(target == float32 || target == float64)
-        return src == float64;
+        // Widened: every backend's visit_float accepts integer input, so a
+        // float alternative may claim it — but only after the exact-kind pass
+        // has let a true integer alternative go first.
+        return src == float64 || (widen && (src == int64 || src == uint64));
     else if constexpr(target == character || meta::str_like<T>)
         return src == string;
     else if constexpr(target == null)
         return src == null;
-    else if constexpr(target == optional || target == pointer)
-        return true;
-    else if constexpr(target == structure)
+    else if constexpr(target == optional || target == pointer) {
+        // Null engages the nullable wrapper itself; anything else is judged
+        // by the wrapped type, so a wrapper alternative never strict-claims
+        // input a later alternative matches exactly —
+        // variant<optional<double>, int> hands an integer to int.
+        if(src == null)
+            return true;
+        constexpr auto wrapped = [] {
+            if constexpr(target == optional)
+                return std::type_identity<typename T::value_type>{};
+            else
+                return std::type_identity<typename T::element_type>{};
+        }();
+        return kind_compatible<Config, Vis, typename decltype(wrapped)::type>(src, widen);
+    } else if constexpr(target == structure)
         return src == structure;
     else if constexpr(target == array || target == set)
         return src == array;
     else if constexpr(target == map)
         return src == structure;
-    else if constexpr(target == variant)
-        return true;
+    else if constexpr(is_specialization_of<std::variant, T>)
+        // A nested variant is exactly as compatible as its alternatives:
+        // aggregate them so it neither strict-claims input only a widening
+        // alternative accepts nor shadows a later exact match.
+        return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (kind_compatible<Config, Vis, std::variant_alternative_t<Is, T>>(src, widen) ||
+                    ...);
+        }(std::make_index_sequence<std::variant_size_v<T>>{});
     else if constexpr(target == enumeration)
         return src == string || src == int64 || src == uint64;
     else
         return true;
 }
 
-template <typename T, typename Format>
-constexpr bool kind_compatible(meta::type_kind src) {
-    // An alternative arrives as its resolved representation — behavior attrs
-    // on an annotation first, then (chained) reprs under the visitor's format
-    // — so compatibility is judged against that; a dynamic representation can
-    // be anything.
-    using resolved_t = meta::resolved_repr_t<T, Format>;
-    if constexpr(std::is_same_v<resolved_t, meta::dynamic>) {
+template <typename Config, typename Vis, typename T>
+constexpr bool kind_compatible(meta::type_kind src, bool widen) {
+    using format = meta::format_of_t<Vis>;
+    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); }) {
+        // A backend dispatch override decodes however it likes — RawValue's
+        // JSON specialization accepts any value — so the type's declared
+        // shape says nothing about what it accepts; always probe it.
         return true;
     } else {
-        return kind_compatible_impl<resolved_t>(src);
+        // An alternative arrives as its resolved representation — behavior
+        // attrs on an annotation first, then (chained) reprs under the
+        // visitor's format — so compatibility is judged against that; a
+        // dynamic representation can be anything.
+        using resolved_t = meta::resolved_repr_t<T, format>;
+        if constexpr(std::is_same_v<resolved_t, meta::dynamic>) {
+            return true;
+        } else if constexpr(meta::resolves_to_tagged_variant<T, format> &&
+                            is_human_readable<Config, Vis>()) {
+            // A tagging spec survived resolution: the tagged decoders read an
+            // object ({tag: value}, {tag, content}, or tag-in-fields), so the
+            // alternatives' own kinds never face the input directly. A
+            // non-human-readable config instead ignores tagging on decode and
+            // reads the underlying variant, so its alternatives' kinds apply
+            // through the branch below.
+            return src == meta::type_kind::unknown || src == meta::type_kind::structure;
+        } else {
+            return kind_compatible_impl<Config, Vis, resolved_t>(src, widen);
+        }
     }
+}
+
+/// True when this alternative decodes through decode_untagged_variant itself —
+/// no dispatch override, a bare std::variant possibly behind nullable
+/// wrappers (which are transparent to non-null input) or declarative repr
+/// chain links (whose from() conversion runs after the variant is read) — so
+/// probing it re-enters the pass structure below and the outer pass level
+/// must flow into it. An imperative repr decodes through its own body
+/// instead, so its inner behavior is opaque to the pass structure.
+template <typename Config, typename Vis, typename T>
+constexpr bool probes_as_untagged_variant() {
+    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); })
+        return false;
+    else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
+        using chosen = meta::repr_for<T, meta::format_of_t<Vis>>;
+        if constexpr(
+            requires { chosen::from(std::declval<meta::declared_repr_t<chosen>>()); } &&
+            !requires(Vis& v, T& out) { chosen::template deserialize<Config>(v, out); })
+            return probes_as_untagged_variant<Config, Vis, meta::declared_repr_t<chosen>>();
+        else
+            return false;
+    } else if constexpr(is_optional_v<T>)
+        return probes_as_untagged_variant<Config, Vis, typename T::value_type>();
+    else if constexpr(is_specialization_of<std::unique_ptr, T> ||
+                      is_specialization_of<std::shared_ptr, T>)
+        return probes_as_untagged_variant<Config, Vis, typename T::element_type>();
+    else
+        return is_specialization_of<std::variant, T>;
+}
+
+template <typename Config, typename Vis, typename... Ts>
+bool
+    untagged_variant_pass(Vis& vis, std::variant<Ts...>& out, meta::type_kind src_kind, bool widen);
+
+/// Probe one nested-variant alternative at the outer pass level. Null engages
+/// the outermost nullable wrapper as usual; any other input flows through the
+/// wrappers and declarative repr links into the variant's own pass at the
+/// same widen level, so a wrapped or repr'd nested variant cannot run its
+/// widening pass during an outer exact pass any more than a bare one can.
+/// Reached only for chains probes_as_untagged_variant admitted, so a repr
+/// link here always has the declarative from() decode path.
+template <typename Config, typename Vis, typename T>
+bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
+    if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
+        using chosen = meta::repr_for<T, meta::format_of_t<Vis>>;
+        meta::declared_repr_t<chosen> declared{};
+        KOTA_CODEC_TRY(nested_alternative_pass<Config>(vis, declared, src_kind, widen));
+        out = chosen::from(std::move(declared));
+        return true;
+    } else if constexpr(is_specialization_of<std::variant, T>) {
+        return untagged_variant_pass<Config>(vis, out, src_kind, widen);
+    } else {
+        if(src_kind == meta::type_kind::null)
+            return decode_value<Config>(vis, out);
+        ensure_allocated(out);
+        return nested_alternative_pass<Config>(vis, *out, src_kind, widen);
+    }
+}
+
+/// One admission pass over an untagged variant's alternatives at the given
+/// widen level, each candidate probed through a fork. A nested variant —
+/// bare, under nullable wrappers, or behind a declarative repr — re-enters
+/// this pass at the same level instead of running its full decode, so an
+/// outer exact pass never triggers inner widening: decoding 1000 into
+/// variant<variant<int8_t, double>, int64_t> must reach the outer int64_t
+/// before any pass hands 1000 to the inner double. The widen pass re-admits
+/// such a nested alternative even when it strict-claimed — its exact branch
+/// failing (a narrowing int8_t) says nothing about its widening branch —
+/// while any other alternative that strict-claimed is skipped: its retry
+/// would just repeat the failure.
+template <typename Config, typename Vis, typename... Ts>
+bool untagged_variant_pass(Vis& vis,
+                           std::variant<Ts...>& out,
+                           meta::type_kind src_kind,
+                           bool widen) {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
+        return (([&] {
+                    using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
+                    constexpr bool nested = probes_as_untagged_variant<Config, Vis, alt_t>();
+                    bool strict = kind_compatible<Config, Vis, alt_t>(src_kind, false);
+                    bool admit = widen ? (nested || !strict) &&
+                                             kind_compatible<Config, Vis, alt_t>(src_kind, true)
+                                       : strict;
+                    if(!admit)
+                        return false;
+                    return vis.try_read([&](auto& fork) -> bool {
+                        if constexpr(nested) {
+                            return nested_alternative_pass<Config>(fork,
+                                                                   out.template emplace<Is>(),
+                                                                   src_kind,
+                                                                   widen);
+                        } else {
+                            return construct_and_visit<Config>(fork, out, Is);
+                        }
+                    });
+                }()) ||
+                ...);
+    }(std::index_sequence_for<Ts...>{});
 }
 
 template <typename Config, typename Vis, typename... Ts>
 bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
     if constexpr(has_try_read<Vis>) {
         if constexpr(has_peek_kind<Vis>) {
+            // Exact-kind pass first, so an integer picks an int alternative
+            // over an earlier float one; the widening pass then admits the
+            // conversions the decoders themselves perform (visit_float from
+            // integer input). The last alternative runs once more on the real
+            // visitor so its error surfaces when nothing claims the value.
             auto src_kind = vis.peek_kind();
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
-                return (([&] {
-                            using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                            if constexpr(Is != last) {
-                                if(!kind_compatible<alt_t, meta::format_of_t<Vis>>(src_kind))
-                                    return false;
-                                return vis.try_read([&](auto& fork) -> bool {
-                                    return construct_and_visit<Config>(fork, out, Is);
-                                });
-                            } else {
-                                return construct_and_visit<Config>(vis, out, Is);
-                            }
-                        }()) ||
-                        ...);
-            }(std::index_sequence_for<Ts...>{});
+            constexpr std::size_t last = sizeof...(Ts) - 1;
+            return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
+                   untagged_variant_pass<Config>(vis, out, src_kind, true) ||
+                   construct_and_visit<Config>(vis, out, last);
         } else {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
                 [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;

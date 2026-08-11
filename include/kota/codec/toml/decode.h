@@ -1,10 +1,11 @@
 #pragma once
 
 #include <charconv>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <ranges>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -40,34 +41,33 @@ inline std::string_view node_type_name(const Node* node) {
 }
 
 template <typename T>
-consteval bool is_map_like() {
-    if constexpr(std::ranges::input_range<T>) {
-        return meta::kind_of<T>() == meta::type_kind::map;
-    } else {
-        return false;
-    }
-}
-
-template <typename T>
 constexpr bool root_table_v = [] {
     // Judge the shape of the representation the codec dispatch resolves
-    // (annotations and toml-scoped meta::repr included), mirroring the root
-    // routing in to_toml.
+    // (annotations and toml-scoped meta::repr included) with the same kind
+    // test to_toml's root routing applies — in kind_of, str-like or
+    // tuple-like wins over reflection, so a bare reflectable check would
+    // claim the root table for values the encoder boxes.
     using R = meta::resolved_repr_t<T, format>;
-    return (meta::reflectable_class<R> && !is_specialization_of<std::pair, R> &&
-            !is_specialization_of<std::tuple, R> && !std::ranges::input_range<R>) ||
-           is_map_like<R>() || std::same_as<R, Table>;
+    constexpr auto kind = meta::kind_of<R>();
+    return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
+           std::same_as<R, Table>;
 }();
 
 template <typename T>
 auto select_root_node(const Table& tbl) -> const Node* {
     using U = std::remove_cvref_t<T>;
+    constexpr auto kind = meta::kind_of<U>();
 
-    if constexpr(is_optional_v<U> && std::is_same_v<meta::resolved_repr_t<U, format>, U>) {
+    // Nullable roots mirror to_toml's unwrapping: an absent value is the
+    // empty document, a present one routes by the shape of what it wraps.
+    // Empty always means null here — to_toml rejects an engaged value whose
+    // serialization would be the empty document.
+    if constexpr((kind == meta::type_kind::optional || kind == meta::type_kind::pointer) &&
+                 std::is_same_v<meta::resolved_repr_t<U, format>, U>) {
         if(tbl.empty()) {
             return nullptr;
         }
-        using value_t = typename U::value_type;
+        using value_t = std::remove_cvref_t<decltype(*std::declval<U&>())>;
         if constexpr(root_table_v<value_t>) {
             return std::addressof(static_cast<const Node&>(tbl));
         } else {

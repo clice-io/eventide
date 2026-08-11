@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/config.h"
@@ -58,7 +59,9 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_char(T v) {
-        char32_t cp = static_cast<char32_t>(v);
+        // Through unsigned first: a negative char must map to its octet
+        // (0x80-0xFF), not sign-extend into an invalid codepoint.
+        char32_t cp = static_cast<std::make_unsigned_t<T>>(v);
         if(cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
             return scoped_context<rich_error>::fail(rich_error("invalid Unicode codepoint"));
         }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -489,3 +490,8 @@ public:
 };
 
 }  // namespace kota
+
+/// std::format does not consider base-class formatters, so the string_view
+/// one must be re-anchored for string_ref explicitly.
+template <>
+struct std::formatter<kota::string_ref, char> : std::formatter<std::string_view, char> {};

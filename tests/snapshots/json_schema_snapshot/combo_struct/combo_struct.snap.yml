@@ -10,7 +10,7 @@ created_at: 2026-05-18
             "type": "string"
         },
         "age": {
-            "oneOf": [
+            "anyOf": [
                 {
                     "type": "integer",
                     "minimum": -2147483648,

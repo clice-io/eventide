@@ -607,8 +607,10 @@ TEST_CASE(root_integers) {
 }
 
 TEST_CASE(root_floats) {
+    // The default nan_repr (Passthrough) hands non-finite values to the
+    // writer, which emits null — so even the default schema admits null.
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"number"})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","anyOf":[{"type":"number"},{"type":"null"}]})";
     EXPECT_EQ(json::schema_string<float>().value(), schema);
     EXPECT_EQ(json::schema_string<double>().value(), schema);
 }
@@ -654,7 +656,7 @@ TEST_CASE(scalar_wrapper_integers) {
 
 TEST_CASE(scalar_wrapper_floats) {
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"type":"number"}},"required":["v"]})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"anyOf":[{"type":"number"},{"type":"null"}]}},"required":["v"]})";
     EXPECT_EQ(json::schema_string<s_f32>().value(), schema);
     EXPECT_EQ(json::schema_string<s_f64>().value(), schema);
 }
@@ -687,35 +689,50 @@ TEST_CASE(root_enum_color_i8) {
     const auto result = json::schema_string<color_i8>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["red","green","blue"]})");
+              R"("type":"integer","minimum":-128,"maximum":127})");
 }
 
 TEST_CASE(root_enum_single) {
     const auto result = json::schema_string<single_enum>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["only"]})");
+              R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
 
 TEST_CASE(root_enum_status) {
     const auto result = json::schema_string<status>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["ok","fail","pending"]})");
+              R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
 
 TEST_CASE(root_enum_flag_u8) {
     const auto result = json::schema_string<flag_u8>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["off","on"]})");
+              R"("type":"integer","minimum":0,"maximum":255})");
 }
 
 TEST_CASE(root_enum_level_i16) {
     const auto result = json::schema_string<level_i16>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["low","mid","high"]})");
+              R"("type":"integer","minimum":-32768,"maximum":32767})");
+}
+
+TEST_CASE(root_enum_value_outside_name_scan) {
+    // 65535 lies outside the [-128, 127] name-reflection scan, yet encodes
+    // fine as a number — the schema must not reject it, so the numeric form
+    // is the underlying integer's range rather than a reflected value list.
+    enum class big_u16 : std::uint16_t { a = 0, c = 65535 };
+    const auto encoded = json::to_json(big_u16::c);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "65535");
+
+    const auto result = json::schema_string<big_u16>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"integer","minimum":0,"maximum":65535})");
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +999,7 @@ TEST_CASE(nested_with_enum) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("c":{"enum":["red","green","blue"]},)"
+              R"("c":{"type":"integer","minimum":-128,"maximum":127},)"
               R"("name":{"type":"string"}},)"
               R"("required":["c","name"]})");
 }
@@ -998,7 +1015,7 @@ TEST_CASE(optional_field) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("age":{"oneOf":[{"type":"integer",)"
+              R"("age":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}},)"
@@ -1012,7 +1029,7 @@ TEST_CASE(unique_ptr_field) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("ptr":{"oneOf":[{"type":"integer",)"
+              R"("ptr":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}},)"
@@ -1026,7 +1043,7 @@ TEST_CASE(shared_ptr_field) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("ptr":{"oneOf":[{"type":"integer",)"
+              R"("ptr":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}},)"
@@ -1039,11 +1056,11 @@ TEST_CASE(all_optional_fields) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("a":{"oneOf":[{"type":"integer",)"
+              R"("a":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]},)"
-              R"("b":{"oneOf":[{"type":"string"},)"
+              R"("b":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}]}}})");
 }
 
@@ -1053,13 +1070,13 @@ TEST_CASE(all_ptr_types) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("opt":{"oneOf":[{"type":"string"},)"
+              R"("opt":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}]},)"
-              R"("uniq":{"oneOf":[{"type":"integer",)"
+              R"("uniq":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]},)"
-              R"("shr":{"oneOf":[{"type":"boolean"},)"
+              R"("shr":{"anyOf":[{"type":"boolean"},)"
               R"({"type":"null"}]}}})");
 }
 
@@ -1216,7 +1233,7 @@ TEST_CASE(flatten_with_optional) {
               R"("x":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"("y":{"oneOf":[{"type":"integer",)"
+              R"("y":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]},)"
@@ -1267,7 +1284,7 @@ TEST_CASE(variant_untagged) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[)"
+              R"("v":{"anyOf":[)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
@@ -1281,7 +1298,7 @@ TEST_CASE(variant_three_alts) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[)"
+              R"("v":{"anyOf":[)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
@@ -1491,13 +1508,13 @@ TEST_CASE(root_internal_variant) {
               R"("oneOf":[)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("radius":{"type":"number"},)"
+              R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
               R"("kind":{"const":"circle"}},)"
               R"("required":["radius","kind"]},)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("width":{"type":"number"},)"
-              R"("height":{"type":"number"},)"
+              R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+              R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
               R"("kind":{"const":"rect"}},)"
               R"("required":["width","height","kind"]}]})");
 }
@@ -1587,7 +1604,7 @@ TEST_CASE(map_str_enum) {
               R"("properties":{)"
               R"("entries":{"type":"object",)"
               R"("additionalProperties":{)"
-              R"("enum":["red","green","blue"]}}},)"
+              R"("type":"integer","minimum":-128,"maximum":127}}},)"
               R"("required":["entries"]})");
 }
 
@@ -1598,7 +1615,7 @@ TEST_CASE(vec_optional_items) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("v":{"type":"array",)"
-              R"("items":{"oneOf":[{"type":"integer",)"
+              R"("items":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}}},)"
@@ -1611,7 +1628,7 @@ TEST_CASE(optional_vec_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[{"type":"array",)"
+              R"("v":{"anyOf":[{"type":"array",)"
               R"("items":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
@@ -1626,7 +1643,7 @@ TEST_CASE(vec_of_enum) {
               R"("properties":{)"
               R"("colors":{"type":"array",)"
               R"("items":{)"
-              R"("enum":["red","green","blue"]}}},)"
+              R"("type":"integer","minimum":-128,"maximum":127}}},)"
               R"("required":["colors"]})");
 }
 
@@ -1719,7 +1736,7 @@ TEST_CASE(shared_ptr_to_struct) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("point":{"oneOf":[{)"
+              R"("point":{"anyOf":[{)"
               R"("$ref":"#/$defs/point2d"},)"
               R"({"type":"null"}]}},)"
               R"("required":["name"],)"
@@ -1741,7 +1758,7 @@ TEST_CASE(optional_struct_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("point":{"oneOf":[{)"
+              R"("point":{"anyOf":[{)"
               R"("$ref":"#/$defs/point2d"},)"
               R"({"type":"null"}]},)"
               R"("name":{"type":"string"}},)"
@@ -1798,8 +1815,8 @@ TEST_CASE(multi_enum_fields) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("c":{"enum":["red","green","blue"]},)"
-              R"("s":{"enum":["ok","fail","pending"]},)"
+              R"("c":{"type":"integer","minimum":-128,"maximum":127},)"
+              R"("s":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
               R"("label":{"type":"string"}},)"
               R"("required":["c","s","label"]})");
 }
@@ -1810,7 +1827,7 @@ TEST_CASE(with_flag_enum) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("f":{"enum":["off","on"]},)"
+              R"("f":{"type":"integer","minimum":0,"maximum":255},)"
               R"("name":{"type":"string"}},)"
               R"("required":["f","name"]})");
 }
@@ -1821,7 +1838,7 @@ TEST_CASE(with_level_enum) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("l":{"enum":["low","mid","high"]},)"
+              R"("l":{"type":"integer","minimum":-32768,"maximum":32767},)"
               R"("v":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
@@ -1838,7 +1855,7 @@ TEST_CASE(optional_inner_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("i":{"oneOf":[{)"
+              R"("i":{"anyOf":[{)"
               R"("$ref":"#/$defs/inner"},)"
               R"({"type":"null"}]},)"
               R"("name":{"type":"string"}},)"
@@ -1863,7 +1880,7 @@ TEST_CASE(vec_of_variant) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("items":{"type":"array",)"
-              R"("items":{"oneOf":[)"
+              R"("items":{"anyOf":[)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
@@ -1882,8 +1899,8 @@ TEST_CASE(combo_mixed_fields) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("color":{)"
-              R"("enum":["red","green","blue"]},)"
-              R"("label":{"oneOf":[{"type":"string"},)"
+              R"("type":"integer","minimum":-128,"maximum":127},)"
+              R"("label":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}]},)"
               R"("values":{"type":"array",)"
               R"("items":{"type":"integer",)"
@@ -1905,7 +1922,7 @@ TEST_CASE(combo_nested_struct_refs) {
               R"("point":{)"
               R"("$ref":"#/$defs/point2d"},)"
               R"("color":{)"
-              R"("enum":["red","green","blue"]},)"
+              R"("type":"integer","minimum":-128,"maximum":127},)"
               R"("points":{"type":"array",)"
               R"("items":{)"
               R"("$ref":"#/$defs/point2d"}},)"
@@ -1964,7 +1981,7 @@ TEST_CASE(combo_deep_nesting) {
               R"("deep_inner":{"type":"object",)"
               R"("properties":{)"
               R"("c":{)"
-              R"("enum":["red","green","blue"]},)"
+              R"("type":"integer","minimum":-128,"maximum":127},)"
               R"("v":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
@@ -2009,7 +2026,7 @@ TEST_CASE(combo_many_fields) {
               R"("maximum":2147483647},)"
               R"("d":{"type":"string"},)"
               R"("e":{"type":"boolean"},)"
-              R"("f":{"type":"number"}},)"
+              R"("f":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
               R"("required":["a","b","c","d","e","f"]})");
 }
 
@@ -2084,7 +2101,7 @@ TEST_CASE(self_referential_struct) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("next":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)"
+              R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
               R"("required":["value"]})");
 }
 
@@ -2100,7 +2117,9 @@ TEST_CASE(empty_enum) {
         type_kind::int32,
     };
     const auto result = json::schema_string(empty_ei).value();
-    EXPECT_EQ(result, R"({"$schema":"https://json-schema.org/draft/2020-12/schema","enum":[]})");
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
 
 // ---------------------------------------------------------------------------
@@ -2137,9 +2156,9 @@ TEST_CASE(variant_of_variant) {
     const auto result = json::schema_string(outer_var).value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("oneOf":[)"
+              R"("anyOf":[)"
               R"({"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"({"oneOf":[)"
+              R"({"anyOf":[)"
               R"({"type":"string"},)"
               R"({"type":"boolean"}]}]})");
 }
@@ -2169,7 +2188,7 @@ TEST_CASE(field_ordering_stability) {
               R"("zebra":{"type":"string"},)"
               R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
               R"("middle":{"type":"boolean"},)"
-              R"("beta":{"type":"number"}},)"
+              R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
               R"("required":["zebra","alpha","middle","beta"]})");
 }
 
@@ -2187,7 +2206,7 @@ TEST_CASE(variant_with_monostate) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[)"
+              R"("v":{"anyOf":[)"
               R"({"type":"null"},)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
@@ -2240,13 +2259,13 @@ TEST_CASE(mutual_recursion) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("b":{"oneOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
+              R"("b":{"anyOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
               R"("required":["value"],)"
               R"("$defs":{)"
               R"("node_b":{"type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("a":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)"
+              R"("a":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
               R"("required":["name"]}}})");
 }
 
@@ -2270,7 +2289,10 @@ TEST_CASE(bytes_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("data":{"type":"string"}},)"
+              R"("data":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":0,)"
+              R"("maximum":255}}},)"
               R"("required":["data"]})");
 }
 
@@ -2298,7 +2320,7 @@ TEST_CASE(description_on_optional_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("label":{"oneOf":[{"type":"string"},)"
+              R"("label":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}],)"
               R"("description":"Optional display label."}}})");
 }
@@ -2392,16 +2414,214 @@ TEST_CASE(description_in_internal_tagged_alternative) {
               R"("oneOf":[)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("radius":{"type":"number",)"
+              R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}],)"
               R"("description":"Radius in meters."},)"
               R"("kind":{"const":"circle"}},)"
               R"("required":["radius","kind"]},)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("width":{"type":"number"},)"
-              R"("height":{"type":"number"},)"
+              R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+              R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
               R"("kind":{"const":"rect"}},)"
               R"("required":["width","height","kind"]}]})");
+}
+
+// ---------------------------------------------------------------------------
+// enum representation config
+// ---------------------------------------------------------------------------
+
+struct string_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+};
+
+TEST_CASE(enum_names_under_string_config) {
+    const auto result = json::schema_string<color_i8, string_enum_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["red","green","blue"]})");
+}
+
+TEST_CASE(unnamed_enum_value_rejected_under_string_config) {
+    // A representable value without a reflected member name has no string
+    // spelling: the encoder rejects it, so the schema's enum list of
+    // reflected names stays exhaustive.
+    const auto encoded = json::to_json<string_enum_config>(static_cast<color_i8>(42));
+    EXPECT_FALSE(encoded.has_value());
+}
+
+TEST_CASE(schema_agrees_with_encoder_on_enums) {
+    // Under the default config the encoder emits the numeric value, so the
+    // schema constrains the same numeric form.
+    const auto encoded = json::to_json(with_enum{.c = color_i8::green, .name = "g"});
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_TRUE(encoded->find(R"("c":1)") != std::string::npos);
+
+    const auto schema = json::schema_string<with_enum>().value();
+    EXPECT_TRUE(schema.find(R"("c":{"type":"integer","minimum":-128,"maximum":127})") !=
+                std::string::npos);
+}
+
+struct renamed_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+    using enum_rename = naming::rename_policy::upper_snake;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
+    // The schema lists the spellings the encoder writes under the same
+    // config, not the raw reflected names.
+    const auto encoded = json::to_json<renamed_enum_config>(color_i8::green);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("GREEN")");
+
+    const auto result = json::schema_string<color_i8, renamed_enum_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["RED","GREEN","BLUE"]})");
+}
+
+// ---------------------------------------------------------------------------
+// nan_repr config
+// ---------------------------------------------------------------------------
+
+struct nan_null_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Null;
+};
+
+struct nan_string_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::String;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
+    // The default Passthrough forwards the non-finite value to the writer,
+    // whose only JSON spelling for it is null — the schema must admit that.
+    const auto encoded = json::to_json(std::numeric_limits<double>::quiet_NaN());
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "null");
+
+    const auto result = json::schema_string<double>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+}
+
+TEST_CASE(schema_agrees_with_encoder_on_nan_null) {
+    const auto encoded = json::to_json<nan_null_config>(std::numeric_limits<double>::quiet_NaN());
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "null");
+
+    const auto result = json::schema_string<double, nan_null_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+}
+
+TEST_CASE(schema_agrees_with_encoder_on_nan_string) {
+    const auto encoded = json::to_json<nan_string_config>(std::numeric_limits<float>::infinity());
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("Infinity")");
+
+    const auto result = json::schema_string<float, nan_string_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[{"type":"number"},)"
+              R"({"enum":["NaN","Infinity","-Infinity"]}]})");
+}
+
+struct nan_error_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Error;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
+    // A finite long double beyond double's range narrows to infinity in the
+    // document, so the nan_repr policy judges the narrowed value: String
+    // spells it, Error rejects it — never a null the schema does not admit.
+    constexpr long double big = std::numeric_limits<long double>::max();
+    if constexpr(big > static_cast<long double>(std::numeric_limits<double>::max())) {
+        const auto spelled = json::to_json<nan_string_config>(big);
+        ASSERT_TRUE(spelled.has_value());
+        EXPECT_EQ(*spelled, R"("Infinity")");
+
+        const auto negative = json::to_json<nan_string_config>(-big);
+        ASSERT_TRUE(negative.has_value());
+        EXPECT_EQ(*negative, R"("-Infinity")");
+
+        EXPECT_FALSE(json::to_json<nan_error_config>(big).has_value());
+    } else {
+        // long double is double: the value stays a finite number.
+        EXPECT_TRUE(json::to_json<nan_error_config>(big).has_value());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// human_readable config
+// ---------------------------------------------------------------------------
+
+struct non_hr_config {
+    [[maybe_unused]] constexpr static bool human_readable = false;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
+    // A non-human-readable config bypasses tagging and encodes the underlying
+    // variant, so the schema describes the untagged alternatives.
+    const auto encoded = json::to_json<non_hr_config>(root_external_variant{7});
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "7");
+
+    const auto result = json::schema_string<root_external_variant, non_hr_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"}]})");
+}
+
+// ---------------------------------------------------------------------------
+// overlapping untagged alternatives
+// ---------------------------------------------------------------------------
+
+TEST_CASE(untagged_overlap_validates_as_any_of) {
+    // A numeric enum's underlying range overlaps the int alternative: both
+    // branches match the same document, so exactly-one (oneOf) semantics
+    // would reject every value the encoder emits — anyOf must apply.
+    using overlapping = std::variant<color_i8, std::int32_t>;
+    const auto result = json::schema_string<overlapping>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[)"
+              R"({"type":"integer","minimum":-128,"maximum":127},)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}]})");
+}
+
+// ---------------------------------------------------------------------------
+// metadata config forwarding
+// ---------------------------------------------------------------------------
+
+struct camel_deny_config {
+    using field_rename = naming::rename_policy::lower_camel;
+    [[maybe_unused]] constexpr static bool deny_unknown_fields = true;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_config) {
+    // The schema must accept what to_json under the same config emits:
+    // renamed field names and the unknown-field policy.
+    const auto encoded = json::to_json<camel_deny_config>(casing_child{.first_value = 7});
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"firstValue":7})");
+
+    const auto result = json::schema_string<casing_child, camel_deny_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("firstValue":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["firstValue"],)"
+              R"("additionalProperties":false})");
 }
 
 };  // TEST_SUITE(serde_json_schema)
