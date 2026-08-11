@@ -1,3 +1,4 @@
+#include <array>
 #include <cstdint>
 #include <format>
 #include <limits>
@@ -665,6 +666,29 @@ using defaults_adjacent_variant =
 KOTATSU_ANNOTATION(defaults_external_annotation, tagged = true, tag_names = {"a", "b"});
 using defaults_external_variant =
     annotate<defaults_external_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+
+struct defaults_elem_a {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> alpha = 7;
+};
+
+struct defaults_elem_b {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::string> beta = "cell";
+};
+
+struct defaults_elem_c {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <bool> gamma = true;
+};
+
+struct defaults_containers {
+    std::vector<defaults_elem_a> pool = {{}};
+    std::tuple<defaults_elem_b, std::int32_t> entry;
+    std::map<std::string, defaults_elem_c> index = {
+        {"main", {}}
+    };
+};
 
 namespace json = kota::codec::json;
 
@@ -2862,6 +2886,30 @@ TEST_CASE(defaults_external_tagged_variant) {
     const auto result = json::schema_string<defaults_external_variant>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_container_elements) {
+    // Required containers carry no site default, but the walk descends
+    // alongside their encoded elements — each tuple slot against its prefix
+    // schema, every array element and map entry against the shared element
+    // schema — so struct $defs reachable only through containers keep their
+    // leaf defaults.
+    const auto result = json::schema_string<defaults_containers>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":7})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("beta":{"type":"string","default":"cell"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("gamma":{"type":"boolean","default":true})") != std::string::npos);
+    // The required container properties themselves stay bare.
+    EXPECT_TRUE(
+        result.find(R"("pool":{"type":"array","items":{"$ref":"#/$defs/defaults_elem_a"}})") !=
+        std::string::npos);
+}
+
+TEST_CASE(defaults_container_root) {
+    // A container root merges its schema shape (std::array reflects as a
+    // tuple: prefixItems) into the top-level object; the walk pairs it with
+    // the encoded array document and still reaches the element $def.
+    const auto result = json::schema_string<std::array<defaults_elem_a, 2>>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":7})") != std::string::npos);
 }
 
 TEST_CASE(defaults_repr_backed_root) {

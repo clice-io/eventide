@@ -505,6 +505,10 @@ private:
 /// annotation would be a lie; they are skipped, as are properties the default
 /// document does not carry (encode-side skip conditions). Property-level
 /// struct $refs recurse so defaults land on the leaf fields inside $defs; a
+/// container schema descends alongside its encoded elements — each tuple
+/// slot against its prefix schema, every array element and map entry
+/// against the shared element schema — so a struct reachable only through a
+/// container still annotates its $def leaves. A
 /// $def shared by several sites keeps the values of its first visit, while
 /// each non-required ref site also carries its whole encoded object as its
 /// own default, so per-site member initializers survive the sharing. A
@@ -522,15 +526,44 @@ public:
     }
 
     void annotate(dyn::Object& body, const dyn::Value& value) {
-        // Every walked body pairs with an object document: a struct schema
-        // with a struct encoding, a tagged variant whose tagged forms are
-        // all objects — unless the root type is a nullable wrapper (the
-        // emitter unwraps optional/pointer roots to the inner body, but a
-        // default-constructed wrapper encodes to null). Null carries no
-        // property values, so there is nothing to annotate from.
+        // An array document pairs with a container schema: a tuple walks
+        // each prefix schema against its slot (the emitter and encoder
+        // agree on the arity), an array/set walks the shared item schema
+        // against every element. A tuple also carries "items": false to
+        // close the prefix, so prefixItems decides first.
+        if(const auto* elems = value.get_array()) {
+            if(auto* prefix = body.find("prefixItems")) {
+                auto& schemas = *prefix->get_array();
+                for(std::size_t i = 0; i < elems->size(); ++i) {
+                    descend(schemas[i], (*elems)[i]);
+                }
+            } else if(auto* items = body.find("items")) {
+                for(const auto& elem: *elems) {
+                    descend(*items, elem);
+                }
+            }
+            return;
+        }
+        // Every other walked body pairs with an object document: a struct
+        // schema with a struct encoding, a map with its entries, a tagged
+        // variant whose tagged forms are all objects — unless the root
+        // type is a nullable wrapper (the emitter unwraps optional/pointer
+        // roots to the inner body, but a default-constructed wrapper
+        // encodes to null). Null carries no property values, so there is
+        // nothing to annotate from.
         const auto* doc = value.get_object();
         if(doc == nullptr) {
             return;
+        }
+        // A map schema constrains every entry through one value schema —
+        // walk it against each encoded entry. additionalProperties also
+        // spells a deny-unknown struct's `false`, which get_object rejects.
+        if(auto* extra = body.find("additionalProperties")) {
+            if(extra->get_object() != nullptr) {
+                for(const auto& entry: *doc) {
+                    descend(*extra, entry.second);
+                }
+            }
         }
         if(auto* props = body.find("properties")) {
             const dyn::Array* required = nullptr;
@@ -615,7 +648,17 @@ private:
     /// leaf values, so the ref site is the only place a per-site member
     /// initializer survives.
     void annotate_property(dyn::Value& prop, const dyn::Value& value, bool required) {
-        auto& obj = *prop.get_object();
+        descend(prop, value);
+        if(!required) {
+            prop.get_object()->insert("default", value);
+        }
+    }
+
+    /// Routes the walk through one schema site — a property or a container
+    /// element: a $ref hops to its $def, on the first visit only, while any
+    /// inline shape annotates in place.
+    void descend(dyn::Value& schema, const dyn::Value& value) {
+        auto& obj = *schema.get_object();
         if(const auto* ref = obj.find("$ref")) {
             if(auto& target = resolve(*ref->get_string()); visited.insert(&target).second) {
                 annotate(target, value);
@@ -623,16 +666,15 @@ private:
         } else {
             annotate(obj, value);
         }
-        if(!required) {
-            obj.insert("default", value);
-        }
     }
 
-    /// Only $defs references reach the walk at property level: a by-value
-    /// self-reference ($ref "#") would make the type infinite, and
-    /// pointer/optional self-references sit inside an anyOf wrapper, which
-    /// the walk treats as a leaf. The emitter inserted "$defs" and the named
-    /// body before it emitted the reference.
+    /// Only $defs references reach the walk: a root self-reference ($ref
+    /// "#") under a property or a tuple slot would make the type infinite,
+    /// the dynamic containers that could otherwise close the cycle (vector,
+    /// map, set) default-construct empty — no element document to descend
+    /// with — and pointer/optional self-references sit inside an anyOf
+    /// wrapper, which the walk treats as a leaf. The emitter inserted
+    /// "$defs" and the named body before it emitted the reference.
     dyn::Object& resolve(std::string_view ref) {
         constexpr std::string_view prefix = "#/$defs/";
         return *defs->find(ref.substr(prefix.size()))->get_object();
