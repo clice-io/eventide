@@ -45,8 +45,8 @@ constexpr auto format_of_impl() {
 
 }  // namespace detail
 
-/// The format tag a config carries; void — the format-agnostic slot — when it
-/// carries none.
+/// The format tag a config or visitor carries; void — the format-agnostic
+/// slot — when it carries none.
 template <typename Config>
 using format_of_t = typename decltype(detail::format_of_impl<Config>())::type;
 
@@ -283,11 +283,13 @@ struct resolved_repr {
 /// behavior::enum_string; the type's repr applies only when no behavior attr
 /// provides the representation, and within it the config's format tag selects
 /// a format-scoped specialization over the format-agnostic one — the same
-/// choice the dispatch makes from the visitor's format tag. Every chosen representation re-enters
-/// the resolver, so chained reprs and annotations nested inside representation types resolve to the
-/// final type, matching the codec's recursive re-dispatch on the converted value. The rename_all /
-/// deny_unknown_fields of reflectable annotated nodes merge into the carried config through
-/// merged_config_t — the same primitive and the same reflectable_class gate
+/// choice the dispatch makes from the visitor's format tag. Every chosen
+/// representation re-enters the resolver, so chained reprs and annotations
+/// nested inside representation types resolve to the final type, matching the
+/// codec's recursive re-dispatch on the converted value. The rename_all /
+/// deny_unknown_fields of reflectable annotated nodes merge into the carried
+/// config through merged_config_t — the same primitive and the same
+/// reflectable_class gate
 /// the codec dispatch uses — so the resulting type_info describes the
 /// documents the codec actually reads and writes. A tagged variant keeps its
 /// tagging spec attr; the spec's own rename_all/deny stay inert for the
@@ -618,10 +620,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 /// specializations; void resolves the format-agnostic view.
 template <typename T, typename Format = void>
 using resolved_repr_t =
-    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>,
-                                           std::conditional_t<std::is_void_v<Format>,
-                                                              default_config,
-                                                              format_config<Format>>>())::type;
+    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
 template <typename T, typename Config>
 constexpr const type_info& type_info_of() {

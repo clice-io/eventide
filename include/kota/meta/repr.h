@@ -74,7 +74,7 @@ constexpr auto repr_for_impl() {
 
 /// The repr specialization selected for T under Format: the format-scoped one
 /// when present, the format-agnostic one otherwise.
-template <typename T, typename Format = void>
+template <typename T, typename Format>
     requires has_repr<T, Format>
 using repr_for = typename decltype(detail::repr_for_impl<T, Format>())::type;
 

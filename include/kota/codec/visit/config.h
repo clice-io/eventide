@@ -104,25 +104,6 @@ constexpr bool is_layout_computed() {
     }
 }
 
-namespace detail {
-
-template <typename Vis>
-constexpr auto visitor_format_impl() {
-    if constexpr(requires { typename Vis::format; }) {
-        return std::type_identity<typename Vis::format>{};
-    } else {
-        return std::type_identity<void>{};
-    }
-}
-
-}  // namespace detail
-
-/// The format tag a visitor declares, selecting format-scoped meta::repr
-/// specializations for its backend; void — the format-agnostic slot — when
-/// the visitor declares none.
-template <typename Vis>
-using visitor_format_t = typename decltype(detail::visitor_format_impl<Vis>())::type;
-
 /// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
 template <typename Config, typename Vis>
 constexpr bool is_human_readable() {

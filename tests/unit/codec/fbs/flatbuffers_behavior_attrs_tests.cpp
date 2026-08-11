@@ -947,6 +947,12 @@ struct ProbeGrid {
     auto operator==(const ProbeGrid&) const -> bool = default;
 };
 
+struct SensorList {
+    std::vector<SensorId> ids;
+
+    auto operator==(const SensorList&) const -> bool = default;
+};
+
 // fbs resolves the format-scoped repr; the bare (format-agnostic) view keeps
 // the string form other backends dispatch on.
 static_assert(std::is_same_v<meta::resolved_repr_t<SensorId, fbs::format>, std::uint32_t>);
@@ -964,7 +970,7 @@ TEST_CASE(format_scoped_repr_selected_by_fbs) {
     auto encoded = fbs::to_flatbuffer(input);
     ASSERT_TRUE(encoded.has_value());
 
-    // The wire slot holds the fbs-scoped uint32, not the string form.
+    // The table slot holds the fbs-scoped uint32, not the string form.
     auto root = fbs::table_view<SensorReading>::from_bytes(
         std::span<const std::uint8_t>(encoded->data(), encoded->size()));
     ASSERT_TRUE(root.valid());
@@ -985,6 +991,32 @@ TEST_CASE(other_backends_keep_format_agnostic_repr) {
 
     SensorReading output{};
     ASSERT_TRUE(json::from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(format_scoped_repr_reaches_vector_elements) {
+    // Element classification (element_layout_of / scalar cells) must resolve
+    // the same fbs-scoped repr as the dispatch: the vector stores uint32
+    // scalars, not string offsets.
+    const SensorList input{
+        .ids = {SensorId{3}, SensorId{9}}
+    };
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = fbs::table_view<SensorList>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+
+    auto ids = root[&SensorList::ids];
+    ASSERT_TRUE(ids.valid());
+    ASSERT_EQ(ids.size(), 2U);
+    EXPECT_EQ(ids[0], 3U);
+    EXPECT_EQ(ids[1], 9U);
+
+    SensorList output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 }
 

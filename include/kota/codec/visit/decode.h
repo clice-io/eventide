@@ -657,7 +657,7 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
                 return (([&] {
                             using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
                             if constexpr(Is != last) {
-                                if(!kind_compatible<alt_t, visitor_format_t<Vis>>(src_kind))
+                                if(!kind_compatible<alt_t, meta::format_of_t<Vis>>(src_kind))
                                     return false;
                                 return vis.try_read([&](auto& fork) -> bool {
                                     return construct_and_visit<Config>(fork, out, Is);
@@ -765,7 +765,7 @@ bool decode_value(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
-        static_assert(!meta::has_repr<V, visitor_format_t<Vis>>,
+        static_assert(!meta::has_repr<V, meta::format_of_t<Vis>>,
                       "type has both a deserialize_visit specialization and a meta::repr; "
                       "keep exactly one");
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
@@ -813,8 +813,8 @@ bool decode_value(Vis& vis, T& out) {
         } else {
             return decode_value<Config>(vis, inner);
         }
-    } else if constexpr(meta::has_repr<V, visitor_format_t<Vis>>) {
-        return detail::repr_decode<meta::repr_for<V, visitor_format_t<Vis>>, Config>(vis, out);
+    } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
+        return detail::repr_decode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, out);
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;

@@ -204,7 +204,7 @@ bool encode_value(Vis& vis, const T& value) {
     if constexpr(requires(Vis& v, const V& val) {
                      serialize_visit<Vis, V, Config>::visit(v, val);
                  }) {
-        static_assert(!meta::has_repr<V, visitor_format_t<Vis>>,
+        static_assert(!meta::has_repr<V, meta::format_of_t<Vis>>,
                       "type has both a serialize_visit specialization and a meta::repr; "
                       "keep exactly one");
         return serialize_visit<Vis, V, Config>::visit(vis, value);
@@ -243,8 +243,8 @@ bool encode_value(Vis& vis, const T& value) {
         } else {
             return encode_value<Config>(vis, inner);
         }
-    } else if constexpr(meta::has_repr<V, visitor_format_t<Vis>>) {
-        return detail::repr_encode<meta::repr_for<V, visitor_format_t<Vis>>, Config>(vis, value);
+    } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
+        return detail::repr_encode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, value);
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;

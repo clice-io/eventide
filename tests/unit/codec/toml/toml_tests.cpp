@@ -218,3 +218,80 @@ TEST_CASE(tuple_length_errors) {
 }  // namespace kota::codec
 
 #endif
+
+// ============================================================================
+// Format-scoped repr: the TOML backend picks repr<T, toml::format>.
+// ============================================================================
+
+namespace kota_toml_format_test {
+
+// Generic form is textual; the toml-scoped override is a bare integer.
+struct journal {
+    int page = 0;
+
+    auto operator==(const journal&) const -> bool = default;
+};
+
+}  // namespace kota_toml_format_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_toml_format_test::journal> {
+    using type = std::string;
+
+    static type to(const kota_toml_format_test::journal& j) {
+        return "p" + std::to_string(j.page);
+    }
+
+    static kota_toml_format_test::journal from(const std::string& encoded) {
+        return {.page = std::stoi(encoded.substr(1))};
+    }
+};
+
+template <>
+struct repr<kota_toml_format_test::journal, codec::toml::format> {
+    using type = std::int64_t;
+
+    static type to(const kota_toml_format_test::journal& j) {
+        return j.page;
+    }
+
+    static kota_toml_format_test::journal from(type v) {
+        return {.page = static_cast<int>(v)};
+    }
+};
+
+}  // namespace kota::meta
+
+namespace kota::codec {
+
+namespace {
+
+using kota_toml_format_test::journal;
+
+struct journal_entry {
+    journal j;
+
+    auto operator==(const journal_entry&) const -> bool = default;
+};
+
+TEST_SUITE(serde_toml_format_scoped) {
+
+TEST_CASE(format_scoped_repr_selected_by_toml) {
+    const journal_entry input{.j = {.page = 41}};
+
+    auto text = toml::to_string(input);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_TRUE(text->find("j = 41") != std::string::npos);
+
+    auto output = toml::parse<journal_entry>(*text);
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, input);
+}
+
+};  // TEST_SUITE(serde_toml_format_scoped)
+
+}  // namespace
+
+}  // namespace kota::codec
