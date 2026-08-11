@@ -20,8 +20,8 @@ using namespace meta;
 
 namespace {
 
-using fbs::from_flatbuffer;
-using fbs::to_flatbuffer;
+using fbs::from_bytes;
+using fbs::to_bytes;
 
 enum class role : std::int32_t {
     admin,
@@ -68,11 +68,11 @@ TEST_SUITE(serde_flatbuffers_behavior_attrs) {
 TEST_CASE(enum_string_roundtrip_on_struct_field) {
     const with_enum_string_field input{.id = 42, .level = role::editor};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_enum_string_field output{};
-    auto status = from_flatbuffer(*encoded, output);
+    auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -80,11 +80,11 @@ TEST_CASE(enum_string_roundtrip_on_struct_field) {
 TEST_CASE(enum_string_roundtrip_viewer_value) {
     const with_enum_string_field input{.id = 7, .level = role::viewer};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_enum_string_field output{};
-    auto status = from_flatbuffer(*encoded, output);
+    auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -92,11 +92,11 @@ TEST_CASE(enum_string_roundtrip_viewer_value) {
 TEST_CASE(with_adapter_roundtrip_int_as_string) {
     const with_adapter_field input{.id = 9, .encoded = 12345, .tag = "gold"};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_adapter_field output{};
-    auto status = from_flatbuffer(*encoded, output);
+    auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -104,11 +104,11 @@ TEST_CASE(with_adapter_roundtrip_int_as_string) {
 TEST_CASE(with_adapter_roundtrip_negative_value) {
     const with_adapter_field input{.id = 1, .encoded = -42, .tag = "debt"};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_adapter_field output{};
-    auto status = from_flatbuffer(*encoded, output);
+    auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -117,11 +117,11 @@ TEST_CASE(with_adapter_roundtrip_inside_optional, skip = true) {
     with_optional_adapter_field input{};
     input.maybe_encoded.emplace(7);
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_optional_adapter_field output{};
-    auto status = from_flatbuffer(*encoded, output);
+    auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output.maybe_encoded.has_value());
     EXPECT_EQ(annotated_value(*output.maybe_encoded), 7);
@@ -130,12 +130,12 @@ TEST_CASE(with_adapter_roundtrip_inside_optional, skip = true) {
 TEST_CASE(with_adapter_roundtrip_empty_optional) {
     const with_optional_adapter_field input{};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_optional_adapter_field output{};
     output.maybe_encoded.emplace(999);  // ensure decode clears it
-    auto status = from_flatbuffer(*encoded, output);
+    auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_FALSE(output.maybe_encoded.has_value());
 }
@@ -513,11 +513,11 @@ TEST_SUITE(serde_flatbuffers_type_traits) {
 TEST_CASE(type_traits_plain_field_roundtrip) {
     const TypeTraitsPlainField input{.tag = Tag{42}, .label = "hello"};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     TypeTraitsPlainField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -531,11 +531,11 @@ TEST_CASE(type_traits_map_value_roundtrip) {
     };
     input.blobs_by_id[20] = ByteBag{{std::byte{0x11}}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     TypeTraitsMapField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -544,18 +544,18 @@ TEST_CASE(type_traits_sequence_element_roundtrip) {
     TypeTraitsSequenceField input;
     input.tags = {Tag{1}, Tag{2}, Tag{3}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     TypeTraitsSequenceField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
 
 TEST_CASE(type_traits_proxy_lazy_scalar_access) {
     const TypeTraitsRoot input{.root_tag = Tag{777}, .blobs = {}, .content = "lazy"};
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = fbs::table_view<TypeTraitsRoot>::from_bytes(
@@ -582,7 +582,7 @@ TEST_CASE(map_with_repr_key_lookup) {
     input.ranks[Tag{7}] = 1;
     input.ranks[Tag{100}] = 5;
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = fbs::table_view<tag_rank_map>::from_bytes(
@@ -606,7 +606,7 @@ TEST_CASE(type_traits_proxy_lazy_map_value_access) {
         {std::byte{0xBE}, std::byte{0xEF}}
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = fbs::table_view<TypeTraitsRoot>::from_bytes(
@@ -635,11 +635,11 @@ TEST_CASE(type_traits_proxy_lazy_map_value_access) {
 TEST_CASE(imperative_repr_field_roundtrip) {
     const ImperativeReprField input{.tag = HexTag{54321}, .label = "imp"};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     ImperativeReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 
@@ -660,11 +660,11 @@ TEST_CASE(iterable_repr_element_roundtrip) {
     };
     input.groups = {IdSet{{10, 20}}, IdSet{}, IdSet{{7}}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     IterableReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -672,20 +672,20 @@ TEST_CASE(iterable_repr_element_roundtrip) {
 TEST_CASE(repr_inside_optional_roundtrip) {
     OptionalReprField input{.maybe_tag = Tag{99}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     OptionalReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 
     input.maybe_tag.reset();
-    encoded = fbs::to_flatbuffer(input);
+    encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     output.maybe_tag = Tag{1};
-    status = fbs::from_flatbuffer(*encoded, output);
+    status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_FALSE(output.maybe_tag.has_value());
 }
@@ -700,11 +700,11 @@ TEST_CASE(table_repr_element_roundtrip) {
         Endpoint{"beta",  443}
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     TableReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -715,11 +715,11 @@ TEST_CASE(nullable_repr_element_roundtrip) {
     BoxedReprField input;
     input.ids = {MaybeId{7U}, MaybeId{}, MaybeId{42U}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     BoxedReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -730,7 +730,7 @@ TEST_CASE(view_reads_boxed_nullable_repr_elements) {
     BoxedReprField input;
     input.ids = {MaybeId{7U}, MaybeId{}, MaybeId{42U}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = fbs::table_view<BoxedReprField>::from_bytes(
@@ -752,11 +752,11 @@ TEST_CASE(null_repr_element_roundtrip) {
     input.markers = {Marker{}, Marker{}, Marker{}};
     input.label = "three";
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     NullReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output.markers.size(), 3U);
     EXPECT_EQ(output, input);
@@ -771,11 +771,11 @@ TEST_CASE(bytes_repr_element_roundtrip) {
                    ByteBag{},
                    ByteBag{{std::byte{0x01}}}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     BytesReprField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 
@@ -801,11 +801,11 @@ TEST_CASE(adapted_element_travels_as_adapter_repr) {
     AdaptedElementField input;
     input.vals = {12, -3, 4567};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     AdaptedElementField output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output.vals.size() == 3U);
     EXPECT_EQ(meta::annotated_value(output.vals[0]), 12);
@@ -818,7 +818,7 @@ TEST_CASE(view_honors_field_adapter_over_type_repr) {
     // representation; the proxy view must follow the adapter.
     const AdapterOverReprField input{.tag = Tag{4242}};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = fbs::table_view<AdapterOverReprField>::from_bytes(
@@ -828,7 +828,7 @@ TEST_CASE(view_honors_field_adapter_over_type_repr) {
     EXPECT_EQ(encoded_tag, std::string_view{"4242"});
 
     AdapterOverReprField output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(meta::annotated_value(output.tag), Tag{4242});
 }
 
@@ -967,7 +967,7 @@ TEST_SUITE(serde_flatbuffers_format_scoped) {
 TEST_CASE(format_scoped_repr_selected_by_fbs) {
     const SensorReading input{.id = SensorId{7}, .label = "porch"};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     // The table slot holds the fbs-scoped uint32, not the string form.
@@ -978,19 +978,19 @@ TEST_CASE(format_scoped_repr_selected_by_fbs) {
     EXPECT_EQ(raw, 7U);
 
     SensorReading output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 }
 
 TEST_CASE(other_backends_keep_format_agnostic_repr) {
     const SensorReading input{.id = SensorId{7}, .label = "porch"};
 
-    auto encoded = json::to_json(input);
+    auto encoded = json::to_string(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"id":"s7","label":"porch"})");
 
     SensorReading output{};
-    ASSERT_TRUE(json::from_json(*encoded, output).has_value());
+    ASSERT_TRUE(json::from_string(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 }
 
@@ -1002,7 +1002,7 @@ TEST_CASE(format_scoped_repr_reaches_vector_elements) {
         .ids = {SensorId{3}, SensorId{9}}
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = fbs::table_view<SensorList>::from_bytes(
@@ -1016,7 +1016,7 @@ TEST_CASE(format_scoped_repr_reaches_vector_elements) {
     EXPECT_EQ(ids[1], 9U);
 
     SensorList output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 }
 
@@ -1026,11 +1026,11 @@ TEST_CASE(repr_field_blocks_inline_struct) {
                   {.kind = probe_kind::heat, .reading = -2.0F}},
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     ProbeGrid output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 }
 

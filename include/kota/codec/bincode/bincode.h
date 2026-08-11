@@ -9,8 +9,8 @@
 namespace kota::codec {
 
 template <typename Config>
-struct serialize_visit<bincode::writer, RawValue, Config> {
-    static bool visit(bincode::writer& vis, const RawValue& value) {
+struct serialize_visit<bincode::Writer, RawValue, Config> {
+    static bool visit(bincode::Writer& vis, const RawValue& value) {
         auto bytes =
             std::span<const std::byte>(reinterpret_cast<const std::byte*>(value.data.data()),
                                        value.data.size());
@@ -19,8 +19,8 @@ struct serialize_visit<bincode::writer, RawValue, Config> {
 };
 
 template <typename Config>
-struct deserialize_visit<bincode::reader, RawValue, Config> {
-    static bool visit(bincode::reader& vis, RawValue& value) {
+struct deserialize_visit<bincode::Reader, RawValue, Config> {
+    static bool visit(bincode::Reader& vis, RawValue& value) {
         std::vector<std::byte> bytes;
         if(!vis.visit_bytes(bytes)) {
             return false;

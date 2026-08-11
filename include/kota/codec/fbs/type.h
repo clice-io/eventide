@@ -40,6 +40,37 @@ using verifier_t = ::flatbuffers::Verifier;
 
 /// Format tag: scopes a meta::repr specialization to the flatbuffers backend
 /// (meta::repr<T, codec::fbs::format>).
+///
+/// # Lowerings
+///
+/// FlatBuffers binary built in two passes (allocate child offsets, then
+/// write tables); layout_computed=true, so meta::dynamic reprs are rejected
+/// at compile time. Field slots use voffsets first_field=4, field_step=2 in
+/// declaration order; the buffer carries the "EVTO" identifier.
+/// - root → always a table: structures map directly, tuples and variants
+///   use their dedicated table layouts described below, any other kind is
+///   boxed into a single-field table at the first slot, and a null root is
+///   an empty table
+/// - boolean → uint8 cell; character → int8 cell; long double → double
+///   cell; other scalars → their natural fixed-width cells
+/// - string → flatbuffers string; bytes → vector of uint8
+/// - enumeration → underlying integer cell
+/// - structure → table with one slot per field; structs satisfying
+///   can_inline_struct_v (trivial, standard-layout, unannotated fields that
+///   are scalars, enums, or nested inline structs) may instead inline as
+///   fixed-size structs inside vectors
+/// - array/set → vector; element storage follows element_layout (proxy.h):
+///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
+///   other table-shaped elements use their own layouts), or boxed tables
+///   for nullable elements and nested containers / byte blobs
+/// - tuple → table with one slot per element
+/// - map → sorted vector of two-field {key, value} entry tables; the
+///   ordering key mirrors find_entry (strings lexicographic, enums by
+///   underlying value, scalars by value) so lookups can binary-search
+/// - variant → table with the u32 alternative index at the first slot and
+///   the payload at the slot for that alternative (variant_payload_voffset)
+/// - optional/pointer → disengaged fields simply leave their slot absent;
+///   as vector elements they degrade to boxed tables
 struct format {};
 
 enum class object_error_code : std::uint8_t {
@@ -55,7 +86,7 @@ namespace detail {
 /// Static visitor traits shared by the fbs visitors the codec dispatch
 /// drives: a binary backend whose output layout is computed statically (so
 /// meta::dynamic reprs are rejected at compile time).
-struct visitor_base {
+struct VisitorBase {
     using error_type = rich_error;
     using format = fbs::format;
     constexpr static bool human_readable = false;

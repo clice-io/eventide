@@ -498,7 +498,7 @@ private:
 /// Metadata resolution config for schema generation: the user's config
 /// (field_rename, deny_unknown_fields, ...) merged over defaults — the same
 /// merge the codec dispatch applies — tagged with the JSON format so
-/// format-scoped meta::repr specializations resolve the way to_json does.
+/// format-scoped meta::repr specializations resolve the way to_string does.
 template <typename Config>
 struct schema_config : default_config<Config> {
     using format = json::format;
@@ -506,7 +506,7 @@ struct schema_config : default_config<Config> {
 
 /// schema_options as a codec config declares them. No visitor participates
 /// here, so is_human_readable sees only the config override — matching
-/// to_json, whose ValueWriter is human-readable.
+/// to_string, whose ValueWriter is human-readable.
 template <typename Config>
 schema_options options_of() {
     using merged = default_config<Config>;
@@ -535,7 +535,7 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
                                                        bool pretty = false,
                                                        const schema_options& options = {}) {
     KOTA_EXPECTED_TRY_V(auto value, schema(root, options));
-    KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
+    KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
     if(!pretty) {
         return compact;
     }

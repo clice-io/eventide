@@ -32,6 +32,10 @@ struct Person {
     std::optional<std::string> email;
 };
 
+struct nan_string_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::String;
+};
+
 }  // namespace
 
 }  // namespace kota::codec::debug
@@ -69,6 +73,12 @@ TEST_CASE(float_special) {
     EXPECT_EQ(to_string(std::numeric_limits<double>::quiet_NaN()), "nan");
     EXPECT_EQ(to_string(std::numeric_limits<double>::infinity()), "inf");
     EXPECT_EQ(to_string(-std::numeric_limits<double>::infinity()), "-inf");
+};
+
+TEST_CASE(float_special_with_config) {
+    EXPECT_EQ(to_string<nan_string_config>(std::numeric_limits<double>::quiet_NaN()), R"("NaN")");
+    EXPECT_EQ(to_string<nan_string_config>(std::numeric_limits<double>::infinity()),
+              R"("Infinity")");
 };
 
 TEST_CASE(string_values) {

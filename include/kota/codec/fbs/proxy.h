@@ -132,13 +132,13 @@ enum class element_layout : std::uint8_t {
 
 /// The single classification every consumer of a vector's element layout
 /// consults — encode collector choice (seq_encode_impl), decode reader
-/// (vec_reader), the lazy array_view and its pointer type — so they can never
+/// (VecReader), the lazy array_view and its pointer type — so they can never
 /// diverge. Decided on the element's unpeeled resolved representation: boxed
 /// elements travel as wrapper tables because nullable and null-like shapes
 /// need a table for absence to still occupy a vector entry, and nested
 /// containers and byte blobs have no direct vector-of-vectors representation.
 /// Tuple-like elements are tables even when they could inline as structs:
-/// they decode through per-slot table access (tuple_view, table_field_reader).
+/// they decode through per-slot table access (tuple_view, TableFieldReader).
 template <typename Element>
 consteval element_layout element_layout_of() {
     using repr_t = apply_repr_t<std::remove_cvref_t<Element>>;

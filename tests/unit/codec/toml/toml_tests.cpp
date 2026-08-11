@@ -19,9 +19,8 @@ namespace kota::codec {
 
 namespace {
 
+using toml::from_string;
 using toml::from_toml;
-using toml::from_toml_table;
-using toml::parse;
 using toml::to_string;
 using toml::to_toml;
 
@@ -30,6 +29,18 @@ using person = meta::fixtures::PersonWithScores;
 struct payload_with_extra {
     int id = 0;
     ::toml::table extra;
+};
+
+enum class priority { low, high };
+
+struct string_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+};
+
+struct task_entry {
+    std::string title;
+    priority level = priority::low;
+    bool operator==(const task_entry&) const = default;
 };
 
 /// Reflectable, yet str-like — kind_of classifies it as a string, so the
@@ -60,7 +71,7 @@ TEST_CASE(struct_roundtrip_with_dom) {
     ASSERT_TRUE(dom->contains("active"));
 
     person output{};
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
@@ -73,7 +84,7 @@ scores = [4, 5]
 active = true
 )";
 
-    auto parsed = parse<person>(input);
+    auto parsed = from_string<person>(input);
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(parsed->id, 9);
     EXPECT_EQ(parsed->name, "bob");
@@ -83,9 +94,21 @@ active = true
     auto encoded = to_string(*parsed);
     ASSERT_TRUE(encoded.has_value());
 
-    auto reparsed = parse<person>(*encoded);
+    auto reparsed = from_string<person>(*encoded);
     ASSERT_TRUE(reparsed.has_value());
     EXPECT_EQ(*reparsed, *parsed);
+}
+
+TEST_CASE(to_string_and_from_string_with_config) {
+    const task_entry input{.title = "write docs", .level = priority::high};
+
+    auto text = to_string<string_enum_config>(input);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_TRUE(text->find(R"(level = 'high')") != std::string::npos);
+
+    auto parsed = from_string<task_entry, string_enum_config>(*text);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, input);
 }
 
 TEST_CASE(dynamic_dom_field_roundtrip) {
@@ -103,7 +126,7 @@ TEST_CASE(dynamic_dom_field_roundtrip) {
     ASSERT_TRUE(dom.has_value());
 
     payload_with_extra output{};
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
 
     EXPECT_EQ(output.id, 1);
@@ -129,7 +152,7 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     ASSERT_TRUE(encoded_values->contains("__value"));
 
     std::vector<int> decoded_values{};
-    auto decode_values_status = from_toml_table(*encoded_values, decoded_values);
+    auto decode_values_status = from_toml(*encoded_values, decoded_values);
     ASSERT_TRUE(decode_values_status.has_value());
     EXPECT_EQ(decoded_values, values);
 
@@ -139,7 +162,7 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     EXPECT_TRUE(encoded_none->empty());
 
     std::optional<int> decoded_none = 42;
-    auto decode_none_status = from_toml_table(*encoded_none, decoded_none);
+    auto decode_none_status = from_toml(*encoded_none, decoded_none);
     ASSERT_TRUE(decode_none_status.has_value());
     EXPECT_FALSE(decoded_none.has_value());
 }
@@ -156,7 +179,7 @@ TEST_CASE(shared_ptr_root_roundtrip) {
     ASSERT_TRUE(dom.has_value());
 
     std::shared_ptr<person> output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output != nullptr);
     EXPECT_EQ(*output, *input);
@@ -169,7 +192,7 @@ TEST_CASE(null_shared_ptr_root) {
     EXPECT_TRUE(dom->empty());
 
     auto output = std::make_shared<person>();
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_TRUE(output == nullptr);
 }
@@ -186,7 +209,7 @@ TEST_CASE(unique_ptr_root_roundtrip) {
     ASSERT_TRUE(dom.has_value());
 
     std::unique_ptr<person> output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output != nullptr);
     EXPECT_EQ(*output, *input);
@@ -205,7 +228,7 @@ TEST_CASE(optional_root_present_roundtrip) {
     EXPECT_FALSE(dom->contains("__value"));
 
     std::optional<person> output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(*output, *input);
@@ -220,7 +243,7 @@ TEST_CASE(pointer_to_scalar_root_boxes) {
     EXPECT_TRUE(dom->contains("__value"));
 
     std::shared_ptr<int> output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output != nullptr);
     EXPECT_EQ(*output, 7);
@@ -237,7 +260,7 @@ TEST_CASE(str_like_reflectable_root_boxes) {
     EXPECT_TRUE(dom->contains("__value"));
 
     str_like_aggregate output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output.value, "abc");
 
@@ -247,7 +270,7 @@ TEST_CASE(str_like_reflectable_root_boxes) {
     EXPECT_TRUE(ptr_dom->contains("__value"));
 
     std::shared_ptr<str_like_aggregate> ptr_output;
-    auto ptr_status = from_toml_table(*ptr_dom, ptr_output);
+    auto ptr_status = from_toml(*ptr_dom, ptr_output);
     ASSERT_TRUE(ptr_status.has_value());
     ASSERT_TRUE(ptr_output != nullptr);
     EXPECT_EQ(ptr_output->value, "abc");
@@ -270,14 +293,14 @@ TEST_CASE(nullable_root_engaged_empty_table_rejected) {
     ASSERT_TRUE(dom.has_value());
 
     std::shared_ptr<map_t> output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output != nullptr);
     EXPECT_EQ(*output, *filled);
 
     // The empty document stays reserved for the null pointer.
     output = std::make_shared<map_t>();
-    status = from_toml_table(::toml::table{}, output);
+    status = from_toml(::toml::table{}, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_TRUE(output == nullptr);
 }
@@ -295,7 +318,7 @@ TEST_CASE(table_root_symmetry) {
     EXPECT_EQ((*dom)["zip"].value<std::int64_t>().value_or(0), 200000);
 
     ::toml::table output;
-    auto status = from_toml_table(*dom, output);
+    auto status = from_toml(*dom, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_TRUE(output == input);
 }
@@ -312,63 +335,63 @@ TEST_CASE(tuple_length_errors) {
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
     }
 
     // Too few elements for tuple<int,int>
     {
         auto tbl = boxed(::toml::array{1});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
     }
 
     // Too many elements for pair<int,int>
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::pair<int, int> p{};
-        EXPECT_FALSE(from_toml_table(tbl, p).has_value());
+        EXPECT_FALSE(from_toml(tbl, p).has_value());
     }
 
     // Too few elements for pair
     {
         auto tbl = boxed(::toml::array{1});
         std::pair<int, int> p{};
-        EXPECT_FALSE(from_toml_table(tbl, p).has_value());
+        EXPECT_FALSE(from_toml(tbl, p).has_value());
     }
 
     // Empty array into non-empty tuple
     {
         auto tbl = boxed(::toml::array{});
         std::tuple<int> t{};
-        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
     }
 
     // Non-empty array into empty tuple
     {
         auto tbl = boxed(::toml::array{1});
         std::tuple<> t{};
-        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
     }
 
     // Too many elements for array<int,2>
     {
         auto tbl = boxed(::toml::array{1, 2, 3});
         std::array<int, 2> a{};
-        EXPECT_FALSE(from_toml_table(tbl, a).has_value());
+        EXPECT_FALSE(from_toml(tbl, a).has_value());
     }
 
     // Too few elements for array<int,2>
     {
         auto tbl = boxed(::toml::array{1});
         std::array<int, 2> a{};
-        EXPECT_FALSE(from_toml_table(tbl, a).has_value());
+        EXPECT_FALSE(from_toml(tbl, a).has_value());
     }
 
     // Exact match still works
     {
         auto tbl = boxed(::toml::array{1, 2});
         std::tuple<int, int> t{};
-        ASSERT_TRUE(from_toml_table(tbl, t).has_value());
+        ASSERT_TRUE(from_toml(tbl, t).has_value());
         EXPECT_EQ(std::get<0>(t), 1);
         EXPECT_EQ(std::get<1>(t), 2);
     }
@@ -377,7 +400,7 @@ TEST_CASE(tuple_length_errors) {
     {
         auto tbl = boxed(::toml::array{1, "x"});
         std::tuple<int, int> t{};
-        EXPECT_FALSE(from_toml_table(tbl, t).has_value());
+        EXPECT_FALSE(from_toml(tbl, t).has_value());
     }
 }
 
@@ -479,7 +502,7 @@ TEST_CASE(format_scoped_repr_selected_by_toml) {
     ASSERT_TRUE(text.has_value());
     EXPECT_TRUE(text->find("j = 41") != std::string::npos);
 
-    auto output = toml::parse<journal_entry>(*text);
+    auto output = toml::from_string<journal_entry>(*text);
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(*output, input);
 }
@@ -496,7 +519,7 @@ TEST_CASE(map_keys_follow_toml_scoped_repr) {
     // textual one.
     EXPECT_TRUE(text->find("p7") == std::string::npos);
 
-    auto output = toml::parse<std::map<journal, int>>(*text);
+    auto output = toml::from_string<std::map<journal, int>>(*text);
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(*output, input);
 }
@@ -510,7 +533,7 @@ TEST_CASE(top_level_scalar_repr_boxed_under_root_key) {
     ASSERT_TRUE(text.has_value());
     EXPECT_TRUE(text->find("page") == std::string::npos);
 
-    auto output = toml::parse<journal>(*text);
+    auto output = toml::from_string<journal>(*text);
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(*output, input);
 }
@@ -525,7 +548,7 @@ TEST_CASE(top_level_table_shaped_repr_becomes_root) {
     EXPECT_TRUE(text->find("page = 3") != std::string::npos);
     EXPECT_TRUE(text->find(std::string(toml::detail::boxed_root_key)) == std::string::npos);
 
-    auto output = toml::parse<diary>(*text);
+    auto output = toml::from_string<diary>(*text);
     ASSERT_TRUE(output.has_value());
     EXPECT_EQ(*output, input);
 }

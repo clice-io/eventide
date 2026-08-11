@@ -264,7 +264,7 @@ struct ValueReader {
             return fail_type("table");
         }
         for(const auto& [k, v]: *tbl) {
-            map_key_reader<format> kr{std::string_view(k)};
+            MapKeyReader<format> kr{std::string_view(k)};
             ValueReader vr{&v};
             KOTA_CODEC_TRY(cb(kr, vr));
         }
@@ -327,6 +327,8 @@ private:
     }
 };
 
+/// Parses TOML text into a raw toml::Table DOM without decoding into any
+/// type; from_toml consumes the result.
 inline auto parse_table(std::string_view text) -> std::expected<Table, rich_error> {
     // toml++ is pinned to TOML_EXCEPTIONS=0 (see toml/type.h), so parsing
     // always reports failures through toml::parse_result — a single code path
@@ -348,29 +350,10 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
     return std::move(parsed).table();
 }
 
+/// Decodes a toml::Table DOM into `out`, routing the root the same way
+/// to_toml produced it (root table vs boxed `__value` key).
 template <typename Config = void, typename T>
-auto from_toml(std::string_view toml_str, T& out) -> std::expected<void, rich_error> {
-    auto table = parse_table(toml_str);
-    if(!table) {
-        return std::unexpected(std::move(table).error());
-    }
-
-    using V = std::remove_const_t<T>;
-    const auto* root = detail::select_root_node<V>(*table);
-
-    using Cfg = default_config<Config>;
-    rich_error err;
-    scoped_context<rich_error> guard(err);
-
-    ValueReader reader{root};
-    if(!decode_value<Cfg>(reader, out)) {
-        return std::unexpected(std::move(err));
-    }
-    return {};
-}
-
-template <typename Config = void, typename T>
-auto from_toml_table(const Table& tbl, T& out) -> std::expected<void, rich_error> {
+auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
     using V = std::remove_const_t<T>;
     const auto* root = detail::select_root_node<V>(tbl);
 
@@ -383,6 +366,28 @@ auto from_toml_table(const Table& tbl, T& out) -> std::expected<void, rich_error
         return std::unexpected(std::move(err));
     }
     return {};
+}
+
+/// Decodes TOML text into `out` (or, in the value-returning overload, into a
+/// default-constructed T): parse_table followed by from_toml.
+template <typename Config = void, typename T>
+auto from_string(std::string_view text, T& out) -> std::expected<void, rich_error> {
+    auto table = parse_table(text);
+    if(!table) {
+        return std::unexpected(std::move(table).error());
+    }
+    return from_toml<Config>(*table, out);
+}
+
+template <typename T, typename Config = void>
+    requires std::default_initializable<T>
+auto from_string(std::string_view text) -> std::expected<T, rich_error> {
+    T value{};
+    auto result = from_string<Config>(text, value);
+    if(!result) {
+        return std::unexpected(std::move(result).error());
+    }
+    return value;
 }
 
 }  // namespace kota::codec::toml

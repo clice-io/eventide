@@ -10,7 +10,7 @@ namespace kota::codec {
 
 namespace {
 
-using toml::parse;
+using toml::from_string;
 using toml::to_string;
 
 auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
@@ -18,7 +18,7 @@ auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
     if(!encoded) {
         return std::unexpected(rich_error(encoded.error().to_string()));
     }
-    return parse<T>(*encoded);
+    return from_string<T>(*encoded);
 };
 
 TEST_SUITE(serde_toml_standard) {

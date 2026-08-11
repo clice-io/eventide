@@ -14,7 +14,7 @@ using namespace meta;
 
 namespace {
 
-using json::from_json;
+using json::from_string;
 
 using person = meta::fixtures::Person;
 using with_scores = meta::fixtures::WithScores;
@@ -35,14 +35,14 @@ TEST_SUITE(serde_simdjson_error_message) {
 
 TEST_CASE(missing_required_field) {
     person parsed{};
-    auto status = from_json(R"({"age": 25, "addr": {"city": "NY", "zip": 10001}})", parsed);
+    auto status = from_string(R"({"age": 25, "addr": {"city": "NY", "zip": 10001}})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(status.error().message, "missing required field 'name'");
 }
 
 TEST_CASE(unknown_field_denied) {
     strict_payload parsed{};
-    auto status = from_json(R"({"id": 1, "name": "ok", "extra": true})", parsed);
+    auto status = from_string(R"({"id": 1, "name": "ok", "extra": true})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(status.error().message, "unknown field 'extra'");
 }
@@ -50,8 +50,8 @@ TEST_CASE(unknown_field_denied) {
 TEST_CASE(nested_field_error_path) {
     person parsed{};
     auto status =
-        from_json(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
-                  parsed);
+        from_string(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
+                    parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
                 status.error().message.find("invalid") != std::string::npos);
@@ -60,7 +60,7 @@ TEST_CASE(nested_field_error_path) {
 
 TEST_CASE(sequence_element_error_path) {
     std::vector<int> parsed;
-    auto status = from_json(R"([1, 2, "bad", 4])", parsed);
+    auto status = from_string(R"([1, 2, "bad", 4])", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
                 status.error().message.find("invalid") != std::string::npos);
@@ -69,7 +69,7 @@ TEST_CASE(sequence_element_error_path) {
 
 TEST_CASE(nested_sequence_error_path) {
     with_scores parsed{};
-    auto status = from_json(R"({"name": "bob", "scores": [10, "bad", 30]})", parsed);
+    auto status = from_string(R"({"name": "bob", "scores": [10, "bad", 30]})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
                 status.error().message.find("invalid") != std::string::npos);
@@ -78,14 +78,14 @@ TEST_CASE(nested_sequence_error_path) {
 
 TEST_CASE(enum_string_error_message) {
     color_enum_string parsed = color::red;
-    auto status = from_json(R"("yellow")", parsed);
+    auto status = from_string(R"("yellow")", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("yellow") != std::string::npos);
 }
 
 TEST_CASE(number_out_of_range) {
     std::uint8_t parsed = 0;
-    auto status = from_json("300", parsed);
+    auto status = from_string("300", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("range") != std::string::npos ||
                 status.error().message.find("out of") != std::string::npos);
@@ -93,11 +93,11 @@ TEST_CASE(number_out_of_range) {
 
 TEST_CASE(error_has_location) {
     person parsed{};
-    auto status = from_json(R"({
+    auto status = from_string(R"({
   "name": "alice",
   "age": "not_a_number"
 })",
-                            parsed);
+                              parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("type") != std::string::npos ||
                 status.error().message.find("invalid") != std::string::npos);
@@ -111,8 +111,8 @@ TEST_CASE(error_has_location) {
 TEST_CASE(to_string_combines_all) {
     person parsed{};
     auto status =
-        from_json(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
-                  parsed);
+        from_string(R"({"name": "alice", "age": 30, "addr": {"city": "NY", "zip": "wrong"}})",
+                    parsed);
     EXPECT_FALSE(status.has_value());
     auto str = status.error().to_string();
     EXPECT_TRUE(str.find("addr.zip") != std::string::npos);

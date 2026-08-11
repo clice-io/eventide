@@ -1,8 +1,6 @@
 #pragma once
 
-#include <concepts>
 #include <expected>
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -14,23 +12,8 @@
 
 namespace kota::codec::json {
 
-template <typename Config = void, typename T>
-auto parse(std::string_view json, T& value) -> std::expected<void, rich_error> {
-    return from_json<Config>(json, value);
-}
-
-template <typename T, typename Config = void>
-    requires std::default_initializable<T>
-auto parse(std::string_view json) -> std::expected<T, rich_error> {
-    return from_json<Config, T>(json);
-}
-
-template <typename Config = void, typename T>
-auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
-    -> std::expected<std::string, error> {
-    return to_json<Config>(value, initial_capacity);
-}
-
+/// Reformats JSON text with indentation; the input is parsed (and thus
+/// validated) but not decoded into any type.
 inline std::expected<std::string, error> prettify(std::string_view json) {
     simdjson::dom::parser parser;
     simdjson::dom::element doc;

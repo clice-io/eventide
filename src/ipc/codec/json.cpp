@@ -61,7 +61,7 @@ struct json_rpc_incoming {
 }  // namespace
 
 IncomingMessage JsonCodec::parse_message(std::string_view payload) {
-    auto envelope = codec::json::parse<json_rpc_incoming>(payload);
+    auto envelope = codec::json::from_string<json_rpc_incoming>(payload);
     if(!envelope) {
         return IncomingParseError{
             Error(protocol::ErrorCode::ParseError, envelope.error().to_string())};

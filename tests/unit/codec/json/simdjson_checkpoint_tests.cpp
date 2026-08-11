@@ -13,7 +13,7 @@ namespace kota::codec {
 
 namespace {
 
-using json::from_json;
+using json::from_string;
 using json::Reader;
 using json::Source;
 
@@ -194,7 +194,7 @@ TEST_CASE(variant_fallback_reclaims) {
     std::string input = R"({"a":")" + big + R"("})";
 
     NestedVariant out;
-    auto result = from_json<>(input, out);
+    auto result = from_string<>(input, out);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(out.index(), 1U);
     EXPECT_EQ(std::get<Shallow>(out).a.size(), 8192U);
@@ -205,7 +205,7 @@ TEST_CASE(variant_fallback_reclaims_256KB) {
     std::string input = R"({"a":")" + big + R"("})";
 
     NestedVariant out;
-    auto result = from_json<>(input, out);
+    auto result = from_string<>(input, out);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(out.index(), 1U);
     EXPECT_EQ(std::get<Shallow>(out).a.size(), 256U * 1024U);
@@ -219,7 +219,7 @@ TEST_CASE(variant_first_alternative_succeeds) {
     std::string input = R"({"a":")" + s1 + R"(","b":")" + s2 + R"(","c":")" + s3 + R"("})";
 
     NestedVariant out;
-    auto result = from_json<>(input, out);
+    auto result = from_string<>(input, out);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(out.index(), 0U);
     auto& n = std::get<Nested>(out);
@@ -232,7 +232,7 @@ TEST_CASE(value_level_variant) {
     // Variant inside an array: try_read operates on a Value, not Document.
     auto input = R"({"items":[{"value":"world"}]})";
     Wrapper w;
-    auto result = from_json<>(input, w);
+    auto result = from_string<>(input, w);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(w.items.size(), 1U);
     ASSERT_EQ(w.items[0].index(), 1U);

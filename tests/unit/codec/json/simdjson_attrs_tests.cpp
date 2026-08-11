@@ -10,8 +10,8 @@ using namespace meta;
 
 namespace {
 
-using json::from_json;
-using json::to_json;
+using json::from_string;
+using json::to_string;
 
 enum class access_level {
     admin,
@@ -95,7 +95,7 @@ TEST_CASE(serialize_builtin_attrs) {
     input.profile.age = 30;
     input.level = access_level::admin;
 
-    auto encoded = to_json(input);
+    auto encoded = to_string(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded,
               R"({"id":7,"displayName":"alice","first":"Alice","age":30,"level":"admin"})");
@@ -105,7 +105,7 @@ TEST_CASE(deserialize_builtin_attrs) {
     builtin_attr_payload parsed{};
     parsed.internal_id = 321;
 
-    auto status = from_json(
+    auto status = from_string(
         R"({"id":9,"name":"bob","first":"Bob","age":21,"level":"viewer","internal_id":100,"note":"x"})",
         parsed);
     ASSERT_TRUE(status.has_value());
@@ -124,8 +124,8 @@ TEST_CASE(deserialize_builtin_attrs_unknown_enum_fails) {
     parsed.level = access_level::admin;
 
     auto status =
-        from_json(R"({"id":9,"displayName":"bob","first":"Bob","age":21,"level":"super_admin"})",
-                  parsed);
+        from_string(R"({"id":9,"displayName":"bob","first":"Bob","age":21,"level":"super_admin"})",
+                    parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(parsed.level, access_level::admin);
 }
@@ -134,44 +134,44 @@ TEST_CASE(rename_attr_serialization) {
     custom_rename_payload input{};
     input.nickname = "neo";
 
-    auto encoded = to_json(input);
+    auto encoded = to_string(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"handle":"neo"})");
 
     custom_rename_payload parsed{};
-    auto status = from_json(R"({"handle":"trinity"})", parsed);
+    auto status = from_string(R"({"handle":"trinity"})", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed.nickname, "trinity");
 }
 
 TEST_CASE(top_level_annotated_value_enum_string) {
     access_level_enum_string level = access_level::admin;
-    auto encoded = to_json(level);
+    auto encoded = to_string(level);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"("admin")");
 
     access_level_enum_string parsed = access_level::admin;
-    auto status = from_json(R"("viewer")", parsed);
+    auto status = from_string(R"("viewer")", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed, access_level::viewer);
 }
 
 TEST_CASE(top_level_annotated_value_enum_string_unknown_fails) {
     access_level_enum_string parsed = access_level::admin;
-    auto status = from_json(R"("unknown")", parsed);
+    auto status = from_string(R"("unknown")", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_EQ(parsed, access_level::admin);
 }
 
 TEST_CASE(alias_conflict_fails_fast) {
     alias_conflict_payload parsed{};
-    auto status = from_json(R"({"dup":1})", parsed);
+    auto status = from_string(R"({"dup":1})", parsed);
     EXPECT_FALSE(status.has_value());
 }
 
 TEST_CASE(skip_field_does_not_require_deserializer) {
     skip_unsupported_payload parsed{};
-    auto status = from_json(R"({"id":17})", parsed);
+    auto status = from_string(R"({"id":17})", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed.id, 17);
     EXPECT_EQ(parsed.raw, nullptr);
@@ -182,12 +182,12 @@ TEST_CASE(annotated_struct_rename_all_applies) {
     input.user_id = 7;
     input.login_count = 12;
 
-    auto encoded = to_json(input);
+    auto encoded = to_string(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"userId":7,"loginCount":12})");
 
     renamed_struct_level_payload parsed{};
-    auto status = from_json(R"({"userId":3,"loginCount":4})", parsed);
+    auto status = from_string(R"({"userId":3,"loginCount":4})", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed.user_id, 3);
     EXPECT_EQ(parsed.login_count, 4);
@@ -196,19 +196,19 @@ TEST_CASE(annotated_struct_rename_all_applies) {
 TEST_CASE(annotated_struct_deny_unknown_fields_applies) {
     strict_renamed_struct_level_payload parsed{};
 
-    auto status = from_json(R"({"userId":3,"loginCount":4,"extra":9})", parsed);
+    auto status = from_string(R"({"userId":3,"loginCount":4,"extra":9})", parsed);
     EXPECT_FALSE(status.has_value());
     EXPECT_TRUE(status.error().message.find("unknown field") != std::string::npos);
 }
 
 TEST_CASE(description_attr_is_encoding_transparent) {
     documented_payload input{.id = 7, .name = "alice"};
-    auto encoded = to_json(input);
+    auto encoded = to_string(input);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"id":7,"name":"alice"})");
 
     documented_payload parsed{};
-    auto status = from_json(R"({"id":3,"name":"bob"})", parsed);
+    auto status = from_string(R"({"id":3,"name":"bob"})", parsed);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(parsed.id, 3);
     EXPECT_EQ(parsed.name, "bob");
