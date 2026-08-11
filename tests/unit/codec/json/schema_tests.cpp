@@ -600,6 +600,14 @@ struct defaults_node {
     std::unique_ptr<defaults_node> next;
 };
 
+struct defaults_ref_sites {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <defaults_leaf> pool;
+
+    KOTATSU_ANNOTATE(defaulted = true)
+    <defaults_leaf> mirror = {defaults_leaf{.threads = 9}};
+};
+
 namespace json = kota::codec::json;
 
 template <typename T>
@@ -2707,11 +2715,40 @@ TEST_CASE(defaults_skip_condition) {
 
 TEST_CASE(defaults_shared_def_first_visit_wins) {
     // The two sites default-construct differently (mirror overrides threads
-    // via its member initializer), but the shared $def keeps the values of
-    // the first visit; the override appears nowhere.
+    // via its member initializer), but both are required — no site default —
+    // and the shared $def keeps the values of the first visit; the override
+    // appears nowhere.
     const auto result = json::schema_string<defaults_shared_override>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_non_required_ref_sites) {
+    // Non-required refs to a shared $def each carry their whole encoded
+    // object as the property default, so the per-site member initializer
+    // survives even though the $def keeps first-visit leaf values.
+    const auto result = json::schema_string<defaults_ref_sites>().value();
+    EXPECT_TRUE(
+        result.find(
+            R"("pool":{"$ref":"#/$defs/defaults_leaf","default":{"threads":4,"name":"worker"}})") !=
+        std::string::npos);
+    EXPECT_TRUE(
+        result.find(
+            R"("mirror":{"$ref":"#/$defs/defaults_leaf","default":{"threads":9,"name":"worker"}})") !=
+        std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+}
+
+TEST_CASE(defaults_nullable_root) {
+    // A nullable root unwraps to the struct body, but its default instance
+    // encodes to null — a document with no properties to annotate from, not
+    // a crash.
+    const auto opt = json::schema_string<std::optional<defaults_leaf>>().value();
+    EXPECT_TRUE(opt.find(R"("threads")") != std::string::npos);
+    EXPECT_TRUE(opt.find(R"("default")") == std::string::npos);
+
+    const auto ptr = json::schema_string<std::unique_ptr<defaults_leaf>>().value();
+    EXPECT_TRUE(ptr.find(R"("default")") == std::string::npos);
 }
 
 TEST_CASE(defaults_engaged_optional) {

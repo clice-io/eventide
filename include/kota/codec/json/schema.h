@@ -505,7 +505,9 @@ private:
 /// annotation would be a lie; they are skipped, as are properties the default
 /// document does not carry (encode-side skip conditions). Property-level
 /// struct $refs recurse so defaults land on the leaf fields inside $defs; a
-/// $def shared by several sites keeps the values of its first visit. An
+/// $def shared by several sites keeps the values of its first visit, while
+/// each non-required ref site also carries its whole encoded object as its
+/// own default, so per-site member initializers survive the sharing. An
 /// anyOf wrapper (optional/pointer field) is a leaf: it takes the whole
 /// encoded value as its default, so a $def reachable only through nullable
 /// fields stays unannotated.
@@ -523,14 +525,21 @@ public:
             return;
         }
         // A body with "properties" is a struct schema, so its paired
-        // document is a struct encoding — always an object.
-        const auto& doc = *value.get_object();
+        // document is a struct encoding — an object, unless the root type is
+        // a nullable wrapper (the emitter unwraps optional/pointer roots to
+        // the struct body, but a default-constructed wrapper encodes to
+        // null). Null carries no property values, so there is nothing to
+        // annotate from.
+        const auto* doc = value.get_object();
+        if(doc == nullptr) {
+            return;
+        }
         const dyn::Array* required = nullptr;
         if(const auto* r = body.find("required")) {
             required = r->get_array();
         }
         for(auto& [name, prop]: *props_entry->get_object()) {
-            if(const auto* v = doc.find(name)) {
+            if(const auto* v = doc->find(name)) {
                 annotate_property(prop, *v, is_required(required, name));
             }
         }
@@ -546,14 +555,16 @@ private:
     }
 
     /// A $ref recurses whether or not its property is required: the section
-    /// itself may always appear while its leaves carry decode defaults.
+    /// itself may always appear while its leaves carry decode defaults. A
+    /// non-required $ref additionally takes the whole encoded object as its
+    /// own default — the shared $def keeps first-visit leaf values, so the
+    /// ref site is the only place a per-site member initializer survives.
     void annotate_property(dyn::Value& prop, const dyn::Value& value, bool required) {
         auto& obj = *prop.get_object();
         if(const auto* ref = obj.find("$ref")) {
             if(auto& target = resolve(*ref->get_string()); visited.insert(&target).second) {
                 annotate(target, value);
             }
-            return;
         }
         if(!required) {
             obj.insert("default", value);
