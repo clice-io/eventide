@@ -1,7 +1,9 @@
 #if __has_include(<toml++/toml.hpp>)
 
 #include <array>
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -129,6 +131,54 @@ TEST_CASE(boxed_root_scalar_and_optional_none) {
     auto decode_none_status = from_toml_table(*encoded_none, decoded_none);
     ASSERT_TRUE(decode_none_status.has_value());
     EXPECT_FALSE(decoded_none.has_value());
+}
+
+TEST_CASE(shared_ptr_root_roundtrip) {
+    const auto input = std::make_shared<person>(person{
+        .id = 3,
+        .name = "carol",
+        .scores = {9, 9},
+        .active = false,
+    });
+
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+
+    std::shared_ptr<person> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, *input);
+}
+
+TEST_CASE(null_shared_ptr_root) {
+    const std::shared_ptr<person> input;
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_TRUE(dom->empty());
+
+    auto output = std::make_shared<person>();
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_TRUE(output == nullptr);
+}
+
+TEST_CASE(table_root_symmetry) {
+    ::toml::table input;
+    input.insert_or_assign("city", "shanghai");
+    input.insert_or_assign("zip", 200000);
+
+    // A raw table root becomes the document root itself, not a boxed value.
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_FALSE(dom->contains("__value"));
+    EXPECT_EQ((*dom)["city"].value<std::string_view>().value_or(""), "shanghai");
+    EXPECT_EQ((*dom)["zip"].value<std::int64_t>().value_or(0), 200000);
+
+    ::toml::table output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_TRUE(output == input);
 }
 
 TEST_CASE(tuple_length_errors) {

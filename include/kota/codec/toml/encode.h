@@ -277,7 +277,11 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
         Table root;
 
         bool ok;
-        if constexpr(kind == meta::type_kind::structure || kind == meta::type_kind::map) {
+        // Table-shaped values become the root table itself — including a raw
+        // toml::Table, whose serialize_visit emits it verbatim (its range
+        // kind would otherwise box it while the decode side reads the root).
+        if constexpr(kind == meta::type_kind::structure || kind == meta::type_kind::map ||
+                     std::is_same_v<resolved_t, Table>) {
             ValueWriter<RootSink> vw{{root}};
             ok = encode_value<Cfg>(vw, value);
         } else {

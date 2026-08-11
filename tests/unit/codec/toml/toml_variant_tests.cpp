@@ -96,6 +96,24 @@ TEST_CASE(int_before_double) {
     EXPECT_EQ(std::get<double>(out.num), 3.14);
 }
 
+TEST_CASE(double_from_integer_input) {
+    // No integer alternative exists: the widening pass lets the double
+    // alternative claim integer input instead of failing outright.
+    using V = std::variant<double, std::string>;
+
+    struct Holder {
+        V num;
+    };
+
+    auto tbl = ::toml::table{
+        {"num", 42}
+    };
+    Holder out{};
+    ASSERT_TRUE(from_toml_table(tbl, out).has_value());
+    EXPECT_EQ(out.num.index(), 0U);
+    EXPECT_EQ(std::get<double>(out.num), 42.0);
+}
+
 TEST_CASE(bool_vs_int) {
     using V = std::variant<bool, int>;
 

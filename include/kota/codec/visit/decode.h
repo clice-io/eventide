@@ -601,7 +601,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
 }
 
 template <typename T>
-constexpr bool kind_compatible_impl(meta::type_kind src) {
+constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
     using enum meta::type_kind;
     constexpr auto target = meta::kind_of<T>();
 
@@ -612,7 +612,10 @@ constexpr bool kind_compatible_impl(meta::type_kind src) {
     else if constexpr(meta::int_like<T> || meta::uint_like<T>)
         return src == int64 || src == uint64;
     else if constexpr(target == float32 || target == float64)
-        return src == float64;
+        // Widened: every backend's visit_float accepts integer input, so a
+        // float alternative may claim it — but only after the exact-kind pass
+        // has let a true integer alternative go first.
+        return src == float64 || (widen && (src == int64 || src == uint64));
     else if constexpr(target == character || meta::str_like<T>)
         return src == string;
     else if constexpr(target == null)
@@ -634,7 +637,7 @@ constexpr bool kind_compatible_impl(meta::type_kind src) {
 }
 
 template <typename T, typename Format>
-constexpr bool kind_compatible(meta::type_kind src) {
+constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     // An alternative arrives as its resolved representation — behavior attrs
     // on an annotation first, then (chained) reprs under the visitor's format
     // — so compatibility is judged against that; a dynamic representation can
@@ -643,7 +646,7 @@ constexpr bool kind_compatible(meta::type_kind src) {
     if constexpr(std::is_same_v<resolved_t, meta::dynamic>) {
         return true;
     } else {
-        return kind_compatible_impl<resolved_t>(src);
+        return kind_compatible_impl<resolved_t>(src, widen);
     }
 }
 
@@ -653,20 +656,31 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
         if constexpr(has_peek_kind<Vis>) {
             auto src_kind = vis.peek_kind();
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-                [[maybe_unused]] constexpr std::size_t last = sizeof...(Ts) - 1;
-                return (([&] {
-                            using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                            if constexpr(Is != last) {
-                                if(!kind_compatible<alt_t, meta::format_of_t<Vis>>(src_kind))
+                constexpr std::size_t last = sizeof...(Ts) - 1;
+                // Exact-kind pass first, so an integer picks an int
+                // alternative over an earlier float one; the widening pass
+                // then admits the conversions the decoders themselves perform
+                // (visit_float from integer input). The last alternative runs
+                // once more on the real visitor so its error surfaces when
+                // nothing claims the value.
+                auto attempt = [&](bool widen) -> bool {
+                    return (([&] {
+                                using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
+                                using fmt = meta::format_of_t<Vis>;
+                                bool strict = kind_compatible<alt_t, fmt>(src_kind, false);
+                                bool admit =
+                                    widen ? !strict && kind_compatible<alt_t, fmt>(src_kind, true)
+                                          : strict;
+                                if(!admit)
                                     return false;
                                 return vis.try_read([&](auto& fork) -> bool {
                                     return construct_and_visit<Config>(fork, out, Is);
                                 });
-                            } else {
-                                return construct_and_visit<Config>(vis, out, Is);
-                            }
-                        }()) ||
-                        ...);
+                            }()) ||
+                            ...);
+                };
+                return attempt(false) || attempt(true) ||
+                       construct_and_visit<Config>(vis, out, last);
             }(std::index_sequence_for<Ts...>{});
         } else {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {

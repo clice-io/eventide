@@ -687,35 +687,35 @@ TEST_CASE(root_enum_color_i8) {
     const auto result = json::schema_string<color_i8>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["red","green","blue"]})");
+              R"("enum":[0,1,2]})");
 }
 
 TEST_CASE(root_enum_single) {
     const auto result = json::schema_string<single_enum>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["only"]})");
+              R"("enum":[42]})");
 }
 
 TEST_CASE(root_enum_status) {
     const auto result = json::schema_string<status>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["ok","fail","pending"]})");
+              R"("enum":[0,1,2]})");
 }
 
 TEST_CASE(root_enum_flag_u8) {
     const auto result = json::schema_string<flag_u8>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["off","on"]})");
+              R"("enum":[0,1]})");
 }
 
 TEST_CASE(root_enum_level_i16) {
     const auto result = json::schema_string<level_i16>().value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("enum":["low","mid","high"]})");
+              R"("enum":[0,50,100]})");
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +982,7 @@ TEST_CASE(nested_with_enum) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("c":{"enum":["red","green","blue"]},)"
+              R"("c":{"enum":[0,1,2]},)"
               R"("name":{"type":"string"}},)"
               R"("required":["c","name"]})");
 }
@@ -1587,7 +1587,7 @@ TEST_CASE(map_str_enum) {
               R"("properties":{)"
               R"("entries":{"type":"object",)"
               R"("additionalProperties":{)"
-              R"("enum":["red","green","blue"]}}},)"
+              R"("enum":[0,1,2]}}},)"
               R"("required":["entries"]})");
 }
 
@@ -1626,7 +1626,7 @@ TEST_CASE(vec_of_enum) {
               R"("properties":{)"
               R"("colors":{"type":"array",)"
               R"("items":{)"
-              R"("enum":["red","green","blue"]}}},)"
+              R"("enum":[0,1,2]}}},)"
               R"("required":["colors"]})");
 }
 
@@ -1798,8 +1798,8 @@ TEST_CASE(multi_enum_fields) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("c":{"enum":["red","green","blue"]},)"
-              R"("s":{"enum":["ok","fail","pending"]},)"
+              R"("c":{"enum":[0,1,2]},)"
+              R"("s":{"enum":[0,1,2]},)"
               R"("label":{"type":"string"}},)"
               R"("required":["c","s","label"]})");
 }
@@ -1810,7 +1810,7 @@ TEST_CASE(with_flag_enum) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("f":{"enum":["off","on"]},)"
+              R"("f":{"enum":[0,1]},)"
               R"("name":{"type":"string"}},)"
               R"("required":["f","name"]})");
 }
@@ -1821,7 +1821,7 @@ TEST_CASE(with_level_enum) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("l":{"enum":["low","mid","high"]},)"
+              R"("l":{"enum":[0,50,100]},)"
               R"("v":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
@@ -1882,7 +1882,7 @@ TEST_CASE(combo_mixed_fields) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("color":{)"
-              R"("enum":["red","green","blue"]},)"
+              R"("enum":[0,1,2]},)"
               R"("label":{"oneOf":[{"type":"string"},)"
               R"({"type":"null"}]},)"
               R"("values":{"type":"array",)"
@@ -1905,7 +1905,7 @@ TEST_CASE(combo_nested_struct_refs) {
               R"("point":{)"
               R"("$ref":"#/$defs/point2d"},)"
               R"("color":{)"
-              R"("enum":["red","green","blue"]},)"
+              R"("enum":[0,1,2]},)"
               R"("points":{"type":"array",)"
               R"("items":{)"
               R"("$ref":"#/$defs/point2d"}},)"
@@ -1964,7 +1964,7 @@ TEST_CASE(combo_deep_nesting) {
               R"("deep_inner":{"type":"object",)"
               R"("properties":{)"
               R"("c":{)"
-              R"("enum":["red","green","blue"]},)"
+              R"("enum":[0,1,2]},)"
               R"("v":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
@@ -2270,7 +2270,10 @@ TEST_CASE(bytes_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("data":{"type":"string"}},)"
+              R"("data":{"type":"array",)"
+              R"("items":{"type":"integer",)"
+              R"("minimum":0,)"
+              R"("maximum":255}}},)"
               R"("required":["data"]})");
 }
 
@@ -2402,6 +2405,32 @@ TEST_CASE(description_in_internal_tagged_alternative) {
               R"("height":{"type":"number"},)"
               R"("kind":{"const":"rect"}},)"
               R"("required":["width","height","kind"]}]})");
+}
+
+// ---------------------------------------------------------------------------
+// enum representation config
+// ---------------------------------------------------------------------------
+
+struct string_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+};
+
+TEST_CASE(enum_names_under_string_config) {
+    const auto result = json::schema_string<color_i8, string_enum_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("enum":["red","green","blue"]})");
+}
+
+TEST_CASE(schema_agrees_with_encoder_on_enums) {
+    // Under the default config the encoder emits the numeric value, so the
+    // schema's enum list must hold that same form.
+    const auto encoded = json::to_json(with_enum{.c = color_i8::green, .name = "g"});
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_TRUE(encoded->find(R"("c":1)") != std::string::npos);
+
+    const auto schema = json::schema_string<with_enum>().value();
+    EXPECT_TRUE(schema.find(R"("c":{"enum":[0,1,2]})") != std::string::npos);
 }
 
 };  // TEST_SUITE(serde_json_schema)

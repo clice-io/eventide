@@ -140,6 +140,25 @@ TEST_CASE(double_before_int) {
     EXPECT_EQ(std::get<double>(out), 3.14);
 }
 
+TEST_CASE(double_from_integer_input) {
+    // No integer alternative exists: the widening pass lets the double
+    // alternative claim integer input instead of failing outright.
+    using V = std::variant<double, std::string>;
+
+    V out{};
+    ASSERT_TRUE(from_json("5", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(out), 5.0);
+
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(out), 3.14);
+
+    ASSERT_TRUE(from_json(R"("x")", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::string>(out), "x");
+}
+
 TEST_CASE(monostate_matches_null) {
     using V = std::variant<std::monostate, int, std::string>;
 

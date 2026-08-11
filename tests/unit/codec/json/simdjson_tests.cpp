@@ -115,6 +115,17 @@ TEST_CASE(basic_errors) {
     EXPECT_FALSE(null_status.has_value());
 }
 
+TEST_CASE(char_codepoint_range) {
+    // U+20AC does not fit char: the decode errors instead of silently
+    // truncating the codepoint.
+    char c = '\0';
+    EXPECT_FALSE(from_json(R"("€")", c).has_value());
+
+    // A multi-byte codepoint whose value fits the octet range still decodes.
+    ASSERT_TRUE(from_json(R"("é")", c).has_value());
+    EXPECT_EQ(c, static_cast<char>(0xE9));
+}
+
 TEST_CASE(enum_roundtrip) {
     ASSERT_EQ(to_json(signed_enum::low), "-3");
     ASSERT_EQ(to_json(unsigned_enum::max), "250");

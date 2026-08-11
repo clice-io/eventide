@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <expected>
 #include <format>
 #include <limits>
@@ -27,6 +28,8 @@ class SchemaEmitter {
     using result_t = std::expected<dyn::Value, error>;
 
 public:
+    explicit SchemaEmitter(enum_repr enums) : enum_as_names(enums == enum_repr::String) {}
+
     result_t emit(const meta::type_info& root) {
         root_ti = unwrap(&root);
         if(root_ti->kind == tk::structure) {
@@ -104,10 +107,17 @@ private:
                 };
             case tk::character:
             case tk::string:
-            case tk::bytes:
                 return dyn::Value{
                     {"type", "string"}
                 };
+            case tk::bytes: {
+                // visit_bytes emits an array of octets, not a string.
+                KOTA_EXPECTED_TRY_V(auto items, make_integer(0, 255));
+                return dyn::Value{
+                    {"type",  "array"         },
+                    {"items", std::move(items)},
+                };
+            }
             case tk::float32:
             case tk::float64:
                 return dyn::Value{
@@ -186,11 +196,54 @@ private:
         };
     }
 
-    static result_t make_enum(const meta::type_info* ti) {
+    /// Reads the type-erased member-value array; enum objects share their
+    /// underlying type's representation, so each cell is one U.
+    template <typename U>
+    static void push_enum_values(dyn::Array& out, const void* data, std::size_t count) {
+        const auto* bytes = static_cast<const std::byte*>(data);
+        for(std::size_t i = 0; i < count; ++i) {
+            U v;
+            std::memcpy(&v, bytes + i * sizeof(U), sizeof(U));
+            if constexpr(std::is_signed_v<U>) {
+                out.push_back(dyn::Value(static_cast<std::int64_t>(v)));
+            } else {
+                out.push_back(dyn::Value(static_cast<std::uint64_t>(v)));
+            }
+        }
+    }
+
+    result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
         dyn::Array values;
-        for(const auto& name: ei->member_names) {
-            values.push_back(dyn::Value(name));
+        if(enum_as_names) {
+            for(const auto& name: ei->member_names) {
+                values.push_back(dyn::Value(name));
+            }
+            return dyn::Value{
+                {"enum", std::move(values)}
+            };
+        }
+        // enum_repr::Integer: the document holds the numeric values.
+        const auto count = ei->member_names.size();
+        switch(ei->underlying_kind) {
+            case tk::int8: push_enum_values<std::int8_t>(values, ei->member_values, count); break;
+            case tk::int16: push_enum_values<std::int16_t>(values, ei->member_values, count); break;
+            case tk::int32: push_enum_values<std::int32_t>(values, ei->member_values, count); break;
+            case tk::int64: push_enum_values<std::int64_t>(values, ei->member_values, count); break;
+            case tk::uint8: push_enum_values<std::uint8_t>(values, ei->member_values, count); break;
+            case tk::uint16:
+                push_enum_values<std::uint16_t>(values, ei->member_values, count);
+                break;
+            case tk::uint32:
+                push_enum_values<std::uint32_t>(values, ei->member_values, count);
+                break;
+            case tk::uint64:
+                push_enum_values<std::uint64_t>(values, ei->member_values, count);
+                break;
+            default:
+                return dyn::Value{
+                    {"type", "integer"}
+                };
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -400,6 +453,7 @@ private:
         };
     }
 
+    bool enum_as_names;
     std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const meta::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
@@ -409,18 +463,21 @@ private:
 
 }  // namespace detail
 
-inline std::expected<dyn::Value, error> schema(const meta::type_info& root) {
-    return detail::SchemaEmitter{}.emit(root);
+inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
+                                               enum_repr enums = enum_repr::Integer) {
+    return detail::SchemaEmitter{enums}.emit(root);
 }
 
-template <typename T>
+template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
-    return schema(meta::type_info_of<T, meta::format_config<format>>());
+    return schema(meta::type_info_of<T, meta::format_config<format>>(),
+                  default_config<Config>::enum_repr);
 }
 
 inline std::expected<std::string, error> schema_string(const meta::type_info& root,
-                                                       bool pretty = false) {
-    KOTA_EXPECTED_TRY_V(auto value, schema(root));
+                                                       bool pretty = false,
+                                                       enum_repr enums = enum_repr::Integer) {
+    KOTA_EXPECTED_TRY_V(auto value, schema(root, enums));
     KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
     if(!pretty) {
         return compact;
@@ -428,9 +485,11 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
     return prettify(compact);
 }
 
-template <typename T>
+template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
-    return schema_string(meta::type_info_of<T, meta::format_config<format>>(), pretty);
+    return schema_string(meta::type_info_of<T, meta::format_config<format>>(),
+                         pretty,
+                         default_config<Config>::enum_repr);
 }
 
 }  // namespace kota::codec::json
