@@ -159,6 +159,27 @@ TEST_CASE(double_from_integer_input) {
     EXPECT_EQ(std::get<std::string>(out), "x");
 }
 
+TEST_CASE(widening_when_float_family_is_last) {
+    // The widen pass claims the value through a fork even when the float
+    // alternative is last (previously only the unconditional fallback did).
+    using V = std::variant<std::string, double>;
+    V out;
+    ASSERT_TRUE(from_json("5", out).has_value());
+    ASSERT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<double>(out), 5.0);
+
+    ASSERT_TRUE(from_json(R"("x")", out).has_value());
+    ASSERT_EQ(out.index(), 0U);
+}
+
+TEST_CASE(float32_alternative_from_integer_input) {
+    using V = std::variant<float, std::string>;
+    V out;
+    ASSERT_TRUE(from_json("5", out).has_value());
+    ASSERT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<float>(out), 5.0F);
+}
+
 TEST_CASE(monostate_matches_null) {
     using V = std::variant<std::monostate, int, std::string>;
 

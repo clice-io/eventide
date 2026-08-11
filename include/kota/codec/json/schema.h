@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <expected>
@@ -7,6 +8,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -18,6 +20,7 @@
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/json.h"
+#include "kota/codec/visit/config.h"
 
 namespace kota::codec::json {
 
@@ -219,31 +222,41 @@ private:
             for(const auto& name: ei->member_names) {
                 values.push_back(dyn::Value(name));
             }
-            return dyn::Value{
-                {"enum", std::move(values)}
-            };
-        }
-        // enum_repr::Integer: the document holds the numeric values.
-        const auto count = ei->member_names.size();
-        switch(ei->underlying_kind) {
-            case tk::int8: push_enum_values<std::int8_t>(values, ei->member_values, count); break;
-            case tk::int16: push_enum_values<std::int16_t>(values, ei->member_values, count); break;
-            case tk::int32: push_enum_values<std::int32_t>(values, ei->member_values, count); break;
-            case tk::int64: push_enum_values<std::int64_t>(values, ei->member_values, count); break;
-            case tk::uint8: push_enum_values<std::uint8_t>(values, ei->member_values, count); break;
-            case tk::uint16:
-                push_enum_values<std::uint16_t>(values, ei->member_values, count);
-                break;
-            case tk::uint32:
-                push_enum_values<std::uint32_t>(values, ei->member_values, count);
-                break;
-            case tk::uint64:
-                push_enum_values<std::uint64_t>(values, ei->member_values, count);
-                break;
-            default:
-                return dyn::Value{
-                    {"type", "integer"}
-                };
+        } else {
+            // enum_repr::Integer: the document holds the numeric values.
+            const auto count = ei->member_names.size();
+            switch(ei->underlying_kind) {
+                case tk::int8:
+                    push_enum_values<std::int8_t>(values, ei->member_values, count);
+                    break;
+                case tk::int16:
+                    push_enum_values<std::int16_t>(values, ei->member_values, count);
+                    break;
+                case tk::int32:
+                    push_enum_values<std::int32_t>(values, ei->member_values, count);
+                    break;
+                case tk::int64:
+                    push_enum_values<std::int64_t>(values, ei->member_values, count);
+                    break;
+                case tk::uint8:
+                    push_enum_values<std::uint8_t>(values, ei->member_values, count);
+                    break;
+                case tk::uint16:
+                    push_enum_values<std::uint16_t>(values, ei->member_values, count);
+                    break;
+                case tk::uint32:
+                    push_enum_values<std::uint32_t>(values, ei->member_values, count);
+                    break;
+                case tk::uint64:
+                    push_enum_values<std::uint64_t>(values, ei->member_values, count);
+                    break;
+                default:
+                    // char/bool/extended-char underlying: still a number in
+                    // the document, but without a portable value list here.
+                    return dyn::Value{
+                        {"type", "integer"}
+                    };
+            }
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -464,7 +477,7 @@ private:
 }  // namespace detail
 
 inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
-                                               enum_repr enums = enum_repr::Integer) {
+                                               enum_repr enums = default_config<>::enum_repr) {
     return detail::SchemaEmitter{enums}.emit(root);
 }
 
@@ -474,9 +487,10 @@ std::expected<dyn::Value, error> schema() {
                   default_config<Config>::enum_repr);
 }
 
-inline std::expected<std::string, error> schema_string(const meta::type_info& root,
-                                                       bool pretty = false,
-                                                       enum_repr enums = enum_repr::Integer) {
+inline std::expected<std::string, error>
+    schema_string(const meta::type_info& root,
+                  bool pretty = false,
+                  enum_repr enums = default_config<>::enum_repr) {
     KOTA_EXPECTED_TRY_V(auto value, schema(root, enums));
     KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
     if(!pretty) {

@@ -124,6 +124,16 @@ TEST_CASE(char_codepoint_range) {
     // A multi-byte codepoint whose value fits the octet range still decodes.
     ASSERT_TRUE(from_json(R"("é")", c).has_value());
     EXPECT_EQ(c, static_cast<char>(0xE9));
+
+    // Exact boundary: U+00FF is the last codepoint that fits, U+0100 the
+    // first that does not.
+    ASSERT_TRUE(from_json(R"("ÿ")", c).has_value());
+    EXPECT_EQ(c, static_cast<char>(0xFF));
+    EXPECT_FALSE(from_json(R"("Ā")", c).has_value());
+
+    // Encode maps the octet back to the same codepoint (no sign extension),
+    // so the pair roundtrips both ways.
+    EXPECT_EQ(to_json(static_cast<char>(0xE9)), R"("é")");
 }
 
 TEST_CASE(enum_roundtrip) {

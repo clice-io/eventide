@@ -163,6 +163,58 @@ TEST_CASE(null_shared_ptr_root) {
     EXPECT_TRUE(output == nullptr);
 }
 
+TEST_CASE(unique_ptr_root_roundtrip) {
+    auto input = std::make_unique<person>(person{
+        .id = 8,
+        .name = "dave",
+        .scores = {1},
+        .active = true,
+    });
+
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+
+    std::unique_ptr<person> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, *input);
+}
+
+TEST_CASE(optional_root_present_roundtrip) {
+    const std::optional<person> input = person{
+        .id = 4,
+        .name = "erin",
+        .scores = {7, 8},
+        .active = true,
+    };
+
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_FALSE(dom->contains("__value"));
+
+    std::optional<person> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, *input);
+}
+
+TEST_CASE(pointer_to_scalar_root_boxes) {
+    // A scalar pointee routes through the boxed root key, same as a bare
+    // scalar root.
+    const auto input = std::make_shared<int>(7);
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_TRUE(dom->contains("__value"));
+
+    std::shared_ptr<int> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, 7);
+}
+
 TEST_CASE(table_root_symmetry) {
     ::toml::table input;
     input.insert_or_assign("city", "shanghai");

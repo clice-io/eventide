@@ -50,16 +50,6 @@ consteval bool is_map_like() {
 }
 
 template <typename T>
-struct nullable_value {
-    using type = typename T::element_type;  // unique_ptr / shared_ptr
-};
-
-template <typename T>
-struct nullable_value<std::optional<T>> {
-    using type = T;
-};
-
-template <typename T>
 constexpr bool root_table_v = [] {
     // Judge the shape of the representation the codec dispatch resolves
     // (annotations and toml-scoped meta::repr included), mirroring the root
@@ -82,7 +72,7 @@ auto select_root_node(const Table& tbl) -> const Node* {
         if(tbl.empty()) {
             return nullptr;
         }
-        using value_t = typename nullable_value<U>::type;
+        using value_t = std::remove_cvref_t<decltype(*std::declval<U&>())>;
         if constexpr(root_table_v<value_t>) {
             return std::addressof(static_cast<const Node&>(tbl));
         } else {

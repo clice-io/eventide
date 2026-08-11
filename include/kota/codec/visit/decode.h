@@ -663,10 +663,10 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
                 // (visit_float from integer input). The last alternative runs
                 // once more on the real visitor so its error surfaces when
                 // nothing claims the value.
+                using fmt = meta::format_of_t<Vis>;
                 auto attempt = [&](bool widen) -> bool {
                     return (([&] {
                                 using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                                using fmt = meta::format_of_t<Vis>;
                                 bool strict = kind_compatible<alt_t, fmt>(src_kind, false);
                                 bool admit =
                                     widen ? !strict && kind_compatible<alt_t, fmt>(src_kind, true)
