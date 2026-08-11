@@ -260,6 +260,40 @@ TEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
     EXPECT_EQ(std::get<bool>(out), true);
 }
 
+TEST_CASE(custom_decoder_alternative_probed_for_any_kind) {
+    // RawValue decodes through a deserialize_visit override that accepts any
+    // JSON value, so the kind probe must not judge it by its declared struct
+    // shape — even when it is neither first nor last.
+    using V = std::variant<int, RawValue, bool>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"("text")", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<RawValue>(out).data, R"("text")");
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<int>(out), 7);
+}
+
+TEST_CASE(custom_decoder_wrapped_in_optional_probed_for_any_kind) {
+    // The wrapper recursion must surface the wrapped type's dispatch
+    // override, not its declared shape: a string still reaches
+    // optional<RawValue> instead of falling through to int and failing.
+    using V = std::variant<std::optional<RawValue>, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json(R"("text")", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    auto& opt = std::get<std::optional<RawValue>>(out);
+    ASSERT_TRUE(opt.has_value());
+    EXPECT_EQ(opt->data, R"("text")");
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<std::optional<RawValue>>(out).has_value());
+}
+
 TEST_CASE(adjacently_tagged_nested_variant_keeps_object_shape) {
     using V = std::variant<AdjSimple, std::string>;
 

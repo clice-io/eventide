@@ -1013,7 +1013,7 @@ TEST_CASE(optional_field) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("age":{"oneOf":[{"type":"integer",)"
+              R"("age":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}},)"
@@ -1027,7 +1027,7 @@ TEST_CASE(unique_ptr_field) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("ptr":{"oneOf":[{"type":"integer",)"
+              R"("ptr":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}},)"
@@ -1041,7 +1041,7 @@ TEST_CASE(shared_ptr_field) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("ptr":{"oneOf":[{"type":"integer",)"
+              R"("ptr":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}},)"
@@ -1054,11 +1054,11 @@ TEST_CASE(all_optional_fields) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("a":{"oneOf":[{"type":"integer",)"
+              R"("a":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]},)"
-              R"("b":{"oneOf":[{"type":"string"},)"
+              R"("b":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}]}}})");
 }
 
@@ -1068,13 +1068,13 @@ TEST_CASE(all_ptr_types) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("opt":{"oneOf":[{"type":"string"},)"
+              R"("opt":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}]},)"
-              R"("uniq":{"oneOf":[{"type":"integer",)"
+              R"("uniq":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]},)"
-              R"("shr":{"oneOf":[{"type":"boolean"},)"
+              R"("shr":{"anyOf":[{"type":"boolean"},)"
               R"({"type":"null"}]}}})");
 }
 
@@ -1231,7 +1231,7 @@ TEST_CASE(flatten_with_optional) {
               R"("x":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"("y":{"oneOf":[{"type":"integer",)"
+              R"("y":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]},)"
@@ -1282,7 +1282,7 @@ TEST_CASE(variant_untagged) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[)"
+              R"("v":{"anyOf":[)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
@@ -1296,7 +1296,7 @@ TEST_CASE(variant_three_alts) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[)"
+              R"("v":{"anyOf":[)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
@@ -1613,7 +1613,7 @@ TEST_CASE(vec_optional_items) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("v":{"type":"array",)"
-              R"("items":{"oneOf":[{"type":"integer",)"
+              R"("items":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
               R"({"type":"null"}]}}},)"
@@ -1626,7 +1626,7 @@ TEST_CASE(optional_vec_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[{"type":"array",)"
+              R"("v":{"anyOf":[{"type":"array",)"
               R"("items":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
@@ -1734,7 +1734,7 @@ TEST_CASE(shared_ptr_to_struct) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("point":{"oneOf":[{)"
+              R"("point":{"anyOf":[{)"
               R"("$ref":"#/$defs/point2d"},)"
               R"({"type":"null"}]}},)"
               R"("required":["name"],)"
@@ -1756,7 +1756,7 @@ TEST_CASE(optional_struct_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("point":{"oneOf":[{)"
+              R"("point":{"anyOf":[{)"
               R"("$ref":"#/$defs/point2d"},)"
               R"({"type":"null"}]},)"
               R"("name":{"type":"string"}},)"
@@ -1853,7 +1853,7 @@ TEST_CASE(optional_inner_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("i":{"oneOf":[{)"
+              R"("i":{"anyOf":[{)"
               R"("$ref":"#/$defs/inner"},)"
               R"({"type":"null"}]},)"
               R"("name":{"type":"string"}},)"
@@ -1878,7 +1878,7 @@ TEST_CASE(vec_of_variant) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("items":{"type":"array",)"
-              R"("items":{"oneOf":[)"
+              R"("items":{"anyOf":[)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
@@ -1898,7 +1898,7 @@ TEST_CASE(combo_mixed_fields) {
               R"("properties":{)"
               R"("color":{)"
               R"("type":"integer","minimum":-128,"maximum":127},)"
-              R"("label":{"oneOf":[{"type":"string"},)"
+              R"("label":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}]},)"
               R"("values":{"type":"array",)"
               R"("items":{"type":"integer",)"
@@ -2099,7 +2099,7 @@ TEST_CASE(self_referential_struct) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("next":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)"
+              R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
               R"("required":["value"]})");
 }
 
@@ -2154,9 +2154,9 @@ TEST_CASE(variant_of_variant) {
     const auto result = json::schema_string(outer_var).value();
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-              R"("oneOf":[)"
+              R"("anyOf":[)"
               R"({"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"({"oneOf":[)"
+              R"({"anyOf":[)"
               R"({"type":"string"},)"
               R"({"type":"boolean"}]}]})");
 }
@@ -2204,7 +2204,7 @@ TEST_CASE(variant_with_monostate) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("v":{"oneOf":[)"
+              R"("v":{"anyOf":[)"
               R"({"type":"null"},)"
               R"({"type":"integer",)"
               R"("minimum":-2147483648,)"
@@ -2257,13 +2257,13 @@ TEST_CASE(mutual_recursion) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
-              R"("b":{"oneOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
+              R"("b":{"anyOf":[{"$ref":"#/$defs/node_b"},{"type":"null"}]}},)"
               R"("required":["value"],)"
               R"("$defs":{)"
               R"("node_b":{"type":"object",)"
               R"("properties":{)"
               R"("name":{"type":"string"},)"
-              R"("a":{"oneOf":[{"$ref":"#"},{"type":"null"}]}},)"
+              R"("a":{"anyOf":[{"$ref":"#"},{"type":"null"}]}},)"
               R"("required":["name"]}}})");
 }
 
@@ -2318,7 +2318,7 @@ TEST_CASE(description_on_optional_field) {
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("type":"object",)"
               R"("properties":{)"
-              R"("label":{"oneOf":[{"type":"string"},)"
+              R"("label":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}],)"
               R"("description":"Optional display label."}}})");
 }
@@ -2467,6 +2467,85 @@ TEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("enum":["RED","GREEN","BLUE"]})");
+}
+
+// ---------------------------------------------------------------------------
+// nan_repr config
+// ---------------------------------------------------------------------------
+
+struct nan_null_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Null;
+};
+
+struct nan_string_config {
+    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::String;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_nan_null) {
+    const auto encoded = json::to_json<nan_null_config>(std::numeric_limits<double>::quiet_NaN());
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "null");
+
+    const auto result = json::schema_string<double, nan_null_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+}
+
+TEST_CASE(schema_agrees_with_encoder_on_nan_string) {
+    const auto encoded = json::to_json<nan_string_config>(std::numeric_limits<float>::infinity());
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"("Infinity")");
+
+    const auto result = json::schema_string<float, nan_string_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[{"type":"number"},)"
+              R"({"enum":["NaN","Infinity","-Infinity"]}]})");
+}
+
+// ---------------------------------------------------------------------------
+// human_readable config
+// ---------------------------------------------------------------------------
+
+struct non_hr_config {
+    [[maybe_unused]] constexpr static bool human_readable = false;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
+    // A non-human-readable config bypasses tagging and encodes the underlying
+    // variant, so the schema describes the untagged alternatives.
+    const auto encoded = json::to_json<non_hr_config>(root_external_variant{7});
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "7");
+
+    const auto result = json::schema_string<root_external_variant, non_hr_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647},)"
+              R"({"type":"string"}]})");
+}
+
+// ---------------------------------------------------------------------------
+// overlapping untagged alternatives
+// ---------------------------------------------------------------------------
+
+TEST_CASE(untagged_overlap_validates_as_any_of) {
+    // A numeric enum's underlying range overlaps the int alternative: both
+    // branches match the same document, so exactly-one (oneOf) semantics
+    // would reject every value the encoder emits — anyOf must apply.
+    using overlapping = std::variant<color_i8, std::int32_t>;
+    const auto result = json::schema_string<overlapping>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[)"
+              R"({"type":"integer","minimum":-128,"maximum":127},)"
+              R"({"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}]})");
 }
 
 // ---------------------------------------------------------------------------

@@ -27,6 +27,19 @@ namespace kota::codec::json {
 /// as a pointer and the emitter applies it the way the encoder does.
 using enum_rename_fn = std::string (*)(bool is_serialize, std::string_view name);
 
+/// The config knobs that shape the documents the encoder emits — and thus the
+/// schema. The typed entry points derive them from the codec config; the
+/// type-erased ones default to the codec defaults.
+struct schema_options {
+    codec::enum_repr enums = default_config<>::enum_repr;
+    enum_rename_fn rename = apply_enum_rename<void>;
+    codec::nan_repr nan = default_config<>::nan_repr;
+    /// A non-human-readable config bypasses variant tagging and encodes the
+    /// underlying untagged variant (the is_human_readable gate in
+    /// encode_value), so the schema must drop the tag shape the same way.
+    bool human_readable = true;
+};
+
 namespace detail {
 
 class SchemaEmitter {
@@ -34,8 +47,7 @@ class SchemaEmitter {
     using result_t = std::expected<dyn::Value, error>;
 
 public:
-    SchemaEmitter(enum_repr enums, enum_rename_fn rename) :
-        enum_as_names(enums == enum_repr::String), rename(rename) {}
+    explicit SchemaEmitter(const schema_options& opts) : opts(opts) {}
 
     result_t emit(const meta::type_info& root) {
         root_ti = unwrap(&root);
@@ -93,8 +105,11 @@ private:
     result_t make_nullable(const meta::type_info* ti) {
         auto* inner = unwrap(ti);
         KOTA_EXPECTED_TRY_V(auto schema, make_schema(inner));
+        // anyOf, not oneOf: the inner schema may itself admit null (a
+        // monostate alternative, an unconstrained any), and a null document
+        // must not fail by matching both branches.
         return dyn::Value{
-            {"oneOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
+            {"anyOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
         };
     }
 
@@ -126,10 +141,7 @@ private:
                 };
             }
             case tk::float32:
-            case tk::float64:
-                return dyn::Value{
-                    {"type", "number"}
-                };
+            case tk::float64: return make_float();
             case tk::int8:
             case tk::int16:
             case tk::int32:
@@ -222,9 +234,32 @@ private:
         }
     }
 
+    /// The encoder's non-finite handling is part of the document contract:
+    /// nan_repr::Null encodes NaN/Infinity as null and nan_repr::String as
+    /// one of three fixed strings. Error never emits a non-finite value, and
+    /// Passthrough declines to define one, so both keep the plain number.
+    result_t make_float() const {
+        dyn::Value number{
+            {"type", "number"}
+        };
+        switch(opts.nan) {
+            case nan_repr::Null:
+                return dyn::Value{
+                    {"anyOf", dyn::Array{std::move(number), dyn::Value{{"type", "null"}}}},
+                };
+            case nan_repr::String:
+                return dyn::Value{
+                    {"anyOf",
+                     dyn::Array{std::move(number),
+                                dyn::Value{{"enum", dyn::Array{"NaN", "Infinity", "-Infinity"}}}}},
+                };
+            default: return number;
+        }
+    }
+
     result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
-        if(!enum_as_names) {
+        if(opts.enums != enum_repr::String) {
             // enum_repr::Integer: the codec casts through the underlying type
             // without checking membership, and name reflection only covers a
             // limited scan range — values outside it still encode. The honest
@@ -233,7 +268,7 @@ private:
         }
         dyn::Array values;
         for(const auto& name: ei->member_names) {
-            values.push_back(dyn::Value(rename(true, name)));
+            values.push_back(dyn::Value(opts.rename(true, name)));
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -385,20 +420,21 @@ private:
 
     result_t make_variant(const meta::type_info* ti) {
         auto* vi = static_cast<const meta::variant_type_info*>(ti);
-        dyn::Array one_of;
+        auto tagging = opts.human_readable ? vi->tagging : meta::tag_mode::none;
+        dyn::Array alts;
 
         for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
-            switch(vi->tagging) {
+            switch(tagging) {
                 case meta::tag_mode::none: {
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back(std::move(schema));
+                    alts.push_back(std::move(schema));
                     break;
                 }
 
                 case meta::tag_mode::external: {
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back({
+                    alts.push_back({
                         {"type",                 "object"                        },
                         {"properties",           {{alt_name, std::move(schema)}} },
                         {"required",             dyn::Array{dyn::Value(alt_name)}},
@@ -412,14 +448,14 @@ private:
                     KOTA_EXPECTED_TRY_V(
                         auto schema,
                         make_internal_tagged(&vi->alternatives[i](), vi->tag_field, alt_name));
-                    one_of.push_back(std::move(schema));
+                    alts.push_back(std::move(schema));
                     break;
                 }
 
                 case meta::tag_mode::adjacent: {
                     auto alt_name = alternative_name(vi, i);
                     KOTA_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
-                    one_of.push_back({
+                    alts.push_back({
                         {"type",                 "object"},
                         {"properties",
                          dyn::Object{
@@ -438,13 +474,15 @@ private:
             }
         }
 
+        // Untagged alternatives can overlap — a numeric enum's underlying
+        // range next to an integer both match the same document — so only the
+        // tagged forms, disjoint by their tag, claim exactly-one semantics.
         return dyn::Value{
-            {"oneOf", std::move(one_of)}
+            {tagging == meta::tag_mode::none ? "anyOf" : "oneOf", std::move(alts)},
         };
     }
 
-    bool enum_as_names;
-    enum_rename_fn rename;
+    schema_options opts;
     std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const meta::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
@@ -461,27 +499,37 @@ struct schema_config : default_config<Config> {
     using format = json::format;
 };
 
+/// schema_options as a codec config declares them. No visitor participates
+/// here, so is_human_readable sees only the config override — matching
+/// to_json, whose ValueWriter is human-readable.
+template <typename Config>
+schema_options options_of() {
+    using merged = default_config<Config>;
+    return {
+        .enums = merged::enum_repr,
+        .rename = apply_enum_rename<merged>,
+        .nan = merged::nan_repr,
+        .human_readable = is_human_readable<merged, void>(),
+    };
+}
+
 }  // namespace detail
 
 inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
-                                               enum_repr enums = default_config<>::enum_repr,
-                                               enum_rename_fn rename = apply_enum_rename<void>) {
-    return detail::SchemaEmitter{enums, rename}.emit(root);
+                                               const schema_options& options = {}) {
+    return detail::SchemaEmitter{options}.emit(root);
 }
 
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
     return schema(meta::type_info_of<T, detail::schema_config<Config>>(),
-                  default_config<Config>::enum_repr,
-                  apply_enum_rename<default_config<Config>>);
+                  detail::options_of<Config>());
 }
 
-inline std::expected<std::string, error>
-    schema_string(const meta::type_info& root,
-                  bool pretty = false,
-                  enum_repr enums = default_config<>::enum_repr,
-                  enum_rename_fn rename = apply_enum_rename<void>) {
-    KOTA_EXPECTED_TRY_V(auto value, schema(root, enums, rename));
+inline std::expected<std::string, error> schema_string(const meta::type_info& root,
+                                                       bool pretty = false,
+                                                       const schema_options& options = {}) {
+    KOTA_EXPECTED_TRY_V(auto value, schema(root, options));
     KOTA_EXPECTED_TRY_V(auto compact, to_json(std::move(value)));
     if(!pretty) {
         return compact;
@@ -493,8 +541,7 @@ template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
     return schema_string(meta::type_info_of<T, detail::schema_config<Config>>(),
                          pretty,
-                         default_config<Config>::enum_repr,
-                         apply_enum_rename<default_config<Config>>);
+                         detail::options_of<Config>());
 }
 
 }  // namespace kota::codec::json
