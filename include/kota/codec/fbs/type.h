@@ -47,7 +47,8 @@ using verifier_t = ::flatbuffers::Verifier;
 /// write tables); layout_computed=true, so meta::dynamic reprs are rejected
 /// at compile time. Field slots use voffsets first_field=4, field_step=2 in
 /// declaration order; the buffer carries the "EVTO" identifier.
-/// - root → always a table: structures map directly, any other kind is
+/// - root → always a table: structures map directly, tuples and variants
+///   use their dedicated table layouts described below, any other kind is
 ///   boxed into a single-field table at the first slot, and a null root is
 ///   an empty table
 /// - boolean → uint8 cell; character → int8 cell; long double → double
@@ -59,8 +60,9 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   are scalars, enums, or nested inline structs) may instead inline as
 ///   fixed-size structs inside vectors
 /// - array/set → vector; element storage follows element_layout (proxy.h):
-///   scalar cells, strings, inline structs, tables, or boxed tables for
-///   nullable / variant-shaped elements
+///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
+///   other table-shaped elements use their own layouts), or boxed tables
+///   for nullable elements and nested containers / byte blobs
 /// - tuple → table with one slot per element
 /// - map → sorted vector of two-field {key, value} entry tables; the
 ///   ordering key mirrors find_entry (strings lexicographic, enums by
