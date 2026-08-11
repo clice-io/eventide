@@ -100,7 +100,8 @@ using remove_optional_t = typename remove_optional<std::remove_cv_t<T>>::type;
 
 template <typename T>
 constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || meta::int_like<T> || meta::uint_like<T> || meta::floating_like<T>;
+    std::same_as<T, bool> || meta::int_like<T> || meta::uint_like<T> || meta::floating_like<T> ||
+    meta::char_like<T> || std::same_as<T, std::byte>;
 
 template <typename T>
 struct schema_struct_trait;
