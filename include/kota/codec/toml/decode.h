@@ -1,11 +1,9 @@
 #pragma once
 
-#include <charconv>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -17,6 +15,7 @@
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
+#include "kota/codec/visit/map_key.h"
 
 namespace kota::codec::toml {
 
@@ -81,57 +80,6 @@ auto select_root_node(const Table& tbl) -> const Node* {
 }
 
 }  // namespace detail
-
-struct StrReader {
-    std::string_view str;
-    using error_type = rich_error;
-    using format = toml::format;
-
-    template <typename T>
-    bool visit_str(T& out) {
-        out = T(str);
-        return true;
-    }
-
-    template <typename T>
-        requires std::is_signed_v<T>
-    bool visit_int(T& out) {
-        std::int64_t tmp;
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), tmp);
-        if(ec != std::errc{} || ptr != str.data() + str.size()) {
-            return scoped_context<rich_error>::fail(
-                rich_error(std::string("cannot parse '") + std::string(str) + "' as integer"));
-        }
-        if constexpr(sizeof(T) < sizeof(std::int64_t)) {
-            if(!kota::narrow_int(tmp, out)) {
-                return scoped_context<rich_error>::fail(rich_error("integer value out of range"));
-            }
-        } else {
-            out = tmp;
-        }
-        return true;
-    }
-
-    template <typename T>
-        requires std::is_unsigned_v<T>
-    bool visit_uint(T& out) {
-        std::uint64_t tmp;
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), tmp);
-        if(ec != std::errc{} || ptr != str.data() + str.size()) {
-            return scoped_context<rich_error>::fail(rich_error(
-                std::string("cannot parse '") + std::string(str) + "' as unsigned integer"));
-        }
-        if constexpr(sizeof(T) < sizeof(std::uint64_t)) {
-            if(!kota::narrow_int(tmp, out)) {
-                return scoped_context<rich_error>::fail(
-                    rich_error("unsigned integer value out of range"));
-            }
-        } else {
-            out = tmp;
-        }
-        return true;
-    }
-};
 
 struct ValueReader {
     const Node* node;
@@ -316,7 +264,7 @@ struct ValueReader {
             return fail_type("table");
         }
         for(const auto& [k, v]: *tbl) {
-            StrReader kr{std::string_view(k)};
+            map_key_reader<format> kr{std::string_view(k)};
             ValueReader vr{&v};
             KOTA_CODEC_TRY(cb(kr, vr));
         }

@@ -56,6 +56,17 @@ TEST_CASE(serialize_object) {
     EXPECT_EQ(obj.at("b").as_int(), 2);
 }
 
+TEST_CASE(map_key_parse_error) {
+    std::map<std::string, int> src{
+        {"abc", 1}
+    };
+    auto encoded = dyn::to_content(src);
+    ASSERT_TRUE(encoded.has_value());
+
+    std::map<int, int> by_id;
+    EXPECT_FALSE(dyn::from_content(*encoded, by_id).has_value());
+}
+
 TEST_CASE(serialize_element_with_dom_subtree) {
     dyn::Object subtree;
     subtree.insert("k", dyn::Value(std::int64_t(9)));

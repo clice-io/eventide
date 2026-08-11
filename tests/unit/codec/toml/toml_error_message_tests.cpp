@@ -1,5 +1,6 @@
 #if __has_include(<toml++/toml.hpp>)
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,12 @@ struct enum_string_color_tag {
 using enum_string_color = annotate<enum_string_color_tag>::type<color>;
 
 TEST_SUITE(serde_toml_error_message) {
+
+TEST_CASE(map_key_parse_error) {
+    auto result = parse<std::map<int, int>>("abc = 1");
+    ASSERT_FALSE(result.has_value());
+    EXPECT_TRUE(result.error().message.find("cannot parse map key 'abc'") != std::string::npos);
+}
 
 TEST_CASE(missing_required_field) {
     auto result = parse<person>(R"(
