@@ -61,6 +61,7 @@ template <typename Sink>
 struct ValueWriter {
     Sink sink;
     using error_type = rich_error;
+    using format = toml::format;
     constexpr static bool human_readable = true;
 
     bool visit_null() {

@@ -24,6 +24,32 @@ namespace kota::meta {
 
 struct default_config {};
 
+/// Carries a backend's format tag into type resolution: passed as the Config
+/// of type_info_of / virtual_schema, it makes format-scoped meta::repr
+/// specializations resolve the way that backend's codec dispatch does.
+template <typename Format>
+struct format_config {
+    using format = Format;
+};
+
+namespace detail {
+
+template <typename Config>
+constexpr auto format_of_impl() {
+    if constexpr(requires { typename Config::format; }) {
+        return std::type_identity<typename Config::format>{};
+    } else {
+        return std::type_identity<void>{};
+    }
+}
+
+}  // namespace detail
+
+/// The format tag a config carries; void — the format-agnostic slot — when it
+/// carries none.
+template <typename Config>
+using format_of_t = typename decltype(detail::format_of_impl<Config>())::type;
+
 struct field_info;
 
 struct type_info {
@@ -255,11 +281,12 @@ struct resolved_repr {
 /// Precedence mirrors the codec dispatch (encode_value / encode_one_field):
 /// behavior::with wins over behavior::as, which wins over
 /// behavior::enum_string; the type's repr applies only when no behavior attr
-/// provides the representation. Every chosen representation re-enters the
-/// resolver, so chained reprs and annotations nested inside representation
-/// types resolve to the final type, matching the codec's recursive
-/// re-dispatch on the converted value. The rename_all / deny_unknown_fields
-/// of reflectable annotated nodes merge into the carried config through
+/// provides the representation, and within it the config's format tag selects
+/// a format-scoped specialization over the format-agnostic one — the same
+/// choice the dispatch makes from the visitor's format tag. Every chosen representation re-enters
+/// the resolver, so chained reprs and annotations nested inside representation types resolve to the
+/// final type, matching the codec's recursive re-dispatch on the converted value. The rename_all /
+/// deny_unknown_fields of reflectable annotated nodes merge into the carried config through
 /// merged_config_t — the same primitive and the same reflectable_class gate
 /// the codec dispatch uses — so the resulting type_info describes the
 /// documents the codec actually reads and writes. A tagged variant keeps its
@@ -279,11 +306,12 @@ constexpr auto resolve_repr() {
         return resolve_repr<target, Config>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
         return resolved_repr<std::string_view, std::tuple<>, Config>{};
-    } else if constexpr(has_repr<raw_t>) {
+    } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
+        using chosen = repr_for<raw_t, format_of_t<Config>>;
         if constexpr(reflectable_class<raw_t>) {
-            return resolve_repr<declared_repr_t<repr<raw_t>>, merged_config_t<Config, attrs_t>>();
+            return resolve_repr<declared_repr_t<chosen>, merged_config_t<Config, attrs_t>>();
         } else {
-            return resolve_repr<declared_repr_t<repr<raw_t>>, Config>();
+            return resolve_repr<declared_repr_t<chosen>, Config>();
         }
     } else if constexpr(is_specialization_of<std::variant, raw_t> &&
                         struct_spec_of<attrs_t>.tagging != tag_mode::none) {
@@ -586,9 +614,14 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 /// The representation of T as the codec dispatch resolves it: behavior attrs
 /// on an annotation take precedence over the underlying type's meta::repr,
 /// and chained reprs and annotations nested inside representation types are
-/// followed to their final type.
-template <typename T>
-using resolved_repr_t = typename decltype(detail::resolve_repr<std::remove_cvref_t<T>>())::type;
+/// followed to their final type. Format selects format-scoped repr
+/// specializations; void resolves the format-agnostic view.
+template <typename T, typename Format = void>
+using resolved_repr_t =
+    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>,
+                                           std::conditional_t<std::is_void_v<Format>,
+                                                              default_config,
+                                                              format_config<Format>>>())::type;
 
 template <typename T, typename Config>
 constexpr const type_info& type_info_of() {

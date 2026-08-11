@@ -19,6 +19,7 @@ namespace kota::codec::json {
 struct ValueWriter {
     StringBuilder& builder;
     using error_type = rich_error;
+    using format = json::format;
     constexpr static bool human_readable = true;
 
     bool visit_bool(bool v) {

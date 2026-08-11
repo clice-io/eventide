@@ -86,12 +86,12 @@ constexpr bool is_scalar_v =
 
 /// Substitute a type by its resolved representation: annotation behavior attrs
 /// take precedence over the underlying type's meta::repr, and chained reprs
-/// are followed (meta::resolved_repr_t); identity when neither applies.
-/// Flatbuffers computes layout statically, so a dynamic representation is
-/// rejected here.
+/// are followed under the fbs format tag (meta::resolved_repr_t); identity
+/// when neither applies. Flatbuffers computes layout statically, so a dynamic
+/// representation is rejected here.
 template <typename T>
 constexpr auto apply_repr_impl() {
-    using repr_t = meta::resolved_repr_t<T>;
+    using repr_t = meta::resolved_repr_t<T, format>;
     static_assert(!std::is_same_v<repr_t, meta::dynamic>,
                   "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
                   "used with the fbs backend");
@@ -196,8 +196,11 @@ template <typename T>
 using scalar_cell_t = typename scalar_cell<std::remove_cvref_t<T>>::type;
 
 template <typename Object>
+using object_schema = meta::virtual_schema<Object, meta::format_config<format>>;
+
+template <typename Object>
 consteval std::size_t field_slot_count() {
-    return meta::virtual_schema<Object>::fields.size();
+    return object_schema<Object>::fields.size();
 }
 
 // Computes the field slot index via union-wrapped uninitialized memory rather
@@ -210,7 +213,7 @@ auto field_index(Member Object::* member) -> std::size_t {
     const auto field = reinterpret_cast<std::uintptr_t>(std::addressof(uninit.value.*member));
     const auto offset = static_cast<std::size_t>(field - base);
 
-    constexpr auto& fields = meta::virtual_schema<Object>::fields;
+    constexpr auto& fields = object_schema<Object>::fields;
     for(std::size_t i = 0; i < fields.size(); ++i) {
         if(fields[i].offset == offset) {
             return i;

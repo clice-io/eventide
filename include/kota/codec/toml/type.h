@@ -29,6 +29,10 @@ static_assert(!TOML_EXCEPTIONS, "toml++ must be in no-exceptions mode for kotats
 
 namespace kota::codec::toml {
 
+/// Format tag: scopes a meta::repr specialization to the TOML backend
+/// (meta::repr<T, codec::toml::format>).
+struct format {};
+
 using Table = ::toml::table;
 using Array = ::toml::array;
 using Node = ::toml::node;

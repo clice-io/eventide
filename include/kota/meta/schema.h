@@ -28,8 +28,9 @@ struct single_field_slots {
     using raw_type = typename unwrap::raw_type;
     using attrs_t = typename unwrap::attrs;
 
-    using type =
-        type_list<field_slot<raw_type, resolved_repr_t<field_t>, filter_runtime_attrs_t<attrs_t>>>;
+    using type = type_list<field_slot<raw_type,
+                                      resolved_repr_t<field_t, format_of_t<Config>>,
+                                      filter_runtime_attrs_t<attrs_t>>>;
 };
 
 template <typename T, typename Config, std::size_t I, bool Flattened>

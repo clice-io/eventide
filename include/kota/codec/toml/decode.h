@@ -139,6 +139,7 @@ struct ValueReader {
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
+    using format = toml::format;
 
     template <typename F>
     bool try_read(F&& fn) {
