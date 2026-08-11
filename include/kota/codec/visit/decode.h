@@ -689,17 +689,25 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
 }
 
 /// True when this alternative decodes through decode_untagged_variant itself —
-/// no dispatch override, no repr, a bare std::variant possibly under nullable
-/// wrappers (which are transparent to non-null input) — so probing it
-/// re-enters the pass structure below and the outer pass level must flow into
-/// it.
+/// no dispatch override, a bare std::variant possibly behind nullable
+/// wrappers (which are transparent to non-null input) or declarative repr
+/// chain links (whose from() conversion runs after the variant is read) — so
+/// probing it re-enters the pass structure below and the outer pass level
+/// must flow into it. An imperative repr decodes through its own body
+/// instead, so its inner behavior is opaque to the pass structure.
 template <typename Config, typename Vis, typename T>
 constexpr bool probes_as_untagged_variant() {
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); })
         return false;
-    else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>)
-        return false;
-    else if constexpr(is_optional_v<T>)
+    else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
+        using chosen = meta::repr_for<T, meta::format_of_t<Vis>>;
+        if constexpr(
+            requires { chosen::from(std::declval<meta::declared_repr_t<chosen>>()); } &&
+            !requires(Vis& v, T& out) { chosen::template deserialize<Config>(v, out); })
+            return probes_as_untagged_variant<Config, Vis, meta::declared_repr_t<chosen>>();
+        else
+            return false;
+    } else if constexpr(is_optional_v<T>)
         return probes_as_untagged_variant<Config, Vis, typename T::value_type>();
     else if constexpr(is_specialization_of<std::unique_ptr, T> ||
                       is_specialization_of<std::shared_ptr, T>)
@@ -714,12 +722,20 @@ bool
 
 /// Probe one nested-variant alternative at the outer pass level. Null engages
 /// the outermost nullable wrapper as usual; any other input flows through the
-/// wrappers into the variant's own pass at the same widen level, so a wrapped
-/// nested variant cannot run its widening pass during an outer exact pass any
-/// more than a bare one can.
+/// wrappers and declarative repr links into the variant's own pass at the
+/// same widen level, so a wrapped or repr'd nested variant cannot run its
+/// widening pass during an outer exact pass any more than a bare one can.
+/// Reached only for chains probes_as_untagged_variant admitted, so a repr
+/// link here always has the declarative from() decode path.
 template <typename Config, typename Vis, typename T>
 bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
-    if constexpr(is_specialization_of<std::variant, T>) {
+    if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
+        using chosen = meta::repr_for<T, meta::format_of_t<Vis>>;
+        meta::declared_repr_t<chosen> declared{};
+        KOTA_CODEC_TRY(nested_alternative_pass<Config>(vis, declared, src_kind, widen));
+        out = chosen::from(std::move(declared));
+        return true;
+    } else if constexpr(is_specialization_of<std::variant, T>) {
         return untagged_variant_pass<Config>(vis, out, src_kind, widen);
     } else {
         if(src_kind == meta::type_kind::null)
@@ -730,10 +746,10 @@ bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool wi
 }
 
 /// One admission pass over an untagged variant's alternatives at the given
-/// widen level, each candidate probed through a fork. A nested variant — bare
-/// or under nullable wrappers — re-enters this pass at the same level instead
-/// of running its full decode, so an outer exact pass never triggers inner
-/// widening: decoding 1000 into
+/// widen level, each candidate probed through a fork. A nested variant —
+/// bare, under nullable wrappers, or behind a declarative repr — re-enters
+/// this pass at the same level instead of running its full decode, so an
+/// outer exact pass never triggers inner widening: decoding 1000 into
 /// variant<variant<int8_t, double>, int64_t> must reach the outer int64_t
 /// before any pass hands 1000 to the inner double. The widen pass re-admits
 /// such a nested alternative even when it strict-claimed — its exact branch

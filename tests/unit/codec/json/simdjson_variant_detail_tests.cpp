@@ -13,6 +13,35 @@
 #include "kota/zest/zest.h"
 #include "kota/codec/json/json.h"
 
+namespace kota_variant_repr_test {
+
+// An alternative whose declared representation is itself an untagged
+// variant: the outer pass level must flow through the repr into it.
+struct boxed_scalar {
+    std::variant<std::int8_t, double> v;
+
+    auto operator==(const boxed_scalar&) const -> bool = default;
+};
+
+}  // namespace kota_variant_repr_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_variant_repr_test::boxed_scalar> {
+    using type = std::variant<std::int8_t, double>;
+
+    static type to(const kota_variant_repr_test::boxed_scalar& b) {
+        return b.v;
+    }
+
+    static kota_variant_repr_test::boxed_scalar from(type v) {
+        return {.v = std::move(v)};
+    }
+};
+
+}  // namespace kota::meta
+
 namespace kota::codec {
 
 using namespace meta;
@@ -276,6 +305,52 @@ TEST_CASE(pointer_wrapped_nested_widening_defers_to_outer_exact_match) {
     ASSERT_TRUE(from_json("1000", wide).has_value());
     EXPECT_EQ(wide.index(), 0U);
     EXPECT_EQ(std::get<double>(*std::get<0>(wide)), 1000.0);
+}
+
+TEST_CASE(repr_nested_widening_defers_to_outer_exact_match) {
+    // An alternative whose meta::repr declares an untagged variant re-enters
+    // the outer pass level like a bare nested variant: its double must not
+    // widen ahead of the outer int64_t, which matches the input exactly.
+    using Box = kota_variant_repr_test::boxed_scalar;
+    using V = std::variant<Box, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    // Values that fit int8_t still land on the repr's exact branch.
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(std::get<Box>(out).v), 7);
+
+    // With no outer exact alternative left, the widen pass still reaches the
+    // repr's double.
+    using W = std::variant<Box, std::string>;
+    W wide{};
+    ASSERT_TRUE(from_json("1000", wide).has_value());
+    EXPECT_EQ(wide.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<Box>(wide).v), 1000.0);
+}
+
+TEST_CASE(wrapped_repr_nested_widening_defers_to_outer_exact_match) {
+    // The pass level flows through nullable wrappers into the repr chain,
+    // while null still engages the wrapper itself.
+    using Box = kota_variant_repr_test::boxed_scalar;
+    using V = std::variant<std::optional<Box>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)->v), 7);
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<0>(out).has_value());
 }
 
 TEST_CASE(nested_widening_still_reachable_in_widen_pass) {
