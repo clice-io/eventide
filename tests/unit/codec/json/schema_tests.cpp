@@ -546,6 +546,43 @@ KOTATSU_ANNOTATION(desc_internal_annotation, tag = "kind", tag_names = {"circle"
 using desc_internal_variant =
     annotate<desc_internal_annotation>::type<std::variant<desc_tagged_circle, desc_tagged_rect>>;
 
+// ---------------------------------------------------------------------------
+// default annotation fixtures
+// ---------------------------------------------------------------------------
+
+struct defaults_leaf {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> threads = 4;
+
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::string> name = "worker";
+};
+
+struct defaults_root {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <bool> enabled = true;
+
+    defaults_leaf pool;
+    defaults_leaf mirror;
+
+    std::optional<std::int32_t> limit;
+
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::vector<std::int32_t>> ids;
+};
+
+struct defaults_skipped {
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <std::vector<std::int32_t>> tags;
+};
+
+enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
+
+struct defaults_with_enum {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <defaults_level> log_level = defaults_level::High;
+};
+
 namespace json = kota::codec::json;
 
 template <typename T>
@@ -1018,7 +1055,7 @@ TEST_CASE(optional_field) {
               R"("age":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"({"type":"null"}]}},)"
+              R"({"type":"null"}],"default":null}},)"
               R"("required":["name"]})");
 }
 
@@ -1032,7 +1069,7 @@ TEST_CASE(unique_ptr_field) {
               R"("ptr":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"({"type":"null"}]}},)"
+              R"({"type":"null"}],"default":null}},)"
               R"("required":["name"]})");
 }
 
@@ -1046,7 +1083,7 @@ TEST_CASE(shared_ptr_field) {
               R"("ptr":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"({"type":"null"}]}},)"
+              R"({"type":"null"}],"default":null}},)"
               R"("required":["name"]})");
 }
 
@@ -1059,9 +1096,9 @@ TEST_CASE(all_optional_fields) {
               R"("a":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("b":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}]}}})");
+              R"({"type":"null"}],"default":null}}})");
 }
 
 TEST_CASE(all_ptr_types) {
@@ -1071,13 +1108,13 @@ TEST_CASE(all_ptr_types) {
               R"("type":"object",)"
               R"("properties":{)"
               R"("opt":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("uniq":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("shr":{"anyOf":[{"type":"boolean"},)"
-              R"({"type":"null"}]}}})");
+              R"({"type":"null"}],"default":null}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1093,7 +1130,7 @@ TEST_CASE(attr_default_value) {
               R"("name":{"type":"string"},)"
               R"("count":{"type":"integer",)"
               R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
+              R"("maximum":2147483647,"default":0}},)"
               R"("required":["name"]})");
 }
 
@@ -1105,8 +1142,8 @@ TEST_CASE(all_default_fields) {
               R"("properties":{)"
               R"("x":{"type":"integer",)"
               R"("minimum":-2147483648,)"
-              R"("maximum":2147483647},)"
-              R"("y":{"type":"string"}}})");
+              R"("maximum":2147483647,"default":0},)"
+              R"("y":{"type":"string","default":""}}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -1160,7 +1197,7 @@ TEST_CASE(skip_and_default) {
               R"("name":{"type":"string"},)"
               R"("count":{"type":"integer",)"
               R"("minimum":-2147483648,)"
-              R"("maximum":2147483647}},)"
+              R"("maximum":2147483647,"default":0}},)"
               R"("required":["name"]})");
 }
 
@@ -1236,7 +1273,7 @@ TEST_CASE(flatten_with_optional) {
               R"("y":{"anyOf":[{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("tag":{"type":"string"}},)"
               R"("required":["x","tag"]})");
 }
@@ -1632,7 +1669,7 @@ TEST_CASE(optional_vec_field) {
               R"("items":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647}},)"
-              R"({"type":"null"}]}}})");
+              R"({"type":"null"}],"default":null}}})");
 }
 
 TEST_CASE(vec_of_enum) {
@@ -1738,7 +1775,7 @@ TEST_CASE(shared_ptr_to_struct) {
               R"("name":{"type":"string"},)"
               R"("point":{"anyOf":[{)"
               R"("$ref":"#/$defs/point2d"},)"
-              R"({"type":"null"}]}},)"
+              R"({"type":"null"}],"default":null}},)"
               R"("required":["name"],)"
               R"("$defs":{)"
               R"("point2d":{"type":"object",)"
@@ -1760,7 +1797,7 @@ TEST_CASE(optional_struct_field) {
               R"("properties":{)"
               R"("point":{"anyOf":[{)"
               R"("$ref":"#/$defs/point2d"},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("name":{"type":"string"}},)"
               R"("required":["name"],)"
               R"("$defs":{)"
@@ -1857,7 +1894,7 @@ TEST_CASE(optional_inner_field) {
               R"("properties":{)"
               R"("i":{"anyOf":[{)"
               R"("$ref":"#/$defs/inner"},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("name":{"type":"string"}},)"
               R"("required":["name"],)"
               R"("$defs":{)"
@@ -1901,7 +1938,7 @@ TEST_CASE(combo_mixed_fields) {
               R"("color":{)"
               R"("type":"integer","minimum":-128,"maximum":127},)"
               R"("label":{"anyOf":[{"type":"string"},)"
-              R"({"type":"null"}]},)"
+              R"({"type":"null"}],"default":null},)"
               R"("values":{"type":"array",)"
               R"("items":{"type":"integer",)"
               R"("minimum":-2147483648,)"
@@ -2322,7 +2359,7 @@ TEST_CASE(description_on_optional_field) {
               R"("properties":{)"
               R"("label":{"anyOf":[{"type":"string"},)"
               R"({"type":"null"}],)"
-              R"("description":"Optional display label."}}})");
+              R"("description":"Optional display label.","default":null}}})");
 }
 
 TEST_CASE(description_on_struct_ref_field) {
@@ -2382,7 +2419,7 @@ TEST_CASE(description_with_default_value) {
               R"("retries":{"type":"integer",)"
               R"("minimum":-2147483648,)"
               R"("maximum":2147483647,)"
-              R"("description":"Retry limit."}}})");
+              R"("description":"Retry limit.","default":0}}})");
 }
 
 TEST_CASE(described_and_bare_struct_share_def) {
@@ -2622,6 +2659,51 @@ TEST_CASE(schema_agrees_with_encoder_on_config) {
               R"("maximum":2147483647}},)"
               R"("required":["firstValue"],)"
               R"("additionalProperties":false})");
+}
+
+// ---------------------------------------------------------------------------
+// default annotations from a default-constructed instance
+// ---------------------------------------------------------------------------
+
+TEST_CASE(defaults_annotated) {
+    const auto result = json::schema_string<defaults_root>().value();
+    // Non-required root fields carry the value a default-constructed
+    // instance encodes.
+    EXPECT_TRUE(result.find(R"("enabled":{"type":"boolean","default":true})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"({"type":"null"}],"default":null})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":[]})") != std::string::npos);
+    // The shared defaults_leaf $def is annotated once, inside $defs; the ref
+    // sites stay bare.
+    EXPECT_TRUE(result.find(R"("pool":{"$ref":"#/$defs/defaults_leaf"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("mirror":{"$ref":"#/$defs/defaults_leaf"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+}
+
+TEST_CASE(defaults_skip_condition) {
+    // The empty vector triggers skip_if at encode time, so the default
+    // document has no such property to annotate from.
+    const auto result = json::schema_string<defaults_skipped>().value();
+    EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
+}
+
+struct defaults_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+    using field_rename = naming::rename_policy::lower_camel;
+};
+
+TEST_CASE(defaults_enum_and_rename_with_config) {
+    // The default rides through the real encoder: the enum's String repr and
+    // the field rename both shape the annotated value and its property name.
+    const auto result = json::schema_string<defaults_with_enum, defaults_enum_config>().value();
+    EXPECT_TRUE(result.find(R"("logLevel":{"enum":["Low","High"],"default":"High"})") !=
+                std::string::npos);
+}
+
+TEST_CASE(defaults_type_erased_absent) {
+    // The type-erased entry has no T to default-construct, so no defaults.
+    const auto result = json::schema_string(type_info_of<defaults_root>()).value();
+    EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
 }
 
 };  // TEST_SUITE(serde_json_schema)

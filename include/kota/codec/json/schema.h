@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -15,6 +17,7 @@
 #include "kota/support/expected_try.h"
 #include "kota/support/naming.h"
 #include "kota/meta/type_info.h"
+#include "kota/codec/dyn/decode.h"
 #include "kota/codec/dyn/document.h"
 #include "kota/codec/dyn/encode.h"
 #include "kota/codec/json/json.h"
@@ -495,6 +498,85 @@ private:
     const meta::type_info* root_ti = nullptr;
 };
 
+/// Walks the emitted schema alongside the document a default-constructed
+/// instance encodes to, annotating optional properties (those absent from
+/// "required") with a `default` — the value decode leaves behind when the
+/// property is absent. Required properties must always appear, so a default
+/// annotation would be a lie; they are skipped, as are properties the default
+/// document does not carry (encode-side skip conditions). Struct $refs
+/// recurse so defaults land on the leaf fields inside $defs; a $def shared by
+/// several sites keeps the values of its first visit.
+class DefaultAnnotator {
+public:
+    explicit DefaultAnnotator(dyn::Object& root) : root(root) {
+        if(auto* d = root.find("$defs")) {
+            defs = d->get_object();
+        }
+        visited.insert(&root);
+    }
+
+    void annotate(dyn::Object& body, const dyn::Value& value) {
+        auto* props_entry = body.find("properties");
+        const auto* doc = value.get_object();
+        if(props_entry == nullptr || doc == nullptr) {
+            return;
+        }
+        const dyn::Array* required = nullptr;
+        if(const auto* r = body.find("required")) {
+            required = r->get_array();
+        }
+        for(auto& [name, prop]: *props_entry->get_object()) {
+            if(const auto* v = doc->find(name)) {
+                annotate_property(prop, *v, is_required(required, name));
+            }
+        }
+    }
+
+private:
+    static bool is_required(const dyn::Array* required, std::string_view name) {
+        if(required == nullptr) {
+            return false;
+        }
+        return std::ranges::any_of(*required,
+                                   [&](const dyn::Value& v) { return v.get_string() == name; });
+    }
+
+    /// A $ref recurses whether or not its property is required: the section
+    /// itself may always appear while its leaves carry decode defaults.
+    void annotate_property(dyn::Value& prop, const dyn::Value& value, bool required) {
+        auto* obj = prop.get_object();
+        if(obj == nullptr) {
+            return;
+        }
+        if(const auto* ref = obj->find("$ref")) {
+            if(auto* target = resolve(*ref->get_string());
+               target != nullptr && visited.insert(target).second) {
+                annotate(*target, value);
+            }
+            return;
+        }
+        if(!required) {
+            obj->insert("default", value);
+        }
+    }
+
+    dyn::Object* resolve(std::string_view ref) {
+        if(ref == "#") {
+            return &root;
+        }
+        constexpr std::string_view prefix = "#/$defs/";
+        if(!ref.starts_with(prefix) || defs == nullptr) {
+            return nullptr;
+        }
+        auto* def = defs->find(ref.substr(prefix.size()));
+        return def != nullptr ? def->get_object() : nullptr;
+    }
+
+    dyn::Object& root;
+    dyn::Object* defs = nullptr;
+    std::unordered_set<const dyn::Object*> visited;
+};
+
 /// Metadata resolution config for schema generation: the user's config
 /// (field_rename, deny_unknown_fields, ...) merged over defaults — the same
 /// merge the codec dispatch applies — tagged with the JSON format so
@@ -525,10 +607,26 @@ inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
     return detail::SchemaEmitter{options}.emit(root);
 }
 
+/// When T is default-initializable and encodable, the schema also carries
+/// `default` annotations: a default-constructed instance is encoded through
+/// the real JSON encoder under Config and parsed back into a document, so the
+/// values match what to_string emits byte for byte (enum renames, nan
+/// handling, format-scoped reprs included). Types the codec rejects
+/// (kind_of == unknown, e.g. schema_opaque) skip the annotation pass so the
+/// encoder is never instantiated; schema emission reports the error at
+/// runtime.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
-    return schema(meta::type_info_of<T, detail::schema_config<Config>>(),
-                  detail::options_of<Config>());
+    KOTA_EXPECTED_TRY_V(auto result,
+                        schema(meta::type_info_of<T, detail::schema_config<Config>>(),
+                               detail::options_of<Config>()));
+    if constexpr(std::default_initializable<T> && meta::kind_of<T>() != meta::type_kind::unknown) {
+        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
+        KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
+        auto& root = *result.get_object();
+        detail::DefaultAnnotator{root}.annotate(root, doc);
+    }
+    return result;
 }
 
 inline std::expected<std::string, error> schema_string(const meta::type_info& root,
@@ -544,9 +642,12 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
 
 template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
-    return schema_string(meta::type_info_of<T, detail::schema_config<Config>>(),
-                         pretty,
-                         detail::options_of<Config>());
+    KOTA_EXPECTED_TRY_V(auto value, (schema<T, Config>()));
+    KOTA_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
+    if(!pretty) {
+        return compact;
+    }
+    return prettify(compact);
 }
 
 }  // namespace kota::codec::json
