@@ -23,8 +23,9 @@ namespace kota::meta {
 struct json_schema_opaque_root {};
 
 /// A non-reflectable class (raw kind unknown) whose meta::repr resolves to a
-/// struct with a defaulted member: the default-annotation pass judges the
-/// JSON-resolved representation, not the raw kind.
+/// struct with a defaulted member: the schema describes the representation's
+/// shape, but the defaults pass covers only types the decoder reads
+/// directly, so a repr-routed root stays unannotated.
 class json_schema_reprd_root {
 public:
     int total() const {
@@ -40,10 +41,9 @@ struct json_schema_reprd_repr {
     <std::int32_t> total = 5;
 };
 
-/// A repr whose to() disagrees with a fresh representation: decode
-/// value-initializes the representation (n = 4) before reading fields, so an
-/// absent property leaves 4 even though a default-constructed root encodes
-/// n = 9 — the annotation must publish the decode-side value.
+/// A declarative repr whose to() disagrees with a fresh representation
+/// (a fresh root encodes n = 9, decode value-initializes n = 4): no single
+/// honest default exists behind the repr, so the schema carries none.
 class json_schema_reprd_shifted {
 public:
     json_schema_reprd_shifted() = default;
@@ -65,9 +65,8 @@ struct json_schema_reprd_shifted_repr {
 
 /// An imperative repr with a struct representation: repr_decode's imperative
 /// branch hands the caller's value straight to deserialize — the declared
-/// representation is never constructed — so decoding an absent property
-/// keeps the value's own state (n_ = 9), not the representation's
-/// initializer (n = 4).
+/// representation is never constructed — so what an absent property leaves
+/// behind is the repr's business, and the schema carries no default.
 class json_schema_imperative_root {
 public:
     int n() const {
@@ -128,7 +127,7 @@ struct repr<kota::meta::json_schema_imperative_root> {
     template <typename Config>
     static bool deserialize(auto& vis, kota::meta::json_schema_imperative_root& v) {
         // Seed the representation from the in-place value: an absent
-        // property keeps it — the semantics the schema's defaults advertise.
+        // property keeps it.
         type d{.n = v.n()};
         if(!codec::decode_value<Config>(vis, d)) {
             return false;
@@ -2926,22 +2925,22 @@ TEST_CASE(defaults_skip_condition) {
     EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
 }
 
-TEST_CASE(defaults_shared_def_omits_disputed) {
-    // The two sites decode in place and disagree on threads (mirror's member
-    // initializer overrides it to 9), so the shared $def cannot tell the
-    // truth for both and says nothing; name agrees at every site and keeps
-    // the fresh value. Both sites are required — no site default either.
+TEST_CASE(defaults_shared_def_shows_fresh_values) {
+    // The shared $def body always describes a fresh defaults_leaf — threads
+    // 4, name "worker" — even though mirror's member initializer overrides
+    // threads to 9 at its site: both sites are required, so the override has
+    // no schema position and is not represented.
     const auto result = json::schema_string<defaults_shared_override>().value();
-    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
 }
 
 TEST_CASE(defaults_non_required_ref_sites) {
     // Non-required refs to a shared $def each carry their whole encoded
     // object as the property default, so the per-site member initializer
-    // survives; the $def itself omits the disputed threads default and keeps
-    // the agreed name.
+    // survives and takes precedence at its site; the $def body keeps
+    // describing a fresh defaults_leaf.
     const auto result = json::schema_string<defaults_ref_sites>().value();
     EXPECT_TRUE(
         result.find(
@@ -2951,36 +2950,40 @@ TEST_CASE(defaults_non_required_ref_sites) {
         result.find(
             R"("mirror":{"$ref":"#/$defs/defaults_leaf","default":{"threads":9,"name":"worker"}})") !=
         std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
 }
 
-TEST_CASE(defaults_engaged_override_omits_disputed) {
-    // An engaged optional decodes in place, so its override disputes the
-    // $def's threads default; the nullable site still carries its
-    // whole-object default.
+TEST_CASE(defaults_engaged_override_carries_site_default) {
+    // The nullable site carries the enclosing instance's whole encoded
+    // object — the engaged override rides the site default, which takes
+    // precedence there — while the $def body keeps describing a fresh
+    // defaults_leaf.
     const auto result = json::schema_string<defaults_engaged_override>().value();
     EXPECT_TRUE(result.find(R"("default":{"threads":9,"name":"worker"})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
 }
 
-TEST_CASE(defaults_in_place_override_cascades) {
-    // The override sits two in-place levels down (root member initializer →
-    // mid.leaf.threads): the site walk follows struct fields through struct
-    // fields, so the leaf $def omits threads while name stays.
+TEST_CASE(defaults_in_place_override_not_represented) {
+    // The override sits two required in-place levels down (root member
+    // initializer → mid.leaf.threads): required sites carry no site default,
+    // so the override has no schema position — the leaf $def stays exact for
+    // a fresh defaults_leaf.
     const auto result = json::schema_string<defaults_cascade_root>().value();
-    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
 }
 
-TEST_CASE(defaults_tuple_element_override_omits_disputed) {
-    // Tuple elements decode in place into the existing tuple, so a
-    // per-element override disputes the element type's $def default.
+TEST_CASE(defaults_tuple_element_def_shows_fresh_values) {
+    // Tuple elements have no per-element default position, so the required
+    // entry's override is not represented; the element type's $def describes
+    // a fresh defaults_leaf.
     const auto result = json::schema_string<defaults_tuple_override>().value();
-    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
 }
 
 TEST_CASE(defaults_nullable_root) {
@@ -3100,22 +3103,33 @@ TEST_CASE(defaults_recursive_root_with_elements) {
     EXPECT_TRUE(result.find(R"("default":2)") == std::string::npos);
 }
 
-TEST_CASE(defaults_repr_backed_root) {
-    // kind_of on the raw class reports unknown, but its repr resolves to a
-    // struct: the guard judges the JSON-resolved representation, so the pass
-    // runs and the representation's defaulted member carries its value.
+TEST_CASE(defaults_repr_backed_root_unannotated) {
+    // The decoder reads the representation, not a json_schema_reprd_root:
+    // the defaults pass covers only types decode reads directly, so the
+    // repr-routed root keeps the representation's schema shape without any
+    // default.
     const auto result = json::schema_string<json_schema_reprd_root>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":5})") != std::string::npos);
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("total":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}})");
 }
 
-TEST_CASE(defaults_repr_decode_side) {
-    // repr_decode value-initializes the representation before reading
-    // fields, so an absent property leaves the representation's own
-    // initializer — not the value Repr::to encodes for a default-constructed
-    // root.
+TEST_CASE(defaults_declarative_repr_unannotated) {
+    // Encode and decode disagree behind the repr (a fresh root encodes
+    // n = 9, decode value-initializes n = 4): rather than guess, the
+    // repr-routed root carries no default at all.
     const auto result = json::schema_string<json_schema_reprd_shifted>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("n":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}})");
 }
 
 TEST_CASE(defaults_follow_slot_rename_all) {
@@ -3138,14 +3152,19 @@ TEST_CASE(defaults_annotated_root_rename_all) {
     EXPECT_TRUE(result.find(R"("first_value")") == std::string::npos);
 }
 
-TEST_CASE(defaults_imperative_repr_reads_in_place) {
+TEST_CASE(defaults_imperative_repr_unannotated) {
     // repr_decode's imperative branch never constructs the declared
-    // representation — deserialize reads the default-constructed root in
-    // place — so the schema advertises what a fresh root encodes (n_ = 9),
-    // not the representation's initializer (4).
+    // representation — deserialize reads the caller's value in place — so
+    // what an absent property leaves behind is the repr's business and the
+    // repr-routed root carries no default.
     const auto result = json::schema_string<json_schema_imperative_root>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":9})") != std::string::npos);
-    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("n":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}}})");
 }
 
 struct defaults_enum_config {

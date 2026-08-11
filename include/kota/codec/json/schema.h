@@ -520,78 +520,63 @@ private:
 };
 
 /// The fresh documents the default-annotation pass pairs schema bodies with:
-/// for every struct reachable through the resolved type structure whose
-/// decode-fresh value (decode_fresh_t — the declared representation of a
-/// declarative repr chain, the value itself where an imperative link reads
-/// it in place) is default-initializable, the document a value-initialized
-/// instance of that value encodes to under the resolved config, keyed by the
-/// normalized name the emitter gives the type's $def. collect_fresh mirrors
-/// the emitter's reach — struct fields (flattened included, skipped
-/// excluded), each under the config its slot's rename_all / deny_unknown
-/// spec merges to, optional and pointer inners, sequence and set elements,
-/// map values (keys encode as object keys and carry no schema), tuple
-/// elements, variant alternatives. Field-level behavior attrs (`with`, `as`)
-/// are not followed, and a fresh instance the encoder rejects (a NaN member
+/// for every default-initializable struct the decoder reads directly (see
+/// decoder_reads_directly) reachable through the resolved type structure,
+/// the document a value-initialized instance encodes to under the resolved
+/// config, keyed by the normalized name the emitter gives the type's $def.
+/// collect_fresh mirrors the emitter's reach — struct fields (flattened
+/// included, skipped excluded), each under the config its slot's rename_all
+/// / deny_unknown spec merges to, optional and pointer inners, sequence and
+/// set elements, map values (keys encode as object keys and carry no
+/// schema), tuple elements, variant alternatives. A repr-routed type is
+/// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
+/// not followed, and a fresh instance the encoder rejects (a NaN member
 /// under nan_repr::Error, an unnamed enum value under enum_repr::String)
-/// records no document: both leave their subtrees unannotated rather than
-/// annotated wrongly. `conflicted` lists, per type, the properties whose
-/// fresh value some in-place decode site disagrees with — the annotation
-/// pass omits those defaults instead of publishing a value that is wrong at
-/// one of the sites.
+/// records no document: all three leave their bodies unannotated rather
+/// than annotated wrongly.
 struct FreshDefaults {
     std::unordered_map<std::string, dyn::Value> docs;
-    std::unordered_map<std::string, std::unordered_set<std::string>> conflicted;
     std::unordered_set<std::string> claimed;
     std::unordered_set<const meta::type_info*> seen;
 };
 
-/// Annotates the emitted schema with `default` values — the value decode
-/// leaves behind when a property is absent. Two sources feed the pass,
-/// matching the two ways decode arrives at a value it must default:
-///
-/// - Site defaults. Decode assigns struct fields in place on the enclosing
-///   instance, so an absent optional property keeps whatever the enclosing
-///   default instance carries — member initializers on the enclosing type
-///   included. Each schema body is paired with a document of its own type
-///   (the root body with the encoded fresh instance of the root's resolved
-///   representation — what decode constructs and reads into) and every
-///   non-required property copies its encoded value onto its schema as
-///   `default`; a non-required struct $ref thus carries its whole encoded
-///   object, so per-site member initializers survive the $def sharing.
-///   Required properties must always appear, so a default would be a lie;
-///   they are skipped, as are properties the document does not carry
-///   (encode-side skip conditions, the null a nullable root encodes to).
+/// Annotates the emitted schema with `default` values in two layers, each
+/// exact for what it describes:
 ///
 /// - Fresh defaults. Decode value-initializes sequence and set elements, map
 ///   values, and selected variant alternatives before reading their fields,
-///   so inside a shared $def the enclosing instance's contents are
-///   meaningless — a member initializer that overrides an element's fields
-///   must not leak into the element type's own defaults. Every $def body is
-///   therefore paired with the document a freshly constructed instance of
-///   its own type encodes to (FreshDefaults), and so is every
-///   internal-tagged variant branch — the one schema site whose struct body
-///   is inlined rather than $def'd — via the emitter's alternative marker,
+///   so every $def body shows the document a freshly constructed instance of
+///   its own type encodes to (FreshDefaults) — and so does every
+///   internal-tagged variant branch, the one schema site whose struct body
+///   is inlined rather than $def'd, via the emitter's alternative marker,
 ///   which the sweep consumes and strips. A type that cannot be freshly
 ///   constructed and encoded leaves its body unannotated rather than
 ///   guessing.
 ///
-/// A body shared between sites can still be contradicted by one of them:
-/// struct fields, engaged optionals and pointers, and tuple elements decode
-/// in place, so an enclosing initializer that overrides a nested field wins
-/// over the nested type's own initializer at that site. Wherever
-/// collect_fresh found such a disagreement (FreshDefaults::conflicted), the
-/// disputed property's default is omitted — the shared body cannot tell the
-/// truth for every site, so it says nothing.
+/// - Site defaults. Decode assigns struct fields in place on the enclosing
+///   instance, so an absent non-required property keeps whatever the
+///   enclosing default instance carries — member initializers included. Each
+///   schema body is paired with a document of its own type (the root body
+///   with the encoded root instance) and every non-required property copies
+///   its encoded value onto its schema as `default`; a non-required struct
+///   $ref or nullable property thus carries its whole encoded object, which
+///   takes precedence at that site wherever an enclosing initializer
+///   overrides the fresh values behind the shared $def. Required properties
+///   must always appear, so a default would be a lie; they are skipped, as
+///   are properties the document does not carry (encode-side skip
+///   conditions, the null a nullable root encodes to), and an override on a
+///   required site has no schema position of its own — the shared body keeps
+///   speaking for fresh instances only.
 class DefaultAnnotator {
 public:
     explicit DefaultAnnotator(FreshDefaults fresh) : fresh(std::move(fresh)) {}
 
-    void run(dyn::Object& root, const dyn::Value& root_doc, std::string_view root_name) {
-        annotate_properties(root, root_doc, root_name);
+    void run(dyn::Object& root, const dyn::Value& root_doc) {
+        annotate_properties(root, root_doc);
         if(auto* defs = root.find("$defs")) {
             for(auto& [name, body]: *defs->get_object()) {
                 if(auto it = fresh.docs.find(name); it != fresh.docs.end()) {
-                    annotate_properties(*body.get_object(), it->second, name);
+                    annotate_properties(*body.get_object(), it->second);
                 }
             }
         }
@@ -607,9 +592,7 @@ private:
                                    [&](const dyn::Value& v) { return v.get_string() == name; });
     }
 
-    void annotate_properties(dyn::Object& body,
-                             const dyn::Value& doc_value,
-                             std::string_view type_name) {
+    static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
         // A non-struct root pairs with a non-object document (an array, a
         // scalar, the null a default-constructed nullable root encodes to);
         // it has no properties to annotate from.
@@ -625,14 +608,9 @@ private:
         if(const auto* r = body.find("required")) {
             required = r->get_array();
         }
-        const std::unordered_set<std::string>* disputed = nullptr;
-        if(auto it = fresh.conflicted.find(std::string(type_name)); it != fresh.conflicted.end()) {
-            disputed = &it->second;
-        }
         for(auto& [name, prop]: *props->get_object()) {
             const auto* v = doc->find(name);
-            if(v != nullptr && !is_required(required, name) &&
-               (disputed == nullptr || !disputed->contains(name))) {
+            if(v != nullptr && !is_required(required, name)) {
                 prop.get_object()->insert("default", *v);
             }
         }
@@ -647,7 +625,7 @@ private:
         if(const auto* marker = schema.find(alternative_marker)) {
             auto name = std::string(*marker->get_string());
             if(auto it = fresh.docs.find(name); it != fresh.docs.end()) {
-                annotate_properties(schema, it->second, name);
+                annotate_properties(schema, it->second);
             }
             schema.remove(alternative_marker);
         }
@@ -715,55 +693,21 @@ using slot_config_t = std::conditional_t<meta::reflectable_class<typename Slot::
                                          meta::merged_config_t<Config, typename Slot::attrs>,
                                          Config>;
 
+/// True when decode reads a T value directly: T resolves to itself, or is a
+/// structural meta::annotate wrapper whose resolution is the wrapped type —
+/// a plain wrapper, no repr. Anything routed through a meta::repr makes
+/// decode read the repr's value instead, whose relationship to a fresh T is
+/// the repr's business; the defaults pass covers only the direct kind and
+/// leaves the rest honestly unannotated.
 template <typename T>
-constexpr auto resolve_decode_fresh();
-
-/// One repr link of the chain, split by decode form the way repr_decode
-/// splits it: a declarative link (from()) constructs its declared
-/// representation, so the chain follows it; an imperative link hands the
-/// caller's value to deserialize in place, so the chain stops at T.
-template <typename T, typename Repr>
-constexpr auto decode_fresh_link() {
-    if constexpr(requires { Repr::from(std::declval<meta::declared_repr_t<Repr>>()); }) {
-        return resolve_decode_fresh<meta::declared_repr_t<Repr>>();
-    } else {
-        return std::type_identity<T>{};
-    }
-}
-
-/// The type whose fresh instance decode constructs and reads for T. A fresh
-/// resolved_repr_t is only what decode visits when every link of the chain
-/// is declarative, so this walk mirrors the decode dispatch instead — the
-/// same behavior-attr precedence, `as` recursing into the target it
-/// constructs and converts — and keeps the annotated wrapper at every stop,
-/// so encoding the fresh instance re-applies the wrapper's attrs exactly
-/// like the codec.
-template <typename T>
-constexpr auto resolve_decode_fresh() {
+constexpr bool decoder_reads_directly() {
+    using resolved = meta::resolved_repr_t<T, format>;
     if constexpr(meta::annotated_type<T>) {
-        using attrs_t = typename T::attrs;
-        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
-            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
-            return decode_fresh_link<T, adapter>();
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
-            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
-            return resolve_decode_fresh<target>();
-        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
-            return std::type_identity<T>{};
-        } else if constexpr(meta::has_repr<typename T::annotated_type, format>) {
-            return decode_fresh_link<T, meta::repr_for<typename T::annotated_type, format>>();
-        } else {
-            return std::type_identity<T>{};
-        }
-    } else if constexpr(meta::has_repr<T, format>) {
-        return decode_fresh_link<T, meta::repr_for<T, format>>();
+        return std::same_as<resolved, typename T::annotated_type>;
     } else {
-        return std::type_identity<T>{};
+        return std::same_as<resolved, T>;
     }
 }
-
-template <typename T>
-using decode_fresh_t = typename decltype(resolve_decode_fresh<T>())::type;
 
 template <typename T, typename Config>
 void collect_fresh(FreshDefaults& out);
@@ -779,136 +723,56 @@ void collect_fresh_alternatives(FreshDefaults& out, std::type_identity<std::vari
 }
 
 template <typename T, typename Config>
-void compare_site(FreshDefaults& out, const dyn::Value& site);
-
-/// Replays decode's in-place sites of one struct document: each field's
-/// sub-document is the value decode leaves in the enclosing instance when
-/// the nested properties are absent, so it is held against the field type's
-/// own fresh document.
-template <typename Resolved, typename Config>
-void compare_slot_sites(FreshDefaults& out, const dyn::Object& doc) {
-    using schema = meta::virtual_schema<Resolved, Config>;
-    using slots = typename schema::slots;
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        (
-            [&] {
-                using slot_t = type_list_element_t<Is, slots>;
-                if(const auto* site = doc.find(schema::fields[Is].name)) {
-                    compare_site<typename slot_t::raw_type, slot_config_t<Config, slot_t>>(out,
-                                                                                           *site);
-                }
-            }(),
-            ...);
-    }(std::make_index_sequence<type_list_size_v<slots>>{});
-}
-
-/// Decode reuses in-place sites — struct fields, engaged optionals and
-/// pointers, tuple elements — so the value an absent property leaves behind
-/// there is the enclosing instance's, not a fresh one. Walks one site
-/// document against the fresh documents, recording every property whose
-/// site value disagrees; the walk ends at fresh-constructing positions
-/// (sequence and set elements, map values, variant alternatives), where
-/// decode value-initializes and nothing site-specific survives.
-template <typename T, typename Config>
-void compare_site(FreshDefaults& out, const dyn::Value& site) {
-    using tk = meta::type_kind;
-    using resolved = meta::resolved_repr_t<T, format>;
-    constexpr tk kind = meta::kind_of<resolved>();
-    if constexpr(kind == tk::structure) {
-        // A null site is a disengaged optional or pointer: decode emplaces a
-        // fresh value there, which agrees with the fresh document by
-        // definition.
-        const auto* site_obj = site.get_object();
-        if(site_obj == nullptr) {
-            return;
-        }
-        auto name = kota::naming::normalize_identifier(meta::type_info_of<T, Config>().type_name);
-        if(auto it = out.docs.find(name); it != out.docs.end()) {
-            for(const auto& [key, fresh_value]: *it->second.get_object()) {
-                const auto* site_value = site_obj->find(key);
-                if(site_value == nullptr || *site_value != fresh_value) {
-                    out.conflicted[name].insert(key);
-                }
-            }
-        }
-        compare_slot_sites<resolved, meta::resolved_config_t<T, Config>>(out, *site_obj);
-    } else if constexpr(kind == tk::optional) {
-        compare_site<typename resolved::value_type, Config>(out, site);
-    } else if constexpr(kind == tk::pointer) {
-        compare_site<typename resolved::element_type, Config>(out, site);
-    } else if constexpr(kind == tk::tuple) {
-        // A disengaged optional-of-tuple site encodes null: nothing decodes
-        // in place there.
-        if(const auto* arr = site.get_array()) {
-            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (compare_site<std::tuple_element_t<Is, resolved>, Config>(out, (*arr)[Is]), ...);
-            }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
-        }
-    }
-}
-
-template <typename T, typename Config>
 void collect_fresh(FreshDefaults& out) {
-    using tk = meta::type_kind;
-    using resolved = meta::resolved_repr_t<T, format>;
-    constexpr tk kind = meta::kind_of<resolved>();
-    if constexpr(kind == tk::structure) {
-        const meta::type_info& ti = meta::type_info_of<T, Config>();
-        if(!out.seen.insert(&ti).second) {
-            return;
-        }
-        // The resolved config carries T's own structural annotations (an
-        // annotated root or container element — slots merge theirs before
-        // recursing), so the document keys and field names below match the
-        // schema the emitter derives from the same resolution.
-        using cfg = meta::resolved_config_t<T, Config>;
-        using fresh_t = decode_fresh_t<T>;
-        auto name = kota::naming::normalize_identifier(ti.type_name);
-        if(!out.claimed.insert(name).second) {
-            // Two distinct types under one normalized name: the emitter
-            // rejects the collision for $def'd types, but an inlined
-            // internal-tagged alternative shares the namespace silently —
-            // annotate neither rather than pair one with the other's
-            // document.
-            out.docs.erase(name);
-        } else if constexpr(std::default_initializable<fresh_t>) {
-            // Encode the value decode constructs and reads into — the
-            // declared representation of a declarative repr chain
-            // (repr_decode value-initializes it before visiting), T itself
-            // when an imperative link reads it in place: Repr::to(T{}) may
-            // legally disagree with a fresh representation, and decode's
-            // absent-field values come from whichever instance decode
-            // actually visits.
-            if(auto text = to_string<cfg>(fresh_t{})) {
-                if(auto doc = from_string<dyn::Value>(*text)) {
-                    out.docs.emplace(name, std::move(*doc));
+    // A repr-routed type is skipped, subtree included: decode reads the
+    // repr's value, not a T, so no honest fresh document exists here.
+    if constexpr(decoder_reads_directly<T>()) {
+        using tk = meta::type_kind;
+        using resolved = meta::resolved_repr_t<T, format>;
+        constexpr tk kind = meta::kind_of<resolved>();
+        if constexpr(kind == tk::structure) {
+            const meta::type_info& ti = meta::type_info_of<T, Config>();
+            if(!out.seen.insert(&ti).second) {
+                return;
+            }
+            // The resolved config carries T's own structural annotations (an
+            // annotated root or container element — slots merge theirs
+            // before recursing), so the document keys and field names below
+            // match the schema the emitter derives from the same resolution.
+            using cfg = meta::resolved_config_t<T, Config>;
+            auto name = kota::naming::normalize_identifier(ti.type_name);
+            if(!out.claimed.insert(name).second) {
+                // Two distinct types under one normalized name: the emitter
+                // rejects the collision for $def'd types, but an inlined
+                // internal-tagged alternative shares the namespace silently
+                // — annotate neither rather than pair one with the other's
+                // document.
+                out.docs.erase(name);
+            } else if constexpr(std::default_initializable<T>) {
+                if(auto text = to_string<cfg>(T{})) {
+                    if(auto doc = from_string<dyn::Value>(*text)) {
+                        out.docs.emplace(name, std::move(*doc));
+                    }
                 }
             }
+            collect_fresh_slots<cfg>(out, typename meta::virtual_schema<resolved, cfg>::slots{});
+        } else if constexpr(kind == tk::optional) {
+            collect_fresh<typename resolved::value_type, Config>(out);
+        } else if constexpr(kind == tk::pointer) {
+            collect_fresh<typename resolved::element_type, Config>(out);
+        } else if constexpr(kind == tk::array || kind == tk::set) {
+            collect_fresh<std::ranges::range_value_t<resolved>, Config>(out);
+        } else if constexpr(kind == tk::map) {
+            collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Config>(out);
+        } else if constexpr(kind == tk::tuple) {
+            [&out]<std::size_t... Is>(std::index_sequence<Is...>) {
+                (collect_fresh<std::tuple_element_t<Is, resolved>, Config>(out), ...);
+            }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
+        } else if constexpr(kind == tk::variant) {
+            collect_fresh_alternatives<Config>(out, std::type_identity<resolved>{});
         }
-        collect_fresh_slots<cfg>(out, typename meta::virtual_schema<resolved, cfg>::slots{});
-        // With the whole subtree collected, replay this struct's own
-        // in-place sites against it (the collision branch above may have
-        // dropped the document — nothing to compare then, and the emitter
-        // rejects the $def collision anyway).
-        if(auto it = out.docs.find(name); it != out.docs.end()) {
-            compare_slot_sites<resolved, cfg>(out, *it->second.get_object());
-        }
-    } else if constexpr(kind == tk::optional) {
-        collect_fresh<typename resolved::value_type, Config>(out);
-    } else if constexpr(kind == tk::pointer) {
-        collect_fresh<typename resolved::element_type, Config>(out);
-    } else if constexpr(kind == tk::array || kind == tk::set) {
-        collect_fresh<std::ranges::range_value_t<resolved>, Config>(out);
-    } else if constexpr(kind == tk::map) {
-        collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Config>(out);
-    } else if constexpr(kind == tk::tuple) {
-        [&out]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (collect_fresh<std::tuple_element_t<Is, resolved>, Config>(out), ...);
-        }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
-    } else if constexpr(kind == tk::variant) {
-        collect_fresh_alternatives<Config>(out, std::type_identity<resolved>{});
+        // Scalars, enums, bytes, any: leaves without annotatable structure.
     }
-    // Scalars, enums, bytes, any: leaves without annotatable structure.
 }
 
 }  // namespace detail
@@ -930,52 +794,40 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 
 }  // namespace detail
 
-/// When the value decode reads for T is default-initializable, the schema
-/// also carries `default` annotations: fresh instances of the values decode
-/// actually constructs and reads into are encoded through the real JSON
-/// encoder under Config and parsed back into documents, so the values match
-/// what to_string emits byte for byte (enum renames, nan handling,
-/// format-scoped reprs, structural annotations on the root itself included)
-/// — and, for a repr-backed type, describe the decode side per repr form:
-/// a declarative chain ends at the representation repr_decode
-/// value-initializes before visiting, not at what Repr::to(T{}) happens to
-/// encode, while an imperative link hands the caller's value to deserialize
-/// in place, so the fresh instance is the value's own type. Root properties
-/// take the values of the root's fresh instance; each $def and inlined
-/// variant branch takes the values of a freshly constructed instance of its
-/// own type — what decode's fresh constructions (sequence elements, map
-/// values, emplaced alternatives) actually produce — while a nested type
-/// that cannot be freshly constructed or encoded stays unannotated, and a
-/// default an in-place site contradicts is omitted (see DefaultAnnotator).
-/// Two consequences of riding the real encoder: the root's fresh instance
-/// must encode under Config — an instance the encoder rejects (a NaN member
-/// under nan_repr::Error, an enum value without a reflected name under
-/// enum_repr::String) fails schema generation with that error — and a T
-/// whose fields the codec cannot serialize fails to compile, exactly like
-/// to_string itself. Only an opaque root — one whose JSON-resolved
-/// representation still reflects as kind unknown — skips the pass at
-/// compile time and keeps reporting the emission error at runtime.
+/// When T is default-initializable and the decoder reads it directly — T
+/// resolves to itself, or is a structural meta::annotate wrapper of the type
+/// it resolves to — the schema also carries `default` annotations: fresh
+/// instances are encoded through the real JSON encoder under Config and
+/// parsed back into documents, so the values match what to_string emits byte
+/// for byte (enum renames, nan handling, structural annotations on the root
+/// itself included). Root properties take the values of T{}; each $def and
+/// inlined variant branch takes the values of a freshly constructed instance
+/// of its own type, with non-required sites layering their whole-object
+/// defaults on top (see DefaultAnnotator). Two consequences of riding the
+/// real encoder: T{} must encode under Config — an instance the encoder
+/// rejects (a NaN member under nan_repr::Error, an enum value without a
+/// reflected name under enum_repr::String) fails schema generation with that
+/// error — and a T whose fields the codec cannot serialize fails to compile,
+/// exactly like to_string itself. A repr-routed root gets an honestly
+/// unannotated schema; an opaque root — one whose JSON-resolved
+/// representation still reflects as kind unknown — keeps reporting the
+/// emission error at runtime.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
-    using fresh_t = detail::decode_fresh_t<T>;
-    constexpr bool annotate_defaults = std::default_initializable<fresh_t> &&
-                                       meta::kind_of<resolved>() != meta::type_kind::unknown;
+    constexpr bool annotate_defaults = std::default_initializable<T> &&
+                                       meta::kind_of<resolved>() != meta::type_kind::unknown &&
+                                       detail::decoder_reads_directly<T>();
     KOTA_EXPECTED_TRY_V(
         auto result,
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
             meta::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
-        using cfg = meta::resolved_config_t<T, detail::schema_config<Config>>;
-        KOTA_EXPECTED_TRY_V(auto text, to_string<cfg>(fresh_t{}));
+        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
         detail::collect_fresh<T, detail::schema_config<Config>>(fresh);
-        detail::DefaultAnnotator{std::move(fresh)}.run(
-            *result.get_object(),
-            doc,
-            kota::naming::normalize_identifier(
-                meta::type_info_of<T, detail::schema_config<Config>>().type_name));
+        detail::DefaultAnnotator{std::move(fresh)}.run(*result.get_object(), doc);
     }
     return result;
 }
