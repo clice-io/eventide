@@ -521,9 +521,10 @@ private:
 
 /// The fresh documents the default-annotation pass pairs schema bodies with:
 /// for every struct reachable through the resolved type structure whose
-/// JSON-resolved representation is default-initializable, the document a
-/// value-initialized instance of that representation encodes to under Config
-/// — the value repr_decode constructs before reading fields — keyed by the
+/// decode-fresh value (decode_fresh_t — the declared representation of a
+/// declarative repr chain, the value itself where an imperative link reads
+/// it in place) is default-initializable, the document a value-initialized
+/// instance of that value encodes to under the resolved config, keyed by the
 /// normalized name the emitter gives the type's $def. collect_fresh mirrors
 /// the emitter's reach — struct fields (flattened included, skipped
 /// excluded), each under the config its slot's rename_all / deny_unknown
@@ -714,6 +715,56 @@ using slot_config_t = std::conditional_t<meta::reflectable_class<typename Slot::
                                          meta::merged_config_t<Config, typename Slot::attrs>,
                                          Config>;
 
+template <typename T>
+constexpr auto resolve_decode_fresh();
+
+/// One repr link of the chain, split by decode form the way repr_decode
+/// splits it: a declarative link (from()) constructs its declared
+/// representation, so the chain follows it; an imperative link hands the
+/// caller's value to deserialize in place, so the chain stops at T.
+template <typename T, typename Repr>
+constexpr auto decode_fresh_link() {
+    if constexpr(requires { Repr::from(std::declval<meta::declared_repr_t<Repr>>()); }) {
+        return resolve_decode_fresh<meta::declared_repr_t<Repr>>();
+    } else {
+        return std::type_identity<T>{};
+    }
+}
+
+/// The type whose fresh instance decode constructs and reads for T. A fresh
+/// resolved_repr_t is only what decode visits when every link of the chain
+/// is declarative, so this walk mirrors the decode dispatch instead — the
+/// same behavior-attr precedence, `as` recursing into the target it
+/// constructs and converts — and keeps the annotated wrapper at every stop,
+/// so encoding the fresh instance re-applies the wrapper's attrs exactly
+/// like the codec.
+template <typename T>
+constexpr auto resolve_decode_fresh() {
+    if constexpr(meta::annotated_type<T>) {
+        using attrs_t = typename T::attrs;
+        if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+            using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
+            return decode_fresh_link<T, adapter>();
+        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+            using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
+            return resolve_decode_fresh<target>();
+        } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
+            return std::type_identity<T>{};
+        } else if constexpr(meta::has_repr<typename T::annotated_type, format>) {
+            return decode_fresh_link<T, meta::repr_for<typename T::annotated_type, format>>();
+        } else {
+            return std::type_identity<T>{};
+        }
+    } else if constexpr(meta::has_repr<T, format>) {
+        return decode_fresh_link<T, meta::repr_for<T, format>>();
+    } else {
+        return std::type_identity<T>{};
+    }
+}
+
+template <typename T>
+using decode_fresh_t = typename decltype(resolve_decode_fresh<T>())::type;
+
 template <typename T, typename Config>
 void collect_fresh(FreshDefaults& out);
 
@@ -780,7 +831,7 @@ void compare_site(FreshDefaults& out, const dyn::Value& site) {
                 }
             }
         }
-        compare_slot_sites<resolved, Config>(out, *site_obj);
+        compare_slot_sites<resolved, meta::resolved_config_t<T, Config>>(out, *site_obj);
     } else if constexpr(kind == tk::optional) {
         compare_site<typename resolved::value_type, Config>(out, site);
     } else if constexpr(kind == tk::pointer) {
@@ -806,6 +857,12 @@ void collect_fresh(FreshDefaults& out) {
         if(!out.seen.insert(&ti).second) {
             return;
         }
+        // The resolved config carries T's own structural annotations (an
+        // annotated root or container element — slots merge theirs before
+        // recursing), so the document keys and field names below match the
+        // schema the emitter derives from the same resolution.
+        using cfg = meta::resolved_config_t<T, Config>;
+        using fresh_t = decode_fresh_t<T>;
         auto name = kota::naming::normalize_identifier(ti.type_name);
         if(!out.claimed.insert(name).second) {
             // Two distinct types under one normalized name: the emitter
@@ -814,25 +871,27 @@ void collect_fresh(FreshDefaults& out) {
             // annotate neither rather than pair one with the other's
             // document.
             out.docs.erase(name);
-        } else if constexpr(std::default_initializable<resolved>) {
-            // Encode the representation decode constructs and reads into
-            // (repr_decode value-initializes it before visiting), not the
-            // source type: Repr::to(T{}) may legally disagree with
-            // resolved{}, and decode's absent-field values come from the
-            // latter.
-            if(auto text = to_string<Config>(resolved{})) {
+        } else if constexpr(std::default_initializable<fresh_t>) {
+            // Encode the value decode constructs and reads into — the
+            // declared representation of a declarative repr chain
+            // (repr_decode value-initializes it before visiting), T itself
+            // when an imperative link reads it in place: Repr::to(T{}) may
+            // legally disagree with a fresh representation, and decode's
+            // absent-field values come from whichever instance decode
+            // actually visits.
+            if(auto text = to_string<cfg>(fresh_t{})) {
                 if(auto doc = from_string<dyn::Value>(*text)) {
                     out.docs.emplace(name, std::move(*doc));
                 }
             }
         }
-        collect_fresh_slots<Config>(out, typename meta::virtual_schema<resolved, Config>::slots{});
+        collect_fresh_slots<cfg>(out, typename meta::virtual_schema<resolved, cfg>::slots{});
         // With the whole subtree collected, replay this struct's own
         // in-place sites against it (the collision branch above may have
         // dropped the document — nothing to compare then, and the emitter
         // rejects the $def collision anyway).
         if(auto it = out.docs.find(name); it != out.docs.end()) {
-            compare_slot_sites<resolved, Config>(out, *it->second.get_object());
+            compare_slot_sites<resolved, cfg>(out, *it->second.get_object());
         }
     } else if constexpr(kind == tk::optional) {
         collect_fresh<typename resolved::value_type, Config>(out);
@@ -871,22 +930,24 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 
 }  // namespace detail
 
-/// When the JSON-resolved representation of T is default-initializable, the
-/// schema also carries `default` annotations: fresh instances of the
-/// representations decode actually constructs and reads into are encoded
-/// through the real JSON encoder under Config and parsed back into
-/// documents, so the values match what to_string emits byte for byte (enum
-/// renames, nan handling, format-scoped reprs included) — and, for a
-/// repr-backed type, describe what decoding an absent property leaves in
-/// the representation (repr_decode value-initializes it), not what
-/// Repr::to(T{}) happens to encode. Root properties take the values of the
-/// root's fresh representation; each $def and inlined variant branch takes
-/// the values of a freshly constructed instance of its own type — what
-/// decode's fresh constructions (sequence elements, map values, emplaced
-/// alternatives) actually produce — while a nested type that cannot be
-/// freshly constructed or encoded stays unannotated, and a default an
-/// in-place site contradicts is omitted (see DefaultAnnotator). Two
-/// consequences of riding the real encoder: the root's fresh representation
+/// When the value decode reads for T is default-initializable, the schema
+/// also carries `default` annotations: fresh instances of the values decode
+/// actually constructs and reads into are encoded through the real JSON
+/// encoder under Config and parsed back into documents, so the values match
+/// what to_string emits byte for byte (enum renames, nan handling,
+/// format-scoped reprs, structural annotations on the root itself included)
+/// — and, for a repr-backed type, describe the decode side per repr form:
+/// a declarative chain ends at the representation repr_decode
+/// value-initializes before visiting, not at what Repr::to(T{}) happens to
+/// encode, while an imperative link hands the caller's value to deserialize
+/// in place, so the fresh instance is the value's own type. Root properties
+/// take the values of the root's fresh instance; each $def and inlined
+/// variant branch takes the values of a freshly constructed instance of its
+/// own type — what decode's fresh constructions (sequence elements, map
+/// values, emplaced alternatives) actually produce — while a nested type
+/// that cannot be freshly constructed or encoded stays unannotated, and a
+/// default an in-place site contradicts is omitted (see DefaultAnnotator).
+/// Two consequences of riding the real encoder: the root's fresh instance
 /// must encode under Config — an instance the encoder rejects (a NaN member
 /// under nan_repr::Error, an enum value without a reflected name under
 /// enum_repr::String) fails schema generation with that error — and a T
@@ -897,14 +958,16 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
     using resolved = meta::resolved_repr_t<T, format>;
-    constexpr bool annotate_defaults = std::default_initializable<resolved> &&
+    using fresh_t = detail::decode_fresh_t<T>;
+    constexpr bool annotate_defaults = std::default_initializable<fresh_t> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown;
     KOTA_EXPECTED_TRY_V(
         auto result,
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
             meta::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
-        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(resolved{}));
+        using cfg = meta::resolved_config_t<T, detail::schema_config<Config>>;
+        KOTA_EXPECTED_TRY_V(auto text, to_string<cfg>(fresh_t{}));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
         detail::collect_fresh<T, detail::schema_config<Config>>(fresh);

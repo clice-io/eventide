@@ -63,6 +63,30 @@ struct json_schema_reprd_shifted_repr {
     <std::int32_t> n = 4;
 };
 
+/// An imperative repr with a struct representation: repr_decode's imperative
+/// branch hands the caller's value straight to deserialize — the declared
+/// representation is never constructed — so decoding an absent property
+/// keeps the value's own state (n_ = 9), not the representation's
+/// initializer (n = 4).
+class json_schema_imperative_root {
+public:
+    int n() const {
+        return n_;
+    }
+
+    void set_n(int n) {
+        n_ = n;
+    }
+
+private:
+    int n_ = 9;
+};
+
+struct json_schema_imperative_repr {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> n = 4;
+};
+
 }  // namespace kota::meta
 
 namespace kota::meta {
@@ -89,6 +113,28 @@ struct repr<kota::meta::json_schema_reprd_shifted> {
 
     static kota::meta::json_schema_reprd_shifted from(const type& d) {
         return kota::meta::json_schema_reprd_shifted(d.n);
+    }
+};
+
+template <>
+struct repr<kota::meta::json_schema_imperative_root> {
+    using type = kota::meta::json_schema_imperative_repr;
+
+    template <typename Config>
+    static bool serialize(auto& vis, const kota::meta::json_schema_imperative_root& v) {
+        return codec::encode_value<Config>(vis, type{.n = v.n()});
+    }
+
+    template <typename Config>
+    static bool deserialize(auto& vis, kota::meta::json_schema_imperative_root& v) {
+        // Seed the representation from the in-place value: an absent
+        // property keeps it — the semantics the schema's defaults advertise.
+        type d{.n = v.n()};
+        if(!codec::decode_value<Config>(vis, d)) {
+            return false;
+        }
+        v.set_n(d.n);
+        return true;
     }
 };
 
@@ -770,6 +816,10 @@ struct renamed_defaults_holder {
     KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
     <renamed_defaults_child> child;
 };
+
+KOTATSU_ANNOTATION(renamed_defaults_root_annotation, rename_all = casing::lower_camel);
+using renamed_defaults_root =
+    annotate<renamed_defaults_root_annotation>::type<renamed_defaults_child>;
 
 namespace json = kota::codec::json;
 
@@ -3075,6 +3125,27 @@ TEST_CASE(defaults_follow_slot_rename_all) {
     const auto result = json::schema_string<renamed_defaults_holder>().value();
     EXPECT_TRUE(result.find(R"("firstValue")") != std::string::npos);
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+}
+
+TEST_CASE(defaults_annotated_root_rename_all) {
+    // A structural annotation on the root itself shapes the fresh document
+    // the same way it shapes the schema: the fresh root encodes under the
+    // resolution's merged config, so the renamed property still pairs with
+    // its default.
+    const auto result = json::schema_string<renamed_defaults_root>().value();
+    EXPECT_TRUE(result.find(R"("firstValue")") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("first_value")") == std::string::npos);
+}
+
+TEST_CASE(defaults_imperative_repr_reads_in_place) {
+    // repr_decode's imperative branch never constructs the declared
+    // representation — deserialize reads the default-constructed root in
+    // place — so the schema advertises what a fresh root encodes (n_ = 9),
+    // not the representation's initializer (4).
+    const auto result = json::schema_string<json_schema_imperative_root>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":9})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
 }
 
 struct defaults_enum_config {

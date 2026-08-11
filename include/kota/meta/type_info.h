@@ -622,6 +622,15 @@ template <typename T, typename Format = void>
 using resolved_repr_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
+/// The config T's resolution ends with: every rename_all / deny_unknown_fields
+/// spec crossed on the way — a structural annotation on T itself included —
+/// merged onto Config, exactly as the codec dispatch layers them while
+/// reading or writing a T. Config is a codec config (as for type_info_of),
+/// not a bare format tag; its format selects format-scoped reprs.
+template <typename T, typename Config>
+using resolved_config_t =
+    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, Config>())::config;
+
 /// True when T resolves to a std::variant whose tagging spec survived
 /// resolution: external, internal, and adjacent tagging all give the value an
 /// object document shape in the human-readable codecs, regardless of the
