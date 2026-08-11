@@ -235,14 +235,17 @@ private:
     }
 
     /// The encoder's non-finite handling is part of the document contract:
-    /// nan_repr::Null encodes NaN/Infinity as null and nan_repr::String as
-    /// one of three fixed strings. Error never emits a non-finite value, and
-    /// Passthrough declines to define one, so both keep the plain number.
+    /// nan_repr::Null encodes NaN/Infinity as null — and so does Passthrough,
+    /// which forwards the value to the JSON writer, whose only spelling for a
+    /// non-finite number is null. nan_repr::String encodes one of three fixed
+    /// strings. Only Error never emits a non-finite value, so it alone keeps
+    /// the plain number.
     result_t make_float() const {
         dyn::Value number{
             {"type", "number"}
         };
         switch(opts.nan) {
+            case nan_repr::Passthrough:
             case nan_repr::Null:
                 return dyn::Value{
                     {"anyOf", dyn::Array{std::move(number), dyn::Value{{"type", "null"}}}},
@@ -253,7 +256,7 @@ private:
                      dyn::Array{std::move(number),
                                 dyn::Value{{"enum", dyn::Array{"NaN", "Infinity", "-Infinity"}}}}},
                 };
-            default: return number;
+            default: return number;  // Error: no non-finite document exists.
         }
     }
 
@@ -266,6 +269,8 @@ private:
             // constraint is the underlying integer's range, not a value list.
             return make_integer_kind(ei->underlying_kind);
         }
+        // Exhaustive: a value without a reflected member name has no string
+        // spelling, so the encoder rejects it instead of emitting one.
         dyn::Array values;
         for(const auto& name: ei->member_names) {
             values.push_back(dyn::Value(opts.rename(true, name)));

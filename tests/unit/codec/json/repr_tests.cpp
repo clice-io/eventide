@@ -724,7 +724,8 @@ TEST_CASE(annotation_nested_in_repr_resolved_type) {
 
     auto schema = json::schema_string<fee_schedule>();
     ASSERT_TRUE(schema.has_value());
-    EXPECT_TRUE(schema->find(R"("fee":{"type":"number"})") != std::string::npos);
+    EXPECT_TRUE(schema->find(R"("fee":{"anyOf":[{"type":"number"},{"type":"null"}]})") !=
+                std::string::npos);
 }
 
 TEST_CASE(annotated_repr_alternative_in_untagged_variant) {

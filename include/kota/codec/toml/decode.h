@@ -1,11 +1,11 @@
 #pragma once
 
 #include <charconv>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -41,23 +41,16 @@ inline std::string_view node_type_name(const Node* node) {
 }
 
 template <typename T>
-consteval bool is_map_like() {
-    if constexpr(std::ranges::input_range<T>) {
-        return meta::kind_of<T>() == meta::type_kind::map;
-    } else {
-        return false;
-    }
-}
-
-template <typename T>
 constexpr bool root_table_v = [] {
     // Judge the shape of the representation the codec dispatch resolves
-    // (annotations and toml-scoped meta::repr included), mirroring the root
-    // routing in to_toml.
+    // (annotations and toml-scoped meta::repr included) with the same kind
+    // test to_toml's root routing applies — in kind_of, str-like or
+    // tuple-like wins over reflection, so a bare reflectable check would
+    // claim the root table for values the encoder boxes.
     using R = meta::resolved_repr_t<T, format>;
-    return (meta::reflectable_class<R> && !is_specialization_of<std::pair, R> &&
-            !is_specialization_of<std::tuple, R> && !std::ranges::input_range<R>) ||
-           is_map_like<R>() || std::same_as<R, Table>;
+    constexpr auto kind = meta::kind_of<R>();
+    return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
+           std::same_as<R, Table>;
 }();
 
 template <typename T>

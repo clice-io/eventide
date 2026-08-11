@@ -607,8 +607,10 @@ TEST_CASE(root_integers) {
 }
 
 TEST_CASE(root_floats) {
+    // The default nan_repr (Passthrough) hands non-finite values to the
+    // writer, which emits null — so even the default schema admits null.
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"number"})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","anyOf":[{"type":"number"},{"type":"null"}]})";
     EXPECT_EQ(json::schema_string<float>().value(), schema);
     EXPECT_EQ(json::schema_string<double>().value(), schema);
 }
@@ -654,7 +656,7 @@ TEST_CASE(scalar_wrapper_integers) {
 
 TEST_CASE(scalar_wrapper_floats) {
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"type":"number"}},"required":["v"]})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"anyOf":[{"type":"number"},{"type":"null"}]}},"required":["v"]})";
     EXPECT_EQ(json::schema_string<s_f32>().value(), schema);
     EXPECT_EQ(json::schema_string<s_f64>().value(), schema);
 }
@@ -1506,13 +1508,13 @@ TEST_CASE(root_internal_variant) {
               R"("oneOf":[)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("radius":{"type":"number"},)"
+              R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
               R"("kind":{"const":"circle"}},)"
               R"("required":["radius","kind"]},)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("width":{"type":"number"},)"
-              R"("height":{"type":"number"},)"
+              R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+              R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
               R"("kind":{"const":"rect"}},)"
               R"("required":["width","height","kind"]}]})");
 }
@@ -2024,7 +2026,7 @@ TEST_CASE(combo_many_fields) {
               R"("maximum":2147483647},)"
               R"("d":{"type":"string"},)"
               R"("e":{"type":"boolean"},)"
-              R"("f":{"type":"number"}},)"
+              R"("f":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
               R"("required":["a","b","c","d","e","f"]})");
 }
 
@@ -2186,7 +2188,7 @@ TEST_CASE(field_ordering_stability) {
               R"("zebra":{"type":"string"},)"
               R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
               R"("middle":{"type":"boolean"},)"
-              R"("beta":{"type":"number"}},)"
+              R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
               R"("required":["zebra","alpha","middle","beta"]})");
 }
 
@@ -2412,14 +2414,14 @@ TEST_CASE(description_in_internal_tagged_alternative) {
               R"("oneOf":[)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("radius":{"type":"number",)"
+              R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}],)"
               R"("description":"Radius in meters."},)"
               R"("kind":{"const":"circle"}},)"
               R"("required":["radius","kind"]},)"
               R"({"type":"object",)"
               R"("properties":{)"
-              R"("width":{"type":"number"},)"
-              R"("height":{"type":"number"},)"
+              R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+              R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
               R"("kind":{"const":"rect"}},)"
               R"("required":["width","height","kind"]}]})");
 }
@@ -2437,6 +2439,14 @@ TEST_CASE(enum_names_under_string_config) {
     EXPECT_EQ(result,
               R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
               R"("enum":["red","green","blue"]})");
+}
+
+TEST_CASE(unnamed_enum_value_rejected_under_string_config) {
+    // A representable value without a reflected member name has no string
+    // spelling: the encoder rejects it, so the schema's enum list of
+    // reflected names stays exhaustive.
+    const auto encoded = json::to_json<string_enum_config>(static_cast<color_i8>(42));
+    EXPECT_FALSE(encoded.has_value());
 }
 
 TEST_CASE(schema_agrees_with_encoder_on_enums) {
@@ -2480,6 +2490,19 @@ struct nan_null_config {
 struct nan_string_config {
     [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::String;
 };
+
+TEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
+    // The default Passthrough forwards the non-finite value to the writer,
+    // whose only JSON spelling for it is null — the schema must admit that.
+    const auto encoded = json::to_json(std::numeric_limits<double>::quiet_NaN());
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "null");
+
+    const auto result = json::schema_string<double>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+}
 
 TEST_CASE(schema_agrees_with_encoder_on_nan_null) {
     const auto encoded = json::to_json<nan_null_config>(std::numeric_limits<double>::quiet_NaN());

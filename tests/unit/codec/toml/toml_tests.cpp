@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -29,6 +30,16 @@ using person = meta::fixtures::PersonWithScores;
 struct payload_with_extra {
     int id = 0;
     ::toml::table extra;
+};
+
+/// Reflectable, yet str-like — kind_of classifies it as a string, so the
+/// codec serializes it as one.
+struct str_like_aggregate {
+    std::string value;
+
+    operator std::string_view() const {
+        return value;
+    }
 };
 
 TEST_SUITE(serde_toml) {
@@ -213,6 +224,33 @@ TEST_CASE(pointer_to_scalar_root_boxes) {
     ASSERT_TRUE(status.has_value());
     ASSERT_TRUE(output != nullptr);
     EXPECT_EQ(*output, 7);
+}
+
+TEST_CASE(str_like_reflectable_root_boxes) {
+    // str-like wins over reflection in the codec's kind test, so this
+    // aggregate encodes as a string and the root boxes it — the decode-side
+    // routing must classify by the same kind, not by reflection alone,
+    // both for a bare root and through a pointer root.
+    const str_like_aggregate input{.value = "abc"};
+    auto dom = to_toml(input);
+    ASSERT_TRUE(dom.has_value());
+    EXPECT_TRUE(dom->contains("__value"));
+
+    str_like_aggregate output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_EQ(output.value, "abc");
+
+    const auto boxed = std::make_shared<str_like_aggregate>(input);
+    auto ptr_dom = to_toml(boxed);
+    ASSERT_TRUE(ptr_dom.has_value());
+    EXPECT_TRUE(ptr_dom->contains("__value"));
+
+    std::shared_ptr<str_like_aggregate> ptr_output;
+    auto ptr_status = from_toml_table(*ptr_dom, ptr_output);
+    ASSERT_TRUE(ptr_status.has_value());
+    ASSERT_TRUE(ptr_output != nullptr);
+    EXPECT_EQ(ptr_output->value, "abc");
 }
 
 TEST_CASE(nullable_root_engaged_empty_table_rejected) {

@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <format>
 #include <ranges>
 #include <string_view>
 #include <type_traits>
@@ -314,7 +316,19 @@ bool encode_value(Vis& vis, const T& value) {
             }
         } else if constexpr(kind == enumeration) {
             if constexpr(Config::enum_repr == enum_repr::String) {
-                auto name = apply_enum_rename<Config>(true, meta::enum_name(value));
+                // A value without a reflected member name has no string
+                // spelling: emitting "" would produce a document the decode
+                // side can never map back, so fail loudly instead.
+                auto raw = meta::enum_name(value);
+                if(raw.empty()) {
+                    using U = std::underlying_type_t<V>;
+                    using wide =
+                        std::conditional_t<std::is_signed_v<U>, std::int64_t, std::uint64_t>;
+                    return scoped_context<typename Vis::error_type>::fail(
+                        rich_error(std::format("enum value {} has no reflected name",
+                                               static_cast<wide>(value))));
+                }
+                auto name = apply_enum_rename<Config>(true, raw);
                 std::string_view sv(name);
                 return vis.visit_str(sv);
             } else if constexpr(requires { vis.visit_enum(value); }) {
