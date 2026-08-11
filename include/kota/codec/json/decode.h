@@ -129,6 +129,7 @@ private:
 struct StrReader {
     std::string_view str;
     using error_type = rich_error;
+    using format = json::format;
 
     template <typename T>
     bool visit_str(T& out) {

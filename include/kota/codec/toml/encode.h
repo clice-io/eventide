@@ -7,7 +7,9 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
+#include "kota/meta/type_info.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
 #include "kota/codec/visit/config.h"
@@ -54,6 +56,27 @@ struct ArraySink {
 
     bool emit_null() {
         return scoped_context<rich_error>::fail(rich_error("TOML array does not support null"));
+    }
+};
+
+/// Receives the document root: a table-shaped value becomes the root table
+/// itself rather than landing under a key.
+struct RootSink {
+    Table& root;
+
+    template <typename V>
+    bool emit(V&& v) {
+        if constexpr(std::is_same_v<std::remove_cvref_t<V>, Table>) {
+            root = std::forward<V>(v);
+            return true;
+        } else {
+            return scoped_context<rich_error>::fail(
+                rich_error("top-level TOML value must be a table"));
+        }
+    }
+
+    bool emit_null() {
+        return true;
     }
 };
 
@@ -142,6 +165,7 @@ struct ArraySeqWriter {
 struct KeyWriter {
     std::string& output;
     using error_type = rich_error;
+    using format = toml::format;
 
     template <typename T>
     bool visit_str(const T& v) {
@@ -233,9 +257,15 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 template <typename Config = void, typename T>
 auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     using V = T;
-    constexpr auto kind = meta::kind_of<V>();
+    // Root routing follows the representation the codec dispatch resolves
+    // (annotations and toml-scoped meta::repr included), not the declared
+    // type: a struct whose repr is a scalar is boxed under the root key, and
+    // a repr that resolves to a table shape becomes the root table.
+    using resolved_t = meta::resolved_repr_t<V, format>;
+    constexpr auto kind = meta::kind_of<resolved_t>();
 
-    if constexpr(kind == meta::type_kind::optional || kind == meta::type_kind::pointer) {
+    if constexpr(std::is_same_v<resolved_t, V> &&
+                 (kind == meta::type_kind::optional || kind == meta::type_kind::pointer)) {
         if(value) {
             return to_toml<Config>(*value);
         }
@@ -247,21 +277,9 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
         Table root;
 
         bool ok;
-        if constexpr(kind == meta::type_kind::structure) {
-            TableWriter tw{root};
-            ok = encode_struct_fields<Cfg>(tw, value);
-        } else if constexpr(kind == meta::type_kind::map) {
-            MapWriter mw{root};
-            ok = [&]() -> bool {
-                for(const auto& [k, v]: value) {
-                    bool entry_ok =
-                        mw.visit_entry([&](auto& kv) -> bool { return encode_value<Cfg>(kv, k); },
-                                       [&](auto& vv) -> bool { return encode_value<Cfg>(vv, v); });
-                    if(!entry_ok)
-                        return false;
-                }
-                return true;
-            }();
+        if constexpr(kind == meta::type_kind::structure || kind == meta::type_kind::map) {
+            ValueWriter<RootSink> vw{{root}};
+            ok = encode_value<Cfg>(vw, value);
         } else {
             TableValueWriter vw{
                 {root, std::string(detail::boxed_root_key)}

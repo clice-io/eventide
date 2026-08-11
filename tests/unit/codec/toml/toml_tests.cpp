@@ -1,6 +1,7 @@
 #if __has_include(<toml++/toml.hpp>)
 
 #include <array>
+#include <map>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -217,8 +218,6 @@ TEST_CASE(tuple_length_errors) {
 
 }  // namespace kota::codec
 
-#endif
-
 // ============================================================================
 // Format-scoped repr: the TOML backend picks repr<T, toml::format>.
 // ============================================================================
@@ -229,7 +228,19 @@ namespace kota_toml_format_test {
 struct journal {
     int page = 0;
 
-    auto operator==(const journal&) const -> bool = default;
+    auto operator<=>(const journal&) const = default;
+};
+
+// The toml-scoped repr resolves to a struct: the representation is
+// table-shaped, so it must become the document root itself.
+struct diary {
+    int page = 0;
+
+    auto operator==(const diary&) const -> bool = default;
+};
+
+struct diary_record {
+    int page = 0;
 };
 
 }  // namespace kota_toml_format_test
@@ -262,12 +273,26 @@ struct repr<kota_toml_format_test::journal, codec::toml::format> {
     }
 };
 
+template <>
+struct repr<kota_toml_format_test::diary, codec::toml::format> {
+    using type = kota_toml_format_test::diary_record;
+
+    static type to(const kota_toml_format_test::diary& d) {
+        return {.page = d.page};
+    }
+
+    static kota_toml_format_test::diary from(const type& r) {
+        return {.page = r.page};
+    }
+};
+
 }  // namespace kota::meta
 
 namespace kota::codec {
 
 namespace {
 
+using kota_toml_format_test::diary;
 using kota_toml_format_test::journal;
 
 struct journal_entry {
@@ -290,8 +315,56 @@ TEST_CASE(format_scoped_repr_selected_by_toml) {
     EXPECT_EQ(*output, input);
 }
 
+TEST_CASE(map_keys_follow_toml_scoped_repr) {
+    const std::map<journal, int> input{
+        {journal{.page = 7},  1},
+        {journal{.page = 19}, 2},
+    };
+
+    auto text = toml::to_string(input);
+    ASSERT_TRUE(text.has_value());
+    // Keys travel through the toml-scoped integer repr, not the generic
+    // textual one.
+    EXPECT_TRUE(text->find("p7") == std::string::npos);
+
+    auto output = toml::parse<std::map<journal, int>>(*text);
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, input);
+}
+
+TEST_CASE(top_level_scalar_repr_boxed_under_root_key) {
+    // journal's toml repr is a scalar, so the root routing must box it under
+    // the root key instead of dumping raw struct fields into the table.
+    const journal input{.page = 12};
+
+    auto text = toml::to_string(input);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_TRUE(text->find("page") == std::string::npos);
+
+    auto output = toml::parse<journal>(*text);
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, input);
+}
+
+TEST_CASE(top_level_table_shaped_repr_becomes_root) {
+    // diary's toml repr resolves to a struct: the represented fields form the
+    // root table directly.
+    const diary input{.page = 3};
+
+    auto text = toml::to_string(input);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_TRUE(text->find("page = 3") != std::string::npos);
+    EXPECT_TRUE(text->find(std::string(toml::detail::boxed_root_key)) == std::string::npos);
+
+    auto output = toml::parse<diary>(*text);
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, input);
+}
+
 };  // TEST_SUITE(serde_toml_format_scoped)
 
 }  // namespace
 
 }  // namespace kota::codec
+
+#endif

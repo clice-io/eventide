@@ -7,8 +7,10 @@
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include "kota/support/numeric.h"
+#include "kota/meta/type_info.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/toml/type.h"
 #include "kota/codec/visit/config.h"
@@ -48,24 +50,20 @@ consteval bool is_map_like() {
 
 template <typename T>
 constexpr bool root_table_v = [] {
-    using U = std::remove_cvref_t<T>;
-    if constexpr(meta::annotated_type<U>) {
-        using inner_t = typename U::annotated_type;
-        return (meta::reflectable_class<inner_t> && !is_specialization_of<std::pair, inner_t> &&
-                !is_specialization_of<std::tuple, inner_t> && !std::ranges::input_range<inner_t>) ||
-               is_map_like<inner_t>() || std::same_as<inner_t, Table>;
-    } else {
-        return (meta::reflectable_class<U> && !is_specialization_of<std::pair, U> &&
-                !is_specialization_of<std::tuple, U> && !std::ranges::input_range<U>) ||
-               is_map_like<U>() || std::same_as<U, Table>;
-    }
+    // Judge the shape of the representation the codec dispatch resolves
+    // (annotations and toml-scoped meta::repr included), mirroring the root
+    // routing in to_toml.
+    using R = meta::resolved_repr_t<T, format>;
+    return (meta::reflectable_class<R> && !is_specialization_of<std::pair, R> &&
+            !is_specialization_of<std::tuple, R> && !std::ranges::input_range<R>) ||
+           is_map_like<R>() || std::same_as<R, Table>;
 }();
 
 template <typename T>
 auto select_root_node(const Table& tbl) -> const Node* {
     using U = std::remove_cvref_t<T>;
 
-    if constexpr(is_optional_v<U>) {
+    if constexpr(is_optional_v<U> && std::is_same_v<meta::resolved_repr_t<U, format>, U>) {
         if(tbl.empty()) {
             return nullptr;
         }
@@ -87,6 +85,7 @@ auto select_root_node(const Table& tbl) -> const Node* {
 struct StrReader {
     std::string_view str;
     using error_type = rich_error;
+    using format = toml::format;
 
     template <typename T>
     bool visit_str(T& out) {

@@ -899,7 +899,7 @@ namespace kota_repr_format_test {
 struct journal {
     int page = 0;
 
-    auto operator==(const journal&) const -> bool = default;
+    auto operator<=>(const journal&) const = default;
 };
 
 }  // namespace kota_repr_format_test
@@ -982,6 +982,23 @@ TEST_CASE(untagged_variant_probes_with_json_scoped_repr) {
     ASSERT_TRUE(from_json("42", v).has_value());
     EXPECT_EQ(v.index(), 0U);
     EXPECT_EQ(std::get<journal>(v), (journal{.page = 42}));
+}
+
+TEST_CASE(map_keys_follow_json_scoped_repr) {
+    const std::map<journal, int> input{
+        {journal{.page = 7},  1},
+        {journal{.page = 19}, 2},
+    };
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    // Keys travel through the json-scoped integer repr, not the generic
+    // textual one.
+    EXPECT_EQ(*encoded, R"({"7":1,"19":2})");
+
+    std::map<journal, int> output;
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
 }
 
 };  // TEST_SUITE(serde_json_format_scoped_repr)

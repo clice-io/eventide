@@ -139,6 +139,7 @@ struct SeqWriter {
 struct KeyWriter {
     StringBuilder& builder;
     using error_type = rich_error;
+    using format = json::format;
 
     template <typename T>
     bool visit_str(const T& v) {
