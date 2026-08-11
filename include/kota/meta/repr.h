@@ -37,14 +37,46 @@ namespace kota::meta {
 /// schema output degrades to "any", and layout-computed backends
 /// (flatbuffers) reject the type at compile time.
 ///
+/// The second parameter scopes a specialization to one serialization format:
+/// each backend declares a `format` tag type and exposes it on its visitors,
+/// and a `repr<T, Format>` specialization wins over the format-agnostic
+/// `repr<T>` on that backend only. Backends without a tag — and every schema
+/// consumer entered without one — see the format-agnostic repr.
+///
+///     template <>
+///     struct kota::meta::repr<Roaring, codec::fbs::format> {
+///         using type = std::vector<std::byte>;  // flatbuffers only
+///         ...
+///     };
+///
 /// Per-field customization (behavior::with / behavior::as annotations) takes
 /// priority over the field type's repr.
-template <typename T>
+template <typename T, typename Format = void>
 struct repr;
 
-/// True when repr<T> is specialized (the primary template is never defined).
-template <typename T>
-concept has_repr = requires { sizeof(repr<T>); };
+/// True when a repr applies to T under Format: a format-scoped
+/// specialization, or the format-agnostic one as fallback.
+template <typename T, typename Format = void>
+concept has_repr = requires { sizeof(repr<T, Format>); } || requires { sizeof(repr<T>); };
+
+namespace detail {
+
+template <typename T, typename Format>
+constexpr auto repr_for_impl() {
+    if constexpr(requires { sizeof(repr<T, Format>); }) {
+        return std::type_identity<repr<T, Format>>{};
+    } else {
+        return std::type_identity<repr<T>>{};
+    }
+}
+
+}  // namespace detail
+
+/// The repr specialization selected for T under Format: the format-scoped one
+/// when present, the format-agnostic one otherwise.
+template <typename T, typename Format>
+    requires has_repr<T, Format>
+using repr_for = typename decltype(detail::repr_for_impl<T, Format>())::type;
 
 namespace detail {
 

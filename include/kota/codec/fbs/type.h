@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/meta/repr.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/context.h"
 
@@ -36,6 +37,10 @@ using string_offset_t = offset_t<String>;
 
 using verifier_t = ::flatbuffers::Verifier;
 
+/// Format tag: scopes a meta::repr specialization to the flatbuffers backend
+/// (meta::repr<T, codec::fbs::format>).
+struct format {};
+
 enum class object_error_code : std::uint8_t {
     None = 0,
     TooManyFields,
@@ -51,6 +56,7 @@ namespace detail {
 /// meta::dynamic reprs are rejected at compile time).
 struct visitor_base {
     using error_type = rich_error;
+    using format = fbs::format;
     constexpr static bool human_readable = false;
     constexpr static bool layout_computed = true;
 };
@@ -89,7 +95,12 @@ struct schema_struct_trait;
 template <typename T>
 constexpr bool is_schema_struct_field_v = [] {
     using U = remove_optional_t<T>;
-    if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
+    if constexpr(meta::has_repr<U, format>) {
+        // A repr replaces the raw layout, so the field cannot be part of an
+        // inline struct's memcpy image; the enclosing type degrades to a
+        // table, where the dispatch applies the repr.
+        return false;
+    } else if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
         return true;
     } else if constexpr(meta::reflectable_class<U>) {
         return schema_struct_trait<U>::value;

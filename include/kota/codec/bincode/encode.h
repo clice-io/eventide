@@ -13,6 +13,7 @@ namespace kota::codec::bincode {
 struct writer {
     std::vector<std::byte>& buf;
     using error_type = rich_error;
+    using format = bincode::format;
     constexpr static bool human_readable = false;
 
     template <typename T>

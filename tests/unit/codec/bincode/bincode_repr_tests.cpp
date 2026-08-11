@@ -137,3 +137,105 @@ TEST_CASE(repr_reaches_sequence_elements) {
 }  // namespace
 
 }  // namespace kota::codec
+
+// ============================================================================
+// Format-scoped repr: the bincode backend picks repr<T, bincode::format>.
+// ============================================================================
+
+namespace kota_bincode_format_test {
+
+// Generic form is textual; the bincode-scoped override is a bare uint32.
+// bincode is not self-describing, so writer and reader silently corrupt data
+// unless both resolve the same scoped repr — the shape-twin decode below
+// pins the wire form itself.
+class channel_id {
+public:
+    channel_id() = default;
+
+    explicit channel_id(std::uint32_t v) : value_(v) {}
+
+    auto value() const -> std::uint32_t {
+        return value_;
+    }
+
+    auto operator==(const channel_id&) const -> bool = default;
+
+private:
+    std::uint32_t value_ = 0;
+};
+
+struct beacon {
+    channel_id id;
+
+    auto operator==(const beacon&) const -> bool = default;
+};
+
+// Same wire shape as beacon under the scoped repr.
+struct beacon_twin {
+    std::uint32_t id = 0;
+};
+
+}  // namespace kota_bincode_format_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_bincode_format_test::channel_id> {
+    using type = std::string;
+
+    static type to(const kota_bincode_format_test::channel_id& id) {
+        return "c" + std::to_string(id.value());
+    }
+
+    static kota_bincode_format_test::channel_id from(const std::string& encoded) {
+        return kota_bincode_format_test::channel_id{
+            static_cast<std::uint32_t>(std::stoul(encoded.substr(1)))};
+    }
+};
+
+template <>
+struct repr<kota_bincode_format_test::channel_id, codec::bincode::format> {
+    using type = std::uint32_t;
+
+    static type to(const kota_bincode_format_test::channel_id& id) {
+        return id.value();
+    }
+
+    static kota_bincode_format_test::channel_id from(type v) {
+        return kota_bincode_format_test::channel_id{v};
+    }
+};
+
+}  // namespace kota::meta
+
+namespace kota::codec {
+
+namespace {
+
+using kota_bincode_format_test::beacon;
+using kota_bincode_format_test::beacon_twin;
+using kota_bincode_format_test::channel_id;
+
+TEST_SUITE(serde_bincode_format_scoped) {
+
+TEST_CASE(format_scoped_repr_selected_by_bincode) {
+    const beacon input{.id = channel_id{7}};
+
+    auto encoded = bincode::to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    // The bytes hold the scoped uint32, not the length-prefixed string form.
+    auto twin = bincode::from_bytes<beacon_twin>(*encoded);
+    ASSERT_TRUE(twin.has_value());
+    EXPECT_EQ(twin->id, 7U);
+
+    auto output = bincode::from_bytes<beacon>(*encoded);
+    ASSERT_TRUE(output.has_value());
+    EXPECT_EQ(*output, input);
+}
+
+};  // TEST_SUITE(serde_bincode_format_scoped)
+
+}  // namespace
+
+}  // namespace kota::codec

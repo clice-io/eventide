@@ -10,6 +10,10 @@
 
 namespace kota::codec::json {
 
+/// Format tag: scopes a meta::repr specialization to the JSON backend
+/// (meta::repr<T, codec::json::format>).
+struct format {};
+
 using StringBuilder = simdjson::builder::string_builder;
 
 namespace ondemand {

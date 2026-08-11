@@ -887,3 +887,122 @@ TEST_CASE(schema_follows_repr) {
 }  // namespace
 
 }  // namespace kota::codec
+
+// ============================================================================
+// Format-scoped repr: the JSON backend picks repr<T, json::format>.
+// ============================================================================
+
+namespace kota_repr_format_test {
+
+// Travels as a packed integer in JSON only; the format-agnostic repr keeps
+// the textual form every other backend and bare meta queries see.
+struct journal {
+    int page = 0;
+
+    auto operator<=>(const journal&) const = default;
+};
+
+}  // namespace kota_repr_format_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_repr_format_test::journal> {
+    using type = std::string;
+
+    static type to(const kota_repr_format_test::journal& j) {
+        return "p" + std::to_string(j.page);
+    }
+
+    static kota_repr_format_test::journal from(const std::string& encoded) {
+        kota_repr_format_test::journal j;
+        std::from_chars(encoded.data() + 1, encoded.data() + encoded.size(), j.page);
+        return j;
+    }
+};
+
+template <>
+struct repr<kota_repr_format_test::journal, codec::json::format> {
+    using type = std::int64_t;
+
+    static type to(const kota_repr_format_test::journal& j) {
+        return j.page;
+    }
+
+    static kota_repr_format_test::journal from(type v) {
+        return {.page = static_cast<int>(v)};
+    }
+};
+
+}  // namespace kota::meta
+
+namespace kota::codec {
+
+namespace {
+
+using kota_repr_format_test::journal;
+
+struct journal_holder {
+    journal j;
+
+    auto operator==(const journal_holder&) const -> bool = default;
+};
+
+// The bare (format-agnostic) view keeps the string form; only the JSON
+// backend resolves the scoped int64 form.
+static_assert(std::is_same_v<meta::resolved_repr_t<journal>, std::string>);
+static_assert(std::is_same_v<meta::resolved_repr_t<journal, json::format>, std::int64_t>);
+
+TEST_SUITE(serde_json_format_scoped_repr) {
+
+TEST_CASE(json_backend_picks_json_scoped_repr) {
+    const journal_holder input{.j = {.page = 41}};
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"j":41})");
+
+    journal_holder output{};
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(schema_follows_json_scoped_repr) {
+    auto schema = json::schema_string<journal_holder>();
+    ASSERT_TRUE(schema.has_value());
+    EXPECT_TRUE(schema->find(R"("j":{"type":"integer")") != std::string::npos);
+}
+
+TEST_CASE(untagged_variant_probes_with_json_scoped_repr) {
+    // Kind compatibility is judged under the visitor's format: 42 matches
+    // journal's json-scoped int64 repr, so the first alternative wins; under
+    // the format-agnostic string repr it would fall through to the plain
+    // integer alternative.
+    std::variant<journal, std::int64_t> v;
+    ASSERT_TRUE(from_json("42", v).has_value());
+    EXPECT_EQ(v.index(), 0U);
+    EXPECT_EQ(std::get<journal>(v), (journal{.page = 42}));
+}
+
+TEST_CASE(map_keys_follow_json_scoped_repr) {
+    const std::map<journal, int> input{
+        {journal{.page = 7},  1},
+        {journal{.page = 19}, 2},
+    };
+
+    auto encoded = to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    // Keys travel through the json-scoped integer repr, not the generic
+    // textual one.
+    EXPECT_EQ(*encoded, R"({"7":1,"19":2})");
+
+    std::map<journal, int> output;
+    ASSERT_TRUE(from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+};  // TEST_SUITE(serde_json_format_scoped_repr)
+
+}  // namespace
+
+}  // namespace kota::codec

@@ -129,6 +129,7 @@ private:
 struct StrReader {
     std::string_view str;
     using error_type = rich_error;
+    using format = json::format;
 
     template <typename T>
     bool visit_str(T& out) {
@@ -171,6 +172,7 @@ struct Reader {
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
     using error_type = rich_error;
+    using format = json::format;
 
     Reader(ondemand::Document& d, const char* base, std::size_t size) :
         src(d), buf_base(base), buf_size(size) {}

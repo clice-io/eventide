@@ -415,7 +415,7 @@ inline std::expected<dyn::Value, error> schema(const meta::type_info& root) {
 
 template <typename T>
 std::expected<dyn::Value, error> schema() {
-    return schema(meta::type_info_of<T>());
+    return schema(meta::type_info_of<T, meta::format_config<format>>());
 }
 
 inline std::expected<std::string, error> schema_string(const meta::type_info& root,
@@ -430,7 +430,7 @@ inline std::expected<std::string, error> schema_string(const meta::type_info& ro
 
 template <typename T>
 std::expected<std::string, error> schema_string(bool pretty = false) {
-    return schema_string(meta::type_info_of<T>(), pretty);
+    return schema_string(meta::type_info_of<T, meta::format_config<format>>(), pretty);
 }
 
 }  // namespace kota::codec::json

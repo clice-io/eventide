@@ -8,6 +8,10 @@
 
 namespace kota::codec::bincode {
 
+/// Format tag: scopes a meta::repr specialization to the bincode backend
+/// (meta::repr<T, codec::bincode::format>).
+struct format {};
+
 enum class error_kind : std::uint8_t {
     UnexpectedEof,
     TypeMismatch,

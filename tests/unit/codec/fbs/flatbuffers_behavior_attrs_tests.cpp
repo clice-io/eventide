@@ -12,6 +12,7 @@
 #include "kota/meta/annotation.h"
 #include "kota/meta/attrs.h"
 #include "kota/codec/fbs/fbs.h"
+#include "kota/codec/json/json.h"
 
 namespace kota::codec {
 
@@ -832,6 +833,208 @@ TEST_CASE(view_honors_field_adapter_over_type_repr) {
 }
 
 };  // TEST_SUITE(serde_flatbuffers_type_traits)
+
+}  // namespace
+
+}  // namespace kota::codec
+
+// ============================================================================
+// Format-scoped repr tests: meta::repr<T, codec::fbs::format>
+// ============================================================================
+
+namespace kota_test_format_scoped {
+
+// A value class whose format-agnostic repr is textual, with a compact
+// fbs-scoped override: flatbuffers must pick the uint32 form while every
+// other backend keeps the string form.
+class SensorId {
+public:
+    SensorId() = default;
+
+    explicit SensorId(std::uint32_t v) : value_(v) {}
+
+    auto value() const -> std::uint32_t {
+        return value_;
+    }
+
+    auto operator==(const SensorId&) const -> bool = default;
+
+private:
+    std::uint32_t value_ = 0;
+};
+
+// An enum with an fbs-scoped repr, placed inside an otherwise trivial
+// struct: the repr replaces the raw layout, so the struct must not be
+// classified as an inline (memcpy) struct.
+enum class probe_kind : std::uint8_t {
+    heat,
+    light,
+};
+
+// No default member initializers: CellProbe must stay trivial so that only
+// the repr on probe_kind disqualifies the inline classification.
+struct CellProbe {
+    probe_kind kind;
+    float reading;
+
+    auto operator==(const CellProbe&) const -> bool = default;
+};
+
+}  // namespace kota_test_format_scoped
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_test_format_scoped::SensorId> {
+    using type = std::string;
+
+    static type to(const kota_test_format_scoped::SensorId& id) {
+        return "s" + std::to_string(id.value());
+    }
+
+    static kota_test_format_scoped::SensorId from(const std::string& encoded) {
+        return kota_test_format_scoped::SensorId{
+            static_cast<std::uint32_t>(std::stoul(encoded.substr(1)))};
+    }
+};
+
+template <>
+struct repr<kota_test_format_scoped::SensorId, codec::fbs::format> {
+    using type = std::uint32_t;
+
+    static type to(const kota_test_format_scoped::SensorId& id) {
+        return id.value();
+    }
+
+    static kota_test_format_scoped::SensorId from(type v) {
+        return kota_test_format_scoped::SensorId{v};
+    }
+};
+
+template <>
+struct repr<kota_test_format_scoped::probe_kind, codec::fbs::format> {
+    using type = std::uint32_t;
+
+    static type to(kota_test_format_scoped::probe_kind k) {
+        return static_cast<type>(k);
+    }
+
+    static kota_test_format_scoped::probe_kind from(type v) {
+        return static_cast<kota_test_format_scoped::probe_kind>(v);
+    }
+};
+
+}  // namespace kota::meta
+
+namespace kota::codec {
+
+namespace {
+
+using kota_test_format_scoped::CellProbe;
+using kota_test_format_scoped::probe_kind;
+using kota_test_format_scoped::SensorId;
+
+struct SensorReading {
+    SensorId id;
+    std::string label;
+
+    auto operator==(const SensorReading&) const -> bool = default;
+};
+
+struct ProbeGrid {
+    std::vector<CellProbe> cells;
+
+    auto operator==(const ProbeGrid&) const -> bool = default;
+};
+
+struct SensorList {
+    std::vector<SensorId> ids;
+
+    auto operator==(const SensorList&) const -> bool = default;
+};
+
+// fbs resolves the format-scoped repr; the bare (format-agnostic) view keeps
+// the string form other backends dispatch on.
+static_assert(std::is_same_v<meta::resolved_repr_t<SensorId, fbs::format>, std::uint32_t>);
+static_assert(std::is_same_v<meta::resolved_repr_t<SensorId>, std::string>);
+
+// The repr'd enum disqualifies the memcpy image; the struct degrades to a
+// table where the dispatch applies the repr.
+static_assert(!fbs::is_schema_struct_v<CellProbe>);
+
+TEST_SUITE(serde_flatbuffers_format_scoped) {
+
+TEST_CASE(format_scoped_repr_selected_by_fbs) {
+    const SensorReading input{.id = SensorId{7}, .label = "porch"};
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    // The table slot holds the fbs-scoped uint32, not the string form.
+    auto root = fbs::table_view<SensorReading>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+    const std::uint32_t raw = root[&SensorReading::id];
+    EXPECT_EQ(raw, 7U);
+
+    SensorReading output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(other_backends_keep_format_agnostic_repr) {
+    const SensorReading input{.id = SensorId{7}, .label = "porch"};
+
+    auto encoded = json::to_json(input);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"id":"s7","label":"porch"})");
+
+    SensorReading output{};
+    ASSERT_TRUE(json::from_json(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(format_scoped_repr_reaches_vector_elements) {
+    // Element classification (element_layout_of / scalar cells) must resolve
+    // the same fbs-scoped repr as the dispatch: the vector stores uint32
+    // scalars, not string offsets.
+    const SensorList input{
+        .ids = {SensorId{3}, SensorId{9}}
+    };
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = fbs::table_view<SensorList>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+
+    auto ids = root[&SensorList::ids];
+    ASSERT_TRUE(ids.valid());
+    ASSERT_EQ(ids.size(), 2U);
+    EXPECT_EQ(ids[0], 3U);
+    EXPECT_EQ(ids[1], 9U);
+
+    SensorList output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+TEST_CASE(repr_field_blocks_inline_struct) {
+    const ProbeGrid input{
+        .cells = {{.kind = probe_kind::light, .reading = 1.5F},
+                  {.kind = probe_kind::heat, .reading = -2.0F}},
+    };
+
+    auto encoded = fbs::to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    ProbeGrid output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
+};  // TEST_SUITE(serde_flatbuffers_format_scoped)
 
 }  // namespace
 
