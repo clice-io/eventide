@@ -12,13 +12,13 @@
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
+#include "kota/codec/visit/map_key.h"
 
 namespace kota::codec::dyn {
 
 struct value_writer;
 struct struct_writer;
 struct seq_writer;
-struct key_writer;
 struct map_writer;
 
 struct value_writer {
@@ -111,29 +111,6 @@ struct seq_writer {
     inline bool visit_element(F&& writer);
 };
 
-struct key_writer {
-    std::string& output;
-    using error_type = rich_error;
-
-    template <typename T>
-    bool visit_str(const T& v) {
-        output = std::string(std::string_view(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T v) {
-        output = std::to_string(static_cast<std::int64_t>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T v) {
-        output = std::to_string(static_cast<std::uint64_t>(v));
-        return true;
-    }
-};
-
 struct map_writer {
     dyn::Object& obj;
 
@@ -198,7 +175,7 @@ bool seq_writer::visit_element(F&& writer) {
 template <typename KF, typename VF>
 bool map_writer::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    key_writer kw{key};
+    map_key_writer<string_key_sink> kw{{key}};
     KOTA_CODEC_TRY(key_fn(kw));
     dyn::Value val;
     value_writer vw{val};

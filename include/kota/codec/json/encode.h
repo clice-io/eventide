@@ -14,6 +14,7 @@
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
+#include "kota/codec/visit/map_key.h"
 
 namespace kota::codec::json {
 
@@ -139,29 +140,13 @@ struct SeqWriter {
     bool visit_element(F&& writer);
 };
 
-struct KeyWriter {
+/// Streams a rendered map key into the JSON output as a quoted, escaped
+/// string.
+struct KeySink {
     StringBuilder& builder;
-    using error_type = rich_error;
-    using format = json::format;
 
-    template <typename T>
-    bool visit_str(const T& v) {
-        builder.escape_and_append_with_quotes(std::string_view(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T v) {
-        auto s = std::to_string(static_cast<std::int64_t>(v));
-        builder.escape_and_append_with_quotes(std::string_view(s));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T v) {
-        auto s = std::to_string(static_cast<std::uint64_t>(v));
-        builder.escape_and_append_with_quotes(std::string_view(s));
-        return true;
+    void emit(std::string_view key) {
+        builder.escape_and_append_with_quotes(key);
     }
 };
 
@@ -234,7 +219,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     if(!first)
         builder.append_comma();
     first = false;
-    KeyWriter kw{builder};
+    map_key_writer<KeySink, format> kw{{builder}};
     KOTA_CODEC_TRY(key_fn(kw));
     builder.append_colon();
     ValueWriter vw{builder};

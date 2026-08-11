@@ -15,6 +15,7 @@
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/encode.h"
+#include "kota/codec/visit/map_key.h"
 
 namespace kota::codec::toml {
 
@@ -24,7 +25,6 @@ struct TableSink;
 struct ArraySink;
 struct TableWriter;
 struct ArraySeqWriter;
-struct KeyWriter;
 struct MapWriter;
 
 using TableValueWriter = ValueWriter<TableSink>;
@@ -162,30 +162,6 @@ struct ArraySeqWriter {
     inline bool visit_element(F&& writer);
 };
 
-struct KeyWriter {
-    std::string& output;
-    using error_type = rich_error;
-    using format = toml::format;
-
-    template <typename T>
-    bool visit_str(const T& v) {
-        output = std::string(std::string_view(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T v) {
-        output = std::to_string(static_cast<std::int64_t>(v));
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T v) {
-        output = std::to_string(static_cast<std::uint64_t>(v));
-        return true;
-    }
-};
-
 struct MapWriter {
     Table& tbl;
 
@@ -246,7 +222,7 @@ bool ArraySeqWriter::visit_element(F&& writer) {
 template <typename KF, typename VF>
 bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    KeyWriter kw{key};
+    map_key_writer<string_key_sink, format> kw{{key}};
     KOTA_CODEC_TRY(key_fn(kw));
     TableValueWriter vw{
         {tbl, std::move(key)}

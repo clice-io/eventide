@@ -1,6 +1,6 @@
 #pragma once
 
-#include <charconv>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -15,6 +15,7 @@
 #include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 #include "kota/codec/visit/decode.h"
+#include "kota/codec/visit/map_key.h"
 
 namespace kota::codec::json {
 
@@ -126,45 +127,6 @@ struct Source {
 private:
     std::uintptr_t ptr;
     constexpr static std::uintptr_t tag = 1;
-};
-
-struct StrReader {
-    std::string_view str;
-    using error_type = rich_error;
-    using format = json::format;
-
-    template <typename T>
-    bool visit_str(T& out) {
-        out = T(str);
-        return true;
-    }
-
-    template <typename T>
-    bool visit_int(T& out) {
-        std::int64_t v = 0;
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), v);
-        if(ec != std::errc{} || ptr != str.data() + str.size()) {
-            return scoped_context<rich_error>::fail(rich_error::invalid_type("integer", "string"));
-        }
-        if(!kota::narrow_int(v, out)) {
-            return scoped_context<rich_error>::fail(rich_error("number out of range"));
-        }
-        return true;
-    }
-
-    template <typename T>
-    bool visit_uint(T& out) {
-        std::uint64_t v = 0;
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), v);
-        if(ec != std::errc{} || ptr != str.data() + str.size()) {
-            return scoped_context<rich_error>::fail(
-                rich_error::invalid_type("unsigned integer", "string"));
-        }
-        if(!kota::narrow_int(v, out)) {
-            return scoped_context<rich_error>::fail(rich_error("number out of range"));
-        }
-        return true;
-    }
 };
 
 struct Reader {
@@ -430,7 +392,7 @@ struct Reader {
                 break;
             }
             auto fv = std::move(field).value();
-            StrReader kr{key.value_unsafe()};
+            map_key_reader<format> kr{key.value_unsafe()};
             Reader vr{fv, buf_base, buf_size};
             if(!cb(kr, vr)) {
                 ok = false;

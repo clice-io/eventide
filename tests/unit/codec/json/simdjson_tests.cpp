@@ -304,6 +304,19 @@ TEST_CASE(map_roundtrip) {
     EXPECT_EQ(by_id_out, by_id);
 }
 
+TEST_CASE(map_uint64_key_roundtrip) {
+    // A key beyond int64::max travels as its exact decimal string — it must
+    // not be routed through the signed rendering path.
+    std::map<std::uint64_t, int> by_id{
+        {9223372036854775809ull, 1}
+    };
+    ASSERT_EQ(to_json(by_id), R"({"9223372036854775809":1})");
+
+    std::map<std::uint64_t, int> out;
+    ASSERT_TRUE(from_json(R"({"9223372036854775809":1})", out).has_value());
+    EXPECT_EQ(out, by_id);
+}
+
 TEST_CASE(map_errors) {
     std::map<std::string, int> by_name;
     auto shape_error = from_json(R"([1,2,3])", by_name);
@@ -314,7 +327,18 @@ TEST_CASE(map_errors) {
 
     std::map<int, int> by_id;
     auto key_parse_error = from_json(R"({"abc":1})", by_id);
-    EXPECT_FALSE(key_parse_error.has_value());
+    ASSERT_FALSE(key_parse_error.has_value());
+    EXPECT_TRUE(key_parse_error.error().message.find("cannot parse map key 'abc'") !=
+                std::string::npos);
+
+    std::map<std::uint8_t, int> by_octet;
+    EXPECT_FALSE(from_json(R"({"300":1})", by_octet).has_value());
+
+    std::map<std::int8_t, int> by_offset;
+    EXPECT_FALSE(from_json(R"({"300":1})", by_offset).has_value());
+
+    std::map<std::uint32_t, int> by_index;
+    EXPECT_FALSE(from_json(R"({"-1":1})", by_index).has_value());
 }
 
 TEST_CASE(optional_roundtrip) {
