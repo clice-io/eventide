@@ -40,6 +40,29 @@ struct json_schema_reprd_repr {
     <std::int32_t> total = 5;
 };
 
+/// A repr whose to() disagrees with a fresh representation: decode
+/// value-initializes the representation (n = 4) before reading fields, so an
+/// absent property leaves 4 even though a default-constructed root encodes
+/// n = 9 — the annotation must publish the decode-side value.
+class json_schema_reprd_shifted {
+public:
+    json_schema_reprd_shifted() = default;
+
+    explicit json_schema_reprd_shifted(int n) : n_(n) {}
+
+    int n() const {
+        return n_;
+    }
+
+private:
+    int n_ = 9;
+};
+
+struct json_schema_reprd_shifted_repr {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> n = 4;
+};
+
 }  // namespace kota::meta
 
 namespace kota::meta {
@@ -53,6 +76,19 @@ struct repr<kota::meta::json_schema_reprd_root> {
 
     static type to(const kota::meta::json_schema_reprd_root& v) {
         return {.total = v.total()};
+    }
+};
+
+template <>
+struct repr<kota::meta::json_schema_reprd_shifted> {
+    using type = kota::meta::json_schema_reprd_shifted_repr;
+
+    static type to(const kota::meta::json_schema_reprd_shifted& v) {
+        return {.n = v.n()};
+    }
+
+    static kota::meta::json_schema_reprd_shifted from(const type& d) {
+        return kota::meta::json_schema_reprd_shifted(d.n);
     }
 };
 
@@ -707,6 +743,32 @@ struct defaults_cyclic {
     std::vector<defaults_cyclic> kids = {
         {.depth = 2, .kids = {}}
     };
+};
+
+struct defaults_engaged_override {
+    std::optional<defaults_leaf> anchor = defaults_leaf{.threads = 9};
+};
+
+struct defaults_mid {
+    defaults_leaf leaf;
+};
+
+struct defaults_cascade_root {
+    defaults_mid mid = {.leaf = {.threads = 9}};
+};
+
+struct defaults_tuple_override {
+    std::tuple<defaults_leaf, std::int32_t> entry = {defaults_leaf{.threads = 9}, 0};
+};
+
+struct renamed_defaults_child {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> first_value = 4;
+};
+
+struct renamed_defaults_holder {
+    KOTATSU_ANNOTATE(rename_all = casing::lower_camel)
+    <renamed_defaults_child> child;
 };
 
 namespace json = kota::codec::json;
@@ -2814,21 +2876,22 @@ TEST_CASE(defaults_skip_condition) {
     EXPECT_TRUE(result.find(R"("default")") == std::string::npos);
 }
 
-TEST_CASE(defaults_shared_def_fresh_values) {
-    // The two sites default-construct differently (mirror overrides threads
-    // via its member initializer), but the shared $def describes a freshly
-    // constructed defaults_leaf, so it carries the type's own initializers;
-    // both sites are required — no site default — and the override appears
-    // nowhere.
+TEST_CASE(defaults_shared_def_omits_disputed) {
+    // The two sites decode in place and disagree on threads (mirror's member
+    // initializer overrides it to 9), so the shared $def cannot tell the
+    // truth for both and says nothing; name agrees at every site and keeps
+    // the fresh value. Both sites are required — no site default either.
     const auto result = json::schema_string<defaults_shared_override>().value();
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
     EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
 }
 
 TEST_CASE(defaults_non_required_ref_sites) {
     // Non-required refs to a shared $def each carry their whole encoded
     // object as the property default, so the per-site member initializer
-    // survives even though the $def keeps fresh-instance leaf values.
+    // survives; the $def itself omits the disputed threads default and keeps
+    // the agreed name.
     const auto result = json::schema_string<defaults_ref_sites>().value();
     EXPECT_TRUE(
         result.find(
@@ -2838,7 +2901,36 @@ TEST_CASE(defaults_non_required_ref_sites) {
         result.find(
             R"("mirror":{"$ref":"#/$defs/defaults_leaf","default":{"threads":9,"name":"worker"}})") !=
         std::string::npos);
-    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+}
+
+TEST_CASE(defaults_engaged_override_omits_disputed) {
+    // An engaged optional decodes in place, so its override disputes the
+    // $def's threads default; the nullable site still carries its
+    // whole-object default.
+    const auto result = json::schema_string<defaults_engaged_override>().value();
+    EXPECT_TRUE(result.find(R"("default":{"threads":9,"name":"worker"})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+}
+
+TEST_CASE(defaults_in_place_override_cascades) {
+    // The override sits two in-place levels down (root member initializer →
+    // mid.leaf.threads): the site walk follows struct fields through struct
+    // fields, so the leaf $def omits threads while name stays.
+    const auto result = json::schema_string<defaults_cascade_root>().value();
+    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
+}
+
+TEST_CASE(defaults_tuple_element_override_omits_disputed) {
+    // Tuple elements decode in place into the existing tuple, so a
+    // per-element override disputes the element type's $def default.
+    const auto result = json::schema_string<defaults_tuple_override>().value();
+    EXPECT_TRUE(result.find(R"("default":4)") == std::string::npos);
+    EXPECT_TRUE(result.find(R"("name":{"type":"string","default":"worker"})") != std::string::npos);
 }
 
 TEST_CASE(defaults_nullable_root) {
@@ -2964,6 +3056,25 @@ TEST_CASE(defaults_repr_backed_root) {
     // runs and the representation's defaulted member carries its value.
     const auto result = json::schema_string<json_schema_reprd_root>().value();
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":5})") != std::string::npos);
+}
+
+TEST_CASE(defaults_repr_decode_side) {
+    // repr_decode value-initializes the representation before reading
+    // fields, so an absent property leaves the representation's own
+    // initializer — not the value Repr::to encodes for a default-constructed
+    // root.
+    const auto result = json::schema_string<json_schema_reprd_shifted>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_follow_slot_rename_all) {
+    // A rename_all spec on the field slot renames the child $def's
+    // properties; the fresh document is encoded under the same merged
+    // config, so the renamed property still pairs with its default.
+    const auto result = json::schema_string<renamed_defaults_holder>().value();
+    EXPECT_TRUE(result.find(R"("firstValue")") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":4})") != std::string::npos);
 }
 
 struct defaults_enum_config {

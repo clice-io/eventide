@@ -519,6 +519,31 @@ private:
     const meta::type_info* root_ti = nullptr;
 };
 
+/// The fresh documents the default-annotation pass pairs schema bodies with:
+/// for every struct reachable through the resolved type structure whose
+/// JSON-resolved representation is default-initializable, the document a
+/// value-initialized instance of that representation encodes to under Config
+/// — the value repr_decode constructs before reading fields — keyed by the
+/// normalized name the emitter gives the type's $def. collect_fresh mirrors
+/// the emitter's reach — struct fields (flattened included, skipped
+/// excluded), each under the config its slot's rename_all / deny_unknown
+/// spec merges to, optional and pointer inners, sequence and set elements,
+/// map values (keys encode as object keys and carry no schema), tuple
+/// elements, variant alternatives. Field-level behavior attrs (`with`, `as`)
+/// are not followed, and a fresh instance the encoder rejects (a NaN member
+/// under nan_repr::Error, an unnamed enum value under enum_repr::String)
+/// records no document: both leave their subtrees unannotated rather than
+/// annotated wrongly. `conflicted` lists, per type, the properties whose
+/// fresh value some in-place decode site disagrees with — the annotation
+/// pass omits those defaults instead of publishing a value that is wrong at
+/// one of the sites.
+struct FreshDefaults {
+    std::unordered_map<std::string, dyn::Value> docs;
+    std::unordered_map<std::string, std::unordered_set<std::string>> conflicted;
+    std::unordered_set<std::string> claimed;
+    std::unordered_set<const meta::type_info*> seen;
+};
+
 /// Annotates the emitted schema with `default` values — the value decode
 /// leaves behind when a property is absent. Two sources feed the pass,
 /// matching the two ways decode arrives at a value it must default:
@@ -527,7 +552,8 @@ private:
 ///   instance, so an absent optional property keeps whatever the enclosing
 ///   default instance carries — member initializers on the enclosing type
 ///   included. Each schema body is paired with a document of its own type
-///   (the root body with the encoded default-constructed root) and every
+///   (the root body with the encoded fresh instance of the root's resolved
+///   representation — what decode constructs and reads into) and every
 ///   non-required property copies its encoded value onto its schema as
 ///   `default`; a non-required struct $ref thus carries its whole encoded
 ///   object, so per-site member initializers survive the $def sharing.
@@ -547,17 +573,24 @@ private:
 ///   which the sweep consumes and strips. A type that cannot be freshly
 ///   constructed and encoded leaves its body unannotated rather than
 ///   guessing.
+///
+/// A body shared between sites can still be contradicted by one of them:
+/// struct fields, engaged optionals and pointers, and tuple elements decode
+/// in place, so an enclosing initializer that overrides a nested field wins
+/// over the nested type's own initializer at that site. Wherever
+/// collect_fresh found such a disagreement (FreshDefaults::conflicted), the
+/// disputed property's default is omitted — the shared body cannot tell the
+/// truth for every site, so it says nothing.
 class DefaultAnnotator {
 public:
-    explicit DefaultAnnotator(std::unordered_map<std::string, dyn::Value> fresh) :
-        fresh(std::move(fresh)) {}
+    explicit DefaultAnnotator(FreshDefaults fresh) : fresh(std::move(fresh)) {}
 
-    void run(dyn::Object& root, const dyn::Value& root_doc) {
-        annotate_properties(root, root_doc);
+    void run(dyn::Object& root, const dyn::Value& root_doc, std::string_view root_name) {
+        annotate_properties(root, root_doc, root_name);
         if(auto* defs = root.find("$defs")) {
             for(auto& [name, body]: *defs->get_object()) {
-                if(auto it = fresh.find(name); it != fresh.end()) {
-                    annotate_properties(*body.get_object(), it->second);
+                if(auto it = fresh.docs.find(name); it != fresh.docs.end()) {
+                    annotate_properties(*body.get_object(), it->second, name);
                 }
             }
         }
@@ -573,7 +606,9 @@ private:
                                    [&](const dyn::Value& v) { return v.get_string() == name; });
     }
 
-    static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
+    void annotate_properties(dyn::Object& body,
+                             const dyn::Value& doc_value,
+                             std::string_view type_name) {
         // A non-struct root pairs with a non-object document (an array, a
         // scalar, the null a default-constructed nullable root encodes to);
         // it has no properties to annotate from.
@@ -589,9 +624,14 @@ private:
         if(const auto* r = body.find("required")) {
             required = r->get_array();
         }
+        const std::unordered_set<std::string>* disputed = nullptr;
+        if(auto it = fresh.conflicted.find(std::string(type_name)); it != fresh.conflicted.end()) {
+            disputed = &it->second;
+        }
         for(auto& [name, prop]: *props->get_object()) {
             const auto* v = doc->find(name);
-            if(v != nullptr && !is_required(required, name)) {
+            if(v != nullptr && !is_required(required, name) &&
+               (disputed == nullptr || !disputed->contains(name))) {
                 prop.get_object()->insert("default", *v);
             }
         }
@@ -604,8 +644,9 @@ private:
     /// `enum`, or `const`, whose contents are documents, not schemas.
     void sweep(dyn::Object& schema) {
         if(const auto* marker = schema.find(alternative_marker)) {
-            if(auto it = fresh.find(std::string(*marker->get_string())); it != fresh.end()) {
-                annotate_properties(schema, it->second);
+            auto name = std::string(*marker->get_string());
+            if(auto it = fresh.docs.find(name); it != fresh.docs.end()) {
+                annotate_properties(schema, it->second, name);
             }
             schema.remove(alternative_marker);
         }
@@ -638,7 +679,7 @@ private:
         }
     }
 
-    std::unordered_map<std::string, dyn::Value> fresh;
+    FreshDefaults fresh;
 };
 
 /// Metadata resolution config for schema generation: the user's config
@@ -664,30 +705,21 @@ schema_options options_of() {
     };
 }
 
-/// The fresh documents the default-annotation pass pairs $defs and marked
-/// variant branches with: for every default-initializable struct reachable
-/// through the resolved type structure, the document a value-initialized
-/// instance encodes to under Config, keyed by the normalized name the
-/// emitter gives the type's $def. collect_fresh mirrors the emitter's reach
-/// — struct fields (flattened included, skipped excluded), optional and
-/// pointer inners, sequence and set elements, map values (keys encode as
-/// object keys and carry no schema), tuple elements, variant alternatives.
-/// Field-level behavior attrs (`with`, `as`) are not followed, and a fresh
-/// instance the encoder rejects (a NaN member under nan_repr::Error, an
-/// unnamed enum value under enum_repr::String) records no document: both
-/// leave their subtrees unannotated rather than annotated wrongly.
-struct FreshDefaults {
-    std::unordered_map<std::string, dyn::Value> docs;
-    std::unordered_set<std::string> claimed;
-    std::unordered_set<const meta::type_info*> seen;
-};
+/// The config a slot's subtree resolves and encodes under: a rename_all /
+/// deny_unknown spec on a reflectable struct field merges into the carried
+/// config — the same gate the codec dispatch and meta's repr resolver apply
+/// — and stays inert on every other slot kind.
+template <typename Config, typename Slot>
+using slot_config_t = std::conditional_t<meta::reflectable_class<typename Slot::raw_type>,
+                                         meta::merged_config_t<Config, typename Slot::attrs>,
+                                         Config>;
 
 template <typename T, typename Config>
 void collect_fresh(FreshDefaults& out);
 
 template <typename Config, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kota::type_list<Slots...>) {
-    (collect_fresh<typename Slots::raw_type, Config>(out), ...);
+    (collect_fresh<typename Slots::raw_type, slot_config_t<Config, Slots>>(out), ...);
 }
 
 template <typename Config, typename... Ts>
@@ -696,12 +728,81 @@ void collect_fresh_alternatives(FreshDefaults& out, std::type_identity<std::vari
 }
 
 template <typename T, typename Config>
+void compare_site(FreshDefaults& out, const dyn::Value& site);
+
+/// Replays decode's in-place sites of one struct document: each field's
+/// sub-document is the value decode leaves in the enclosing instance when
+/// the nested properties are absent, so it is held against the field type's
+/// own fresh document.
+template <typename Resolved, typename Config>
+void compare_slot_sites(FreshDefaults& out, const dyn::Object& doc) {
+    using schema = meta::virtual_schema<Resolved, Config>;
+    using slots = typename schema::slots;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        (
+            [&] {
+                using slot_t = type_list_element_t<Is, slots>;
+                if(const auto* site = doc.find(schema::fields[Is].name)) {
+                    compare_site<typename slot_t::raw_type, slot_config_t<Config, slot_t>>(out,
+                                                                                           *site);
+                }
+            }(),
+            ...);
+    }(std::make_index_sequence<type_list_size_v<slots>>{});
+}
+
+/// Decode reuses in-place sites — struct fields, engaged optionals and
+/// pointers, tuple elements — so the value an absent property leaves behind
+/// there is the enclosing instance's, not a fresh one. Walks one site
+/// document against the fresh documents, recording every property whose
+/// site value disagrees; the walk ends at fresh-constructing positions
+/// (sequence and set elements, map values, variant alternatives), where
+/// decode value-initializes and nothing site-specific survives.
+template <typename T, typename Config>
+void compare_site(FreshDefaults& out, const dyn::Value& site) {
+    using tk = meta::type_kind;
+    using resolved = meta::resolved_repr_t<T, format>;
+    constexpr tk kind = meta::kind_of<resolved>();
+    if constexpr(kind == tk::structure) {
+        // A null site is a disengaged optional or pointer: decode emplaces a
+        // fresh value there, which agrees with the fresh document by
+        // definition.
+        const auto* site_obj = site.get_object();
+        if(site_obj == nullptr) {
+            return;
+        }
+        auto name = kota::naming::normalize_identifier(meta::type_info_of<T, Config>().type_name);
+        if(auto it = out.docs.find(name); it != out.docs.end()) {
+            for(const auto& [key, fresh_value]: *it->second.get_object()) {
+                const auto* site_value = site_obj->find(key);
+                if(site_value == nullptr || *site_value != fresh_value) {
+                    out.conflicted[name].insert(key);
+                }
+            }
+        }
+        compare_slot_sites<resolved, Config>(out, *site_obj);
+    } else if constexpr(kind == tk::optional) {
+        compare_site<typename resolved::value_type, Config>(out, site);
+    } else if constexpr(kind == tk::pointer) {
+        compare_site<typename resolved::element_type, Config>(out, site);
+    } else if constexpr(kind == tk::tuple) {
+        // A disengaged optional-of-tuple site encodes null: nothing decodes
+        // in place there.
+        if(const auto* arr = site.get_array()) {
+            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                (compare_site<std::tuple_element_t<Is, resolved>, Config>(out, (*arr)[Is]), ...);
+            }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
+        }
+    }
+}
+
+template <typename T, typename Config>
 void collect_fresh(FreshDefaults& out) {
     using tk = meta::type_kind;
     using resolved = meta::resolved_repr_t<T, format>;
     constexpr tk kind = meta::kind_of<resolved>();
     if constexpr(kind == tk::structure) {
-        const meta::type_info& ti = meta::type_info_of<T, schema_config<Config>>();
+        const meta::type_info& ti = meta::type_info_of<T, Config>();
         if(!out.seen.insert(&ti).second) {
             return;
         }
@@ -713,16 +814,26 @@ void collect_fresh(FreshDefaults& out) {
             // annotate neither rather than pair one with the other's
             // document.
             out.docs.erase(name);
-        } else if constexpr(std::default_initializable<T>) {
-            if(auto text = to_string<Config>(T{})) {
+        } else if constexpr(std::default_initializable<resolved>) {
+            // Encode the representation decode constructs and reads into
+            // (repr_decode value-initializes it before visiting), not the
+            // source type: Repr::to(T{}) may legally disagree with
+            // resolved{}, and decode's absent-field values come from the
+            // latter.
+            if(auto text = to_string<Config>(resolved{})) {
                 if(auto doc = from_string<dyn::Value>(*text)) {
-                    out.docs.emplace(std::move(name), std::move(*doc));
+                    out.docs.emplace(name, std::move(*doc));
                 }
             }
         }
-        collect_fresh_slots<Config>(
-            out,
-            typename meta::virtual_schema<resolved, schema_config<Config>>::slots{});
+        collect_fresh_slots<Config>(out, typename meta::virtual_schema<resolved, Config>::slots{});
+        // With the whole subtree collected, replay this struct's own
+        // in-place sites against it (the collision branch above may have
+        // dropped the document — nothing to compare then, and the emitter
+        // rejects the $def collision anyway).
+        if(auto it = out.docs.find(name); it != out.docs.end()) {
+            compare_slot_sites<resolved, Config>(out, *it->second.get_object());
+        }
     } else if constexpr(kind == tk::optional) {
         collect_fresh<typename resolved::value_type, Config>(out);
     } else if constexpr(kind == tk::pointer) {
@@ -760,39 +871,48 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 
 }  // namespace detail
 
-/// When T is default-initializable, the schema also carries `default`
-/// annotations: default instances are encoded through the real JSON encoder
-/// under Config and parsed back into documents, so the values match what
-/// to_string emits byte for byte (enum renames, nan handling, format-scoped
-/// reprs included). Root properties take the values of a default-constructed
-/// T; each $def and inlined variant branch takes the values of a freshly
-/// constructed instance of its own type — what decode's fresh constructions
-/// (sequence elements, map values, emplaced alternatives) actually produce —
-/// while a nested type that cannot be freshly constructed or encoded stays
-/// unannotated. Two consequences of riding the real encoder: T{} must encode
-/// under Config — a default instance the encoder rejects (a NaN member under
-/// nan_repr::Error, an enum value without a reflected name under
+/// When the JSON-resolved representation of T is default-initializable, the
+/// schema also carries `default` annotations: fresh instances of the
+/// representations decode actually constructs and reads into are encoded
+/// through the real JSON encoder under Config and parsed back into
+/// documents, so the values match what to_string emits byte for byte (enum
+/// renames, nan handling, format-scoped reprs included) — and, for a
+/// repr-backed type, describe what decoding an absent property leaves in
+/// the representation (repr_decode value-initializes it), not what
+/// Repr::to(T{}) happens to encode. Root properties take the values of the
+/// root's fresh representation; each $def and inlined variant branch takes
+/// the values of a freshly constructed instance of its own type — what
+/// decode's fresh constructions (sequence elements, map values, emplaced
+/// alternatives) actually produce — while a nested type that cannot be
+/// freshly constructed or encoded stays unannotated, and a default an
+/// in-place site contradicts is omitted (see DefaultAnnotator). Two
+/// consequences of riding the real encoder: the root's fresh representation
+/// must encode under Config — an instance the encoder rejects (a NaN member
+/// under nan_repr::Error, an enum value without a reflected name under
 /// enum_repr::String) fails schema generation with that error — and a T
 /// whose fields the codec cannot serialize fails to compile, exactly like
 /// to_string itself. Only an opaque root — one whose JSON-resolved
-/// representation still reflects as kind unknown, so a repr-backed root
-/// joins the pass through its representation — skips it at compile time and
-/// keeps reporting the emission error at runtime.
+/// representation still reflects as kind unknown — skips the pass at
+/// compile time and keeps reporting the emission error at runtime.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
-    constexpr bool annotate_defaults =
-        std::default_initializable<T> &&
-        meta::kind_of<meta::resolved_repr_t<T, format>>() != meta::type_kind::unknown;
+    using resolved = meta::resolved_repr_t<T, format>;
+    constexpr bool annotate_defaults = std::default_initializable<resolved> &&
+                                       meta::kind_of<resolved>() != meta::type_kind::unknown;
     KOTA_EXPECTED_TRY_V(
         auto result,
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
             meta::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
-        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
+        KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(resolved{}));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
-        detail::collect_fresh<T, Config>(fresh);
-        detail::DefaultAnnotator{std::move(fresh.docs)}.run(*result.get_object(), doc);
+        detail::collect_fresh<T, detail::schema_config<Config>>(fresh);
+        detail::DefaultAnnotator{std::move(fresh)}.run(
+            *result.get_object(),
+            doc,
+            kota::naming::normalize_identifier(
+                meta::type_info_of<T, detail::schema_config<Config>>().type_name));
     }
     return result;
 }
