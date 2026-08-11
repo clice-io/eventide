@@ -21,12 +21,39 @@ namespace kota::meta {
 
 struct json_schema_opaque_root {};
 
+/// A non-reflectable class (raw kind unknown) whose meta::repr resolves to a
+/// struct with a defaulted member: the default-annotation pass judges the
+/// JSON-resolved representation, not the raw kind.
+class json_schema_reprd_root {
+public:
+    int total() const {
+        return total_;
+    }
+
+private:
+    int total_ = 5;
+};
+
+struct json_schema_reprd_repr {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> total = 5;
+};
+
 }  // namespace kota::meta
 
 namespace kota::meta {
 
 template <>
 constexpr inline bool schema_opaque<kota::meta::json_schema_opaque_root> = true;
+
+template <>
+struct repr<kota::meta::json_schema_reprd_root> {
+    using type = kota::meta::json_schema_reprd_repr;
+
+    static type to(const kota::meta::json_schema_reprd_root& v) {
+        return {.total = v.total()};
+    }
+};
 
 }  // namespace kota::meta
 
@@ -607,6 +634,37 @@ struct defaults_ref_sites {
     KOTATSU_ANNOTATE(defaulted = true)
     <defaults_leaf> mirror = {defaults_leaf{.threads = 9}};
 };
+
+struct defaults_alt_a {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> depth = 3;
+
+    std::string name;
+};
+
+struct defaults_alt_b {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::int32_t> other = 9;
+};
+
+KOTATSU_ANNOTATION(defaults_internal_annotation, tag = "kind", tag_names = {"a", "b"});
+using defaults_internal_variant =
+    annotate<defaults_internal_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+
+struct defaults_variant_holder {
+    defaults_internal_variant shape;
+};
+
+KOTATSU_ANNOTATION(defaults_adjacent_annotation,
+                   tag = "type",
+                   content = "value",
+                   tag_names = {"a", "b"});
+using defaults_adjacent_variant =
+    annotate<defaults_adjacent_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+
+KOTATSU_ANNOTATION(defaults_external_annotation, tagged = true, tag_names = {"a", "b"});
+using defaults_external_variant =
+    annotate<defaults_external_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
 namespace json = kota::codec::json;
 
@@ -2769,6 +2827,49 @@ TEST_CASE(defaults_recursive_root) {
     EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":1})") != std::string::npos);
     EXPECT_TRUE(result.find(R"("next":{"anyOf":[{"$ref":"#"},{"type":"null"}],"default":null})") !=
                 std::string::npos);
+}
+
+TEST_CASE(defaults_internal_tagged_variant_member) {
+    // A required tagged-variant property is no leaf: the walk follows the
+    // oneOf branch whose tag constraint the default document satisfies, so
+    // the encoded alternative's defaulted member keeps its initializer while
+    // the unselected branch stays bare.
+    const auto result = json::schema_string<defaults_variant_holder>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_tagged_variant_root) {
+    // The same walk applies to a tagged variant at the root, whose oneOf is
+    // merged into the top-level schema object.
+    const auto result = json::schema_string<defaults_internal_variant>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_adjacent_tagged_variant) {
+    // Adjacent tagging routes the alternative behind the content property, a
+    // struct $ref: the matched branch recurses into its $def, while the
+    // unselected alternative's $def stays annotation-free.
+    const auto result = json::schema_string<defaults_adjacent_variant>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_external_tagged_variant) {
+    // External tagging carries no tag const; the branch requiring the
+    // encoded alternative's name matches, and the $ref under it recurses.
+    const auto result = json::schema_string<defaults_external_variant>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":3})") != std::string::npos);
+    EXPECT_TRUE(result.find(R"("default":9)") == std::string::npos);
+}
+
+TEST_CASE(defaults_repr_backed_root) {
+    // kind_of on the raw class reports unknown, but its repr resolves to a
+    // struct: the guard judges the JSON-resolved representation, so the pass
+    // runs and the representation's defaulted member carries its value.
+    const auto result = json::schema_string<json_schema_reprd_root>().value();
+    EXPECT_TRUE(result.find(R"("maximum":2147483647,"default":5})") != std::string::npos);
 }
 
 struct defaults_enum_config {

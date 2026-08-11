@@ -507,10 +507,12 @@ private:
 /// struct $refs recurse so defaults land on the leaf fields inside $defs; a
 /// $def shared by several sites keeps the values of its first visit, while
 /// each non-required ref site also carries its whole encoded object as its
-/// own default, so per-site member initializers survive the sharing. An
-/// anyOf wrapper (optional/pointer field) is a leaf: it takes the whole
-/// encoded value as its default, so a $def reachable only through nullable
-/// fields stays unannotated.
+/// own default, so per-site member initializers survive the sharing. A
+/// tagged variant (a oneOf) descends into the branch whose tag constraints
+/// the document satisfies — the encoded alternative — so its members keep
+/// their decode defaults. An anyOf wrapper (optional/pointer field, untagged
+/// variant) is a leaf: it takes the whole encoded value as its default, so a
+/// $def reachable only through nullable fields stays unannotated.
 class DefaultAnnotator {
 public:
     explicit DefaultAnnotator(dyn::Object& root) {
@@ -520,27 +522,44 @@ public:
     }
 
     void annotate(dyn::Object& body, const dyn::Value& value) {
-        auto* props_entry = body.find("properties");
-        if(props_entry == nullptr) {
-            return;
-        }
-        // A body with "properties" is a struct schema, so its paired
-        // document is a struct encoding — an object, unless the root type is
-        // a nullable wrapper (the emitter unwraps optional/pointer roots to
-        // the struct body, but a default-constructed wrapper encodes to
-        // null). Null carries no property values, so there is nothing to
-        // annotate from.
+        // Every walked body pairs with an object document: a struct schema
+        // with a struct encoding, a tagged variant whose tagged forms are
+        // all objects — unless the root type is a nullable wrapper (the
+        // emitter unwraps optional/pointer roots to the inner body, but a
+        // default-constructed wrapper encodes to null). Null carries no
+        // property values, so there is nothing to annotate from.
         const auto* doc = value.get_object();
         if(doc == nullptr) {
             return;
         }
-        const dyn::Array* required = nullptr;
-        if(const auto* r = body.find("required")) {
-            required = r->get_array();
+        if(auto* props = body.find("properties")) {
+            const dyn::Array* required = nullptr;
+            if(const auto* r = body.find("required")) {
+                required = r->get_array();
+            }
+            for(auto& [name, prop]: *props->get_object()) {
+                if(const auto* v = doc->find(name)) {
+                    annotate_property(prop, *v, is_required(required, name));
+                }
+            }
         }
-        for(auto& [name, prop]: *props_entry->get_object()) {
-            if(const auto* v = doc->find(name)) {
-                annotate_property(prop, *v, is_required(required, name));
+        // A oneOf is a tagged variant: its branches are disjoint by tag, so
+        // the branch accepting the document describes the encoded
+        // alternative — descend so its members keep their decode defaults.
+        if(auto* one_of = body.find("oneOf")) {
+            auto& alts = *one_of->get_array();
+            auto it = std::ranges::find_if(alts, [&](const dyn::Value& alt) {
+                return branch_matches(*alt.get_object(), *doc);
+            });
+            if(it != alts.end()) {
+                annotate(*it->get_object(), value);
+            }
+        }
+        // An internal-tagged non-struct branch spreads its schema and tag
+        // constraint over allOf parts; walk each against the same document.
+        if(auto* all_of = body.find("allOf")) {
+            for(auto& part: *all_of->get_array()) {
+                annotate(*part.get_object(), value);
             }
         }
     }
@@ -554,17 +573,55 @@ private:
                                    [&](const dyn::Value& v) { return v.get_string() == name; });
     }
 
+    /// Whether a oneOf branch accepts the document: every required property
+    /// present and every property `const` matched. These are exactly the
+    /// constraints the emitter places on a tagged branch — external tagging
+    /// requires the alternative's name, internal and adjacent tagging pin
+    /// the tag property to a const — so the encoded alternative's branch,
+    /// and only it, matches.
+    static bool branch_matches(const dyn::Object& branch, const dyn::Object& doc) {
+        if(const auto* r = branch.find("required")) {
+            auto present = [&](const dyn::Value& name) {
+                return doc.contains(*name.get_string());
+            };
+            if(!std::ranges::all_of(*r->get_array(), present)) {
+                return false;
+            }
+        }
+        if(const auto* props = branch.find("properties")) {
+            for(const auto& [name, schema]: *props->get_object()) {
+                if(const auto* c = schema.get_object()->find("const")) {
+                    const auto* v = doc.find(name);
+                    if(v == nullptr || *v != *c) {
+                        return false;
+                    }
+                }
+            }
+        }
+        if(const auto* all_of = branch.find("allOf")) {
+            return std::ranges::all_of(*all_of->get_array(), [&](const dyn::Value& part) {
+                return branch_matches(*part.get_object(), doc);
+            });
+        }
+        return true;
+    }
+
     /// A $ref recurses whether or not its property is required: the section
-    /// itself may always appear while its leaves carry decode defaults. A
-    /// non-required $ref additionally takes the whole encoded object as its
-    /// own default — the shared $def keeps first-visit leaf values, so the
-    /// ref site is the only place a per-site member initializer survives.
+    /// itself may always appear while its leaves carry decode defaults — and
+    /// so does any other schema shape, which annotate walks (a tagged
+    /// variant through its encoded branch) or ignores (a leaf, an anyOf
+    /// wrapper). A non-required property additionally takes the whole
+    /// encoded value as its own default — the shared $def keeps first-visit
+    /// leaf values, so the ref site is the only place a per-site member
+    /// initializer survives.
     void annotate_property(dyn::Value& prop, const dyn::Value& value, bool required) {
         auto& obj = *prop.get_object();
         if(const auto* ref = obj.find("$ref")) {
             if(auto& target = resolve(*ref->get_string()); visited.insert(&target).second) {
                 annotate(target, value);
             }
+        } else {
+            annotate(obj, value);
         }
         if(!required) {
             obj.insert("default", value);
@@ -636,15 +693,17 @@ inline std::expected<std::string, error> stringify(dyn::Value value, bool pretty
 /// rejects (a NaN member under nan_repr::Error, an enum value without a
 /// reflected name under enum_repr::String) fails schema generation with that
 /// error — and a T whose fields the codec cannot serialize fails to compile,
-/// exactly like to_string itself. Only an opaque root (kind_of == unknown)
-/// skips the pass at compile time and keeps reporting the emission error at
-/// runtime.
+/// exactly like to_string itself. Only an opaque root — one whose
+/// JSON-resolved representation still reflects as kind unknown, so a
+/// repr-backed root joins the pass through its representation — skips it at
+/// compile time and keeps reporting the emission error at runtime.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
     KOTA_EXPECTED_TRY_V(auto result,
                         schema(meta::type_info_of<T, detail::schema_config<Config>>(),
                                detail::options_of<Config>()));
-    if constexpr(std::default_initializable<T> && meta::kind_of<T>() != meta::type_kind::unknown) {
+    if constexpr(std::default_initializable<T> &&
+                 meta::kind_of<meta::resolved_repr_t<T, format>>() != meta::type_kind::unknown) {
         KOTA_EXPECTED_TRY_V(auto text, to_string<Config>(T{}));
         KOTA_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         auto& root = *result.get_object();
