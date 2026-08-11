@@ -68,6 +68,10 @@ KOTATSU_ANNOTATION(int_tag_tri_shape_annotation,
 using IntTagTriShape =
     annotate<int_tag_tri_shape_annotation>::type<std::variant<Circle, Rect, Triangle>>;
 
+struct non_hr_config {
+    constexpr static bool human_readable = false;
+};
+
 struct ExtHolder {
     std::string label;
     ExtWithStruct item;
@@ -233,6 +237,27 @@ TEST_CASE(tagged_nested_variant_keeps_object_shape) {
     ASSERT_TRUE(from_json("7", out).has_value());
     EXPECT_EQ(out.index(), 1U);
     EXPECT_EQ(std::get<int>(out), 7);
+}
+
+TEST_CASE(non_human_readable_config_ignores_tagging_in_probe) {
+    // A non-human-readable config skips the tagged decoders and reads the
+    // underlying variant directly, so the kind probe must classify ExtSimple
+    // by its alternatives' kinds rather than as an object.
+    using V = std::variant<ExtSimple, bool>;
+
+    V v = ExtSimple{1};
+    auto encoded = to_json<non_hr_config>(v);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, "1");
+
+    V out{};
+    ASSERT_TRUE(from_json<non_hr_config>("1", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<int>(std::get<ExtSimple>(out)), 1);
+
+    ASSERT_TRUE(from_json<non_hr_config>("true", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<bool>(out), true);
 }
 
 TEST_CASE(adjacently_tagged_nested_variant_keeps_object_shape) {

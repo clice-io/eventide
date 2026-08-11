@@ -67,6 +67,8 @@ auto select_root_node(const Table& tbl) -> const Node* {
 
     // Nullable roots mirror to_toml's unwrapping: an absent value is the
     // empty document, a present one routes by the shape of what it wraps.
+    // Empty always means null here — to_toml rejects an engaged value whose
+    // serialization would be the empty document.
     if constexpr((kind == meta::type_kind::optional || kind == meta::type_kind::pointer) &&
                  std::is_same_v<meta::resolved_repr_t<U, format>, U>) {
         if(tbl.empty()) {

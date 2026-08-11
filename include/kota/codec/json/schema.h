@@ -2,13 +2,11 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <expected>
 #include <format>
 #include <limits>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -133,21 +131,13 @@ private:
                     {"type", "number"}
                 };
             case tk::int8:
-                return make_integer(std::numeric_limits<std::int8_t>::min(),
-                                    std::numeric_limits<std::int8_t>::max());
             case tk::int16:
-                return make_integer(std::numeric_limits<std::int16_t>::min(),
-                                    std::numeric_limits<std::int16_t>::max());
             case tk::int32:
-                return make_integer(std::numeric_limits<std::int32_t>::min(),
-                                    std::numeric_limits<std::int32_t>::max());
             case tk::int64:
-                return make_integer(std::numeric_limits<std::int64_t>::min(),
-                                    std::numeric_limits<std::int64_t>::max());
-            case tk::uint8: return make_unsigned(std::numeric_limits<std::uint8_t>::max());
-            case tk::uint16: return make_unsigned(std::numeric_limits<std::uint16_t>::max());
-            case tk::uint32: return make_unsigned(std::numeric_limits<std::uint32_t>::max());
-            case tk::uint64: return make_unsigned(std::numeric_limits<std::uint64_t>::max());
+            case tk::uint8:
+            case tk::uint16:
+            case tk::uint32:
+            case tk::uint64: return make_integer_kind(ti->kind);
             case tk::enumeration: return make_enum(ti);
             case tk::array:
             case tk::set: return make_array(ti);
@@ -205,64 +195,45 @@ private:
         };
     }
 
-    /// Reads the type-erased member-value array; enum objects share their
-    /// underlying type's representation, so each cell is one U.
-    template <typename U>
-    static void push_enum_values(dyn::Array& out, const void* data, std::size_t count) {
-        const auto* bytes = static_cast<const std::byte*>(data);
-        for(std::size_t i = 0; i < count; ++i) {
-            U v;
-            std::memcpy(&v, bytes + i * sizeof(U), sizeof(U));
-            if constexpr(std::is_signed_v<U>) {
-                out.push_back(dyn::Value(static_cast<std::int64_t>(v)));
-            } else {
-                out.push_back(dyn::Value(static_cast<std::uint64_t>(v)));
-            }
+    static result_t make_integer_kind(meta::type_kind kind) {
+        switch(kind) {
+            case tk::int8:
+                return make_integer(std::numeric_limits<std::int8_t>::min(),
+                                    std::numeric_limits<std::int8_t>::max());
+            case tk::int16:
+                return make_integer(std::numeric_limits<std::int16_t>::min(),
+                                    std::numeric_limits<std::int16_t>::max());
+            case tk::int32:
+                return make_integer(std::numeric_limits<std::int32_t>::min(),
+                                    std::numeric_limits<std::int32_t>::max());
+            case tk::int64:
+                return make_integer(std::numeric_limits<std::int64_t>::min(),
+                                    std::numeric_limits<std::int64_t>::max());
+            case tk::uint8: return make_unsigned(std::numeric_limits<std::uint8_t>::max());
+            case tk::uint16: return make_unsigned(std::numeric_limits<std::uint16_t>::max());
+            case tk::uint32: return make_unsigned(std::numeric_limits<std::uint32_t>::max());
+            case tk::uint64: return make_unsigned(std::numeric_limits<std::uint64_t>::max());
+            default:
+                // char/bool/extended-char underlying: still a number in the
+                // document, but without portable bounds here.
+                return dyn::Value{
+                    {"type", "integer"}
+                };
         }
     }
 
     result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
+        if(!enum_as_names) {
+            // enum_repr::Integer: the codec casts through the underlying type
+            // without checking membership, and name reflection only covers a
+            // limited scan range — values outside it still encode. The honest
+            // constraint is the underlying integer's range, not a value list.
+            return make_integer_kind(ei->underlying_kind);
+        }
         dyn::Array values;
-        if(enum_as_names) {
-            for(const auto& name: ei->member_names) {
-                values.push_back(dyn::Value(rename(true, name)));
-            }
-        } else {
-            // enum_repr::Integer: the document holds the numeric values.
-            const auto count = ei->member_names.size();
-            switch(ei->underlying_kind) {
-                case tk::int8:
-                    push_enum_values<std::int8_t>(values, ei->member_values, count);
-                    break;
-                case tk::int16:
-                    push_enum_values<std::int16_t>(values, ei->member_values, count);
-                    break;
-                case tk::int32:
-                    push_enum_values<std::int32_t>(values, ei->member_values, count);
-                    break;
-                case tk::int64:
-                    push_enum_values<std::int64_t>(values, ei->member_values, count);
-                    break;
-                case tk::uint8:
-                    push_enum_values<std::uint8_t>(values, ei->member_values, count);
-                    break;
-                case tk::uint16:
-                    push_enum_values<std::uint16_t>(values, ei->member_values, count);
-                    break;
-                case tk::uint32:
-                    push_enum_values<std::uint32_t>(values, ei->member_values, count);
-                    break;
-                case tk::uint64:
-                    push_enum_values<std::uint64_t>(values, ei->member_values, count);
-                    break;
-                default:
-                    // char/bool/extended-char underlying: still a number in
-                    // the document, but without a portable value list here.
-                    return dyn::Value{
-                        {"type", "integer"}
-                    };
-            }
+        for(const auto& name: ei->member_names) {
+            values.push_back(dyn::Value(rename(true, name)));
         }
         return dyn::Value{
             {"enum", std::move(values)}

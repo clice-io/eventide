@@ -267,7 +267,17 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
     if constexpr(std::is_same_v<resolved_t, V> &&
                  (kind == meta::type_kind::optional || kind == meta::type_kind::pointer)) {
         if(value) {
-            return to_toml<Config>(*value);
+            auto engaged = to_toml<Config>(*value);
+            // A null root is the empty document (TOML has no null), so an
+            // engaged pointee that serializes to an empty table — a non-null
+            // pointer to an empty map, say — would decode back as null. Fail
+            // loudly instead of losing the engaged state silently.
+            if(engaged && engaged->empty()) {
+                return std::unexpected(
+                    rich_error("engaged nullable root serializes to an empty TOML document, "
+                               "indistinguishable from null"));
+            }
+            return engaged;
         }
         return Table{};
     } else {

@@ -601,10 +601,10 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
 }
 
 template <typename T, typename Format>
-constexpr bool kind_compatible(meta::type_kind src, bool widen);
+constexpr bool kind_compatible(meta::type_kind src, bool widen, bool human_readable);
 
 template <typename T, typename Format>
-constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
+constexpr bool kind_compatible_impl(meta::type_kind src, bool widen, bool human_readable) {
     using enum meta::type_kind;
     constexpr auto target = meta::kind_of<T>();
 
@@ -636,7 +636,9 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
             else
                 return std::type_identity<typename T::element_type>{};
         }();
-        return kind_compatible<typename decltype(wrapped)::type, Format>(src, widen);
+        return kind_compatible<typename decltype(wrapped)::type, Format>(src,
+                                                                         widen,
+                                                                         human_readable);
     } else if constexpr(target == structure)
         return src == structure;
     else if constexpr(target == array || target == set)
@@ -648,7 +650,10 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
         // aggregate them so it neither strict-claims input only a widening
         // alternative accepts nor shadows a later exact match.
         return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return (kind_compatible<std::variant_alternative_t<Is, T>, Format>(src, widen) || ...);
+            return (kind_compatible<std::variant_alternative_t<Is, T>, Format>(src,
+                                                                               widen,
+                                                                               human_readable) ||
+                    ...);
         }(std::make_index_sequence<std::variant_size_v<T>>{});
     else if constexpr(target == enumeration)
         return src == string || src == int64 || src == uint64;
@@ -657,7 +662,7 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
 }
 
 template <typename T, typename Format>
-constexpr bool kind_compatible(meta::type_kind src, bool widen) {
+constexpr bool kind_compatible(meta::type_kind src, bool widen, bool human_readable) {
     // An alternative arrives as its resolved representation — behavior attrs
     // on an annotation first, then (chained) reprs under the visitor's format
     // — so compatibility is judged against that; a dynamic representation can
@@ -668,10 +673,15 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     } else if constexpr(meta::resolves_to_tagged_variant<T, Format>) {
         // A tagging spec survived resolution: the tagged decoders read an
         // object ({tag: value}, {tag, content}, or tag-in-fields), so the
-        // alternatives' own kinds never face the input directly.
-        return src == meta::type_kind::unknown || src == meta::type_kind::structure;
+        // alternatives' own kinds never face the input directly. But a
+        // non-human-readable config ignores tagging on decode and reads the
+        // underlying variant, so its alternatives' kinds apply instead.
+        if(human_readable) {
+            return src == meta::type_kind::unknown || src == meta::type_kind::structure;
+        }
+        return kind_compatible_impl<resolved_t, Format>(src, widen, human_readable);
     } else {
-        return kind_compatible_impl<resolved_t, Format>(src, widen);
+        return kind_compatible_impl<resolved_t, Format>(src, widen, human_readable);
     }
 }
 
@@ -689,13 +699,15 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
                 // once more on the real visitor so its error surfaces when
                 // nothing claims the value.
                 using fmt = meta::format_of_t<Vis>;
+                constexpr bool hr = is_human_readable<Config, Vis>();
                 auto attempt = [&](bool widen) -> bool {
                     return (([&] {
                                 using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                                bool strict = kind_compatible<alt_t, fmt>(src_kind, false);
+                                bool strict = kind_compatible<alt_t, fmt>(src_kind, false, hr);
                                 bool admit =
-                                    widen ? !strict && kind_compatible<alt_t, fmt>(src_kind, true)
-                                          : strict;
+                                    widen
+                                        ? !strict && kind_compatible<alt_t, fmt>(src_kind, true, hr)
+                                        : strict;
                                 if(!admit)
                                     return false;
                                 return vis.try_read([&](auto& fork) -> bool {

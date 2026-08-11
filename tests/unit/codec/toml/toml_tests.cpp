@@ -215,6 +215,35 @@ TEST_CASE(pointer_to_scalar_root_boxes) {
     EXPECT_EQ(*output, 7);
 }
 
+TEST_CASE(nullable_root_engaged_empty_table_rejected) {
+    // TOML has no null: a null root is the empty document, so an engaged
+    // pointer whose pointee serializes to an empty table has no
+    // representation of its own — encoding fails loudly instead of
+    // roundtripping back as null.
+    using map_t = std::map<std::string, int>;
+
+    const auto empty_map = std::make_shared<map_t>();
+    EXPECT_FALSE(to_toml(empty_map).has_value());
+
+    const auto filled = std::make_shared<map_t>(map_t{
+        {"a", 1}
+    });
+    auto dom = to_toml(filled);
+    ASSERT_TRUE(dom.has_value());
+
+    std::shared_ptr<map_t> output;
+    auto status = from_toml_table(*dom, output);
+    ASSERT_TRUE(status.has_value());
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_EQ(*output, *filled);
+
+    // The empty document stays reserved for the null pointer.
+    output = std::make_shared<map_t>();
+    status = from_toml_table(::toml::table{}, output);
+    ASSERT_TRUE(status.has_value());
+    EXPECT_TRUE(output == nullptr);
+}
+
 TEST_CASE(table_root_symmetry) {
     ::toml::table input;
     input.insert_or_assign("city", "shanghai");
