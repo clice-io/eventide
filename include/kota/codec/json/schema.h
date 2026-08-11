@@ -474,6 +474,15 @@ private:
     const meta::type_info* root_ti = nullptr;
 };
 
+/// Metadata resolution config for schema generation: the user's config
+/// (field_rename, deny_unknown_fields, ...) merged over defaults — the same
+/// merge the codec dispatch applies — tagged with the JSON format so
+/// format-scoped meta::repr specializations resolve the way to_json does.
+template <typename Config>
+struct schema_config : default_config<Config> {
+    using format = json::format;
+};
+
 }  // namespace detail
 
 inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
@@ -483,7 +492,7 @@ inline std::expected<dyn::Value, error> schema(const meta::type_info& root,
 
 template <typename T, typename Config = void>
 std::expected<dyn::Value, error> schema() {
-    return schema(meta::type_info_of<T, meta::format_config<format>>(),
+    return schema(meta::type_info_of<T, detail::schema_config<Config>>(),
                   default_config<Config>::enum_repr);
 }
 
@@ -501,7 +510,7 @@ inline std::expected<std::string, error>
 
 template <typename T, typename Config = void>
 std::expected<std::string, error> schema_string(bool pretty = false) {
-    return schema_string(meta::type_info_of<T, meta::format_config<format>>(),
+    return schema_string(meta::type_info_of<T, detail::schema_config<Config>>(),
                          pretty,
                          default_config<Config>::enum_repr);
 }

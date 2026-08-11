@@ -180,6 +180,45 @@ TEST_CASE(float32_alternative_from_integer_input) {
     EXPECT_EQ(std::get<float>(out), 5.0F);
 }
 
+TEST_CASE(optional_wrapper_before_int) {
+    // A nullable wrapper is judged by its wrapped type: integer input lands
+    // on the exact int alternative, not the earlier optional<double>. Null
+    // still engages the wrapper itself.
+    using V = std::variant<std::optional<double>, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json("42", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 42);
+
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::optional<double>>(out), 3.14);
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<std::optional<double>>(out).has_value());
+}
+
+TEST_CASE(nested_variant_before_int) {
+    // A nested variant is as compatible as its alternatives: integer input
+    // skips variant<double, string> in the exact pass and lands on int.
+    using V = std::variant<std::variant<double, std::string>, int>;
+
+    V out{};
+    ASSERT_TRUE(from_json("42", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<int>(out), 42);
+
+    ASSERT_TRUE(from_json("3.14", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<double>(std::get<0>(out)), 3.14);
+
+    ASSERT_TRUE(from_json(R"("x")", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::string>(std::get<0>(out)), "x");
+}
+
 TEST_CASE(monostate_matches_null) {
     using V = std::variant<std::monostate, int, std::string>;
 

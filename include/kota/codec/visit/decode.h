@@ -600,7 +600,10 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     }
 }
 
-template <typename T>
+template <typename T, typename Format>
+constexpr bool kind_compatible(meta::type_kind src, bool widen);
+
+template <typename T, typename Format>
 constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
     using enum meta::type_kind;
     constexpr auto target = meta::kind_of<T>();
@@ -620,16 +623,33 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
         return src == string;
     else if constexpr(target == null)
         return src == null;
-    else if constexpr(target == optional || target == pointer)
-        return true;
-    else if constexpr(target == structure)
+    else if constexpr(target == optional || target == pointer) {
+        // Null engages the nullable wrapper itself; anything else is judged
+        // by the wrapped type, so a wrapper alternative never strict-claims
+        // input a later alternative matches exactly —
+        // variant<optional<double>, int> hands an integer to int.
+        if(src == null)
+            return true;
+        constexpr auto wrapped = [] {
+            if constexpr(target == optional)
+                return std::type_identity<typename T::value_type>{};
+            else
+                return std::type_identity<typename T::element_type>{};
+        }();
+        return kind_compatible<typename decltype(wrapped)::type, Format>(src, widen);
+    } else if constexpr(target == structure)
         return src == structure;
     else if constexpr(target == array || target == set)
         return src == array;
     else if constexpr(target == map)
         return src == structure;
-    else if constexpr(target == variant)
-        return true;
+    else if constexpr(is_specialization_of<std::variant, T>)
+        // A nested variant is exactly as compatible as its alternatives:
+        // aggregate them so it neither strict-claims input only a widening
+        // alternative accepts nor shadows a later exact match.
+        return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (kind_compatible<std::variant_alternative_t<Is, T>, Format>(src, widen) || ...);
+        }(std::make_index_sequence<std::variant_size_v<T>>{});
     else if constexpr(target == enumeration)
         return src == string || src == int64 || src == uint64;
     else
@@ -646,7 +666,7 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     if constexpr(std::is_same_v<resolved_t, meta::dynamic>) {
         return true;
     } else {
-        return kind_compatible_impl<resolved_t>(src, widen);
+        return kind_compatible_impl<resolved_t, Format>(src, widen);
     }
 }
 

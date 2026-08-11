@@ -2433,6 +2433,34 @@ TEST_CASE(schema_agrees_with_encoder_on_enums) {
     EXPECT_TRUE(schema.find(R"("c":{"enum":[0,1,2]})") != std::string::npos);
 }
 
+// ---------------------------------------------------------------------------
+// metadata config forwarding
+// ---------------------------------------------------------------------------
+
+struct camel_deny_config {
+    using field_rename = naming::rename_policy::lower_camel;
+    [[maybe_unused]] constexpr static bool deny_unknown_fields = true;
+};
+
+TEST_CASE(schema_agrees_with_encoder_on_config) {
+    // The schema must accept what to_json under the same config emits:
+    // renamed field names and the unknown-field policy.
+    const auto encoded = json::to_json<camel_deny_config>(casing_child{.first_value = 7});
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(*encoded, R"({"firstValue":7})");
+
+    const auto result = json::schema_string<casing_child, camel_deny_config>().value();
+    EXPECT_EQ(result,
+              R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+              R"("type":"object",)"
+              R"("properties":{)"
+              R"("firstValue":{"type":"integer",)"
+              R"("minimum":-2147483648,)"
+              R"("maximum":2147483647}},)"
+              R"("required":["firstValue"],)"
+              R"("additionalProperties":false})");
+}
+
 };  // TEST_SUITE(serde_json_schema)
 
 }  // namespace
