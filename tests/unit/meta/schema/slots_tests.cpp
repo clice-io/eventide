@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <type_traits>
 #include <variant>
 
@@ -69,11 +68,6 @@ TEST_CASE(simple_struct_slots) {
     STATIC_EXPECT_EQ(kind_of<slot1::raw_type>(), type_kind::string);
     STATIC_EXPECT_EQ(kind_of<slot2::raw_type>(), type_kind::float32);
 
-    // repr_type == raw_type for plain fields
-    EXPECT_TYPE_EQ(slot0::raw_type, slot0::repr_type);
-    EXPECT_TYPE_EQ(slot1::raw_type, slot1::repr_type);
-    EXPECT_TYPE_EQ(slot2::raw_type, slot2::repr_type);
-
     // attrs is empty tuple for plain fields
     EXPECT_TYPE_EQ(slot0::attrs, std::tuple<>);
 }
@@ -98,55 +92,33 @@ TEST_CASE(skip_and_flatten_slot_counts) {
     STATIC_EXPECT_EQ(kind_of<os3::raw_type>(), type_kind::int32);
 }
 
-TEST_CASE(behavior_repr_types) {
+TEST_CASE(behavior_slot_attrs) {
     using slots = virtual_schema<fx::BehaviorStruct>::slots;
 
-    // Field 0 (maybe): raw=optional<int>, encoded=optional<int>, has skip_if attr
+    // Field 0 (maybe): raw=optional<int>, has skip_if attr
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, std::optional<int>);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::optional<int>);
     STATIC_EXPECT_FALSE(std::is_same_v<slot0::attrs, std::tuple<>>);
 
-    // Field 1 (as_str): raw=int, encoded=std::string
+    // Field 1 (as_str): the slot keeps the raw type; the behavior transform
+    // lives in the field's type_info kind, not the slot.
     using slot1 = type_list_element_t<1, slots>;
     EXPECT_TYPE_EQ(slot1::raw_type, int);
-    EXPECT_TYPE_EQ(slot1::repr_type, std::string);
 
-    // Field 2 (plain): raw=encoded=float, empty attrs
+    // Field 2 (plain): empty attrs
     using slot2 = type_list_element_t<2, slots>;
     STATIC_EXPECT_EQ(kind_of<slot2::raw_type>(), type_kind::float32);
-    STATIC_EXPECT_EQ(kind_of<slot2::repr_type>(), type_kind::float32);
     EXPECT_TYPE_EQ(slot2::attrs, std::tuple<>);
 }
 
-TEST_CASE(enum_string_slot) {
-    using slots = virtual_schema<fx::EnumStringStruct>::slots;
-    using slot0 = type_list_element_t<0, slots>;
-
-    EXPECT_TYPE_EQ(slot0::raw_type, fx::Color);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::string_view);
-}
-
-TEST_CASE(with_repr_type_slot) {
-    using slots = virtual_schema<fx::WithReprStruct>::slots;
-    using slot0 = type_list_element_t<0, slots>;
-
-    EXPECT_TYPE_EQ(slot0::raw_type, int);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::string);
-}
-
-TEST_CASE(repr_type_slot) {
+TEST_CASE(repr_field_type_info) {
     namespace ns = ::kota_slots_repr_test;
     using slots = virtual_schema<ns::ReprStruct>::slots;
 
-    // repr substitutes the declared representation at the slot and type_info level.
+    // The slot keeps the raw field type; repr substitution shows up in the
+    // field's type_info (a dynamic repr degrades to type_kind::any).
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, ns::RepId);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::uint32_t);
-
-    // A dynamic repr degrades to type_kind::any.
-    using slot1 = type_list_element_t<1, slots>;
-    EXPECT_TYPE_EQ(slot1::repr_type, dynamic);
 
     constexpr auto& fields = virtual_schema<ns::ReprStruct>::fields;
     STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::uint32);
@@ -160,7 +132,6 @@ TEST_CASE(tagged_variant_slot) {
 
     // tagged<> is a schema attr that appears in behavior attrs filter
     EXPECT_TYPE_EQ(slot0::raw_type, std::variant<int, std::string>);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::variant<int, std::string>);
     // attrs is not empty (contains tagged<>)
     STATIC_EXPECT_FALSE(std::is_same_v<slot0::attrs, std::tuple<>>);
 }

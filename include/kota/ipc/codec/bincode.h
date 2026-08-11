@@ -7,7 +7,6 @@
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
 #include "kota/codec/bincode/bincode.h"
-#include "kota/codec/visit/common.h"
 
 namespace kota::codec {
 

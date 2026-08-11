@@ -1,11 +1,8 @@
 #pragma once
 
-#include <cstddef>
 #include <string>
 #include <string_view>
 #include <type_traits>
-
-#include "kota/support/naming.h"
 
 namespace kota::codec {
 
@@ -14,22 +11,6 @@ enum class enum_repr { Integer, String };
 
 /// How NaN/Infinity float values are serialized.
 enum class nan_repr { Passthrough, Null, String, Error };
-
-/// How chrono time_point values are serialized. No default — must be explicitly chosen.
-enum class chrono_repr { Iso8601, EpochSeconds, EpochMillis };
-
-/// What to do when a duplicate key is encountered during data-driven deserialization.
-enum class duplicate_keys { LastWins, Error };
-
-namespace spelling {
-
-using identity = kota::naming::rename_policy::identity;
-using snake_case = kota::naming::rename_policy::lower_snake;
-using camelCase = kota::naming::rename_policy::lower_camel;
-using PascalCase = kota::naming::rename_policy::upper_camel;
-using SCREAMING_SNAKE_CASE = kota::naming::rename_policy::upper_snake;
-
-}  // namespace spelling
 
 namespace detail {
 
@@ -62,32 +43,11 @@ struct default_config :
     /// NaN/Infinity handling.
     KOTA_CFG_FIELD_(nan_repr, kota::codec::nan_repr::Passthrough);
 
-    /// Duplicate key policy in data-driven deserialization.
-    KOTA_CFG_FIELD_(duplicate_keys, kota::codec::duplicate_keys::LastWins);
-
-    /// Serialize: skip nullable fields (optional/unique_ptr/shared_ptr) when null.
-    KOTA_CFG_FIELD_(skip_none_fields, false);
-
     /// Deserialize: reject unknown fields in data-driven mode.
     KOTA_CFG_FIELD_(deny_unknown_fields, false);
 
-    /// Deserialize: use T{} for missing fields instead of reporting error.
-    KOTA_CFG_FIELD_(default_for_missing, false);
-
-    /// Deserialize: check narrowing overflow on numeric conversions.
-    KOTA_CFG_FIELD_(strict_numeric, false);
-
     /// Generate error path tracking code (prepend_field/prepend_index).
     KOTA_CFG_FIELD_(detailed_error, true);
-
-    /// Recursion depth limit (0 = unlimited).
-    KOTA_CFG_FIELD_(max_depth, std::size_t(0));
-
-    /// Max string byte length on deserialization (0 = unlimited).
-    KOTA_CFG_FIELD_(max_string_length, std::size_t(0));
-
-    /// Max container element count on deserialization (0 = unlimited).
-    KOTA_CFG_FIELD_(max_container_size, std::size_t(0));
 };
 
 #undef KOTA_CFG_FIELD_

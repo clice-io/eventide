@@ -43,18 +43,18 @@ TEST_CASE(skip_if_and_as) {
     STATIC_EXPECT_FALSE(fields[2].has_behavior);
 }
 
-TEST_CASE(with_repr_type) {
+TEST_CASE(with_adapter_type_info) {
     constexpr auto& fields = virtual_schema<fx::WithReprStruct>::fields;
 
     // Adapter declares type = std::string
     STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::string);
     STATIC_EXPECT_TRUE(fields[0].has_behavior);
 
-    // Verify slot repr_type at compile time
+    // The slot keeps the raw field type; repr resolution is pinned by the
+    // field's type_info kind above.
     using slots = virtual_schema<fx::WithReprStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, int);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::string);
 
     // plain float is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::float32);
@@ -64,15 +64,15 @@ TEST_CASE(with_repr_type) {
 TEST_CASE(enum_string) {
     constexpr auto& fields = virtual_schema<fx::EnumStringStruct>::fields;
 
-    // enum_string encoded type is string_view -> kind is string
+    // enum_string encodes through a non-owning view
     STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::string);
     STATIC_EXPECT_TRUE(fields[0].has_behavior);
+    EXPECT_TYPE_EQ(resolved_repr_t<decltype(fx::EnumStringStruct::color_field)>, std::string_view);
 
     // Verify slot types
     using slots = virtual_schema<fx::EnumStringStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, fx::Color);
-    EXPECT_TYPE_EQ(slot0::repr_type, std::string_view);
 
     // plain int is unaffected
     STATIC_EXPECT_EQ(fields[1].type().kind, type_kind::int32);
@@ -83,12 +83,11 @@ TEST_CASE(tagged_variant) {
     constexpr auto& fields = virtual_schema<fx::TaggedVariantStruct>::fields;
     STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::variant);
 
-    // tagged<> should appear in slot behavior attrs
+    // The slot keeps the raw variant type; the tagged<> spec itself is
+    // asserted in slots_tests (tagged_variant_slot).
     using slots = virtual_schema<fx::TaggedVariantStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     EXPECT_TYPE_EQ(slot0::raw_type, std::variant<int, std::string>);
-    // repr_type stays as variant (tagged is a schema attr, not a type transform)
-    EXPECT_TYPE_EQ(slot0::repr_type, std::variant<int, std::string>);
 }
 
 TEST_CASE(multi_attr_combination) {
@@ -114,7 +113,7 @@ TEST_CASE(skip_if_combined_with_behavior) {
         STATIC_EXPECT_EQ(fields[0].type().kind, type_kind::string);
     }
 
-    // skip_if + with: both flags present, repr_type = string (from adapter)
+    // skip_if + with: both flags present, encoded type = string (from adapter)
     {
         constexpr auto& fields = virtual_schema<fx::SkipIfWithStruct>::fields;
         STATIC_EXPECT_TRUE(fields[0].has_skip_if);

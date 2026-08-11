@@ -5,11 +5,12 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
 #include "kota/meta/repr.h"
-#include "kota/codec/visit/common.h"
+#include "kota/meta/type_kind.h"
 #include "kota/codec/visit/context.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -83,11 +84,24 @@ inline auto variant_payload_voffset(std::size_t index) -> object_result_t<voffse
 
 namespace schema_detail {
 
-using codec::detail::remove_optional_t;
+template <typename T>
+struct remove_optional {
+    using type = T;
+};
+
+template <typename T>
+struct remove_optional<std::optional<T>> {
+    using type = T;
+};
+
+/// meta::field_type yields const-qualified types, so strip cv before matching.
+template <typename T>
+using remove_optional_t = typename remove_optional<std::remove_cv_t<T>>::type;
 
 template <typename T>
 constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || codec::int_like<T> || codec::uint_like<T> || codec::floating_like<T>;
+    std::same_as<T, bool> || meta::int_like<T> || meta::uint_like<T> || meta::floating_like<T> ||
+    meta::char_like<T> || std::same_as<T, std::byte>;
 
 template <typename T>
 struct schema_struct_trait;

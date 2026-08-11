@@ -702,13 +702,10 @@ inline bool
     return true;
 }
 
-template <typename Seq>
-using element_clean_t = std::remove_cvref_t<std::ranges::range_value_t<Seq>>;
-
 template <typename Container, typename Body>
 bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t& out_offset) {
     using enum proxy_detail::element_layout;
-    using element_t = element_clean_t<Container>;
+    using element_t = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
     using repr_t = proxy_detail::apply_repr_t<element_t>;
     constexpr auto layout = proxy_detail::element_layout_of<element_t>();
 

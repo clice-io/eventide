@@ -90,6 +90,47 @@ TEST_CASE(trivial_struct_field_serializes_as_inline_struct) {
     EXPECT_EQ(addr[&address::zip], 200000);
 }
 
+TEST_CASE(char_and_byte_fields_keep_struct_inline) {
+    // char and std::byte are scalars to the fbs backend (proxy.h is_scalar_v),
+    // so a trivial struct containing them stays an inline FlatBuffers struct
+    // instead of degrading to a table.
+    struct probe {
+        char tag;
+        std::byte flags;
+        std::int32_t count;
+
+        auto operator==(const probe&) const -> bool = default;
+    };
+
+    static_assert(fbs::is_schema_struct_v<probe>);
+
+    struct frame {
+        std::int32_t id;
+        probe p;
+
+        auto operator==(const frame&) const -> bool = default;
+    };
+
+    const frame input{
+        .id = 9,
+        .p = {.tag = 'k', .flags = std::byte{0x5A}, .count = 3},
+    };
+
+    auto encoded = to_flatbuffer(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = table_view<frame>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    const auto p = root[&frame::p];
+    EXPECT_EQ(p.tag, 'k');
+    EXPECT_TRUE(p.flags == std::byte{0x5A});
+    EXPECT_EQ(p.count, 3);
+
+    frame output{};
+    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    EXPECT_EQ(output, input);
+}
+
 TEST_CASE(non_trivial_nested_object_serializes_as_table_offset) {
     const person input{
         .id = 1,
