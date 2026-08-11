@@ -240,6 +240,44 @@ TEST_CASE(nested_widening_defers_to_outer_exact_match) {
     EXPECT_EQ(std::get<std::int8_t>(std::get<0>(out)), 7);
 }
 
+TEST_CASE(wrapped_nested_widening_defers_to_outer_exact_match) {
+    // The outer pass level flows through nullable wrappers: the double nested
+    // under optional must not widen ahead of the outer int64_t, while null
+    // still engages the wrapper itself.
+    using V = std::variant<std::optional<std::variant<std::int8_t, double>>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    ASSERT_TRUE(from_json("7", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_EQ(std::get<std::int8_t>(*std::get<0>(out)), 7);
+
+    ASSERT_TRUE(from_json("null", out).has_value());
+    EXPECT_EQ(out.index(), 0U);
+    EXPECT_FALSE(std::get<0>(out).has_value());
+}
+
+TEST_CASE(pointer_wrapped_nested_widening_defers_to_outer_exact_match) {
+    // Same pass propagation through a smart-pointer wrapper, and the widen
+    // pass still reaches the wrapped double when no exact match remains.
+    using nested_t = std::variant<std::int8_t, double>;
+    using V = std::variant<std::unique_ptr<nested_t>, std::int64_t>;
+
+    V out{};
+    ASSERT_TRUE(from_json("1000", out).has_value());
+    EXPECT_EQ(out.index(), 1U);
+    EXPECT_EQ(std::get<std::int64_t>(out), 1000);
+
+    using W = std::variant<std::unique_ptr<nested_t>, std::string>;
+    W wide{};
+    ASSERT_TRUE(from_json("1000", wide).has_value());
+    EXPECT_EQ(wide.index(), 0U);
+    EXPECT_EQ(std::get<double>(*std::get<0>(wide)), 1000.0);
+}
+
 TEST_CASE(nested_widening_still_reachable_in_widen_pass) {
     // With no outer exact alternative left, the widen pass re-probes the
     // nested variant and its double claims the value the int8_t rejected.

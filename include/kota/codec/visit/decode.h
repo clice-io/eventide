@@ -689,22 +689,51 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
 }
 
 /// True when this alternative decodes through decode_untagged_variant itself —
-/// no dispatch override, no repr, a bare std::variant — so probing it re-enters
-/// the pass structure below and the outer pass level must flow into it.
+/// no dispatch override, no repr, a bare std::variant possibly under nullable
+/// wrappers (which are transparent to non-null input) — so probing it
+/// re-enters the pass structure below and the outer pass level must flow into
+/// it.
 template <typename Config, typename Vis, typename T>
 constexpr bool probes_as_untagged_variant() {
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); })
         return false;
     else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>)
         return false;
+    else if constexpr(is_optional_v<T>)
+        return probes_as_untagged_variant<Config, Vis, typename T::value_type>();
+    else if constexpr(is_specialization_of<std::unique_ptr, T> ||
+                      is_specialization_of<std::shared_ptr, T>)
+        return probes_as_untagged_variant<Config, Vis, typename T::element_type>();
     else
         return is_specialization_of<std::variant, T>;
 }
 
+template <typename Config, typename Vis, typename... Ts>
+bool
+    untagged_variant_pass(Vis& vis, std::variant<Ts...>& out, meta::type_kind src_kind, bool widen);
+
+/// Probe one nested-variant alternative at the outer pass level. Null engages
+/// the outermost nullable wrapper as usual; any other input flows through the
+/// wrappers into the variant's own pass at the same widen level, so a wrapped
+/// nested variant cannot run its widening pass during an outer exact pass any
+/// more than a bare one can.
+template <typename Config, typename Vis, typename T>
+bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
+    if constexpr(is_specialization_of<std::variant, T>) {
+        return untagged_variant_pass<Config>(vis, out, src_kind, widen);
+    } else {
+        if(src_kind == meta::type_kind::null)
+            return decode_value<Config>(vis, out);
+        ensure_allocated(out);
+        return nested_alternative_pass<Config>(vis, *out, src_kind, widen);
+    }
+}
+
 /// One admission pass over an untagged variant's alternatives at the given
-/// widen level, each candidate probed through a fork. A bare nested variant
-/// re-enters this pass at the same level instead of running its full decode,
-/// so an outer exact pass never triggers inner widening: decoding 1000 into
+/// widen level, each candidate probed through a fork. A nested variant — bare
+/// or under nullable wrappers — re-enters this pass at the same level instead
+/// of running its full decode, so an outer exact pass never triggers inner
+/// widening: decoding 1000 into
 /// variant<variant<int8_t, double>, int64_t> must reach the outer int64_t
 /// before any pass hands 1000 to the inner double. The widen pass re-admits
 /// such a nested alternative even when it strict-claimed — its exact branch
@@ -728,10 +757,10 @@ bool untagged_variant_pass(Vis& vis,
                         return false;
                     return vis.try_read([&](auto& fork) -> bool {
                         if constexpr(nested) {
-                            return untagged_variant_pass<Config>(fork,
-                                                                 out.template emplace<Is>(),
-                                                                 src_kind,
-                                                                 widen);
+                            return nested_alternative_pass<Config>(fork,
+                                                                   out.template emplace<Is>(),
+                                                                   src_kind,
+                                                                   widen);
                         } else {
                             return construct_and_visit<Config>(fork, out, Is);
                         }
