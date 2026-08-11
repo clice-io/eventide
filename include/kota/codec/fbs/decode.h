@@ -30,10 +30,10 @@ using fbs::voffset_t;
 using fbs::uoffset_t;
 using fbs::verifier_t;
 
-struct field_reader;
+struct FieldReader;
 
 template <typename T>
-struct scalar_reader : detail::visitor_base {
+struct ScalarReader : detail::VisitorBase {
     T value;
 
     bool visit_bool(bool& out) {
@@ -74,7 +74,7 @@ struct scalar_reader : detail::visitor_base {
     }
 };
 
-struct string_reader : detail::visitor_base {
+struct StringReader : detail::VisitorBase {
     std::string_view value;
 
     template <typename T>
@@ -92,7 +92,7 @@ struct string_reader : detail::visitor_base {
     }
 };
 
-struct table_field_reader : detail::visitor_base {
+struct TableFieldReader : detail::VisitorBase {
     const Table* tbl;
     std::size_t idx = 0;
 
@@ -104,7 +104,7 @@ struct table_field_reader : detail::visitor_base {
 };
 
 template <typename E>
-struct vec_reader {
+struct VecReader {
     using element_t = std::remove_cvref_t<E>;
 
     // An element travels as its resolved representation (behavior attrs, then
@@ -127,7 +127,7 @@ struct vec_reader {
     bool visit_element(F&& reader);
 };
 
-struct map_reader {
+struct MapReader {
     const Vector<table_offset_t>* vec;
     uoffset_t idx = 0;
 
@@ -141,7 +141,7 @@ struct map_reader {
 
 // (table*, slot) reader: slot > 0 reads from that field slot,
 // slot == 0 means the table itself IS the value (e.g. vector element).
-struct field_reader : detail::visitor_base {
+struct FieldReader : detail::VisitorBase {
     const Table* tbl;
     voffset_t slot;
 
@@ -270,32 +270,32 @@ private:
 };
 
 template <typename Idx, typename F>
-bool table_field_reader::visit_field(Idx, std::string_view, F&& reader) {
+bool TableFieldReader::visit_field(Idx, std::string_view, F&& reader) {
     const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(Idx{});
-    field_reader fr{.tbl = tbl, .slot = vid};
+    FieldReader fr{.tbl = tbl, .slot = vid};
     return reader(fr);
 }
 
 template <typename F>
-bool table_field_reader::visit_element(F&& reader) {
+bool TableFieldReader::visit_element(F&& reader) {
     const voffset_t vid = detail::first_field + detail::field_step * static_cast<voffset_t>(idx);
-    field_reader fr{.tbl = tbl, .slot = vid};
+    FieldReader fr{.tbl = tbl, .slot = vid};
     ++idx;
     return reader(fr);
 }
 
-struct root_reader : field_reader {
-    root_reader(const Table* root) : field_reader{.tbl = root, .slot = detail::first_field} {}
+struct RootReader : FieldReader {
+    RootReader(const Table* root) : FieldReader{.tbl = root, .slot = detail::first_field} {}
 
     template <typename U, typename Body>
     bool visit_struct(U&, Body&& body) {
-        table_field_reader tfr{.tbl = tbl};
+        TableFieldReader tfr{.tbl = tbl};
         return body(tfr);
     }
 
     template <typename U, typename Body>
     bool visit_tuple(U&, Body&& body) {
-        table_field_reader tfr{.tbl = tbl};
+        TableFieldReader tfr{.tbl = tbl};
         return body(tfr);
     }
 
@@ -308,13 +308,13 @@ struct root_reader : field_reader {
         auto index = static_cast<std::size_t>(tag);
         const voffset_t payload_slot = static_cast<voffset_t>(
             detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
-        field_reader pv{.tbl = tbl, .slot = payload_slot};
+        FieldReader pv{.tbl = tbl, .slot = payload_slot};
         return body(index, pv);
     }
 };
 
 template <typename T, typename Body>
-bool field_reader::visit_struct(T& out, Body&& body) {
+bool FieldReader::visit_struct(T& out, Body&& body) {
     using V = std::remove_const_t<T>;
     if constexpr(std::same_as<V, std::monostate>) {
         return true;
@@ -327,45 +327,45 @@ bool field_reader::visit_struct(T& out, Body&& body) {
         const auto* child = follow_table();
         if(child == nullptr)
             return true;
-        table_field_reader tfr{.tbl = child};
+        TableFieldReader tfr{.tbl = child};
         return body(tfr);
     }
 }
 
 template <typename T, typename Body>
-bool field_reader::visit_seq([[maybe_unused]] T& out, Body&& body) {
+bool FieldReader::visit_seq([[maybe_unused]] T& out, Body&& body) {
     if(tbl == nullptr)
         return true;
     using V = std::remove_const_t<T>;
     using E = std::ranges::range_value_t<V>;
     const auto effective_slot = (slot == 0) ? detail::first_field : slot;
-    using vr_t = vec_reader<E>;
+    using vr_t = VecReader<E>;
     const auto* vec = tbl->GetPointer<typename vr_t::vec_ptr_t>(effective_slot);
     vr_t vr{.vec = vec};
     return body(vr);
 }
 
 template <typename T, typename Body>
-bool field_reader::visit_tuple(T&, Body&& body) {
+bool FieldReader::visit_tuple(T&, Body&& body) {
     const auto* child = follow_table();
     if(child == nullptr)
         return true;
-    table_field_reader tfr{.tbl = child};
+    TableFieldReader tfr{.tbl = child};
     return body(tfr);
 }
 
 template <typename T, typename Body>
-bool field_reader::visit_map(T&, Body&& body) {
+bool FieldReader::visit_map(T&, Body&& body) {
     if(tbl == nullptr)
         return true;
     const auto effective_slot = (slot == 0) ? detail::first_field : slot;
     const auto* vec = tbl->GetPointer<const Vector<table_offset_t>*>(effective_slot);
-    map_reader mr{.vec = vec};
+    MapReader mr{.vec = vec};
     return body(mr);
 }
 
 template <typename Body>
-bool field_reader::visit_variant(Body&& body) {
+bool FieldReader::visit_variant(Body&& body) {
     const auto* var_table = follow_table();
     if(var_table == nullptr) {
         return scoped_context<rich_error>::fail(rich_error("null variant table"));
@@ -374,24 +374,24 @@ bool field_reader::visit_variant(Body&& body) {
     auto index = static_cast<std::size_t>(tag);
     const voffset_t payload_slot = static_cast<voffset_t>(
         detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
-    field_reader pv{.tbl = var_table, .slot = payload_slot};
+    FieldReader pv{.tbl = var_table, .slot = payload_slot};
     return body(index, pv);
 }
 
 template <typename E>
 template <typename F>
-bool vec_reader<E>::visit_element(F&& reader) {
+bool VecReader<E>::visit_element(F&& reader) {
     using enum proxy_detail::element_layout;
 
     if constexpr(layout == boxed) {
         const auto* wrapper = vec->template GetAs<Table>(idx);
         ++idx;
-        field_reader fr{.tbl = wrapper, .slot = detail::first_field};
+        FieldReader fr{.tbl = wrapper, .slot = detail::first_field};
         return reader(fr);
     } else if constexpr(layout == scalar) {
         auto val = vec->Get(idx);
         ++idx;
-        scalar_reader<decltype(val)> sr{.value = val};
+        ScalarReader<decltype(val)> sr{.value = val};
         return reader(sr);
     } else if constexpr(layout == string) {
         const auto* text = vec->GetAsString(static_cast<uoffset_t>(idx));
@@ -400,38 +400,38 @@ bool vec_reader<E>::visit_element(F&& reader) {
         if(text != nullptr) {
             sv = std::string_view(text->data(), text->size());
         }
-        string_reader sr{.value = sv};
+        StringReader sr{.value = sv};
         return reader(sr);
     } else if constexpr(layout == inline_struct) {
         const auto* ptr = vec->Get(static_cast<uoffset_t>(idx));
         ++idx;
-        scalar_reader<repr_t> sr{.value = ptr ? *ptr : repr_t{}};
+        ScalarReader<repr_t> sr{.value = ptr ? *ptr : repr_t{}};
         return reader(sr);
     } else {
         const auto* child = vec->template GetAs<Table>(static_cast<uoffset_t>(idx));
         ++idx;
-        field_reader fr{.tbl = child, .slot = 0};
+        FieldReader fr{.tbl = child, .slot = 0};
         return reader(fr);
     }
 }
 
 template <typename KF, typename VF>
-bool map_reader::visit_entry(KF&& key_fn, VF&& val_fn) {
+bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
     const auto* entry = vec->template GetAs<Table>(idx);
     ++idx;
     if(entry == nullptr) {
         return scoped_context<rich_error>::fail(rich_error("null map entry table"));
     }
-    field_reader kr{.tbl = entry, .slot = detail::first_field};
+    FieldReader kr{.tbl = entry, .slot = detail::first_field};
     KOTA_CODEC_TRY(key_fn(kr));
-    field_reader vr{.tbl = entry, .slot = detail::first_field + detail::field_step};
+    FieldReader vr{.tbl = entry, .slot = detail::first_field + detail::field_step};
     return val_fn(vr);
 }
 
 }  // namespace decode_detail
 
 template <typename Config = void, typename T>
-auto from_flatbuffer(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
+auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
     if(buf.empty()) {
         return std::unexpected(rich_error("empty buffer"));
     }
@@ -456,7 +456,7 @@ auto from_flatbuffer(std::span<const std::byte> buf, T& out) -> std::expected<vo
     rich_error err;
     scoped_context<rich_error> guard(err);
 
-    decode_detail::root_reader vis(root);
+    decode_detail::RootReader vis(root);
     if(!decode_value<default_config<Config>>(vis, out)) {
         return std::unexpected(std::move(err));
     }
@@ -464,17 +464,17 @@ auto from_flatbuffer(std::span<const std::byte> buf, T& out) -> std::expected<vo
 }
 
 template <typename Config = void, typename T>
-auto from_flatbuffer(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
+auto from_bytes(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
     auto bytes =
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(buf.data()), buf.size());
-    return from_flatbuffer<Config>(bytes, out);
+    return from_bytes<Config>(bytes, out);
 }
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
-auto from_flatbuffer(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
+auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_flatbuffer<Config>(buf, value);
+    auto result = from_bytes<Config>(buf, value);
     if(!result) {
         return std::unexpected(result.error());
     }
@@ -483,9 +483,9 @@ auto from_flatbuffer(std::span<const std::uint8_t> buf) -> std::expected<T, rich
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
-auto from_flatbuffer(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
+auto from_bytes(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_flatbuffer<Config>(buf, value);
+    auto result = from_bytes<Config>(buf, value);
     if(!result) {
         return std::unexpected(result.error());
     }

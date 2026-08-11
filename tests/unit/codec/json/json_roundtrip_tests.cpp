@@ -17,11 +17,11 @@ struct json_adapter {
 
     template <typename T>
     static auto run(const T& input) -> std::expected<T, rich_error> {
-        auto encoded = json::to_json(input);
+        auto encoded = json::to_string(input);
         if(!encoded) {
             return std::unexpected(std::move(encoded).error());
         }
-        return json::parse<T>(*encoded);
+        return json::from_string<T>(*encoded);
     }
 };
 

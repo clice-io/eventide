@@ -55,7 +55,7 @@ namespace detail {
 /// Static visitor traits shared by the fbs visitors the codec dispatch
 /// drives: a binary backend whose output layout is computed statically (so
 /// meta::dynamic reprs are rejected at compile time).
-struct visitor_base {
+struct VisitorBase {
     using error_type = rich_error;
     using format = fbs::format;
     constexpr static bool human_readable = false;

@@ -74,7 +74,7 @@ TEST_CASE(int_uint_cross_sign_access) {
 }
 
 TEST_CASE(parse_and_view_basic_via_json) {
-    auto parsed = json::parse<dyn::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
+    auto parsed = json::from_string<dyn::Value>(R"({"a":1,"b":"x","arr":[1,2]})");
     ASSERT_TRUE(parsed.has_value());
 
     ASSERT_TRUE(parsed->is_object());
@@ -85,7 +85,7 @@ TEST_CASE(parse_and_view_basic_via_json) {
 }
 
 TEST_CASE(cursor_miss_describes_failure) {
-    auto parsed = json::parse<dyn::Value>(R"({"a":{"b":[10,20]}})");
+    auto parsed = json::from_string<dyn::Value>(R"({"a":{"b":[10,20]}})");
     ASSERT_TRUE(parsed.has_value());
 
     auto missing_key = (*parsed)["zzz"];
@@ -103,7 +103,7 @@ TEST_CASE(cursor_miss_describes_failure) {
 }
 
 TEST_CASE(cursor_chain_appends_path) {
-    auto parsed = json::parse<dyn::Value>(R"({"a":1})");
+    auto parsed = json::from_string<dyn::Value>(R"({"a":1})");
     ASSERT_TRUE(parsed.has_value());
 
     auto deep = (*parsed)["missing"]["x"][3]["y"];
@@ -113,7 +113,7 @@ TEST_CASE(cursor_chain_appends_path) {
 
 TEST_CASE(object_lookup_builds_lazy_index) {
     auto json_text = make_large_object_json(32);
-    auto parsed = json::parse<dyn::Value>(json_text);
+    auto parsed = json::from_string<dyn::Value>(json_text);
     ASSERT_TRUE(parsed.has_value());
 
     ASSERT_TRUE(parsed->is_object());
@@ -149,7 +149,7 @@ TEST_CASE(object_equality_is_order_insensitive) {
 }
 
 TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
-    auto parsed = json::parse<mixed_payload>(R"({"id":7,"extra":{"name":"alice","n":1}})");
+    auto parsed = json::from_string<mixed_payload>(R"({"id":7,"extra":{"name":"alice","n":1}})");
     ASSERT_TRUE(parsed.has_value());
     ASSERT_EQ(parsed->id, 7);
 
@@ -162,7 +162,7 @@ TEST_CASE(mixed_struct_roundtrip_with_dynamic_dom) {
     auto encoded = json::to_string(*parsed);
     ASSERT_TRUE(encoded.has_value());
 
-    auto reparsed = json::parse<mixed_payload>(*encoded);
+    auto reparsed = json::from_string<mixed_payload>(*encoded);
     ASSERT_TRUE(reparsed.has_value());
     EXPECT_EQ(reparsed->id, 7);
     ASSERT_TRUE(reparsed->extra.is_object());
@@ -176,7 +176,7 @@ TEST_CASE(deep_nested_array_via_json_roundtrip) {
     text.push_back('1');
     text.append(depth, ']');
 
-    auto parsed = json::parse<dyn::Value>(text);
+    auto parsed = json::from_string<dyn::Value>(text);
     ASSERT_TRUE(parsed.has_value());
 
     dyn::Cursor cursor = parsed->cursor();
@@ -402,7 +402,7 @@ TEST_CASE(object_mutation_during_iteration) {
 
 TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
     auto make_dom = []() -> dyn::Value {
-        auto parsed = json::parse<dyn::Value>(R"({"id":7,"name":"alice"})");
+        auto parsed = json::from_string<dyn::Value>(R"({"id":7,"name":"alice"})");
         return parsed ? std::move(*parsed) : dyn::Value{};
     };
 

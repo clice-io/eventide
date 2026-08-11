@@ -8,13 +8,13 @@
 namespace kota::ipc::lsp {
 namespace {
 
-using codec::json::parse;
+using codec::json::from_string;
 
 TEST_SUITE(language_protocol_enums) {
 
 TEST_CASE(unknown_string_enum_value) {
     auto content =
-        parse<protocol::MarkupContent, lsp_config>(R"({"kind":"asciidoc","value":"body"})");
+        from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"asciidoc","value":"body"})");
     ASSERT_TRUE(content.has_value());
     EXPECT_EQ(content->kind, "asciidoc");
     EXPECT_EQ(content->value, "body");
@@ -22,7 +22,7 @@ TEST_CASE(unknown_string_enum_value) {
 
 TEST_CASE(known_string_enum_value) {
     auto content =
-        parse<protocol::MarkupContent, lsp_config>(R"({"kind":"markdown","value":"body"})");
+        from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"markdown","value":"body"})");
     ASSERT_TRUE(content.has_value());
     EXPECT_EQ(content->kind, protocol::MarkupKind::markdown);
 }
@@ -39,7 +39,7 @@ TEST_CASE(string_enum_round_trip) {
 
 TEST_CASE(unknown_value_round_trip) {
     constexpr std::string_view payload = R"({"kind":"asciidoc","value":"body"})";
-    auto content = parse<protocol::MarkupContent, lsp_config>(payload);
+    auto content = from_string<protocol::MarkupContent, lsp_config>(payload);
     ASSERT_TRUE(content.has_value());
     auto serialized = codec::json::to_string<lsp_config>(*content);
     ASSERT_TRUE(serialized.has_value());
@@ -83,7 +83,7 @@ TEST_CASE(initialize_unknown_enum_values) {
         "trace": "compact"
     })";
 
-    auto params = parse<protocol::InitializeParams, lsp_config>(payload);
+    auto params = from_string<protocol::InitializeParams, lsp_config>(payload);
     ASSERT_TRUE(params.has_value());
 
     auto& init = params->lsp__initialize_params;

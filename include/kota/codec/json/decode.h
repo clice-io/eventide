@@ -392,7 +392,7 @@ struct Reader {
                 break;
             }
             auto fv = std::move(field).value();
-            map_key_reader<format> kr{key.value_unsafe()};
+            MapKeyReader<format> kr{key.value_unsafe()};
             Reader vr{fv, buf_base, buf_size};
             if(!cb(kr, vr)) {
                 ok = false;
@@ -437,7 +437,7 @@ bool Reader::try_read(F&& fn) {
 }
 
 template <typename Config = void, typename T>
-auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error> {
+auto from_string(std::string_view json, T& out) -> std::expected<void, rich_error> {
     padded_string padded(json);
     ondemand::Parser parser;
     ondemand::Document doc;
@@ -457,11 +457,11 @@ auto from_json(std::string_view json, T& out) -> std::expected<void, rich_error>
     return {};
 }
 
-template <typename Config = void, typename T>
+template <typename T, typename Config = void>
     requires std::default_initializable<T>
-auto from_json(std::string_view json) -> std::expected<T, rich_error> {
+auto from_string(std::string_view json) -> std::expected<T, rich_error> {
     T value{};
-    auto result = from_json<Config>(json, value);
+    auto result = from_string<Config>(json, value);
     if(!result) {
         return std::unexpected(std::move(result).error());
     }

@@ -329,7 +329,7 @@ TEST_CASE(deep_nesting) {
 
 TEST_CASE(round_trip_simple_object) {
     std::string_view input = R"({"a":1,"b":"two","c":true,"d":null})";
-    auto parsed = json::parse<dyn::Value>(input);
+    auto parsed = json::from_string<dyn::Value>(input);
     ASSERT_TRUE(parsed.has_value());
     auto output = json::to_string(*parsed);
     ASSERT_TRUE(output.has_value());
@@ -338,7 +338,7 @@ TEST_CASE(round_trip_simple_object) {
 
 TEST_CASE(round_trip_nested) {
     std::string_view input = R"({"x":{"y":[1,2,3]},"z":false})";
-    auto parsed = json::parse<dyn::Value>(input);
+    auto parsed = json::from_string<dyn::Value>(input);
     ASSERT_TRUE(parsed.has_value());
     auto output = json::to_string(*parsed);
     ASSERT_TRUE(output.has_value());
@@ -347,7 +347,7 @@ TEST_CASE(round_trip_nested) {
 
 TEST_CASE(round_trip_array_root) {
     std::string_view input = R"([1,"two",true,null,[3,4]])";
-    auto parsed = json::parse<dyn::Value>(input);
+    auto parsed = json::from_string<dyn::Value>(input);
     ASSERT_TRUE(parsed.has_value());
     auto output = json::to_string(*parsed);
     ASSERT_TRUE(output.has_value());

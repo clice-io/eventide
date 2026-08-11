@@ -12,8 +12,8 @@ namespace kota::codec {
 
 // Bincode serialization: write int64 directly (bincode only uses integer IDs)
 template <typename Config>
-struct serialize_visit<bincode::writer, kota::ipc::protocol::RequestID, Config> {
-    static bool visit(bincode::writer& vis, const kota::ipc::protocol::RequestID& id) {
+struct serialize_visit<bincode::Writer, kota::ipc::protocol::RequestID, Config> {
+    static bool visit(bincode::Writer& vis, const kota::ipc::protocol::RequestID& id) {
         auto* int_id = std::get_if<std::int64_t>(&id);
         if(!int_id) {
             return scoped_context<rich_error>::fail(
@@ -25,8 +25,8 @@ struct serialize_visit<bincode::writer, kota::ipc::protocol::RequestID, Config> 
 
 // Bincode deserialization: read int64 directly (visitor-based)
 template <typename Config>
-struct deserialize_visit<bincode::reader, kota::ipc::protocol::RequestID, Config> {
-    static bool visit(bincode::reader& vis, kota::ipc::protocol::RequestID& id) {
+struct deserialize_visit<bincode::Reader, kota::ipc::protocol::RequestID, Config> {
+    static bool visit(bincode::Reader& vis, kota::ipc::protocol::RequestID& id) {
         std::int64_t v = 0;
         if(!decode_value<Config>(vis, v)) {
             return false;

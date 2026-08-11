@@ -18,10 +18,10 @@
 
 namespace kota::codec::bincode {
 
-struct reader;
+struct Reader;
 
-struct seq_access {
-    reader& r;
+struct SeqAccess {
+    Reader& r;
     std::uint64_t count;
     std::uint64_t idx = 0;
 
@@ -31,8 +31,8 @@ struct seq_access {
     bool visit_element(F&& f);
 };
 
-struct map_access {
-    reader& r;
+struct MapAccess {
+    Reader& r;
     std::uint64_t count;
     std::uint64_t idx = 0;
 
@@ -42,7 +42,7 @@ struct map_access {
     bool visit_entry(KF&& key_reader, VF&& value_reader);
 };
 
-struct reader {
+struct Reader {
     std::span<const std::byte> data;
     std::size_t pos = 0;
     using error_type = rich_error;
@@ -190,7 +190,7 @@ struct reader {
     bool visit_seq(T&, Body&& body) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto count = read_le<std::uint64_t>();
-        seq_access ctx{*this, count};
+        SeqAccess ctx{*this, count};
         return body(ctx);
     }
 
@@ -208,7 +208,7 @@ struct reader {
     bool visit_map(T&, Body&& body) {
         KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
         auto count = read_le<std::uint64_t>();
-        map_access ctx{*this, count};
+        MapAccess ctx{*this, count};
         return body(ctx);
     }
 
@@ -226,23 +226,23 @@ struct reader {
     }
 };
 
-inline bool seq_access::has_element() {
+inline bool SeqAccess::has_element() {
     return idx < count;
 }
 
 template <typename F>
-bool seq_access::visit_element(F&& f) {
+bool SeqAccess::visit_element(F&& f) {
     KOTA_CODEC_TRY(f(r));
     ++idx;
     return true;
 }
 
-inline bool map_access::has_entry() {
+inline bool MapAccess::has_entry() {
     return idx < count;
 }
 
 template <typename KF, typename VF>
-bool map_access::visit_entry(KF&& key_reader, VF&& value_reader) {
+bool MapAccess::visit_entry(KF&& key_reader, VF&& value_reader) {
     KOTA_CODEC_TRY(key_reader(r));
     KOTA_CODEC_TRY(value_reader(r));
     ++idx;
@@ -253,7 +253,7 @@ template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, bincode::error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
-    reader r{data};
+    Reader r{data};
     if(!decode_value<default_config<Config>>(r, out)) {
         return std::unexpected(std::move(err));
     }
@@ -299,8 +299,8 @@ namespace kota::codec {
 // std::monostate is null_like, but in bincode variant payloads it should read nothing
 // (the old Deserializer skipped monostate payloads entirely).
 template <typename Config>
-struct deserialize_visit<bincode::reader, std::monostate, Config> {
-    static bool visit(bincode::reader& /*vis*/, std::monostate& /*value*/) {
+struct deserialize_visit<bincode::Reader, std::monostate, Config> {
+    static bool visit(bincode::Reader& /*vis*/, std::monostate& /*value*/) {
         return true;
     }
 };

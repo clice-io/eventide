@@ -20,7 +20,7 @@ namespace kota::codec {
 
 /// Decodes a map key from its string form.
 template <typename Format = void>
-struct map_key_reader {
+struct MapKeyReader {
     std::string_view str;
     using error_type = rich_error;
     using format = Format;
@@ -61,7 +61,7 @@ private:
 /// Encodes a map key into its string form, handing the result to Sink::emit
 /// as a string_view that is only valid for the duration of that call.
 template <typename Sink, typename Format = void>
-struct map_key_writer {
+struct MapKeyWriter {
     Sink sink;
     using error_type = rich_error;
     using format = Format;
@@ -86,7 +86,7 @@ struct map_key_writer {
 };
 
 /// Sink for backends whose native map type is keyed by std::string.
-struct string_key_sink {
+struct StringKeySink {
     std::string& output;
 
     void emit(std::string_view key) {

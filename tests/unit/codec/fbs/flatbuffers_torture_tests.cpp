@@ -9,14 +9,14 @@ namespace kota::codec {
 namespace {
 
 auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     if(!encoded) {
         return std::unexpected(std::move(encoded.error()));
     }
     if(encoded->empty()) {
         return std::unexpected(rich_error("empty flatbuffer"));
     }
-    return fbs::from_flatbuffer<T>(*encoded);
+    return fbs::from_bytes<T>(*encoded);
 };
 
 TEST_SUITE(serde_flatbuffers_standard) {

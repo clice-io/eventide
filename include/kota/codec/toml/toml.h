@@ -1,49 +1,9 @@
 #pragma once
 
-#include <concepts>
-#include <expected>
-#include <sstream>
-#include <string>
-#include <string_view>
-#include <type_traits>
-#include <utility>
-
 #include "kota/codec/macro.h"
 #include "kota/codec/toml/decode.h"
 #include "kota/codec/toml/encode.h"
 #include "kota/codec/toml/type.h"
-
-namespace kota::codec::toml {
-
-template <typename T>
-auto parse(std::string_view text, T& value) -> std::expected<void, rich_error> {
-    return from_toml(text, value);
-}
-
-template <typename T>
-    requires std::default_initializable<T>
-auto parse(std::string_view text) -> std::expected<T, rich_error> {
-    T value{};
-    auto result = from_toml(text, value);
-    if(!result) {
-        return std::unexpected(std::move(result).error());
-    }
-    return value;
-}
-
-template <typename T>
-auto to_string(const T& value) -> std::expected<std::string, error> {
-    auto table = to_toml(value);
-    if(!table) {
-        return std::unexpected(table.error());
-    }
-
-    std::ostringstream out;
-    out << *table;
-    return out.str();
-}
-
-}  // namespace kota::codec::toml
 
 namespace kota::codec {
 

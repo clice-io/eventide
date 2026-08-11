@@ -28,7 +28,7 @@ namespace {
 using fbs::array_view;
 using fbs::map_view;
 using fbs::table_view;
-using fbs::to_flatbuffer;
+using fbs::to_bytes;
 using fbs::tuple_view;
 using fbs::variant_view;
 
@@ -63,7 +63,7 @@ TEST_CASE(trivial_struct_field_serializes_as_inline_struct) {
         .addr = {.city = "sh", .zip = 200000},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
     ASSERT_TRUE(::flatbuffers::BufferHasIdentifier(encoded->data(), "EVTO"));
 
@@ -116,7 +116,7 @@ TEST_CASE(char_and_byte_fields_keep_struct_inline) {
         .p = {.tag = 'k', .flags = std::byte{0x5A}, .count = 3},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<frame>::from_bytes(*encoded);
@@ -127,7 +127,7 @@ TEST_CASE(char_and_byte_fields_keep_struct_inline) {
     EXPECT_EQ(p.count, 3);
 
     frame output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 }
 
@@ -140,7 +140,7 @@ TEST_CASE(non_trivial_nested_object_serializes_as_table_offset) {
         .addr = {.city = "tokyo", .zip = 100},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<person>::from_bytes(*encoded);
@@ -158,7 +158,7 @@ TEST_CASE(skip_attr_keeps_field_index_layout) {
     input.internal = 999;
     input.c = 5;
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_skip>::from_bytes(*encoded);
@@ -178,7 +178,7 @@ TEST_CASE(vector_of_trivial_struct_serializes_as_struct_vector) {
         .points = {{.x = 1, .y = 2}, {.x = 3, .y = 4}},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<route>::from_bytes(*encoded);
@@ -199,7 +199,7 @@ TEST_CASE(vector_of_trivial_struct_serializes_as_struct_vector) {
 TEST_CASE(root_vector_preserves_scalar_vector_encoding) {
     const std::vector<std::int32_t> input{3, 5, 8};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     const auto* root = ::flatbuffers::GetRoot<::flatbuffers::Table>(encoded->data());
@@ -342,7 +342,7 @@ struct deeply_nested_struct {
 TEST_CASE(optional_scalar_field_present) {
     with_optional_scalar input{.value = 42};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_optional_scalar>::from_bytes(*encoded);
@@ -354,7 +354,7 @@ TEST_CASE(optional_scalar_field_present) {
 TEST_CASE(optional_scalar_field_absent) {
     with_optional_scalar input{.value = std::nullopt};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_optional_scalar>::from_bytes(*encoded);
@@ -368,7 +368,7 @@ TEST_CASE(optional_string_field) {
     {
         with_optional_string input{.value = "hello"};
 
-        auto encoded = to_flatbuffer(input);
+        auto encoded = to_bytes(input);
         ASSERT_TRUE(encoded.has_value());
 
         auto root = table_view<with_optional_string>::from_bytes(*encoded);
@@ -381,7 +381,7 @@ TEST_CASE(optional_string_field) {
     {
         with_optional_string input{.value = std::nullopt};
 
-        auto encoded = to_flatbuffer(input);
+        auto encoded = to_bytes(input);
         ASSERT_TRUE(encoded.has_value());
 
         auto root = table_view<with_optional_string>::from_bytes(*encoded);
@@ -398,7 +398,7 @@ TEST_CASE(optional_struct_field) {
             .addr = address{.city = "paris", .zip = 75000}
         };
 
-        auto encoded = to_flatbuffer(input);
+        auto encoded = to_bytes(input);
         ASSERT_TRUE(encoded.has_value());
 
         auto root = table_view<with_optional_struct>::from_bytes(*encoded);
@@ -415,7 +415,7 @@ TEST_CASE(optional_struct_field) {
     {
         with_optional_struct input{.addr = std::nullopt};
 
-        auto encoded = to_flatbuffer(input);
+        auto encoded = to_bytes(input);
         ASSERT_TRUE(encoded.has_value());
 
         auto root = table_view<with_optional_struct>::from_bytes(*encoded);
@@ -431,7 +431,7 @@ TEST_CASE(unique_ptr_field_present) {
     with_unique_ptr input{};
     input.addr = std::make_unique<address>(address{.city = "berlin", .zip = 10115});
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_unique_ptr>::from_bytes(*encoded);
@@ -448,7 +448,7 @@ TEST_CASE(unique_ptr_field_null) {
     with_unique_ptr input{};
     input.addr = nullptr;
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_unique_ptr>::from_bytes(*encoded);
@@ -465,7 +465,7 @@ TEST_CASE(shared_ptr_field) {
         with_shared_ptr input{};
         input.addr = std::make_shared<address>(address{.city = "london", .zip = 20000});
 
-        auto encoded = to_flatbuffer(input);
+        auto encoded = to_bytes(input);
         ASSERT_TRUE(encoded.has_value());
 
         auto root = table_view<with_shared_ptr>::from_bytes(*encoded);
@@ -483,7 +483,7 @@ TEST_CASE(shared_ptr_field) {
         with_shared_ptr input{};
         input.addr = nullptr;
 
-        auto encoded = to_flatbuffer(input);
+        auto encoded = to_bytes(input);
         ASSERT_TRUE(encoded.has_value());
 
         auto root = table_view<with_shared_ptr>::from_bytes(*encoded);
@@ -497,7 +497,7 @@ TEST_CASE(shared_ptr_field) {
 TEST_CASE(variant_scalar_alternative) {
     with_variant input{.value = std::int32_t{99}};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_variant>::from_bytes(*encoded);
@@ -512,7 +512,7 @@ TEST_CASE(variant_scalar_alternative) {
 TEST_CASE(variant_string_alternative) {
     with_variant input{.value = std::string("kotatsu")};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_variant>::from_bytes(*encoded);
@@ -529,7 +529,7 @@ TEST_CASE(variant_struct_alternative) {
         .value = address{.city = "rome", .zip = 100}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_variant_struct>::from_bytes(*encoded);
@@ -552,11 +552,11 @@ TEST_CASE(vector_of_variants) {
         .items = {std::int32_t{7}, std::string("kotatsu"), std::int32_t{9}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_vector_of_variants output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output.items, input.items);
 
     auto root = table_view<with_vector_of_variants>::from_bytes(*encoded);
@@ -584,7 +584,7 @@ TEST_CASE(pair_field) {
         .value = {42, "hello"}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_pair>::from_bytes(*encoded);
@@ -601,7 +601,7 @@ TEST_CASE(tuple_field) {
         .value = {7, "world", 3.14}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_tuple>::from_bytes(*encoded);
@@ -619,7 +619,7 @@ TEST_CASE(pair_with_struct_value) {
         .value = {"key", address{.city = "nyc", .zip = 10001}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_pair_struct_value>::from_bytes(*encoded);
@@ -640,7 +640,7 @@ TEST_CASE(vector_of_pairs) {
         .items = {{1, "a"}, {2, "b"}, {3, "c"}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_vector_of_pairs>::from_bytes(*encoded);
@@ -666,7 +666,7 @@ TEST_CASE(map_string_to_int) {
         .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_int>::from_bytes(*encoded);
@@ -696,7 +696,7 @@ TEST_CASE(map_int_to_string) {
         .data = {{10, "ten"}, {20, "twenty"}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_int_string>::from_bytes(*encoded);
@@ -721,7 +721,7 @@ TEST_CASE(map_string_to_struct) {
                  {"work", address{.city = "la", .zip = 90001}}},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_struct>::from_bytes(*encoded);
@@ -750,7 +750,7 @@ TEST_CASE(map_string_to_struct) {
 TEST_CASE(empty_map) {
     with_empty_map input{.data = {}};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_empty_map>::from_bytes(*encoded);
@@ -766,7 +766,7 @@ TEST_CASE(map_key_lookup_string_key) {
         .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_int>::from_bytes(*encoded);
@@ -790,7 +790,7 @@ TEST_CASE(map_key_lookup_int_key) {
         .data = {{-7, "minus"}, {2, "two"}, {10, "ten"}, {30, "thirty"}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_int_string>::from_bytes(*encoded);
@@ -815,7 +815,7 @@ TEST_CASE(map_key_lookup_enum_key) {
         .data = {{color::blue, 3}, {color::red, 1}, {color::green, 2}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_enum_map>::from_bytes(*encoded);
@@ -837,11 +837,11 @@ TEST_CASE(vector_of_long_double_roundtrips) {
         .scale = 3.5L,
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_long_doubles output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     ASSERT_EQ(output.samples.size(), 3U);
     EXPECT_EQ(output.samples[0], 1.5L);
     EXPECT_EQ(output.samples[1], -2.25L);
@@ -864,7 +864,7 @@ TEST_CASE(map_key_lookup_uint64_key) {
         .data = {{2U, 1}, {0x8000000000000001ULL, 2}, {42U, 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_u64_map>::from_bytes(*encoded);
@@ -878,7 +878,7 @@ TEST_CASE(map_key_lookup_uint64_key) {
 }
 
 TEST_CASE(vector_of_trivial_struct_roundtrips_eagerly) {
-    // Inline-struct elements decode through scalar_reader::visit_struct; the
+    // Inline-struct elements decode through ScalarReader::visit_struct; the
     // list container also exercises the element-wise collector on encode (no
     // contiguous fast path).
     struct route {
@@ -891,11 +891,11 @@ TEST_CASE(vector_of_trivial_struct_roundtrips_eagerly) {
         .waypoints = {{.x = 5, .y = 6}, {.x = 7, .y = 8}},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     route output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     ASSERT_EQ(output.points.size(), 2U);
     EXPECT_EQ(output.points[1].x, 3);
     EXPECT_EQ(output.points[1].y, 4);
@@ -909,7 +909,7 @@ TEST_CASE(map_find_existing) {
         .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_int>::from_bytes(*encoded);
@@ -929,7 +929,7 @@ TEST_CASE(map_find_missing) {
         .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_int>::from_bytes(*encoded);
@@ -947,7 +947,7 @@ TEST_CASE(map_contains) {
         .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_int>::from_bytes(*encoded);
@@ -967,7 +967,7 @@ TEST_CASE(map_transparent_lookup) {
         .data = {{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_map_string_int>::from_bytes(*encoded);
@@ -998,7 +998,7 @@ TEST_CASE(map_transparent_lookup) {
 TEST_CASE(enum_field) {
     with_enum input{.c = color::blue};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_enum>::from_bytes(*encoded);
@@ -1009,7 +1009,7 @@ TEST_CASE(enum_field) {
 TEST_CASE(bool_field) {
     with_bool input{.flag = true};
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_bool>::from_bytes(*encoded);
@@ -1022,7 +1022,7 @@ TEST_CASE(vector_of_strings) {
         .items = {"hello", "world", "test"}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_vector_strings>::from_bytes(*encoded);
@@ -1041,7 +1041,7 @@ TEST_CASE(vector_of_nested_tables) {
         .items = {address{.city = "a", .zip = 1}, address{.city = "b", .zip = 2}},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<with_vector_tables>::from_bytes(*encoded);
@@ -1067,7 +1067,7 @@ TEST_CASE(deeply_nested) {
         .nested = {.inner = {.city = "deep", .zip = 999}, .nums = {10, 20, 30}},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<deeply_nested_struct>::from_bytes(*encoded);
@@ -1097,11 +1097,11 @@ TEST_CASE(vector_of_byte_blobs) {
         .blobs = {{std::byte{0xAA}, std::byte{0xBB}}, {}, {std::byte{0x01}}},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_byte_blobs output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 
     auto root = table_view<with_byte_blobs>::from_bytes(*encoded);
@@ -1126,11 +1126,11 @@ TEST_CASE(vector_of_optional_scalars) {
         .vals = {5, std::nullopt, 9}
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_optional_elements output{};
-    ASSERT_TRUE(fbs::from_flatbuffer(*encoded, output).has_value());
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
     EXPECT_EQ(output, input);
 
     auto root = table_view<with_optional_elements>::from_bytes(*encoded);
@@ -1159,7 +1159,7 @@ TEST_CASE(array_view_out_of_bounds) {
         .addr = {.city = "x", .zip = 0},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     auto root = table_view<person>::from_bytes(*encoded);
@@ -1183,33 +1183,33 @@ TEST_CASE(roundtrip_nested_struct) {
         .addr = {.city = "sh", .zip = 200000},
     };
 
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     person output{};
-    auto status = fbs::from_flatbuffer(*encoded, output);
+    auto status = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
 }
 
 TEST_CASE(roundtrip_root_vector_and_variant) {
     const std::vector<std::int32_t> input_vec{3, 5, 8};
-    auto encoded_vec = to_flatbuffer(input_vec);
+    auto encoded_vec = to_bytes(input_vec);
     ASSERT_TRUE(encoded_vec.has_value());
 
     std::vector<std::int32_t> output_vec{};
-    auto vec_status = fbs::from_flatbuffer(*encoded_vec, output_vec);
+    auto vec_status = fbs::from_bytes(*encoded_vec, output_vec);
     ASSERT_TRUE(vec_status.has_value());
     EXPECT_EQ(output_vec, input_vec);
 
     using sample_variant = std::variant<std::int32_t, std::string>;
     const sample_variant input_var = std::string("kotatsu");
 
-    auto encoded_var = to_flatbuffer(input_var);
+    auto encoded_var = to_bytes(input_var);
     ASSERT_TRUE(encoded_var.has_value());
 
     sample_variant output_var = std::int32_t{0};
-    auto var_status = fbs::from_flatbuffer(*encoded_var, output_var);
+    auto var_status = fbs::from_bytes(*encoded_var, output_var);
     ASSERT_TRUE(var_status.has_value());
     EXPECT_EQ(output_var, input_var);
 }

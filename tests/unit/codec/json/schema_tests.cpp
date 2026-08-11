@@ -725,7 +725,7 @@ TEST_CASE(root_enum_value_outside_name_scan) {
     // fine as a number — the schema must not reject it, so the numeric form
     // is the underlying integer's range rather than a reflected value list.
     enum class big_u16 : std::uint16_t { a = 0, c = 65535 };
-    const auto encoded = json::to_json(big_u16::c);
+    const auto encoded = json::to_string(big_u16::c);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, "65535");
 
@@ -2445,14 +2445,14 @@ TEST_CASE(unnamed_enum_value_rejected_under_string_config) {
     // A representable value without a reflected member name has no string
     // spelling: the encoder rejects it, so the schema's enum list of
     // reflected names stays exhaustive.
-    const auto encoded = json::to_json<string_enum_config>(static_cast<color_i8>(42));
+    const auto encoded = json::to_string<string_enum_config>(static_cast<color_i8>(42));
     EXPECT_FALSE(encoded.has_value());
 }
 
 TEST_CASE(schema_agrees_with_encoder_on_enums) {
     // Under the default config the encoder emits the numeric value, so the
     // schema constrains the same numeric form.
-    const auto encoded = json::to_json(with_enum{.c = color_i8::green, .name = "g"});
+    const auto encoded = json::to_string(with_enum{.c = color_i8::green, .name = "g"});
     ASSERT_TRUE(encoded.has_value());
     EXPECT_TRUE(encoded->find(R"("c":1)") != std::string::npos);
 
@@ -2469,7 +2469,7 @@ struct renamed_enum_config {
 TEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
     // The schema lists the spellings the encoder writes under the same
     // config, not the raw reflected names.
-    const auto encoded = json::to_json<renamed_enum_config>(color_i8::green);
+    const auto encoded = json::to_string<renamed_enum_config>(color_i8::green);
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"("GREEN")");
 
@@ -2494,7 +2494,7 @@ struct nan_string_config {
 TEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
     // The default Passthrough forwards the non-finite value to the writer,
     // whose only JSON spelling for it is null — the schema must admit that.
-    const auto encoded = json::to_json(std::numeric_limits<double>::quiet_NaN());
+    const auto encoded = json::to_string(std::numeric_limits<double>::quiet_NaN());
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, "null");
 
@@ -2505,7 +2505,7 @@ TEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
 }
 
 TEST_CASE(schema_agrees_with_encoder_on_nan_null) {
-    const auto encoded = json::to_json<nan_null_config>(std::numeric_limits<double>::quiet_NaN());
+    const auto encoded = json::to_string<nan_null_config>(std::numeric_limits<double>::quiet_NaN());
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, "null");
 
@@ -2516,7 +2516,7 @@ TEST_CASE(schema_agrees_with_encoder_on_nan_null) {
 }
 
 TEST_CASE(schema_agrees_with_encoder_on_nan_string) {
-    const auto encoded = json::to_json<nan_string_config>(std::numeric_limits<float>::infinity());
+    const auto encoded = json::to_string<nan_string_config>(std::numeric_limits<float>::infinity());
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"("Infinity")");
 
@@ -2537,18 +2537,18 @@ TEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
     // spells it, Error rejects it — never a null the schema does not admit.
     constexpr long double big = std::numeric_limits<long double>::max();
     if constexpr(big > static_cast<long double>(std::numeric_limits<double>::max())) {
-        const auto spelled = json::to_json<nan_string_config>(big);
+        const auto spelled = json::to_string<nan_string_config>(big);
         ASSERT_TRUE(spelled.has_value());
         EXPECT_EQ(*spelled, R"("Infinity")");
 
-        const auto negative = json::to_json<nan_string_config>(-big);
+        const auto negative = json::to_string<nan_string_config>(-big);
         ASSERT_TRUE(negative.has_value());
         EXPECT_EQ(*negative, R"("-Infinity")");
 
-        EXPECT_FALSE(json::to_json<nan_error_config>(big).has_value());
+        EXPECT_FALSE(json::to_string<nan_error_config>(big).has_value());
     } else {
         // long double is double: the value stays a finite number.
-        EXPECT_TRUE(json::to_json<nan_error_config>(big).has_value());
+        EXPECT_TRUE(json::to_string<nan_error_config>(big).has_value());
     }
 }
 
@@ -2563,7 +2563,7 @@ struct non_hr_config {
 TEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
     // A non-human-readable config bypasses tagging and encodes the underlying
     // variant, so the schema describes the untagged alternatives.
-    const auto encoded = json::to_json<non_hr_config>(root_external_variant{7});
+    const auto encoded = json::to_string<non_hr_config>(root_external_variant{7});
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, "7");
 
@@ -2606,9 +2606,9 @@ struct camel_deny_config {
 };
 
 TEST_CASE(schema_agrees_with_encoder_on_config) {
-    // The schema must accept what to_json under the same config emits:
+    // The schema must accept what to_string under the same config emits:
     // renamed field names and the unknown-field policy.
-    const auto encoded = json::to_json<camel_deny_config>(casing_child{.first_value = 7});
+    const auto encoded = json::to_string<camel_deny_config>(casing_child{.first_value = 7});
     ASSERT_TRUE(encoded.has_value());
     EXPECT_EQ(*encoded, R"({"firstValue":7})");
 

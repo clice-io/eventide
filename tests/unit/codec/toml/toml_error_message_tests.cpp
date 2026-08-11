@@ -16,8 +16,8 @@ using namespace meta;
 
 namespace {
 
-using toml::from_toml;
-using toml::parse;
+using toml::from_string;
+using toml::from_string;
 
 using person = meta::fixtures::Person;
 using with_scores = meta::fixtures::WithScores;
@@ -37,13 +37,13 @@ using enum_string_color = annotate<enum_string_color_tag>::type<color>;
 TEST_SUITE(serde_toml_error_message) {
 
 TEST_CASE(map_key_parse_error) {
-    auto result = parse<std::map<int, int>>("abc = 1");
+    auto result = from_string<std::map<int, int>>("abc = 1");
     ASSERT_FALSE(result.has_value());
     EXPECT_TRUE(result.error().message.find("cannot parse map key 'abc'") != std::string::npos);
 }
 
 TEST_CASE(missing_required_field) {
-    auto result = parse<person>(R"(
+    auto result = from_string<person>(R"(
 age = 25
 [addr]
 city = "NY"
@@ -55,7 +55,7 @@ zip = 10001
 }
 
 TEST_CASE(unknown_field_denied) {
-    auto result = parse<strict_payload>(R"(
+    auto result = from_string<strict_payload>(R"(
 id = 1
 name = "ok"
 extra = true
@@ -73,7 +73,7 @@ TEST_CASE(syntax_error_has_location) {
     // Unterminated string — a tokenizer-level error, reported by parse_table
     // through toml++'s parse_result (toml++ is pinned to TOML_EXCEPTIONS=0,
     // see kota/codec/toml/type.h).
-    auto result = parse<person>(R"(
+    auto result = from_string<person>(R"(
 name = "alice
 age = 30
 )");
@@ -86,7 +86,7 @@ age = 30
 }
 
 TEST_CASE(nested_field_error_path) {
-    auto result = parse<person>(R"(
+    auto result = from_string<person>(R"(
 name = "alice"
 age = 30
 [addr]
@@ -104,7 +104,7 @@ TEST_CASE(sequence_element_error_path) {
     // TOML does not allow mixed-type arrays, so we use a struct with a vector
     // field and provide a table array where an element has the wrong type.
     // Instead, we use a TOML array with string elements for an int vector field.
-    auto result = parse<with_scores>(R"(
+    auto result = from_string<with_scores>(R"(
 name = "bob"
 scores = ["bad"]
 )");
@@ -117,14 +117,14 @@ TEST_CASE(enum_string_error_message) {
     enum_string_color parsed = color::red;
     auto table = toml::parse_table(R"(__value = "purple")");
     ASSERT_TRUE(table.has_value());
-    auto status = toml::from_toml_table(*table, parsed);
+    auto status = toml::from_toml(*table, parsed);
     ASSERT_FALSE(status.has_value());
     auto& e = status.error();
     EXPECT_TRUE(e.message.find("purple") != std::string::npos);
 }
 
 TEST_CASE(error_has_location) {
-    auto result = parse<person>(R"(
+    auto result = from_string<person>(R"(
 name = "alice"
 age = "not_a_number"
 )");
@@ -137,7 +137,7 @@ age = "not_a_number"
 }
 
 TEST_CASE(to_string_combines_all) {
-    auto result = parse<person>(R"(
+    auto result = from_string<person>(R"(
 name = "alice"
 age = 30
 [addr]

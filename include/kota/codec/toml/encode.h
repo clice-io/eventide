@@ -5,6 +5,7 @@
 #include <expected>
 #include <iterator>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -222,7 +223,7 @@ bool ArraySeqWriter::visit_element(F&& writer) {
 template <typename KF, typename VF>
 bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    map_key_writer<string_key_sink, format> kw{{key}};
+    MapKeyWriter<StringKeySink, format> kw{{key}};
     KOTA_CODEC_TRY(key_fn(kw));
     TableValueWriter vw{
         {tbl, std::move(key)}
@@ -282,6 +283,18 @@ auto to_toml(const T& value) -> std::expected<Table, toml::error> {
         }
         return root;
     }
+}
+
+template <typename Config = void, typename T>
+auto to_string(const T& value) -> std::expected<std::string, error> {
+    auto table = to_toml<Config>(value);
+    if(!table) {
+        return std::unexpected(table.error());
+    }
+
+    std::ostringstream out;
+    out << *table;
+    return out.str();
 }
 
 }  // namespace kota::codec::toml

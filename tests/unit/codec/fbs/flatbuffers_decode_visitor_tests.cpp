@@ -23,8 +23,8 @@ using namespace meta;
 
 namespace {
 
-using fbs::to_flatbuffer;
-using fbs::from_flatbuffer;
+using fbs::to_bytes;
+using fbs::from_bytes;
 
 using point = meta::fixtures::Point2i;
 using address = meta::fixtures::Address;
@@ -44,14 +44,14 @@ struct person {
 
 template <typename T>
 auto roundtrip(const T& input) -> std::expected<T, rich_error> {
-    auto encoded = to_flatbuffer(input);
+    auto encoded = to_bytes(input);
     if(!encoded) {
         return std::unexpected(rich_error("encode failed"));
     }
     if(encoded->empty()) {
         return std::unexpected(rich_error("empty buffer"));
     }
-    return from_flatbuffer<T>(*encoded);
+    return from_bytes<T>(*encoded);
 }
 
 TEST_SUITE(fbs_decode_visitor) {
@@ -334,7 +334,7 @@ TEST_CASE(diag_pair_scalar_tuple) {
                            std::string("scalar-b")};
 
     pair_t input{a, b};
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     // Step 1: Read the root table
@@ -370,7 +370,7 @@ TEST_CASE(diag_pair_scalar_tuple) {
 
     // Step 4: Decode roundtrip
     pair_t output{};
-    auto decode_result = fbs::from_flatbuffer(*encoded, output);
+    auto decode_result = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(decode_result.has_value());
     EXPECT_EQ(std::get<0>(output.first), true);          // bool
     EXPECT_EQ(std::get<1>(output.first), 'q');           // char
@@ -387,7 +387,7 @@ TEST_CASE(diag_variant_vector_int) {
         std::vector<int>{1, 2, 3}
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     // Step 1: Read root table (variant table)
@@ -429,7 +429,7 @@ TEST_CASE(diag_variant_vector_int) {
 
     // Step 6: Decode roundtrip
     var_t output{};
-    auto decode_result = fbs::from_flatbuffer(*encoded, output);
+    auto decode_result = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(decode_result.has_value());
     ASSERT_TRUE(std::holds_alternative<std::vector<int>>(output));
     auto& decoded_vec = std::get<std::vector<int>>(output);
@@ -443,7 +443,7 @@ TEST_CASE(diag_variant_monostate) {
     using var_t = std::variant<std::monostate, int, double, std::string, Basic>;
     var_t input{std::in_place_index<0>};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     const auto* data = encoded->data();
@@ -454,7 +454,7 @@ TEST_CASE(diag_variant_monostate) {
     EXPECT_EQ(tag, 0U);
 
     var_t output{42};  // start with different value
-    auto decode_result = fbs::from_flatbuffer(*encoded, output);
+    auto decode_result = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(decode_result.has_value());
     EXPECT_EQ(output.index(), 0U);
 }
@@ -465,7 +465,7 @@ TEST_CASE(diag_variant_basic) {
         Basic{.is_valid = true, .i32 = 64, .f64 = 2.5, .text = "variant-basic"}
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     const auto* data = encoded->data();
@@ -476,7 +476,7 @@ TEST_CASE(diag_variant_basic) {
     EXPECT_EQ(tag, 4U);  // Basic is at index 4
 
     var_t output{};
-    auto decode_result = fbs::from_flatbuffer(*encoded, output);
+    auto decode_result = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(decode_result.has_value());
     ASSERT_TRUE(std::holds_alternative<Basic>(output));
     EXPECT_EQ(std::get<Basic>(output).is_valid, true);
@@ -488,7 +488,7 @@ TEST_CASE(diag_tagged_ext_variant_int) {
     using ext_t = annotate<ext_tag_annotation>::type<std::variant<int, std::string, Basic>>;
     ext_t input{42};
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     const auto* data = encoded->data();
@@ -505,7 +505,7 @@ TEST_CASE(diag_tagged_ext_variant_int) {
     EXPECT_EQ(int_val, 42);
 
     ext_t output{};
-    auto decode_result = fbs::from_flatbuffer(*encoded, output);
+    auto decode_result = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(decode_result.has_value());
     ASSERT_TRUE(std::holds_alternative<int>(meta::annotated_value(output)));
     EXPECT_EQ(std::get<int>(meta::annotated_value(output)), 42);
@@ -570,7 +570,7 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
         std::pair<std::uint32_t, float>{99U, 6.25F}
     };
 
-    auto encoded = fbs::to_flatbuffer(input);
+    auto encoded = fbs::to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
@@ -595,7 +595,7 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
 
     // Manual decode step-by-step
     T output{};
-    auto decode_result = fbs::from_flatbuffer(*encoded, output);
+    auto decode_result = fbs::from_bytes(*encoded, output);
     ASSERT_TRUE(decode_result.has_value());
 
     // Check each tuple element
@@ -608,8 +608,8 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     EXPECT_EQ(std::get<2>(output).first, 99U);
     EXPECT_EQ(std::get<2>(output).second, 6.25F);
 
-    // Manual decode of element 1 via field_reader directly
-    fbs::decode_detail::field_reader vr{
+    // Manual decode of element 1 via FieldReader directly
+    fbs::decode_detail::FieldReader vr{
         .tbl = root,
         .slot = static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step)};
     // This should follow the pointer at slot 6 to get the sub-table

@@ -197,7 +197,7 @@ TEST_CASE(empty_array_scoring) {
 TEST_CASE(json_to_content_variant_roundtrip) {
     using V = std::variant<int, std::string>;
 
-    auto parsed = json::parse<dyn::Value>(R"(42)");
+    auto parsed = json::from_string<dyn::Value>(R"(42)");
     ASSERT_TRUE(parsed.has_value());
 
     V out{};
@@ -212,7 +212,7 @@ TEST_SUITE(serde_content_peek_kind_trait) {
 
 TEST_CASE(json_to_content_scalars) {
     auto test = [](std::string_view json_str, dyn::ValueKind expected_kind) -> bool {
-        auto parsed = json::parse<dyn::Value>(json_str);
+        auto parsed = json::from_string<dyn::Value>(json_str);
         if(!parsed.has_value())
             return false;
         return parsed->kind() == expected_kind;
@@ -227,7 +227,7 @@ TEST_CASE(json_to_content_scalars) {
 }
 
 TEST_CASE(json_to_content_array) {
-    auto parsed = json::parse<dyn::Value>(R"([1,2,3])");
+    auto parsed = json::from_string<dyn::Value>(R"([1,2,3])");
     ASSERT_TRUE(parsed.has_value());
     ASSERT_TRUE(parsed->is_array());
     auto* arr = parsed->get_array();
@@ -239,7 +239,7 @@ TEST_CASE(json_to_content_array) {
 }
 
 TEST_CASE(json_to_content_object) {
-    auto parsed = json::parse<dyn::Value>(R"({"a":1,"b":"two"})");
+    auto parsed = json::from_string<dyn::Value>(R"({"a":1,"b":"two"})");
     ASSERT_TRUE(parsed.has_value());
     ASSERT_TRUE(parsed->is_object());
     EXPECT_EQ((*parsed)["a"].as_int(), 1);
@@ -247,7 +247,7 @@ TEST_CASE(json_to_content_object) {
 }
 
 TEST_CASE(json_to_content_nested) {
-    auto parsed = json::parse<dyn::Value>(R"({"items":[{"x":1},{"x":2}]})");
+    auto parsed = json::from_string<dyn::Value>(R"({"items":[{"x":1},{"x":2}]})");
     ASSERT_TRUE(parsed.has_value());
     ASSERT_TRUE(parsed->is_object());
     auto items = (*parsed)["items"];
@@ -257,7 +257,7 @@ TEST_CASE(json_to_content_nested) {
 }
 
 TEST_CASE(json_to_content_struct) {
-    auto parsed = json::parse<dyn::Value>(R"({"x":1.5,"y":2.5})");
+    auto parsed = json::from_string<dyn::Value>(R"({"x":1.5,"y":2.5})");
     ASSERT_TRUE(parsed.has_value());
 
     Point point{};
@@ -267,7 +267,7 @@ TEST_CASE(json_to_content_struct) {
 
 TEST_CASE(json_to_content_complex_roundtrip) {
     auto dom =
-        json::parse<dyn::Value>(R"({"name":"test","scores":[1,2,3],"nested":{"flag":true}})");
+        json::from_string<dyn::Value>(R"({"name":"test","scores":[1,2,3],"nested":{"flag":true}})");
     ASSERT_TRUE(dom.has_value());
     ASSERT_TRUE(dom->is_object());
     EXPECT_EQ((*dom)["name"].as_string(), "test");

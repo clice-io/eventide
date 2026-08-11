@@ -16,12 +16,12 @@
 
 namespace kota::codec::dyn {
 
-struct value_writer;
-struct struct_writer;
-struct seq_writer;
-struct map_writer;
+struct ValueWriter;
+struct StructWriter;
+struct SeqWriter;
+struct MapWriter;
 
-struct value_writer {
+struct ValueWriter {
     dyn::Value& output;
     using error_type = rich_error;
     constexpr static bool human_readable = true;
@@ -96,7 +96,7 @@ struct value_writer {
     inline bool visit_tuple(const T&, Body&& body);
 };
 
-struct struct_writer {
+struct StructWriter {
     dyn::Object& obj;
     using error_type = rich_error;
 
@@ -104,14 +104,14 @@ struct struct_writer {
     inline bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
 };
 
-struct seq_writer {
+struct SeqWriter {
     dyn::Array& arr;
 
     template <typename F>
     inline bool visit_element(F&& writer);
 };
 
-struct map_writer {
+struct MapWriter {
     dyn::Object& obj;
 
     template <typename KF, typename VF>
@@ -119,66 +119,66 @@ struct map_writer {
 };
 
 template <typename T, typename Body>
-bool value_writer::visit_struct(const T&, Body&& body) {
+bool ValueWriter::visit_struct(const T&, Body&& body) {
     dyn::Object obj;
-    struct_writer sw{obj};
+    StructWriter sw{obj};
     KOTA_CODEC_TRY(body(sw));
     output = dyn::Value(std::move(obj));
     return true;
 }
 
 template <typename Container, typename Body>
-bool value_writer::visit_seq(const Container&, Body&& body) {
+bool ValueWriter::visit_seq(const Container&, Body&& body) {
     dyn::Array arr;
-    seq_writer sw{arr};
+    SeqWriter sw{arr};
     KOTA_CODEC_TRY(body(sw));
     output = dyn::Value(std::move(arr));
     return true;
 }
 
 template <typename Container, typename Body>
-bool value_writer::visit_map(const Container&, Body&& body) {
+bool ValueWriter::visit_map(const Container&, Body&& body) {
     dyn::Object obj;
-    map_writer mw{obj};
+    MapWriter mw{obj};
     KOTA_CODEC_TRY(body(mw));
     output = dyn::Value(std::move(obj));
     return true;
 }
 
 template <typename T, typename Body>
-bool value_writer::visit_tuple(const T&, Body&& body) {
+bool ValueWriter::visit_tuple(const T&, Body&& body) {
     dyn::Array arr;
-    seq_writer sw{arr};
+    SeqWriter sw{arr};
     KOTA_CODEC_TRY(body(sw));
     output = dyn::Value(std::move(arr));
     return true;
 }
 
 template <typename F>
-bool struct_writer::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+bool StructWriter::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
     dyn::Value field_val;
-    value_writer vw{field_val};
+    ValueWriter vw{field_val};
     KOTA_CODEC_TRY(writer(vw));
     obj.insert(std::string(name), std::move(field_val));
     return true;
 }
 
 template <typename F>
-bool seq_writer::visit_element(F&& writer) {
+bool SeqWriter::visit_element(F&& writer) {
     dyn::Value elem_val;
-    value_writer vw{elem_val};
+    ValueWriter vw{elem_val};
     KOTA_CODEC_TRY(writer(vw));
     arr.push_back(std::move(elem_val));
     return true;
 }
 
 template <typename KF, typename VF>
-bool map_writer::visit_entry(KF&& key_fn, VF&& value_fn) {
+bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    map_key_writer<string_key_sink> kw{{key}};
+    MapKeyWriter<StringKeySink> kw{{key}};
     KOTA_CODEC_TRY(key_fn(kw));
     dyn::Value val;
-    value_writer vw{val};
+    ValueWriter vw{val};
     KOTA_CODEC_TRY(value_fn(vw));
     obj.insert(std::move(key), std::move(val));
     return true;
@@ -189,7 +189,7 @@ auto to_content(const T& value) -> std::expected<dyn::Value, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
     dyn::Value result;
-    value_writer vis{result};
+    ValueWriter vis{result};
     if(!encode_value<default_config<Config>>(vis, value)) {
         return std::unexpected(std::move(err));
     }
@@ -210,24 +210,24 @@ struct serialize_visit<Vis, dyn::Value, Config> {
 };
 
 template <typename Config>
-struct serialize_visit<dyn::value_writer, dyn::Value, Config> {
-    static bool visit(dyn::value_writer& vis, const dyn::Value& value) {
+struct serialize_visit<dyn::ValueWriter, dyn::Value, Config> {
+    static bool visit(dyn::ValueWriter& vis, const dyn::Value& value) {
         vis.output = value;
         return true;
     }
 };
 
 template <typename Config>
-struct serialize_visit<dyn::value_writer, dyn::Array, Config> {
-    static bool visit(dyn::value_writer& vis, const dyn::Array& value) {
+struct serialize_visit<dyn::ValueWriter, dyn::Array, Config> {
+    static bool visit(dyn::ValueWriter& vis, const dyn::Array& value) {
         vis.output = dyn::Value(value);
         return true;
     }
 };
 
 template <typename Config>
-struct serialize_visit<dyn::value_writer, dyn::Object, Config> {
-    static bool visit(dyn::value_writer& vis, const dyn::Object& value) {
+struct serialize_visit<dyn::ValueWriter, dyn::Object, Config> {
+    static bool visit(dyn::ValueWriter& vis, const dyn::Object& value) {
         vis.output = dyn::Value(value);
         return true;
     }

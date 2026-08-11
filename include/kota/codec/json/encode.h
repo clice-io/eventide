@@ -219,7 +219,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     if(!first)
         builder.append_comma();
     first = false;
-    map_key_writer<KeySink, format> kw{{builder}};
+    MapKeyWriter<KeySink, format> kw{{builder}};
     KOTA_CODEC_TRY(key_fn(kw));
     builder.append_colon();
     ValueWriter vw{builder};
@@ -227,7 +227,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 }
 
 template <typename Config = void, typename T>
-auto to_json(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
+auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, json::error> {
     rich_error err;
     scoped_context<rich_error> guard(err);

@@ -10,7 +10,7 @@
 
 namespace kota::codec::bincode {
 
-struct writer {
+struct Writer {
     std::vector<std::byte>& buf;
     using error_type = rich_error;
     using format = bincode::format;
@@ -142,7 +142,7 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, bincode::
     rich_error err;
     scoped_context<rich_error> guard(err);
     std::vector<std::byte> buf;
-    writer vis{buf};
+    Writer vis{buf};
     if(!encode_value<default_config<Config>>(vis, value)) {
         return std::unexpected(std::move(err));
     }
@@ -156,8 +156,8 @@ namespace kota::codec {
 // std::monostate is null_like, but in bincode variant payloads it should write nothing
 // (the old Serializer skipped monostate payloads entirely).
 template <typename Config>
-struct serialize_visit<bincode::writer, std::monostate, Config> {
-    static bool visit(bincode::writer& /*vis*/, const std::monostate& /*value*/) {
+struct serialize_visit<bincode::Writer, std::monostate, Config> {
+    static bool visit(bincode::Writer& /*vis*/, const std::monostate& /*value*/) {
         return true;
     }
 };

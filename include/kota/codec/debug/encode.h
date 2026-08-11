@@ -351,7 +351,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return value_fn(vw);
 }
 
-template <typename Config = default_config<>, typename T>
+template <typename Config = void, typename T>
 auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, error> {
     rich_error err;
     scoped_context<rich_error> guard(err);

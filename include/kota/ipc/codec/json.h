@@ -48,7 +48,7 @@ public:
                 raw = "{}";
             }
         }
-        auto parsed = codec::json::parse<T, lsp_config>(raw);
+        auto parsed = codec::json::from_string<T, lsp_config>(raw);
         if(!parsed) {
             return outcome_error(Error(code, parsed.error().to_string()));
         }
