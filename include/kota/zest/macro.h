@@ -200,7 +200,7 @@
 // clang-format off
 #define ZEST_SNAPSHOT_JSON_IMPL(return_action, value, ...)                                         \
     do {                                                                                           \
-        auto _zest_snap_json = ::kota::codec::json::to_string(value);                                \
+        auto _zest_snap_json = ::kota::codec::json::to_string(value);                              \
         if(!_zest_snap_json.has_value()) {                                                         \
             std::println("[snapshot] json serialization failed");                                   \
             ::kota::zest::print_trace(std::source_location::current());                            \

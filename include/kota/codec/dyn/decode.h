@@ -243,7 +243,7 @@ private:
 /// Decodes a dyn::Value DOM tree into `out` (or, in the value-returning
 /// overload, into a default-constructed T).
 template <typename Config = void, typename T>
-auto from_content(const Value& value, T& out) -> std::expected<void, rich_error> {
+auto from_dyn(const Value& value, T& out) -> std::expected<void, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
     ValueReader vis{&value};
@@ -255,9 +255,9 @@ auto from_content(const Value& value, T& out) -> std::expected<void, rich_error>
 
 template <typename T, typename Config = void>
     requires std::default_initializable<T>
-auto from_content(const Value& value) -> std::expected<T, rich_error> {
+auto from_dyn(const Value& value) -> std::expected<T, rich_error> {
     T out{};
-    auto result = from_content<Config>(value, out);
+    auto result = from_dyn<Config>(value, out);
     if(!result) {
         return std::unexpected(std::move(result).error());
     }

@@ -6,15 +6,15 @@ namespace kota::codec {
 
 namespace {
 
-using dyn::from_content;
-using dyn::to_content;
+using dyn::from_dyn;
+using dyn::to_dyn;
 
 auto rt = []<typename T>(const T& input) -> std::expected<T, rich_error> {
-    auto encoded = to_content(input);
+    auto encoded = to_dyn(input);
     if(!encoded) {
         return std::unexpected(rich_error(encoded.error().to_string()));
     }
-    return from_content<T>(*encoded);
+    return from_dyn<T>(*encoded);
 };
 
 TEST_SUITE(serde_dyn_standard) {

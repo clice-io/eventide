@@ -55,8 +55,9 @@ using verifier_t = ::flatbuffers::Verifier;
 /// - string → flatbuffers string; bytes → vector of uint8
 /// - enumeration → underlying integer cell
 /// - structure → table with one slot per field; structs satisfying
-///   can_inline_struct_v (trivial, standard-layout, unannotated scalar
-///   fields) may instead inline as fixed-size structs inside vectors
+///   can_inline_struct_v (trivial, standard-layout, unannotated fields that
+///   are scalars, enums, or nested inline structs) may instead inline as
+///   fixed-size structs inside vectors
 /// - array/set → vector; element storage follows element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables, or boxed tables for
 ///   nullable / variant-shaped elements

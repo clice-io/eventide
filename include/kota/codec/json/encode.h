@@ -226,7 +226,8 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return value_fn(vw);
 }
 
-/// Encodes `value` as compact JSON text (prettify reformats it if needed).
+/// Encodes `value` as compact JSON text; use json::prettify for indented
+/// output.
 template <typename Config = void, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, json::error> {

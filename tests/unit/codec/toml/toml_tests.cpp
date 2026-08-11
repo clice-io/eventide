@@ -21,7 +21,6 @@ namespace {
 
 using toml::from_string;
 using toml::from_toml;
-using toml::from_string;
 using toml::to_string;
 using toml::to_toml;
 
@@ -30,6 +29,18 @@ using person = meta::fixtures::PersonWithScores;
 struct payload_with_extra {
     int id = 0;
     ::toml::table extra;
+};
+
+enum class priority { low, high };
+
+struct string_enum_config {
+    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
+};
+
+struct task_entry {
+    std::string title;
+    priority level = priority::low;
+    bool operator==(const task_entry&) const = default;
 };
 
 /// Reflectable, yet str-like — kind_of classifies it as a string, so the
@@ -86,6 +97,18 @@ active = true
     auto reparsed = from_string<person>(*encoded);
     ASSERT_TRUE(reparsed.has_value());
     EXPECT_EQ(*reparsed, *parsed);
+}
+
+TEST_CASE(to_string_and_from_string_with_config) {
+    const task_entry input{.title = "write docs", .level = priority::high};
+
+    auto text = to_string<string_enum_config>(input);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_TRUE(text->find(R"(level = 'high')") != std::string::npos);
+
+    auto parsed = from_string<task_entry, string_enum_config>(*text);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, input);
 }
 
 TEST_CASE(dynamic_dom_field_roundtrip) {

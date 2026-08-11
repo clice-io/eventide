@@ -407,7 +407,7 @@ TEST_CASE(content_deserializer_keeps_temporary_root_value_alive) {
     };
 
     dom_payload payload{};
-    auto status = dyn::from_content(make_dom(), payload);
+    auto status = dyn::from_dyn(make_dom(), payload);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(payload, (dom_payload{.id = 7, .name = "alice"}));
 }

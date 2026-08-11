@@ -193,7 +193,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 /// Encodes `value` as a dyn::Value DOM tree (the format-neutral
 /// interchange representation; see the header comment).
 template <typename Config = void, typename T>
-auto to_content(const T& value) -> std::expected<dyn::Value, rich_error> {
+auto to_dyn(const T& value) -> std::expected<dyn::Value, rich_error> {
     rich_error err;
     scoped_context<rich_error> guard(err);
     dyn::Value result;
