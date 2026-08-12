@@ -25,6 +25,79 @@
 // view, never an out-of-bounds read — the ASan tree is the authority on the
 // "never" part, these tests drive the inputs.
 
+namespace kota_fbs_verifier_test {
+
+// Decoded through imperative reprs whose deserialize bodies deliberately
+// ignore has_element()/has_entry() and read a fixed count of four — the
+// readers themselves must reject the cursor once it passes the verified
+// size instead of reading out of bounds.
+struct greedy_seq {
+    std::vector<std::int32_t> nums;
+
+    auto operator==(const greedy_seq&) const -> bool = default;
+};
+
+struct greedy_map {
+    std::map<std::string, std::int32_t> entries;
+
+    auto operator==(const greedy_map&) const -> bool = default;
+};
+
+}  // namespace kota_fbs_verifier_test
+
+namespace kota::meta {
+
+template <>
+struct repr<kota_fbs_verifier_test::greedy_seq> {
+    using type = std::vector<std::int32_t>;
+
+    const static type& to(const kota_fbs_verifier_test::greedy_seq& g) {
+        return g.nums;
+    }
+
+    template <typename Config>
+    static bool deserialize(auto& vis, kota_fbs_verifier_test::greedy_seq& g) {
+        g.nums.clear();
+        return vis.visit_seq(g.nums, [&](auto& sv) -> bool {
+            for(std::size_t i = 0; i < 4; ++i) {
+                std::int32_t v = 0;
+                if(!sv.visit_element([&](auto& ev) -> bool { return ev.visit_int(v); }))
+                    return false;
+                g.nums.push_back(v);
+            }
+            return true;
+        });
+    }
+};
+
+template <>
+struct repr<kota_fbs_verifier_test::greedy_map> {
+    using type = std::map<std::string, std::int32_t>;
+
+    const static type& to(const kota_fbs_verifier_test::greedy_map& g) {
+        return g.entries;
+    }
+
+    template <typename Config>
+    static bool deserialize(auto& vis, kota_fbs_verifier_test::greedy_map& g) {
+        g.entries.clear();
+        return vis.visit_map(g.entries, [&](auto& mv) -> bool {
+            for(std::size_t i = 0; i < 4; ++i) {
+                std::string key;
+                std::int32_t val = 0;
+                bool ok = mv.visit_entry([&](auto& kv) -> bool { return kv.visit_str(key); },
+                                         [&](auto& vv) -> bool { return vv.visit_int(val); });
+                if(!ok)
+                    return false;
+                g.entries.emplace(std::move(key), val);
+            }
+            return true;
+        });
+    }
+};
+
+}  // namespace kota::meta
+
 namespace kota::codec {
 
 using namespace meta;
@@ -390,6 +463,46 @@ TEST_CASE(recursion_depth_boundary) {
     node deep_out{};
     EXPECT_FALSE(fbs::from_bytes(*deep, deep_out).has_value());
     EXPECT_FALSE(table_view<node>::from_bytes(*deep).valid());
+}
+
+TEST_CASE(imperative_adapter_cannot_overrun_vector) {
+    using kota_fbs_verifier_test::greedy_seq;
+
+    // The adapter reads four elements unconditionally; a valid two-element
+    // buffer must fail the cursor check instead of reading past the vector.
+    auto shorted = fbs::to_bytes(greedy_seq{
+        .nums = {1, 2}
+    });
+    ASSERT_TRUE(shorted.has_value());
+    EXPECT_FALSE(fbs::from_bytes<greedy_seq>(*shorted).has_value());
+
+    const greedy_seq exact{
+        .nums = {1, 2, 3, 4}
+    };
+    auto encoded = fbs::to_bytes(exact);
+    ASSERT_TRUE(encoded.has_value());
+    auto decoded = fbs::from_bytes<greedy_seq>(*encoded);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(*decoded, exact);
+}
+
+TEST_CASE(imperative_adapter_cannot_overrun_map) {
+    using kota_fbs_verifier_test::greedy_map;
+
+    auto shorted = fbs::to_bytes(greedy_map{
+        .entries = {{"a", 1}, {"b", 2}}
+    });
+    ASSERT_TRUE(shorted.has_value());
+    EXPECT_FALSE(fbs::from_bytes<greedy_map>(*shorted).has_value());
+
+    const greedy_map exact{
+        .entries = {{"a", 1}, {"b", 2}, {"c", 3}, {"d", 4}}
+    };
+    auto encoded = fbs::to_bytes(exact);
+    ASSERT_TRUE(encoded.has_value());
+    auto decoded = fbs::from_bytes<greedy_map>(*encoded);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(*decoded, exact);
 }
 
 TEST_CASE(byte_span_overload_rejects_hostile_input_too) {

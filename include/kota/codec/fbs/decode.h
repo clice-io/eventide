@@ -447,6 +447,12 @@ template <typename F>
 bool VecReader<E>::visit_element(F&& reader) {
     using enum proxy_detail::element_layout;
 
+    // The built-in dispatch loops on has_element(), but an imperative
+    // adapter drives this reader directly — reject the cursor here so it
+    // cannot read past the verified vector.
+    if(!has_element())
+        return fail_verify("vector element out of range");
+
     if constexpr(layout == boxed) {
         const auto* wrapper = vec->template GetAs<Table>(idx);
         ++idx;
@@ -491,6 +497,8 @@ bool VecReader<E>::visit_element(F&& reader) {
 
 template <typename KF, typename VF>
 bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
+    if(!has_entry())
+        return fail_verify("map entry out of range");
     const auto* entry = vec->template GetAs<Table>(idx);
     ++idx;
     if(!entry->VerifyTableStart(*verifier))
