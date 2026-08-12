@@ -352,7 +352,8 @@ TEST_CASE(weak_ptr_field_verifies_and_reads) {
     EXPECT_EQ(root[&weak_holder::after], "tail");
 
     // An expired weak_ptr leaves its slot absent; the view reads the default.
-    input.num.reset();
+    owner.reset();
+    ASSERT_TRUE(input.num.expired());
     auto absent = fbs::to_bytes(input);
     ASSERT_TRUE(absent.has_value());
 
