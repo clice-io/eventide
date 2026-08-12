@@ -354,6 +354,8 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
         if(!tbl->VerifyField<V>(*verifier, slot, alignof(V)))
             return fail_verify("inline struct field");
         const auto* ptr = tbl->GetStruct<const V*>(slot);
+        if(!proxy_detail::valid_inline_struct_bytes(ptr))
+            return fail_verify("inline struct bool byte");
         if(ptr != nullptr)
             out = *ptr;
         return true;
@@ -481,6 +483,8 @@ bool VecReader<E>::visit_element(F&& reader) {
     } else if constexpr(layout == inline_struct) {
         const auto* ptr = vec->Get(static_cast<uoffset_t>(idx));
         ++idx;
+        if(!proxy_detail::valid_inline_struct_bytes(ptr))
+            return fail_verify("inline struct element bool byte");
         ScalarReader<repr_t> sr{.value = ptr ? *ptr : repr_t{}};
         return reader(sr);
     } else {

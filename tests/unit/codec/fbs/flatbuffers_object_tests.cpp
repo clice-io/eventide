@@ -1275,6 +1275,41 @@ TEST_CASE(optional_bearing_struct_stays_table_shaped) {
     EXPECT_EQ(output.entries, input.entries);
 }
 
+/// long double lowers to a double cell everywhere else in this backend; its
+/// native image is ABI-specific and can carry internal padding (x86's 80-bit
+/// format leaves 6 of 16 bytes unspecified), so a memcpy image would
+/// disclose those bytes. A struct holding one stays table-shaped.
+struct with_long_double_member {
+    long double ratio = 0.0L;
+    std::int32_t id = 0;
+
+    friend bool operator==(const with_long_double_member&,
+                           const with_long_double_member&) = default;
+};
+
+static_assert(std::is_trivially_copyable_v<with_long_double_member>);
+static_assert(!fbs::can_inline_struct_v<with_long_double_member>);
+
+TEST_CASE(long_double_bearing_struct_stays_table_shaped) {
+    struct holder {
+        std::vector<with_long_double_member> entries;
+        with_long_double_member solo;
+    };
+
+    const holder input{
+        .entries = {{.ratio = 2.5L, .id = 1}, {.ratio = -0.5L, .id = 2}},
+        .solo = {.ratio = 0.25L,           .id = 3                  },
+    };
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    holder output{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
+    EXPECT_EQ(output.entries, input.entries);
+    EXPECT_EQ(output.solo, input.solo);
+}
+
 /// One past the reflection field limit: meta::field_count() collapses to
 /// zero, indistinguishable from an empty struct, so the padding
 /// sanitization would zero the whole image. Such a struct — and anything
@@ -1377,11 +1412,16 @@ auto scribbled(std::uint8_t fill, char tag, std::int32_t id) -> padded_key {
     return k;
 }
 
-/// The object representation of a padded_key as stored, padding included.
-auto image_of(const padded_key& k) -> std::array<std::byte, sizeof(padded_key)> {
+/// Overwrite a stored padded_key's bytes with fill, then splice the field
+/// values back — written directly into the final storage, so no later copy
+/// can legally drop the padding fill on the way to the encoder.
+void scribble_stored(padded_key& stored, std::uint8_t fill) {
+    const padded_key value = stored;
     std::array<std::byte, sizeof(padded_key)> bytes;
-    std::memcpy(bytes.data(), &k, sizeof(k));
-    return bytes;
+    bytes.fill(std::byte{fill});
+    std::memcpy(bytes.data() + offsetof(padded_key, tag), &value.tag, sizeof(value.tag));
+    std::memcpy(bytes.data() + offsetof(padded_key, id), &value.id, sizeof(value.id));
+    std::memcpy(&stored, bytes.data(), sizeof(stored));
 }
 
 TEST_CASE(inline_struct_padding_never_reaches_the_buffer) {
@@ -1392,23 +1432,55 @@ TEST_CASE(inline_struct_padding_never_reaches_the_buffer) {
     noisy.items.push_back(scribbled(0xFF, 'y', 9));
     noisy.scores.emplace(scribbled(0xFF, 'k', 3), 1);
 
+    // Copies into storage may legally drop the fill (optimized builds do);
+    // re-scribble the reachable stored objects in place so the noisy side
+    // provably carries dirty padding into the encoder. The map key is const
+    // in storage and cannot be re-scribbled — the direct buffer assertions
+    // below cover its path deterministically instead.
+    scribble_stored(noisy.solo, 0xFF);
+    scribble_stored(noisy.items[0], 0xFF);
+
     with_padded_structs quiet;
     quiet.solo = scribbled(0x00, 'x', 7);
     quiet.items.push_back(scribbled(0x00, 'y', 9));
     quiet.scores.emplace(scribbled(0x00, 'k', 3), 1);
 
-    // Guard the fixture: copying a trivially copyable object need not
-    // preserve its padding bytes, so prove the fill survived the trip into
-    // every stored object — otherwise the buffer comparison below would
-    // pass vacuously.
-    ASSERT_TRUE(image_of(noisy.solo) != image_of(quiet.solo));
-    ASSERT_TRUE(image_of(noisy.items[0]) != image_of(quiet.items[0]));
-    ASSERT_TRUE(image_of(noisy.scores.begin()->first) != image_of(quiet.scores.begin()->first));
-
     auto noisy_bytes = to_bytes(noisy);
     auto quiet_bytes = to_bytes(quiet);
     ASSERT_TRUE(noisy_bytes.has_value());
     ASSERT_TRUE(quiet_bytes.has_value());
+
+    // The documented wire property, asserted directly on the buffer: the
+    // stored inline structs' padding bytes encode as zero whatever the
+    // source objects held. Slots follow declaration order (first_field +
+    // 2 * index): items=4, solo=6, scores=8; a map entry holds its key at
+    // the entry table's first slot.
+    auto padding_is_zero = [](const padded_key* stored) {
+        const auto* bytes = reinterpret_cast<const std::uint8_t*>(stored);
+        for(std::size_t i = sizeof(char); i < offsetof(padded_key, id); ++i) {
+            if(bytes[i] != 0) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const auto* root = ::flatbuffers::GetRoot<::flatbuffers::Table>(noisy_bytes->data());
+    const auto* solo = root->GetStruct<const padded_key*>(6);
+    ASSERT_TRUE(solo != nullptr);
+    EXPECT_TRUE(padding_is_zero(solo));
+
+    const auto* items = root->GetPointer<const ::flatbuffers::Vector<const padded_key*>*>(4);
+    ASSERT_TRUE(items != nullptr);
+    EXPECT_TRUE(padding_is_zero(items->Get(0)));
+
+    const auto* entries =
+        root->GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<::flatbuffers::Table>>*>(
+            8);
+    ASSERT_TRUE(entries != nullptr);
+    const auto* key = entries->Get(0)->GetStruct<const padded_key*>(4);
+    ASSERT_TRUE(key != nullptr);
+    EXPECT_TRUE(padding_is_zero(key));
 
     // Anything short of byte-identical output would disclose the memory
     // previously occupying the padding and break encode determinism.

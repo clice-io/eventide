@@ -239,6 +239,32 @@ struct struct_keyed {
     friend bool operator==(const struct_keyed&, const struct_keyed&) = default;
 };
 
+/// Bool-bearing inline struct: size/alignment verification admits any byte
+/// image, so both decode paths must additionally reject a bool byte other
+/// than 0 or 1 — copying such an image into a live bool would be undefined
+/// behavior to read.
+struct bool_flags {
+    bool ready = false;
+    std::int32_t code = 0;
+};
+
+/// Nests the bool one struct level down, putting the validator's offset
+/// accumulation on the hook: the byte sits at inner's offset plus the
+/// field's own.
+struct nested_bool {
+    std::int32_t id = 0;
+    bool_flags inner;
+};
+
+struct with_bool_structs {
+    bool_flags solo;
+    std::vector<bool_flags> items;
+    nested_bool deep;
+};
+
+static_assert(fbs::can_inline_struct_v<bool_flags>);
+static_assert(fbs::can_inline_struct_v<nested_bool>);
+
 auto make_chain(std::size_t depth) -> node {
     node head{.value = 0, .next = nullptr};
     node* tail = &head;
@@ -487,6 +513,53 @@ TEST_CASE(hostile_bytes_never_read_out_of_bounds_struct_keyed_map) {
         [[maybe_unused]] auto hit = m[occ_key{.begin = 1, .end = 5, .target = 9}];
         [[maybe_unused]] bool present = m.contains(occ_key{.begin = 9, .end = 9, .target = 9});
     });
+}
+
+TEST_CASE(inline_struct_bool_byte_must_be_zero_or_one) {
+    const with_bool_structs input{
+        .solo = {.ready = true,               .code = 7                          },
+        .items = {{.ready = false, .code = 1}, {.ready = true, .code = 2}         },
+        .deep = {.id = 3,                     .inner = {.ready = true, .code = 4}},
+    };
+
+    auto encoded = fbs::to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+    ASSERT_TRUE(fbs::from_bytes<with_bool_structs>(*encoded).has_value());
+
+    // Locate the stored images through the raw accessors; slots follow
+    // declaration order (solo=4, items=6, deep=8).
+    const auto* data = encoded->data();
+    const auto* root = ::flatbuffers::GetRoot<::flatbuffers::Table>(data);
+    const auto* solo = root->GetStruct<const bool_flags*>(4);
+    const auto* items = root->GetPointer<const ::flatbuffers::Vector<const bool_flags*>*>(6);
+    const auto* deep = root->GetStruct<const nested_bool*>(8);
+    ASSERT_TRUE(solo != nullptr && items != nullptr && deep != nullptr);
+
+    const auto byte_at = [&](const void* stored, std::size_t offset) {
+        return static_cast<std::size_t>(static_cast<const std::uint8_t*>(stored) - data) + offset;
+    };
+
+    // Any byte but 0/1 must fail both paths — at a field slot, inside the
+    // struct vector, and behind the nested field's offset.
+    for(std::size_t pos:
+        {byte_at(solo, offsetof(bool_flags, ready)),
+         byte_at(items->Get(1), offsetof(bool_flags, ready)),
+         byte_at(deep, offsetof(nested_bool, inner) + offsetof(bool_flags, ready))}) {
+        auto tampered = *encoded;
+        tampered[pos] = 0x02;
+        EXPECT_FALSE(fbs::from_bytes<with_bool_structs>(tampered).has_value());
+        EXPECT_FALSE(table_view<with_bool_structs>::from_bytes(tampered).valid());
+    }
+
+    // The boundary value 1 stays a valid image and reads back as true.
+    auto flipped = *encoded;
+    flipped[byte_at(items->Get(0), offsetof(bool_flags, ready))] = 0x01;
+    auto decoded = fbs::from_bytes<with_bool_structs>(flipped);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_TRUE(decoded->items[0].ready);
+    auto root_view = table_view<with_bool_structs>::from_bytes(flipped);
+    ASSERT_TRUE(root_view.valid());
+    EXPECT_TRUE(root_view[&with_bool_structs::items][0].ready);
 }
 
 TEST_CASE(recursion_depth_boundary) {

@@ -470,6 +470,49 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
 // views trust their pointers, so this walk is what makes from_bytes safe on
 // corrupt, truncated, or malicious input.
 
+/// Whether an inline struct's memcpy image contains bool fields, recursing
+/// into nested inline structs.
+template <typename T>
+consteval bool has_bool_field() {
+    if constexpr(meta::reflectable_class<T>) {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (has_bool_field<std::remove_cv_t<meta::field_type<T, I>>>() || ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else {
+        return std::same_as<T, bool>;
+    }
+}
+
+template <typename T>
+bool bool_bytes_valid(const std::byte* image) {
+    if constexpr(meta::reflectable_class<T>) {
+        return [&]<std::size_t... I>(std::index_sequence<I...>) {
+            return (bool_bytes_valid<std::remove_cv_t<meta::field_type<T, I>>>(
+                        image + meta::field_offset<T>(I)) &&
+                    ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else if constexpr(std::same_as<T, bool>) {
+        return std::to_integer<std::uint8_t>(*image) <= 1;
+    } else {
+        return true;
+    }
+}
+
+/// Size/alignment verification admits any byte image for an inline struct,
+/// but not every image is a valid T: a bool member's byte must be 0 or 1 —
+/// evaluating any other representation is undefined behavior, and both
+/// decode paths copy the whole object out of the buffer. Checks every bool
+/// byte through the raw image (never through a T lvalue, which would be the
+/// very UB being prevented); null — an absent field — verifies trivially.
+template <typename T>
+bool valid_inline_struct_bytes([[maybe_unused]] const T* ptr) {
+    if constexpr(has_bool_field<T>()) {
+        return ptr == nullptr || bool_bytes_valid<T>(reinterpret_cast<const std::byte*>(ptr));
+    } else {
+        return true;
+    }
+}
+
 /// Verify the value of view type T at a field slot, mirroring read_field's
 /// classification branch for branch. An absent slot always verifies (the
 /// views read it as a default), as does a present-but-null nested table.
@@ -563,7 +606,8 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
         const auto* nested = tbl->template GetPointer<const Table*>(slot);
         return nested == nullptr || verify_table<T>(v, nested);
     } else if constexpr(can_inline_struct_v<T>) {
-        return tbl->VerifyField<T>(v, slot, alignof(T));
+        return tbl->VerifyField<T>(v, slot, alignof(T)) &&
+               valid_inline_struct_bytes(tbl->template GetStruct<const T*>(slot));
     } else if constexpr(is_map_range_v<T>) {
         using clean_key_t = deep_clean_t<typename T::key_type>;
         using clean_mapped_t = deep_clean_t<typename T::mapped_type>;
@@ -631,6 +675,15 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
             return true;
         } else {
             // scalar / inline_struct: VerifyVector covered the element data.
+            // An inline struct's bool bytes additionally need semantic
+            // checking — in-bounds is not the same as a valid bool.
+            if constexpr(layout == inline_struct) {
+                for(uoffset_t i = 0; i < vec->size(); ++i) {
+                    if(!valid_inline_struct_bytes(vec->Get(i))) {
+                        return false;
+                    }
+                }
+            }
             return true;
         }
     } else {

@@ -31,6 +31,10 @@ using proxy_detail::slot_id;
 
 /// The bytes an inline struct's fields occupy, recursing into nested inline
 /// structs; falling short of sizeof means the native image carries padding.
+/// Counting sizeof per leaf is exact because every admitted leaf scalar is
+/// internally padding-free — long double, the one scalar whose image can
+/// hold unspecified bytes, is excluded from inline structs entirely
+/// (is_scalar_field_v).
 template <typename T>
 consteval auto packed_size() -> std::size_t {
     if constexpr(meta::reflectable_class<T>) {

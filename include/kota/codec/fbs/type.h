@@ -59,9 +59,10 @@ using verifier_t = ::flatbuffers::Verifier;
 /// - enumeration → underlying integer cell
 /// - structure → table with one slot per field; structs satisfying
 ///   can_inline_struct_v (trivially copyable, standard-layout, unannotated
-///   fields that are scalars, enums, or nested inline structs) may instead
-///   inline as fixed-size structs inside vectors, with padding bytes
-///   encoded as zero
+///   fields that are scalars other than long double, enums, or nested
+///   inline structs) may instead inline as fixed-size structs inside
+///   vectors, with padding bytes encoded as zero and bool bytes verified
+///   on decode
 /// - array/set → vector; element storage follows element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
 ///   other table-shaped elements use their own layouts), or boxed tables
@@ -155,10 +156,18 @@ constexpr bool is_optional_v = false;
 template <typename T>
 constexpr bool is_optional_v<std::optional<T>> = true;
 
+/// A scalar whose native object representation is exactly its wire cell.
+/// long double is excluded: everywhere else in this backend it lowers to a
+/// double cell (scalar_cell), because its native image is ABI-specific and
+/// can carry internal padding (x86's 80-bit format leaves 6 of 16 bytes
+/// unspecified — bytes a memcpy image would disclose). A struct holding one
+/// stays table-shaped, where the field encodes as a deterministic double
+/// cell.
 template <typename T>
 constexpr bool is_scalar_field_v =
-    std::same_as<T, bool> || meta::int_like<T> || meta::uint_like<T> || meta::floating_like<T> ||
-    meta::char_like<T> || std::same_as<T, std::byte>;
+    std::same_as<T, bool> || meta::int_like<T> || meta::uint_like<T> ||
+    (meta::floating_like<T> && !std::same_as<T, long double>) || meta::char_like<T> ||
+    std::same_as<T, std::byte>;
 
 template <typename T>
 struct schema_struct_trait;
