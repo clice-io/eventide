@@ -1310,10 +1310,59 @@ TEST_CASE(long_double_bearing_struct_stays_table_shaped) {
     EXPECT_EQ(output.solo, input.solo);
 }
 
+/// An enum with a deduced underlying type admits only the values of its
+/// minimal bit-field, so not every byte image is a valid value — evaluating
+/// an out-of-range image is undefined behavior that size/alignment
+/// verification cannot see. Such a field keeps the struct table-shaped,
+/// where the slot travels as a plain integer cell; an explicit base admits
+/// every cell value and keeps the struct inline.
+enum deduced_base_mode { mode_off, mode_on };
+
+struct with_deduced_base_enum {
+    deduced_base_mode mode = mode_off;
+    std::int32_t id = 0;
+
+    friend bool operator==(const with_deduced_base_enum&, const with_deduced_base_enum&) = default;
+};
+
+static_assert(std::is_trivially_copyable_v<with_deduced_base_enum>);
+static_assert(!fbs::can_inline_struct_v<with_deduced_base_enum>);
+
+enum fixed_base_mode : std::uint8_t { zone_red, zone_blue };
+
+struct with_fixed_base_enum {
+    fixed_base_mode zone = zone_red;
+    std::int32_t id = 0;
+};
+
+static_assert(fbs::can_inline_struct_v<with_fixed_base_enum>);
+
+TEST_CASE(deduced_base_enum_struct_stays_table_shaped) {
+    struct holder {
+        std::vector<with_deduced_base_enum> entries;
+        with_deduced_base_enum solo;
+    };
+
+    const holder input{
+        .entries = {{.mode = mode_on, .id = 1}, {.mode = mode_off, .id = 2}},
+        .solo = {.mode = mode_on,            .id = 3                    },
+    };
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    holder output{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
+    EXPECT_EQ(output.entries, input.entries);
+    EXPECT_EQ(output.solo, input.solo);
+}
+
 /// One past the reflection field limit: meta::field_count() collapses to
-/// zero, indistinguishable from an empty struct, so the padding
-/// sanitization would zero the whole image. Such a struct — and anything
-/// containing one — must stay table-shaped.
+/// zero, indistinguishable from an empty struct. Such a struct — and
+/// anything containing one — never inlines (the padding sanitization would
+/// zero the whole image), and the table paths reject it at compile time
+/// instead of encoding an empty table (assert_fields_reflected), so it only
+/// appears here in predicate assertions.
 struct over_limit_key {
     std::int32_t f00, f01, f02, f03, f04, f05, f06, f07, f08, f09, f10, f11, f12, f13, f14, f15,
         f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33,

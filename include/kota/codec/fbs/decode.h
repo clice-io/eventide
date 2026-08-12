@@ -320,6 +320,7 @@ struct RootReader : FieldReader {
 
     template <typename U, typename Body>
     bool visit_struct(U&, Body&& body) {
+        detail::assert_fields_reflected<std::remove_const_t<U>>();
         TableFieldReader tfr{.tbl = tbl, .verifier = verifier};
         return body(tfr);
     }
@@ -360,6 +361,7 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
             out = *ptr;
         return true;
     } else {
+        detail::assert_fields_reflected<V>();
         const Table* child = nullptr;
         bool entered = false;
         if(!follow_table(child, entered, "struct field"))

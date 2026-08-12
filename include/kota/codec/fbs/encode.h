@@ -573,7 +573,9 @@ constexpr auto ordering_key_impl() {
             static_assert(can_inline_struct_v<clean_k>,
                           "a struct map key must satisfy can_inline_struct_v; a table-shaped "
                           "key has no canonical ordering for the sorted entry vector");
-            static_assert(proxy_detail::struct_key_orderable_v<clean_k>,
+            // Past the reflection field limit the field walk visits nothing
+            // and every key would order equal — reject instead of mis-sorting.
+            static_assert(fields_reflected_v<clean_k>,
                           "this struct map key has more fields than reflection supports; its "
                           "entries cannot be ordered");
         }
@@ -849,6 +851,7 @@ bool AllocFieldVisitor::visit_struct(const T&, Body&& body) {
         // No allocation needed.
         return true;
     } else {
+        detail::assert_fields_reflected<T>();
         auto off = two_pass(fbb, std::forward<Body>(body));
         stored_offset = off.o;
         return true;
@@ -879,6 +882,7 @@ bool AllocFieldVisitor::visit_variant(std::size_t index, Body&& body) {
 
 template <typename T, typename Body>
 bool TableElemVisitor::visit_struct(const T&, Body&& body) {
+    detail::assert_fields_reflected<T>();
     auto off = two_pass(fbb, std::forward<Body>(body));
     table_offsets.push_back(off);
     return true;
@@ -943,6 +947,7 @@ bool MapEntryCollector<Key>::visit_entry(KF&& key_fn, VF&& value_fn) {
 
 template <typename T, typename Body>
 bool RootVisitor::visit_struct(const T&, Body&& body) {
+    detail::assert_fields_reflected<T>();
     root_off = two_pass(fbb, std::forward<Body>(body));
     return true;
 }

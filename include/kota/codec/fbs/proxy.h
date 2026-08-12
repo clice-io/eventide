@@ -570,6 +570,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
                 ...);
         }(std::make_index_sequence<std::tuple_size_v<T>>{});
     } else {
+        detail::assert_fields_reflected<T>();
         using slots = typename object_schema<T>::slots;
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (verify_slot<type_list_element_t<Is, slots>>(v, tbl, field_slot(Is)) && ...);
@@ -739,24 +740,18 @@ constexpr bool ordering_equal(const T& a, const U& b) {
     }
 }
 
-/// Whether ordering_less actually sees a reflected key's fields: past the
-/// reflection field limit, meta::field_count() collapses to zero, the field
-/// walk visits nothing, and every key of the type compares equal. Both the
-/// encoder's sort and map_view lookups reject such keys; a genuinely empty
-/// struct stays admitted (its single value needs no ordering).
-template <typename T>
-constexpr bool struct_key_orderable_v = std::is_empty_v<T> || meta::field_count<T>() > 0;
-
 /// A key a map_view lookup accepts. Reflected keys compare field-wise via
 /// ordering_less and take only their own type — user-supplied comparisons
 /// are ignored on both the encode and the lookup side, so admitting
 /// heterogeneous queries through them would promise an ordering the search
 /// does not use. Every other key takes anything totally ordered with its
-/// decoded form.
+/// decoded form. can_inline_struct_v implies fields_reflected_v, so a key
+/// past the reflection field limit — whose field walk would visit nothing
+/// and tie every lookup — is rejected here as well as by the encoder.
 template <typename K, typename U>
 concept map_lookup_key =
     (meta::reflectable_class<deep_clean_t<K>> && can_inline_struct_v<deep_clean_t<K>> &&
-     struct_key_orderable_v<deep_clean_t<K>> && std::same_as<U, deep_clean_t<K>>) ||
+     std::same_as<U, deep_clean_t<K>>) ||
     (!meta::reflectable_class<deep_clean_t<K>> &&
      std::totally_ordered_with<field_return_type_t<deep_clean_t<K>>, const U&>);
 

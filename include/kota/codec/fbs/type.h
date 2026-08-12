@@ -59,10 +59,10 @@ using verifier_t = ::flatbuffers::Verifier;
 /// - enumeration → underlying integer cell
 /// - structure → table with one slot per field; structs satisfying
 ///   can_inline_struct_v (trivially copyable, standard-layout, unannotated
-///   fields that are scalars other than long double, enums, or nested
-///   inline structs) may instead inline as fixed-size structs inside
-///   vectors, with padding bytes encoded as zero and bool bytes verified
-///   on decode
+///   fields that are scalars other than long double, fixed-underlying-type
+///   enums, or nested inline structs) may instead inline as fixed-size
+///   structs inside vectors, with padding bytes encoded as zero and bool
+///   bytes verified on decode
 /// - array/set → vector; element storage follows element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
 ///   other table-shaped elements use their own layouts), or boxed tables
@@ -84,6 +84,13 @@ enum class object_error_code : std::uint8_t {
 
 template <typename T>
 using object_result_t = std::expected<T, object_error_code>;
+
+/// Whether reflection sees a nonempty struct's fields: past the reflection
+/// field limit meta::field_count() collapses to zero, indistinguishable from
+/// a genuinely empty struct, so every field-walking lowering would treat the
+/// struct as empty.
+template <typename T>
+constexpr bool fields_reflected_v = std::is_empty_v<T> || meta::field_count<T>() > 0;
 
 namespace detail {
 
@@ -115,6 +122,18 @@ consteval void assert_config_layout_stable() {
     static_assert(default_config<Config>::nan_repr != nan_repr::String,
                   "the fbs backend cannot honor nan_repr::String: a float slot's shape would "
                   "depend on the value it holds");
+}
+
+/// Table lowerings walk a struct's reflected fields, so a nonempty struct
+/// past the reflection field limit would encode as an empty table and decode
+/// by discarding every input value — and it cannot inline either, because
+/// the padding sanitization would zero the whole image. Every table path
+/// asserts the shape away instead of silently dropping data.
+template <typename T>
+consteval void assert_fields_reflected() {
+    static_assert(fields_reflected_v<T>,
+                  "this struct has more fields than reflection supports; the fbs backend would "
+                  "encode it as an empty table, silently discarding every field");
 }
 
 /// A verifier for an untrusted buffer. Depth stays at the flatbuffers
@@ -169,6 +188,18 @@ constexpr bool is_scalar_field_v =
     (meta::floating_like<T> && !std::same_as<T, long double>) || meta::char_like<T> ||
     std::same_as<T, std::byte>;
 
+/// Whether an enum's underlying type is fixed (scoped, or declared with an
+/// explicit base) — exactly the enums direct-list-initializable from an
+/// integer. Only for these is every value of the underlying type a valid
+/// value of the enum, the property a memcpy image needs: an enum with a
+/// deduced base admits only the values of its minimal bit-field, so a
+/// hostile image could hold a representation whose mere evaluation is
+/// undefined behavior, invisible to size/alignment verification. Such a
+/// field keeps the struct table-shaped, where the slot travels as a plain
+/// integer cell.
+template <typename T>
+constexpr bool has_fixed_underlying_v = requires { T{0}; };
+
 template <typename T>
 struct schema_struct_trait;
 
@@ -189,7 +220,9 @@ constexpr bool is_schema_struct_field_v = [] {
         // inline struct's memcpy image; the enclosing type degrades to a
         // table, where the dispatch applies the repr.
         return false;
-    } else if constexpr(is_scalar_field_v<U> || std::is_enum_v<U>) {
+    } else if constexpr(std::is_enum_v<U>) {
+        return has_fixed_underlying_v<U>;
+    } else if constexpr(is_scalar_field_v<U>) {
         return true;
     } else if constexpr(meta::reflectable_class<U>) {
         return schema_struct_trait<U>::value;
@@ -203,13 +236,12 @@ struct schema_struct_trait {
     static consteval bool fields_supported() {
         if constexpr(!meta::reflectable_class<T>) {
             return false;
-        } else if constexpr(!std::is_empty_v<T> && meta::field_count<T>() == 0) {
-            // Past the reflection field limit meta::field_count() collapses
-            // to zero, indistinguishable from a genuinely empty struct: the
-            // padding sanitization would see no fields and zero the entire
-            // image. A nonempty struct whose fields reflection cannot see
-            // stays table-shaped — and, recursing through this trait, so
-            // does any struct containing one.
+        } else if constexpr(!fields_reflected_v<T>) {
+            // The padding sanitization would see no fields and zero the
+            // entire image, so a struct whose fields reflection cannot see
+            // never joins a memcpy image — and, recursing through this
+            // trait, neither does any struct containing one. The table paths
+            // then reject it outright (assert_fields_reflected).
             return false;
         } else {
             return []<std::size_t... I>(std::index_sequence<I...>) {
