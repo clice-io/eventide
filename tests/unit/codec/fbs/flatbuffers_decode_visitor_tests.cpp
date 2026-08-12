@@ -610,7 +610,7 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
 
     // Manual decode of element 1 via FieldReader directly
     auto verifier = fbs::detail::make_verifier(encoded->data(), encoded->size());
-    ASSERT_TRUE(verifier.VerifyOffset(0) != 0);
+    ASSERT_NE(verifier.VerifyOffset(0), 0U);
     ASSERT_TRUE(root->VerifyTableStart(verifier));
     fbs::decode_detail::FieldReader vr{
         .tbl = root,

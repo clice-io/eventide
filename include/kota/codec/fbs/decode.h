@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <ranges>
 #include <span>
 #include <string>
@@ -32,14 +33,15 @@ using fbs::verifier_t;
 
 struct FieldReader;
 
-/// Readers bounds-check every raw buffer access against the verifier before
-/// performing it, so decoding cannot read outside the buffer no matter how
-/// the dispatch drives the visit (reprs, adapters, any Config). Table
-/// descents pair VerifyTableStart/EndTable, which also caps nesting depth —
-/// cyclic offsets terminate instead of recursing forever.
+// Readers bounds-check every raw buffer access against the verifier before
+// performing it, so decoding cannot read outside the buffer no matter how
+// the dispatch drives the visit (reprs, adapters, any Config). Table
+// descents pair VerifyTableStart/EndTable, which also caps nesting depth —
+// cyclic offsets terminate instead of recursing forever.
+
 inline bool fail_verify(std::string_view what) {
     return scoped_context<rich_error>::fail(
-        rich_error(std::string("buffer verification failed: ").append(what)));
+        rich_error(std::format("buffer verification failed: {}", what)));
 }
 
 template <typename T>
@@ -160,8 +162,6 @@ struct FieldReader : detail::VisitorBase {
     verifier_t* verifier;
 
     bool peek_null() {
-        if(tbl == nullptr)
-            return true;
         return tbl->GetOptionalFieldOffset(slot) == 0;
     }
 
@@ -170,54 +170,30 @@ struct FieldReader : detail::VisitorBase {
     }
 
     bool visit_bool(bool& out) {
-        if(tbl == nullptr)
-            return true;
-        if(!tbl->VerifyField<std::uint8_t>(*verifier, slot, alignof(std::uint8_t)))
-            return fail_verify("bool field");
-        out = static_cast<bool>(tbl->GetField<std::uint8_t>(slot, 0));
-        return true;
+        return read_cell<std::uint8_t>(out, "bool field");
     }
 
     template <typename T>
     bool visit_int(T& out) {
-        if(tbl == nullptr)
-            return true;
-        if(!tbl->VerifyField<T>(*verifier, slot, alignof(T)))
-            return fail_verify("integer field");
-        out = static_cast<T>(tbl->GetField<T>(slot, T{}));
-        return true;
+        return read_cell<T>(out, "integer field");
     }
 
     template <typename T>
     bool visit_uint(T& out) {
-        if(tbl == nullptr)
-            return true;
-        if(!tbl->VerifyField<T>(*verifier, slot, alignof(T)))
-            return fail_verify("integer field");
-        out = static_cast<T>(tbl->GetField<T>(slot, T{}));
-        return true;
+        return read_cell<T>(out, "integer field");
     }
 
     template <typename T>
     bool visit_float(T& out) {
-        if(tbl == nullptr)
-            return true;
         if constexpr(std::same_as<T, float> || std::same_as<T, double>) {
-            if(!tbl->VerifyField<T>(*verifier, slot, alignof(T)))
-                return fail_verify("float field");
-            out = tbl->GetField<T>(slot, T{});
+            return read_cell<T>(out, "float field");
         } else {
-            if(!tbl->VerifyField<double>(*verifier, slot, alignof(double)))
-                return fail_verify("float field");
-            out = static_cast<T>(tbl->GetField<double>(slot, 0.0));
+            return read_cell<double>(out, "float field");
         }
-        return true;
     }
 
     template <typename T>
     bool visit_str(T& out) {
-        if(tbl == nullptr)
-            return true;
         if(!tbl->VerifyOffset(*verifier, slot))
             return fail_verify("string field offset");
         const auto* text = tbl->GetPointer<const String*>(slot);
@@ -244,18 +220,11 @@ struct FieldReader : detail::VisitorBase {
 
     template <typename T>
     bool visit_char(T& out) {
-        if(tbl == nullptr)
-            return true;
-        if(!tbl->VerifyField<std::int8_t>(*verifier, slot, alignof(std::int8_t)))
-            return fail_verify("char field");
-        out = static_cast<T>(static_cast<char>(tbl->GetField<std::int8_t>(slot, 0)));
-        return true;
+        return read_cell<std::int8_t>(out, "char field");
     }
 
     template <typename T>
     bool visit_bytes(T& out) {
-        if(tbl == nullptr)
-            return true;
         if(!tbl->VerifyOffset(*verifier, slot))
             return fail_verify("bytes field offset");
         const auto* vec = tbl->GetPointer<const Vector<std::uint8_t>*>(slot);
@@ -294,6 +263,16 @@ struct FieldReader : detail::VisitorBase {
     inline bool visit_variant(Body&& body);
 
 private:
+    // Reads one fixed-width cell after bounds-checking it; an absent slot
+    // reads as the zero cell, like every scalar access in this backend.
+    template <typename Cell, typename T>
+    bool read_cell(T& out, std::string_view what) {
+        if(!tbl->VerifyField<Cell>(*verifier, slot, alignof(Cell)))
+            return fail_verify(what);
+        out = static_cast<T>(tbl->GetField<Cell>(slot, Cell{}));
+        return true;
+    }
+
     // Follows the table this reader designates into `out`. slot == 0
     // designates tbl itself (vector/map elements), whose start the producing
     // reader already verified; a field slot is offset-checked and the child
@@ -303,8 +282,6 @@ private:
     bool follow_table(const Table*& out, bool& entered, std::string_view what) const {
         out = nullptr;
         entered = false;
-        if(tbl == nullptr)
-            return true;
         if(slot == 0) {
             out = tbl;
             return true;
@@ -355,13 +332,12 @@ struct RootReader : FieldReader {
 
     template <typename Body>
     bool visit_variant(Body&& body) {
-        if(tbl == nullptr) {
-            return scoped_context<rich_error>::fail(rich_error("null variant table"));
-        }
         if(!tbl->VerifyField<std::uint32_t>(*verifier, detail::first_field, alignof(std::uint32_t)))
             return fail_verify("variant tag");
         auto tag = tbl->GetField<std::uint32_t>(detail::first_field, 0);
         auto index = static_cast<std::size_t>(tag);
+        // A hostile tag can wrap this cast; safe because construct_and_visit
+        // rejects any out-of-range index before the payload reader is used.
         const voffset_t payload_slot = static_cast<voffset_t>(
             detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
         FieldReader pv{.tbl = tbl, .slot = payload_slot, .verifier = verifier};
@@ -375,8 +351,6 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
     if constexpr(std::same_as<V, std::monostate>) {
         return true;
     } else if constexpr(can_inline_struct_v<V>) {
-        if(tbl == nullptr)
-            return true;
         if(!tbl->VerifyField<V>(*verifier, slot, alignof(V)))
             return fail_verify("inline struct field");
         const auto* ptr = tbl->GetStruct<const V*>(slot);
@@ -400,8 +374,6 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
 
 template <typename T, typename Body>
 bool FieldReader::visit_seq([[maybe_unused]] T& out, Body&& body) {
-    if(tbl == nullptr)
-        return true;
     using V = std::remove_const_t<T>;
     using E = std::ranges::range_value_t<V>;
     const auto effective_slot = (slot == 0) ? detail::first_field : slot;
@@ -432,8 +404,6 @@ bool FieldReader::visit_tuple(T&, Body&& body) {
 
 template <typename T, typename Body>
 bool FieldReader::visit_map(T&, Body&& body) {
-    if(tbl == nullptr)
-        return true;
     const auto effective_slot = (slot == 0) ? detail::first_field : slot;
     if(!tbl->VerifyOffset(*verifier, effective_slot))
         return fail_verify("map field offset");
@@ -460,6 +430,8 @@ bool FieldReader::visit_variant(Body&& body) {
             return fail_verify("variant tag");
         auto tag = var_table->GetField<std::uint32_t>(detail::first_field, 0);
         auto index = static_cast<std::size_t>(tag);
+        // A hostile tag can wrap this cast; safe because construct_and_visit
+        // rejects any out-of-range index before the payload reader is used.
         const voffset_t payload_slot = static_cast<voffset_t>(
             detail::first_field + detail::field_step * static_cast<voffset_t>(index + 1));
         FieldReader pv{.tbl = var_table, .slot = payload_slot, .verifier = verifier};
@@ -543,7 +515,8 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 /// bounds-checked before it happens, so corrupt, truncated, or malicious
 /// input fails with an error instead of reading out of bounds. Table nesting
 /// deeper than the flatbuffers default of 64 is rejected (which also
-/// terminates cyclic offsets), as are buffers of 2 GiB or more.
+/// terminates cyclic offsets), as are buffers at or above flatbuffers'
+/// maximum buffer size (just under 2 GiB).
 /// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
 template <typename Config = void, typename T>
 auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
@@ -580,7 +553,6 @@ auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, r
     if(!decode_value<default_config<Config>>(vis, out)) {
         return std::unexpected(std::move(err));
     }
-    verifier.EndTable();
     return {};
 }
 

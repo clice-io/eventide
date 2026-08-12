@@ -1,16 +1,21 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
+#include <span>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include "kota/zest/zest.h"
+#include "kota/meta/attrs.h"
 #include "kota/codec/fbs/fbs.h"
 
 // Corrupt-input coverage for the fbs verifier: the eager path
@@ -21,6 +26,8 @@
 // "never" part, these tests drive the inputs.
 
 namespace kota::codec {
+
+using namespace meta;
 
 namespace {
 
@@ -33,11 +40,19 @@ struct inner {
     auto operator==(const inner&) const -> bool = default;
 };
 
+// No default member initializers: they would cost the type its trivial
+// default constructor and with it the inline-struct layout under test.
 struct point {
-    std::int32_t x = 0;
-    std::int32_t y = 0;
+    std::int32_t x;
+    std::int32_t y;
 
     auto operator==(const point&) const -> bool = default;
+};
+
+enum class grade : std::int32_t {
+    low = 0,
+    mid = 1,
+    high = 2,
 };
 
 /// One field of every layout the verifier classifies: scalars, strings,
@@ -75,6 +90,46 @@ auto make_rich() -> rich {
     };
 }
 
+/// The shapes rich leaves out: bare enum/char/byte cells, a long double
+/// (double cell), an inline struct field, optional-of-table, an integer-keyed
+/// map, nested vectors, a set, a monostate alternative, std::array behind a
+/// tuple, and the two slot-rerouting behavior attrs (as, enum_string).
+struct rich2 {
+    grade level = grade::low;
+    char tag = 'x';
+    std::byte flag{0};
+    long double ratio = 0.0L;
+    point pos;
+    std::optional<inner> extra;
+    std::unordered_map<std::uint64_t, std::string> names;
+    std::vector<std::vector<std::int32_t>> grid;
+    std::set<std::int32_t> uniq;
+    std::variant<std::monostate, inner> maybe;
+    std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
+    annotation<std::int32_t, behavior::as<std::int64_t>> widened{0};
+    annotation<grade, behavior::enum_string<rename_policy::identity>> level_name{grade::low};
+
+    auto operator==(const rich2&) const -> bool = default;
+};
+
+auto make_rich2() -> rich2 {
+    return rich2{
+        .level = grade::mid,
+        .tag = 'k',
+        .flag = std::byte{0x5A},
+        .ratio = 2.5L,
+        .pos = {.x = 3, .y = 4},
+        .extra = inner{.a = 6, .name = "boxed"},
+        .names = {{7u, "seven"}, {8u, "eight"}},
+        .grid = {{1, 2}, {3}},
+        .uniq = {5, 9},
+        .maybe = inner{.a = 1, .name = "table payload"},
+        .mixed = {11, {21, 22, 23}},
+        .widened = {1234},
+        .level_name = {grade::high},
+    };
+}
+
 struct node {
     std::int32_t value = 0;
     std::unique_ptr<node> next;
@@ -91,6 +146,47 @@ auto make_chain(std::size_t depth) -> node {
     return head;
 }
 
+/// Drives both hostile-input families over one fixture.
+///
+/// Truncation: chopping the tail removes data the root offset still points
+/// into, so any prefix must either fail verification or — when only trailing
+/// padding fell off — still decode to the original value.
+///
+/// Single-byte corruption: flipped values may still decode — a corrupted
+/// scalar is in bounds — but must never crash. When the upfront walk accepts
+/// a tampered buffer, `probe` exercises the view's offset-bearing accessors;
+/// the ASan preset turns any escape into a hard failure.
+template <typename T, typename Probe>
+void expect_hostile_bytes_contained(const T& input, Probe&& probe) {
+    auto encoded = fbs::to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    for(std::size_t len = 8; len < encoded->size(); ++len) {
+        auto span = std::span<const std::uint8_t>(encoded->data(), len);
+        auto result = fbs::from_bytes<T>(span);
+        if(result.has_value()) {
+            EXPECT_EQ(*result, input);
+        }
+        auto root = table_view<T>::from_bytes(span);
+        if(root.valid()) {
+            probe(root);
+        }
+    }
+
+    for(std::size_t pos = 0; pos < encoded->size(); ++pos) {
+        auto tampered = *encoded;
+        tampered[pos] ^= 0xFF;
+
+        T sink{};
+        [[maybe_unused]] auto result = fbs::from_bytes(tampered, sink);
+
+        auto root = table_view<T>::from_bytes(tampered);
+        if(root.valid()) {
+            probe(root);
+        }
+    }
+}
+
 TEST_SUITE(serde_flatbuffers_verifier) {
 
 TEST_CASE(rich_fixture_round_trips_both_paths) {
@@ -100,7 +196,7 @@ TEST_CASE(rich_fixture_round_trips_both_paths) {
 
     auto decoded = fbs::from_bytes<rich>(*encoded);
     ASSERT_TRUE(decoded.has_value());
-    EXPECT_TRUE(*decoded == input);
+    EXPECT_EQ(*decoded, input);
 
     auto root = table_view<rich>::from_bytes(*encoded);
     ASSERT_TRUE(root.valid());
@@ -111,15 +207,74 @@ TEST_CASE(rich_fixture_round_trips_both_paths) {
     EXPECT_EQ(root[&rich::which].get<1>(), "chosen");
 }
 
+TEST_CASE(rich2_fixture_round_trips_both_paths) {
+    const auto input = make_rich2();
+    auto encoded = fbs::to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto decoded = fbs::from_bytes<rich2>(*encoded);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(*decoded, input);
+
+    auto root = table_view<rich2>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    EXPECT_TRUE(root[&rich2::level] == grade::mid);
+    EXPECT_EQ(root[&rich2::tag], 'k');
+    EXPECT_TRUE(root[&rich2::flag] == std::byte{0x5A});
+    EXPECT_EQ(root[&rich2::pos].y, 4);
+    EXPECT_EQ(root[&rich2::extra][&inner::name], "boxed");
+    EXPECT_EQ(root[&rich2::names][std::uint64_t{8}], "eight");
+    EXPECT_EQ(root[&rich2::grid][0][1], 2);
+    EXPECT_EQ(root[&rich2::uniq].size(), 2U);
+    EXPECT_EQ(root[&rich2::maybe].index(), 1U);
+    EXPECT_EQ(root[&rich2::maybe].get<1>()[&inner::a], 1);
+    EXPECT_EQ(root[&rich2::mixed].get<1>().get<2>(), 23);
+    // Behavior attrs reroute the slot: as<int64> reads back the widened cell,
+    // enum_string reads back the enumerator's name.
+    EXPECT_EQ(root[&rich2::widened], 1234);
+    EXPECT_EQ(root[&rich2::level_name], "high");
+}
+
+TEST_CASE(monostate_alternative_round_trips_both_paths) {
+    // A selected monostate travels as an empty table at the payload slot;
+    // the views read the slot as a zero-size inline struct. Both must stay
+    // in bounds.
+    rich2 input = make_rich2();
+    input.maybe = std::monostate{};
+
+    auto encoded = fbs::to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto decoded = fbs::from_bytes<rich2>(*encoded);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(*decoded, input);
+
+    auto root = table_view<rich2>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    EXPECT_EQ(root[&rich2::maybe].index(), 0U);
+    [[maybe_unused]] auto unit = root[&rich2::maybe].get<0>();
+}
+
 TEST_CASE(undersized_buffers_are_rejected) {
-    // Anything below root-uoffset + identifier cannot be a flatbuffer. The
-    // pre-verifier decoder read the identifier at [4, 8) unconditionally —
-    // a 3-byte file was a heap-buffer-overflow.
+    // Anything below root-uoffset + identifier cannot be a flatbuffer.
     std::vector<std::uint8_t> tiny(8, 0xAB);
     for(std::size_t len = 0; len < tiny.size(); ++len) {
         auto span = std::span<const std::uint8_t>(tiny.data(), len);
         auto result = fbs::from_bytes<rich>(span);
         ASSERT_FALSE(result.has_value());
+        EXPECT_FALSE(table_view<rich>::from_bytes(span).valid());
+    }
+}
+
+TEST_CASE(minimal_buffers_with_valid_identifier_are_rejected) {
+    // Smallest spans that pass the size and identifier gates; the root
+    // offset then points into the identifier or at the buffer end.
+    const std::array<std::uint8_t, 8> into_identifier = {4, 0, 0, 0, 'E', 'V', 'T', 'O'};
+    const std::array<std::uint8_t, 8> at_end = {8, 0, 0, 0, 'E', 'V', 'T', 'O'};
+
+    for(const auto& raw: {into_identifier, at_end}) {
+        auto span = std::span<const std::uint8_t>(raw.data(), raw.size());
+        EXPECT_FALSE(fbs::from_bytes<rich>(span).has_value());
         EXPECT_FALSE(table_view<rich>::from_bytes(span).valid());
     }
 }
@@ -149,79 +304,55 @@ TEST_CASE(out_of_bounds_root_offset_is_rejected) {
     EXPECT_FALSE(table_view<rich>::from_bytes(tampered).valid());
 }
 
-TEST_CASE(truncation_never_reads_out_of_bounds) {
-    // Chopping the tail removes table/vector/string data the root offset
-    // still points into. Any prefix must either fail verification or — when
-    // only trailing padding fell off — still decode to the original value.
-    const auto input = make_rich();
-    auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
-
-    for(std::size_t len = 8; len < encoded->size(); ++len) {
-        auto span = std::span<const std::uint8_t>(encoded->data(), len);
-
-        auto result = fbs::from_bytes<rich>(span);
-        if(result.has_value()) {
-            EXPECT_TRUE(*result == input);
+TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich) {
+    expect_hostile_bytes_contained(make_rich(), [](const table_view<rich>& root) {
+        [[maybe_unused]] auto title = root[&rich::title];
+        auto tags = root[&rich::tags];
+        for(std::size_t i = 0; i < tags.size(); ++i) {
+            [[maybe_unused]] auto tag = tags[i];
         }
-
-        auto root = table_view<rich>::from_bytes(span);
-        if(root.valid()) {
-            EXPECT_EQ(root[&rich::id], 42);
+        auto items = root[&rich::items];
+        for(std::size_t i = 0; i < items.size(); ++i) {
+            [[maybe_unused]] auto name = items[i][&inner::name];
         }
-    }
+        [[maybe_unused]] auto hit = root[&rich::index]["k1"];
+        [[maybe_unused]] auto chosen = root[&rich::which].get<1>();
+        [[maybe_unused]] auto second = root[&rich::pair_like].get<1>();
+    });
 }
 
-TEST_CASE(single_word_corruption_never_reads_out_of_bounds) {
-    // The report's original repro: a valid buffer with one 32-bit word
-    // flipped passed the shallow root check and SEGV'd during decode. Both
-    // paths must now survive every position; flipped values are allowed to
-    // decode (a corrupted scalar is still in bounds), just never to crash.
-    // The ASan preset turns any regression here into a hard failure.
-    const auto input = make_rich();
-    auto encoded = fbs::to_bytes(input);
-    ASSERT_TRUE(encoded.has_value());
-
-    for(std::size_t pos = 0; pos + 4 <= encoded->size(); pos += 4) {
-        auto tampered = *encoded;
-        tampered[pos] ^= 0xFF;
-        tampered[pos + 1] ^= 0xFF;
-        tampered[pos + 2] ^= 0xFF;
-        tampered[pos + 3] ^= 0xFF;
-
-        rich sink{};
-        [[maybe_unused]] auto result = fbs::from_bytes(tampered, sink);
-
-        auto root = table_view<rich>::from_bytes(tampered);
-        if(root.valid()) {
-            // The walk accepted the buffer, so every view access must be
-            // safe; exercise the layouts that involve offsets.
-            [[maybe_unused]] auto title = root[&rich::title];
-            [[maybe_unused]] auto tags = root[&rich::tags];
-            for(std::size_t i = 0; i < tags.size(); ++i) {
-                [[maybe_unused]] auto tag = tags[i];
+TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich2) {
+    expect_hostile_bytes_contained(make_rich2(), [](const table_view<rich2>& root) {
+        [[maybe_unused]] auto level = root[&rich2::level];
+        [[maybe_unused]] auto pos = root[&rich2::pos];
+        [[maybe_unused]] auto extra_name = root[&rich2::extra][&inner::name];
+        [[maybe_unused]] auto lookup = root[&rich2::names][std::uint64_t{7}];
+        auto grid = root[&rich2::grid];
+        for(std::size_t i = 0; i < grid.size(); ++i) {
+            auto row = grid[i];
+            for(std::size_t j = 0; j < row.size(); ++j) {
+                [[maybe_unused]] auto cell = row[j];
             }
-            [[maybe_unused]] auto items = root[&rich::items];
-            for(std::size_t i = 0; i < items.size(); ++i) {
-                [[maybe_unused]] auto name = items[i][&inner::name];
-            }
-            [[maybe_unused]] auto hit = root[&rich::index]["k1"];
-            [[maybe_unused]] auto chosen = root[&rich::which].get<1>();
-            [[maybe_unused]] auto second = root[&rich::pair_like].get<1>();
         }
-    }
+        [[maybe_unused]] auto uniq_size = root[&rich2::uniq].size();
+        [[maybe_unused]] auto payload = root[&rich2::maybe].get<1>();
+        [[maybe_unused]] auto arr = root[&rich2::mixed].get<1>().get<0>();
+        [[maybe_unused]] auto widened = root[&rich2::widened];
+        [[maybe_unused]] auto level_name = root[&rich2::level_name];
+    });
 }
 
-TEST_CASE(recursion_depth_is_capped) {
-    // The depth cap is also what terminates cyclic offsets: a cycle is just
-    // an infinitely deep chain.
-    auto shallow = fbs::to_bytes(make_chain(16));
+TEST_CASE(recursion_depth_boundary) {
+    // The verifier's depth cap (flatbuffers default 64) is also what
+    // terminates cyclic offsets: a cycle is just an infinitely deep chain.
+    // Straddle the cap so a change to per-table depth cost surfaces here.
+    auto shallow = fbs::to_bytes(make_chain(60));
     ASSERT_TRUE(shallow.has_value());
     node shallow_out{};
     EXPECT_TRUE(fbs::from_bytes(*shallow, shallow_out).has_value());
     EXPECT_TRUE(table_view<node>::from_bytes(*shallow).valid());
 
-    auto deep = fbs::to_bytes(make_chain(100));
+    auto deep = fbs::to_bytes(make_chain(70));
     ASSERT_TRUE(deep.has_value());
     node deep_out{};
     EXPECT_FALSE(fbs::from_bytes(*deep, deep_out).has_value());

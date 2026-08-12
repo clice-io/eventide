@@ -468,6 +468,9 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
 // views trust their pointers, so this walk is what makes from_bytes safe on
 // corrupt, truncated, or malicious input.
 
+/// Verify the value of view type T at a field slot, mirroring read_field's
+/// classification branch for branch. An absent slot always verifies (the
+/// views read it as a default), as does a present-but-null nested table.
 template <typename T>
 bool verify_field(verifier_t& v, const Table* tbl, slot_id slot);
 
@@ -527,7 +530,8 @@ bool verify_table(verifier_t& v, const Table* tbl) {
             return (verify_slot<type_list_element_t<Is, slots>>(v, tbl, field_slot(Is)) && ...);
         }(std::make_index_sequence<type_list_size_v<slots>>{});
     }
-    return ok && v.EndTable();
+    v.EndTable();
+    return ok;
 }
 
 template <typename T>
@@ -573,8 +577,13 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
         }
         for(uoffset_t i = 0; i < vec->size(); ++i) {
             const auto* entry = vec->template GetAs<Table>(i);
-            if(!entry->VerifyTableStart(v) || !verify_field<clean_key_t>(v, entry, field_slot(0)) ||
-               !verify_field<clean_mapped_t>(v, entry, field_slot(1)) || !v.EndTable()) {
+            if(!entry->VerifyTableStart(v)) {
+                return false;
+            }
+            const bool ok = verify_field<clean_key_t>(v, entry, field_slot(0)) &&
+                            verify_field<clean_mapped_t>(v, entry, field_slot(1));
+            v.EndTable();
+            if(!ok) {
                 return false;
             }
         }
@@ -599,9 +608,13 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
         } else if constexpr(layout == boxed) {
             for(uoffset_t i = 0; i < vec->size(); ++i) {
                 const auto* wrapper = vec->template GetAs<Table>(i);
-                if(!wrapper->VerifyTableStart(v) ||
-                   !verify_field<deep_clean_t<element_t>>(v, wrapper, detail::first_field) ||
-                   !v.EndTable()) {
+                if(!wrapper->VerifyTableStart(v)) {
+                    return false;
+                }
+                const bool ok =
+                    verify_field<deep_clean_t<element_t>>(v, wrapper, detail::first_field);
+                v.EndTable();
+                if(!ok) {
                     return false;
                 }
             }
@@ -930,7 +943,8 @@ public:
     /// Accesses on the returned view are therefore in-bounds even for
     /// corrupt, truncated, or malicious input; a buffer that fails
     /// verification yields an invalid view. Table nesting deeper than the
-    /// flatbuffers default of 64 and buffers of 2 GiB or more are rejected.
+    /// flatbuffers default of 64 is rejected, as are buffers at or above
+    /// flatbuffers' maximum buffer size (just under 2 GiB).
     static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
         static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
                       "table_view reads T's own table layout; a type whose fbs representation "

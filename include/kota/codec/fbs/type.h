@@ -1,6 +1,6 @@
 #pragma once
 
-#include <algorithm>
+#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -120,11 +120,13 @@ consteval void assert_config_layout_stable() {
 /// terminate — while the table-visit cap scales with the buffer: a table
 /// occupies at least 4 bytes, so size/4 admits every legitimate buffer no
 /// matter how large, yet aliased offsets cannot amplify verification work
-/// past O(size).
+/// past O(size). The +16 keeps sub-64-byte buffers from starving.
 inline auto make_verifier(const std::uint8_t* data, std::size_t size) -> verifier_t {
+    // Callers reject larger sizes first; this also keeps the cap within
+    // uoffset_t.
+    assert(size < FLATBUFFERS_MAX_BUFFER_SIZE);
     verifier_t::Options opts;
-    constexpr auto cap = static_cast<std::size_t>((std::numeric_limits<uoffset_t>::max)());
-    opts.max_tables = static_cast<uoffset_t>((std::min)(size / 4 + 16, cap));
+    opts.max_tables = static_cast<uoffset_t>(size / 4 + 16);
     return verifier_t(data, size, opts);
 }
 
