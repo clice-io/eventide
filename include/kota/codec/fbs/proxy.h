@@ -686,6 +686,14 @@ constexpr bool ordering_equal(const T& a, const U& b) {
     }
 }
 
+/// Whether ordering_less actually sees a reflected key's fields: past the
+/// reflection field limit, meta::field_count() collapses to zero, the field
+/// walk visits nothing, and every key of the type compares equal. Both the
+/// encoder's sort and map_view lookups reject such keys; a genuinely empty
+/// struct stays admitted (its single value needs no ordering).
+template <typename T>
+constexpr bool struct_key_orderable_v = std::is_empty_v<T> || meta::field_count<T>() > 0;
+
 /// A key a map_view lookup accepts. Reflected keys compare field-wise via
 /// ordering_less and take only their own type — user-supplied comparisons
 /// are ignored on both the encode and the lookup side, so admitting
@@ -695,7 +703,7 @@ constexpr bool ordering_equal(const T& a, const U& b) {
 template <typename K, typename U>
 concept map_lookup_key =
     (meta::reflectable_class<deep_clean_t<K>> && can_inline_struct_v<deep_clean_t<K>> &&
-     std::same_as<U, deep_clean_t<K>>) ||
+     struct_key_orderable_v<deep_clean_t<K>> && std::same_as<U, deep_clean_t<K>>) ||
     (!meta::reflectable_class<deep_clean_t<K>> &&
      std::totally_ordered_with<field_return_type_t<deep_clean_t<K>>, const U&>);
 
@@ -1031,6 +1039,9 @@ public:
     /// opened and constructs views per query. The caller owns that contract —
     /// on unverified bytes the view reads out of bounds.
     static auto from_verified_bytes(std::span<const std::uint8_t> bytes) -> table_view {
+        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
+                      "table_view reads T's own table layout; a type whose fbs representation "
+                      "differs from itself cannot be viewed — decode it with from_bytes instead");
         return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
     }
 

@@ -505,9 +505,7 @@ constexpr auto ordering_key_impl() {
             static_assert(can_inline_struct_v<clean_k>,
                           "a struct map key must satisfy can_inline_struct_v; a table-shaped "
                           "key has no canonical ordering for the sorted entry vector");
-            // Past the reflection field limit, field_count() collapses to zero
-            // and every key would order equal — reject instead of mis-sorting.
-            static_assert(std::is_empty_v<clean_k> || meta::field_count<clean_k>() > 0,
+            static_assert(proxy_detail::struct_key_orderable_v<clean_k>,
                           "this struct map key has more fields than reflection supports; its "
                           "entries cannot be ordered");
         }
