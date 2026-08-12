@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <optional>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,9 +17,9 @@ public:
     explicit FakeTransport(std::vector<std::string> incoming) :
         incoming_messages(std::move(incoming)) {}
 
-    task<std::optional<std::string>> read_message() override {
+    task<ReadEvent> read_message() override {
         if(read_index >= incoming_messages.size()) {
-            co_return std::nullopt;
+            co_return TransportClosed{};
         }
         co_return incoming_messages[read_index++];
     }
@@ -44,20 +44,22 @@ public:
     using WriteHook = std::function<void(std::string_view, ScriptedTransport&)>;
 
     ScriptedTransport(std::vector<std::string> incoming, WriteHook hook) :
-        incoming_messages(std::move(incoming)), write_hook(std::move(hook)) {
+        incoming_messages(std::make_move_iterator(incoming.begin()),
+                          std::make_move_iterator(incoming.end())),
+        write_hook(std::move(hook)) {
         if(!incoming_messages.empty()) {
             readable.set();
         }
     }
 
-    task<std::optional<std::string>> read_message() override {
+    task<ReadEvent> read_message() override {
         if(closed) {
-            co_return std::nullopt;
+            co_return TransportClosed{};
         }
 
         while(read_index >= incoming_messages.size()) {
             if(closed) {
-                co_return std::nullopt;
+                co_return TransportClosed{};
             }
 
             co_await readable.wait();
@@ -87,6 +89,12 @@ public:
         readable.set();
     }
 
+    void push_dropped(std::size_t announced_bytes, std::size_t limit_bytes) {
+        incoming_messages.push_back(
+            MessageDropped{.announced_bytes = announced_bytes, .limit_bytes = limit_bytes});
+        readable.set();
+    }
+
     Result<void> close() override {
         closed = true;
         readable.set();
@@ -98,7 +106,7 @@ public:
     }
 
 private:
-    std::vector<std::string> incoming_messages;
+    std::vector<ReadEvent> incoming_messages;
     std::vector<std::string> outgoing_messages;
     std::size_t read_index = 0;
     WriteHook write_hook;

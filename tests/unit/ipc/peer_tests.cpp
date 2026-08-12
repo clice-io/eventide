@@ -523,6 +523,54 @@ TEST_CASE(bad_response_silent) {
     EXPECT_FALSE(request_result.error().message.empty());
 }
 
+// A dropped oversized message fails the pending request with MessageTooLarge
+// but leaves the stream usable: the next request on the same peer completes.
+TEST_CASE(dropped_message_fails_pending) {
+    auto transport = std::make_unique<ScriptedTransport>(
+        std::vector<std::string>{},
+        [](std::string_view payload, ScriptedTransport& channel) {
+            if(payload.find(R"("method":"worker/build")") == std::string_view::npos) {
+                return;
+            }
+
+            if(payload.find(R"("id":1)") != std::string_view::npos) {
+                channel.push_dropped(100, 64);
+                return;
+            }
+
+            if(payload.find(R"("id":2)") != std::string_view::npos) {
+                channel.push_incoming(R"({"jsonrpc":"2.0","id":2,"result":{"sum":11}})");
+                channel.close();
+            }
+        });
+
+    event_loop loop;
+    JsonPeer peer(loop, std::move(transport));
+    Result<AddResult> first_result = outcome_error(Error("request did not complete"));
+    Result<AddResult> second_result = outcome_error(Error("request did not complete"));
+
+    auto requester = [&]() -> task<> {
+        first_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 5, .b = 6});
+        second_result =
+            co_await peer.send_request<AddResult>("worker/build", CustomAddParams{.a = 5, .b = 6});
+        co_return;
+    };
+
+    auto request_task = requester();
+    loop.schedule(peer.run());
+    loop.schedule(request_task);
+    EXPECT_EQ(loop.run(), 0);
+
+    ASSERT_FALSE(first_result.has_value());
+    EXPECT_EQ(first_result.error().code,
+              static_cast<protocol::integer>(protocol::ErrorCode::MessageTooLarge));
+    EXPECT_EQ(first_result.error().message, "incoming message dropped: 100 bytes exceeds limit 64");
+
+    ASSERT_TRUE(second_result.has_value());
+    EXPECT_EQ(second_result->sum, 11);
+}
+
 TEST_CASE(bad_params_invalid) {
     auto transport = std::make_unique<FakeTransport>(std::vector<std::string>{
         R"({"jsonrpc":"2.0","id":11,"method":"test/add","params":"invalid"})",

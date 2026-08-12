@@ -16,7 +16,6 @@ namespace {
 // Guard against a broken sender that never produces \r\n\r\n —
 // without a cap the header buffer would grow until OOM.
 constexpr std::size_t max_header_bytes = 8 * 1024;
-constexpr std::size_t max_payload_bytes = 64 * 1024 * 1024;
 
 std::string_view trim_ascii(std::string_view value) {
     auto start = value.find_first_not_of(" \t");
@@ -72,9 +71,6 @@ std::optional<std::size_t> parse_content_length(std::string_view header) {
             parsed = parsed * 10 + digit;
         }
 
-        if(parsed > max_payload_bytes) {
-            return std::nullopt;
-        }
         return parsed;
     }
     return std::nullopt;
@@ -168,7 +164,7 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_tcp(int fd, event
     return std::make_unique<StreamTransport>(std::move(*channel));
 }
 
-task<std::optional<std::string>> StreamTransport::read_message() {
+task<ReadEvent> StreamTransport::read_message() {
     std::string header;
     std::optional<std::size_t> content_length;
 
@@ -176,7 +172,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) [[unlikely]] {
             read_stream.stop();
-            co_return std::nullopt;
+            co_return TransportClosed{};
         }
 
         const auto old_size = header.size();
@@ -186,7 +182,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         if(marker == std::string::npos) {
             if(header.size() > max_header_bytes) [[unlikely]] {
                 read_stream.stop();
-                co_return std::nullopt;
+                co_return TransportClosed{};
             }
             read_stream.consume(chunk->size());
             continue;
@@ -195,7 +191,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         const auto header_end = marker + 4;
         if(header_end > max_header_bytes) [[unlikely]] {
             read_stream.stop();
-            co_return std::nullopt;
+            co_return TransportClosed{};
         }
         const auto consumed_from_chunk = header_end > old_size ? header_end - old_size : 0;
         read_stream.consume(consumed_from_chunk);
@@ -204,8 +200,36 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         content_length = parse_content_length(view);
         if(!content_length.has_value()) [[unlikely]] {
             read_stream.stop();
-            co_return std::nullopt;
+            co_return TransportClosed{};
         }
+    }
+
+    if(*content_length > max_payload_bytes) [[unlikely]] {
+        // Skipping relies on the announced length being honest: a value far
+        // beyond the limit is indistinguishable from framing corruption, and
+        // draining it would silently eat the stream.
+        const auto ceiling_max = (std::numeric_limits<std::size_t>::max)();
+        const auto drain_ceiling =
+            max_payload_bytes <= ceiling_max / 4 ? max_payload_bytes * 4 : ceiling_max;
+        if(*content_length > drain_ceiling) {
+            read_stream.stop();
+            co_return TransportClosed{};
+        }
+
+        std::size_t remaining = *content_length;
+        while(remaining > 0) {
+            auto chunk = co_await read_stream.read_chunk();
+            if(!chunk) [[unlikely]] {
+                read_stream.stop();
+                co_return TransportClosed{};
+            }
+            const auto take = std::min<std::size_t>(remaining, chunk->size());
+            read_stream.consume(take);
+            remaining -= take;
+        }
+
+        co_return MessageDropped{.announced_bytes = *content_length,
+                                 .limit_bytes = max_payload_bytes};
     }
 
     std::string payload;
@@ -215,7 +239,7 @@ task<std::optional<std::string>> StreamTransport::read_message() {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) [[unlikely]] {
             read_stream.stop();
-            co_return std::nullopt;
+            co_return TransportClosed{};
         }
 
         const auto need = *content_length - payload.size();
