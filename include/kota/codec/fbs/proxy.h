@@ -15,6 +15,8 @@
 #include <utility>
 #include <variant>
 
+#include "kota/support/tuple_traits.h"
+#include "kota/support/type_list.h"
 #include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
 #include "kota/meta/type_kind.h"
@@ -458,6 +460,174 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     }
 }
 
+// Upfront deep verification for the zero-copy views: walks the buffer along
+// the exact classification the views read through (read_field's branches,
+// element_layout, deep_clean_t), bounds-checking every offset, string,
+// vector, and table against the verifier. A buffer that verifies can then be
+// accessed through table_view and friends without any further checks — the
+// views trust their pointers, so this walk is what makes from_bytes safe on
+// corrupt, truncated, or malicious input.
+
+template <typename T>
+bool verify_field(verifier_t& v, const Table* tbl, slot_id slot);
+
+/// Verify a table-shaped value (variant, tuple-like, or reflectable struct)
+/// rooted at `tbl`. VerifyTableStart also counts depth and table visits, so
+/// cyclic offsets and alias amplification terminate.
+template <typename T>
+bool verify_table(verifier_t& v, const Table* tbl);
+
+/// Verify one struct field slot: behavior attrs re-route the wire type
+/// exactly as meta's repr resolver does (with > as > enum_string), then the
+/// resolved view type classifies the slot.
+template <typename Slot>
+bool verify_slot(verifier_t& v, const Table* tbl, slot_id slot) {
+    using raw_t = std::remove_cv_t<typename Slot::raw_type>;
+    using attrs_t = typename Slot::attrs;
+
+    if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::with>) {
+        using adapter = typename tuple_find_spec_t<attrs_t, meta::behavior::with>::adapter;
+        return verify_field<deep_clean_t<meta::declared_repr_t<adapter>>>(v, tbl, slot);
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::as>) {
+        using target = typename tuple_find_spec_t<attrs_t, meta::behavior::as>::target;
+        return verify_field<deep_clean_t<target>>(v, tbl, slot);
+    } else if constexpr(tuple_has_spec_v<attrs_t, meta::behavior::enum_string>) {
+        return verify_field<std::string_view>(v, tbl, slot);
+    } else {
+        return verify_field<deep_clean_t<raw_t>>(v, tbl, slot);
+    }
+}
+
+template <typename T>
+bool verify_table(verifier_t& v, const Table* tbl) {
+    if(!tbl->VerifyTableStart(v)) {
+        return false;
+    }
+    bool ok;
+    if constexpr(is_specialization_of<std::variant, T>) {
+        // variant_view::get<I>() is reachable for every alternative
+        // regardless of the stored tag, so every payload slot must verify.
+        ok = tbl->VerifyField<std::uint32_t>(v, variant_tag_slot(), alignof(std::uint32_t)) &&
+             [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                 return (verify_field<deep_clean_t<std::variant_alternative_t<Is, T>>>(
+                             v,
+                             tbl,
+                             variant_payload_slot(Is)) &&
+                         ...);
+             }(std::make_index_sequence<std::variant_size_v<T>>{});
+    } else if constexpr(is_tuple_like_v<T>) {
+        ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (
+                verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v, tbl, field_slot(Is)) &&
+                ...);
+        }(std::make_index_sequence<std::tuple_size_v<T>>{});
+    } else {
+        using slots = typename object_schema<T>::slots;
+        ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (verify_slot<type_list_element_t<Is, slots>>(v, tbl, field_slot(Is)) && ...);
+        }(std::make_index_sequence<type_list_size_v<slots>>{});
+    }
+    return ok && v.EndTable();
+}
+
+template <typename T>
+bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
+    if constexpr(std::same_as<T, std::byte>) {
+        return tbl->VerifyField<std::uint8_t>(v, slot, alignof(std::uint8_t));
+    } else if constexpr(std::is_enum_v<T>) {
+        using cell_t = std::underlying_type_t<T>;
+        return tbl->VerifyField<cell_t>(v, slot, alignof(cell_t));
+    } else if constexpr(meta::char_like<T>) {
+        return tbl->VerifyField<std::int8_t>(v, slot, alignof(std::int8_t));
+    } else if constexpr(meta::bool_like<T> || meta::int_like<T> || meta::uint_like<T>) {
+        return tbl->VerifyField<T>(v, slot, alignof(T));
+    } else if constexpr(meta::floating_like<T>) {
+        using cell_t = scalar_cell_t<T>;
+        return tbl->VerifyField<cell_t>(v, slot, alignof(cell_t));
+    } else if constexpr(is_string_like_v<T>) {
+        return tbl->VerifyOffset(v, slot) &&
+               v.VerifyString(tbl->template GetPointer<const String*>(slot));
+    } else if constexpr(is_specialization_of<std::variant, T> || is_tuple_like_v<T>) {
+        // Table-shaped like the trailing else, but ordered before the range
+        // branch to match read_field: std::array is both tuple-like and
+        // range-like and travels as a table.
+        if(!tbl->VerifyOffset(v, slot)) {
+            return false;
+        }
+        const auto* nested = tbl->template GetPointer<const Table*>(slot);
+        return nested == nullptr || verify_table<T>(v, nested);
+    } else if constexpr(can_inline_struct_v<T>) {
+        return tbl->VerifyField<T>(v, slot, alignof(T));
+    } else if constexpr(is_map_range_v<T>) {
+        using clean_key_t = deep_clean_t<typename T::key_type>;
+        using clean_mapped_t = deep_clean_t<typename T::mapped_type>;
+        if(!tbl->VerifyOffset(v, slot)) {
+            return false;
+        }
+        const auto* vec = tbl->template GetPointer<const Vector<table_offset_t>*>(slot);
+        if(!v.VerifyVector(vec)) {
+            return false;
+        }
+        if(vec == nullptr) {
+            return true;
+        }
+        for(uoffset_t i = 0; i < vec->size(); ++i) {
+            const auto* entry = vec->template GetAs<Table>(i);
+            if(!entry->VerifyTableStart(v) || !verify_field<clean_key_t>(v, entry, field_slot(0)) ||
+               !verify_field<clean_mapped_t>(v, entry, field_slot(1)) || !v.EndTable()) {
+                return false;
+            }
+        }
+        return true;
+    } else if constexpr(is_range_like_v<T>) {
+        using element_t = std::remove_cvref_t<std::ranges::range_value_t<T>>;
+        constexpr auto layout = element_layout_of<element_t>();
+        using enum element_layout;
+
+        if(!tbl->VerifyOffset(v, slot)) {
+            return false;
+        }
+        const auto* vec = tbl->template GetPointer<element_vector_ptr_t<element_t>>(slot);
+        if(!v.VerifyVector(vec)) {
+            return false;
+        }
+        if(vec == nullptr) {
+            return true;
+        }
+        if constexpr(layout == string) {
+            return v.VerifyVectorOfStrings(vec);
+        } else if constexpr(layout == boxed) {
+            for(uoffset_t i = 0; i < vec->size(); ++i) {
+                const auto* wrapper = vec->template GetAs<Table>(i);
+                if(!wrapper->VerifyTableStart(v) ||
+                   !verify_field<deep_clean_t<element_t>>(v, wrapper, detail::first_field) ||
+                   !v.EndTable()) {
+                    return false;
+                }
+            }
+            return true;
+        } else if constexpr(layout == table) {
+            for(uoffset_t i = 0; i < vec->size(); ++i) {
+                const auto* child = vec->template GetAs<Table>(i);
+                if(!verify_table<deep_clean_t<element_t>>(v, child)) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            // scalar / inline_struct: VerifyVector covered the element data.
+            return true;
+        }
+    } else {
+        // Reflectable structure — the table_view branch of read_field.
+        if(!tbl->VerifyOffset(v, slot)) {
+            return false;
+        }
+        const auto* nested = tbl->template GetPointer<const Table*>(slot);
+        return nested == nullptr || verify_table<T>(v, nested);
+    }
+}
+
 }  // namespace proxy_detail
 
 template <typename Element>
@@ -754,19 +924,40 @@ public:
 
     constexpr explicit table_view(view_type view) noexcept : view(view) {}
 
+    /// Verifies the buffer against T's encoded shape before exposing it:
+    /// the "EVTO" identifier, then every offset, string, vector, and table
+    /// reachable through the views (including all variant payload slots).
+    /// Accesses on the returned view are therefore in-bounds even for
+    /// corrupt, truncated, or malicious input; a buffer that fails
+    /// verification yields an invalid view. Table nesting deeper than the
+    /// flatbuffers default of 64 and buffers of 2 GiB or more are rejected.
     static auto from_bytes(std::span<const std::uint8_t> bytes) -> table_view {
-        if(bytes.empty()) {
+        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
+                      "table_view reads T's own table layout; a type whose fbs representation "
+                      "differs from itself cannot be viewed — decode it with from_bytes instead");
+
+        // Root uoffset plus the 4-byte identifier: the smallest well-formed buffer.
+        if(bytes.size() < 2 * sizeof(uoffset_t) || bytes.size() >= FLATBUFFERS_MAX_BUFFER_SIZE) {
             return {};
         }
-        return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
+        const auto* data = bytes.data();
+        if(!::flatbuffers::BufferHasIdentifier(data, detail::buffer_identifier)) {
+            return {};
+        }
+        auto verifier = detail::make_verifier(data, bytes.size());
+        if(verifier.VerifyOffset(0) == 0) {
+            return {};
+        }
+        const auto* root = ::flatbuffers::GetRoot<Table>(data);
+        if(!proxy_detail::verify_table<object_type>(verifier, root)) {
+            return {};
+        }
+        return table_view(view_type(root));
     }
 
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
-        if(bytes.empty()) {
-            return {};
-        }
         const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
-        return table_view(view_type(::flatbuffers::GetRoot<Table>(data)));
+        return from_bytes(std::span<const std::uint8_t>(data, bytes.size()));
     }
 
     constexpr auto valid() const noexcept -> bool {

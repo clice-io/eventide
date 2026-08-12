@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +12,7 @@
 
 #include "kota/meta/repr.h"
 #include "kota/meta/type_kind.h"
+#include "kota/codec/visit/config.h"
 #include "kota/codec/visit/context.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
@@ -96,6 +98,35 @@ struct VisitorBase {
 constexpr inline char buffer_identifier[] = "EVTO";
 constexpr voffset_t first_field = 4;
 constexpr voffset_t field_step = 2;
+
+/// FlatBuffers computes every slot's layout statically from the type, so a
+/// config knob that re-routes values to a different wire shape cannot apply.
+/// Rejecting them here keeps the layout a pure function of the type — which
+/// is also what lets the config-less zero-copy views and their verifier read
+/// any buffer this backend produced.
+template <typename Config>
+consteval void assert_config_layout_stable() {
+    static_assert(default_config<Config>::enum_repr == enum_repr::Integer,
+                  "the fbs backend cannot honor enum_repr::String: it would change every enum "
+                  "slot from an integer cell to a string offset; annotate individual fields "
+                  "with behavior::enum_string instead");
+    static_assert(default_config<Config>::nan_repr != nan_repr::String,
+                  "the fbs backend cannot honor nan_repr::String: a float slot's shape would "
+                  "depend on the value it holds");
+}
+
+/// A verifier for an untrusted buffer. Depth stays at the flatbuffers
+/// default (64) — it bounds the decode/verify recursion, so cyclic offsets
+/// terminate — while the table-visit cap scales with the buffer: a table
+/// occupies at least 4 bytes, so size/4 admits every legitimate buffer no
+/// matter how large, yet aliased offsets cannot amplify verification work
+/// past O(size).
+inline auto make_verifier(const std::uint8_t* data, std::size_t size) -> verifier_t {
+    verifier_t::Options opts;
+    constexpr auto cap = static_cast<std::size_t>((std::numeric_limits<uoffset_t>::max)());
+    opts.max_tables = static_cast<uoffset_t>((std::min)(size / 4 + 16, cap));
+    return verifier_t(data, size, opts);
+}
 
 inline auto field_voffset(std::size_t index) -> object_result_t<voffset_t> {
     constexpr auto max_voffset = static_cast<std::size_t>((std::numeric_limits<voffset_t>::max)());
