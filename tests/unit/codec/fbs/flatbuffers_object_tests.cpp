@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -1426,6 +1427,32 @@ TEST_CASE(struct_keyed_unordered_map_encodes_sorted) {
     EXPECT_EQ(m.at(0).get<1>(), 10);
     EXPECT_EQ(m.at(1).get<1>(), 20);
     EXPECT_EQ(m.at(2).get<1>(), 30);
+}
+
+TEST_CASE(from_verified_bytes_wraps_without_reverifying) {
+    // The memory-map-once pattern: verify at load via from_bytes, then
+    // construct throwaway views per query without paying verification again.
+    const person input{
+        .id = 7,
+        .name = "alice",
+        .pos = {.x = 10, .y = 20},
+        .scores = {1, 2, 3},
+        .addr = {.city = "sh", .zip = 200000},
+    };
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+    ASSERT_TRUE(table_view<person>::from_bytes(*encoded).valid());
+
+    auto root = table_view<person>::from_verified_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    EXPECT_EQ(root[&person::id], 7);
+    EXPECT_EQ(root[&person::name], "alice");
+    EXPECT_EQ(root[&person::scores].size(), 3U);
+
+    auto bytes = std::span<const std::byte>(reinterpret_cast<const std::byte*>(encoded->data()),
+                                            encoded->size());
+    EXPECT_EQ(table_view<person>::from_verified_bytes(bytes)[&person::id], 7);
 }
 
 TEST_CASE(struct_keyed_map_empty_and_single_entry) {

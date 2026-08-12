@@ -1026,6 +1026,19 @@ public:
         return from_bytes(std::span<const std::uint8_t>(data, bytes.size()));
     }
 
+    /// Wraps a buffer that already passed from_bytes verification, without
+    /// re-verifying: the memory-map-once pattern verifies a blob when it is
+    /// opened and constructs views per query. The caller owns that contract —
+    /// on unverified bytes the view reads out of bounds.
+    static auto from_verified_bytes(std::span<const std::uint8_t> bytes) -> table_view {
+        return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
+    }
+
+    static auto from_verified_bytes(std::span<const std::byte> bytes) -> table_view {
+        const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
+        return from_verified_bytes(std::span<const std::uint8_t>(data, bytes.size()));
+    }
+
     constexpr auto valid() const noexcept -> bool {
         return view.valid();
     }
