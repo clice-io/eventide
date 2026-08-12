@@ -1377,6 +1377,13 @@ auto scribbled(std::uint8_t fill, char tag, std::int32_t id) -> padded_key {
     return k;
 }
 
+/// The object representation of a padded_key as stored, padding included.
+auto image_of(const padded_key& k) -> std::array<std::byte, sizeof(padded_key)> {
+    std::array<std::byte, sizeof(padded_key)> bytes;
+    std::memcpy(bytes.data(), &k, sizeof(k));
+    return bytes;
+}
+
 TEST_CASE(inline_struct_padding_never_reaches_the_buffer) {
     // The same logical value with two different paddings, covering every
     // inline-struct write path: table field, vector element, map key.
@@ -1389,6 +1396,14 @@ TEST_CASE(inline_struct_padding_never_reaches_the_buffer) {
     quiet.solo = scribbled(0x00, 'x', 7);
     quiet.items.push_back(scribbled(0x00, 'y', 9));
     quiet.scores.emplace(scribbled(0x00, 'k', 3), 1);
+
+    // Guard the fixture: copying a trivially copyable object need not
+    // preserve its padding bytes, so prove the fill survived the trip into
+    // every stored object — otherwise the buffer comparison below would
+    // pass vacuously.
+    ASSERT_TRUE(image_of(noisy.solo) != image_of(quiet.solo));
+    ASSERT_TRUE(image_of(noisy.items[0]) != image_of(quiet.items[0]));
+    ASSERT_TRUE(image_of(noisy.scores.begin()->first) != image_of(quiet.scores.begin()->first));
 
     auto noisy_bytes = to_bytes(noisy);
     auto quiet_bytes = to_bytes(quiet);
