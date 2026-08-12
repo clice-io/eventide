@@ -902,6 +902,8 @@ bool RootVisitor::visit_variant(std::size_t index, Body&& body) {
 template <typename Config = void, typename T>
 auto to_bytes(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::vector<std::uint8_t>, rich_error> {
+    detail::assert_config_layout_stable<Config>();
+
     rich_error err;
     scoped_context<rich_error> guard(err);
 

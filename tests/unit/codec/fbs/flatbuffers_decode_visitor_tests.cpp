@@ -609,9 +609,13 @@ TEST_CASE(diag_tuple_06_tuple_basic_array_pair) {
     EXPECT_EQ(std::get<2>(output).second, 6.25F);
 
     // Manual decode of element 1 via FieldReader directly
+    auto verifier = fbs::detail::make_verifier(encoded->data(), encoded->size());
+    ASSERT_NE(verifier.VerifyOffset(0), 0U);
+    ASSERT_TRUE(root->VerifyTableStart(verifier));
     fbs::decode_detail::FieldReader vr{
         .tbl = root,
-        .slot = static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step)};
+        .slot = static_cast<fbs::voffset_t>(fbs::detail::first_field + fbs::detail::field_step),
+        .verifier = &verifier};
     // This should follow the pointer at slot 6 to get the sub-table
     std::array<int, 3> manual_arr{};
     bool manual_ok = vr.visit_tuple(manual_arr, [&](auto& sv) -> bool {
