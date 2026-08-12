@@ -106,7 +106,7 @@ TEST_CASE(char_and_byte_fields_keep_struct_inline) {
         auto operator==(const probe&) const -> bool = default;
     };
 
-    static_assert(fbs::is_schema_struct_v<probe>);
+    static_assert(fbs::can_inline_struct_v<probe>);
 
     struct frame {
         std::int32_t id;

@@ -63,6 +63,50 @@ struct with_optional_adapter_field {
     auto operator==(const with_optional_adapter_field&) const -> bool = default;
 };
 
+/// Aggregate underlying type: its annotation inherits from it, so the
+/// annotation is itself a trivially-copyable aggregate whose fields
+/// reflection walks right through — invisible to any check that only looks
+/// at the outermost struct's direct field types.
+struct calibration {
+    std::int32_t code = 0;
+
+    auto operator==(const calibration&) const -> bool = default;
+};
+
+// Adapter: encode calibration as its code's decimal string.
+struct CalibrationAdapter {
+    using type = std::string;
+
+    static auto to(const calibration& c) -> std::string {
+        return std::to_string(c.code);
+    }
+
+    static auto from(const std::string& encoded) -> calibration {
+        return {.code = encoded.empty() ? 0 : std::stoi(encoded)};
+    }
+};
+
+struct adapted_probe {
+    annotation<calibration, behavior::with<CalibrationAdapter>> cal;
+
+    auto operator==(const adapted_probe&) const -> bool = default;
+};
+
+struct probe_frame {
+    adapted_probe probe;
+    std::int32_t id = 0;
+
+    auto operator==(const probe_frame&) const -> bool = default;
+};
+
+// The annotation guard must hold at every nesting depth: the annotated
+// field rejects its own struct, and any struct containing that struct —
+// probe_frame is trivially copyable and its reflected field walk sees only
+// int32 cells, so without the recursive guard it would inline as a raw
+// memcpy image and never run the adapter.
+static_assert(!fbs::can_inline_struct_v<adapted_probe>);
+static_assert(!fbs::can_inline_struct_v<probe_frame>);
+
 TEST_SUITE(serde_flatbuffers_behavior_attrs) {
 
 TEST_CASE(enum_string_roundtrip_on_struct_field) {
@@ -111,6 +155,37 @@ TEST_CASE(with_adapter_roundtrip_negative_value) {
     auto status = from_bytes(*encoded, output);
     ASSERT_TRUE(status.has_value());
     EXPECT_EQ(output, input);
+}
+
+TEST_CASE(nested_annotated_aggregate_keeps_adapter) {
+    struct holder {
+        probe_frame frame;
+    };
+
+    holder input{};
+    // The annotation inherits from calibration, so the field is set through
+    // the base subobject.
+    input.frame.probe.cal.code = 27;
+    input.frame.id = 4;
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    // The wire must hold the adapted string, not calibration's raw image:
+    // frame and probe are tables, and the annotated slot is a string.
+    auto root = fbs::table_view<holder>::from_bytes(
+        std::span<const std::uint8_t>(encoded->data(), encoded->size()));
+    ASSERT_TRUE(root.valid());
+    auto frame = root[&holder::frame];
+    ASSERT_TRUE(frame.valid());
+    auto probe = frame[&probe_frame::probe];
+    ASSERT_TRUE(probe.valid());
+    const std::string_view encoded_cal = probe[&adapted_probe::cal];
+    EXPECT_EQ(encoded_cal, std::string_view{"27"});
+
+    holder output{};
+    ASSERT_TRUE(from_bytes(*encoded, output).has_value());
+    EXPECT_EQ(output.frame, input.frame);
 }
 
 TEST_CASE(with_adapter_roundtrip_inside_optional, skip = true) {
@@ -960,7 +1035,7 @@ static_assert(std::is_same_v<meta::resolved_repr_t<SensorId>, std::string>);
 
 // The repr'd enum disqualifies the memcpy image; the struct degrades to a
 // table where the dispatch applies the repr.
-static_assert(!fbs::is_schema_struct_v<CellProbe>);
+static_assert(!fbs::can_inline_struct_v<CellProbe>);
 
 TEST_SUITE(serde_flatbuffers_format_scoped) {
 

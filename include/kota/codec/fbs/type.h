@@ -208,7 +208,16 @@ constexpr bool is_schema_struct_field_v = [] {
     // meta::field_type yields const-qualified types, so strip cv before
     // matching.
     using U = std::remove_cv_t<T>;
-    if constexpr(is_optional_v<U>) {
+    if constexpr(meta::annotated_type<U>) {
+        // An annotation's attrs replace the field's raw handling (with/as
+        // substitute the shape, skip_if drops the slot), so an annotated
+        // field cannot join a memcpy image at any nesting depth; the
+        // enclosing struct degrades to a table, where the dispatch applies
+        // the attrs. Checked before the reflection branch: an annotation
+        // wrapping an aggregate is itself an aggregate that reflection
+        // would walk right through, hiding the attrs.
+        return false;
+    } else if constexpr(is_optional_v<U>) {
         // std::optional<int> is trivially copyable, yet not every byte image
         // is a valid optional: the engagement flag admits only two values,
         // and inline structs are verified for size/alignment alone. An
@@ -261,28 +270,13 @@ struct schema_struct_trait {
                                   fields_supported();
 };
 
-template <typename T>
-constexpr bool is_schema_struct_v = schema_struct_trait<T>::value;
-
 }  // namespace schema_detail
 
+/// Whether a struct lowers to an inline fixed-size FlatBuffers struct — a
+/// verbatim memcpy image — instead of a table: trivially copyable,
+/// assignable, standard-layout, and every field (recursively) an
+/// unannotated scalar, fixed-underlying-type enum, or such a struct.
 template <typename T>
-constexpr bool is_schema_struct_v = schema_detail::is_schema_struct_v<T>;
-
-template <typename T>
-consteval bool has_annotated_fields() {
-    using U = std::remove_cvref_t<T>;
-    if constexpr(!meta::reflectable_class<U>) {
-        return false;
-    } else {
-        return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (meta::annotated_type<meta::field_type<U, I>> || ...);
-        }(std::make_index_sequence<meta::field_count<U>()>{});
-    }
-}
-
-template <typename T>
-constexpr bool can_inline_struct_v =
-    meta::reflectable_class<T> && is_schema_struct_v<T> && !has_annotated_fields<T>();
+constexpr bool can_inline_struct_v = schema_detail::schema_struct_trait<T>::value;
 
 }  // namespace kota::codec::fbs
