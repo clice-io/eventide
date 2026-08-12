@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -57,23 +56,34 @@ void copy_field_bytes(const T& value, std::byte* image) {
     }
 }
 
+/// An inline struct's buffer image: T's size and alignment, byte-typed
+/// storage. The bytes stay byte-typed all the way to the builder because a
+/// copy of T itself may not survive intact — T's trivial copy operations
+/// copy members, not the object representation, so sanitized padding could
+/// come back unspecified (and the builder's push_small copies by
+/// assignment). A byte array has no padding: copying it preserves every
+/// byte.
+template <typename T>
+struct alignas(T) WireImage {
+    std::byte bytes[sizeof(T)];
+};
+
 /// The image an inline struct writes to the buffer. A padded struct's native
 /// object representation would disclose the indeterminate padding bytes and
 /// make encoding nondeterministic, so its field bytes are copied one by one
 /// over a zeroed image (std::bit_cast cannot build it: the result's padding
-/// is unspecified). A padding-free struct is its own image.
+/// is unspecified). A padding-free struct's image is its whole object
+/// representation.
 template <typename T>
-auto wire_image(const T& value) -> T {
+auto wire_image(const T& value) -> WireImage<T> {
     static_assert(can_inline_struct_v<T>);
+    WireImage<T> image{};
     if constexpr(has_padding_v<T>) {
-        std::array<std::byte, sizeof(T)> bytes{};
-        copy_field_bytes(value, bytes.data());
-        T image;
-        std::memcpy(std::addressof(image), bytes.data(), sizeof(T));
-        return image;
+        copy_field_bytes(value, image.bytes);
     } else {
-        return value;
+        std::memcpy(image.bytes, std::addressof(value), sizeof(T));
     }
+    return image;
 }
 
 struct AllocFieldVisitor;
@@ -258,7 +268,7 @@ struct WriteFieldVisitor : detail::VisitorBase {
     template <typename T, typename Body>
     bool visit_struct(const T& value, Body&&) {
         if constexpr(can_inline_struct_v<T>) {
-            const T image = wire_image(value);
+            const auto image = wire_image(value);
             fbb.AddStruct(sid, &image);
         } else {
             fbb.AddOffset(sid, offset_t<void>(stored_offset));
@@ -401,10 +411,10 @@ struct StringCollector {
 
 template <typename T>
 struct InlineStructElemVisitor : detail::VisitorBase {
-    std::vector<T>& elems;
+    std::vector<WireImage<T>>& elems;
 
     // The dispatch calls visit_struct for structures. For inline structs the
-    // value is simply copied into the element vector.
+    // sanitized image is simply appended to the element vector.
     template <typename U, typename Body>
     bool visit_struct(const U& value, Body&&) {
         static_assert(std::is_same_v<U, T>);
@@ -416,7 +426,7 @@ struct InlineStructElemVisitor : detail::VisitorBase {
 template <typename T>
 struct InlineStructCollector {
     builder_t& fbb;
-    std::vector<T> elems{};
+    std::vector<WireImage<T>> elems{};
     uoffset_t result_offset = 0;
 
     template <typename F>
@@ -426,7 +436,12 @@ struct InlineStructCollector {
     }
 
     bool finish() {
-        auto off = fbb.CreateVectorOfStructs(elems.data(), elems.size());
+        // The builder only memcpys the elements' bytes, but WireImage's
+        // single-parameter template shape would match flatbuffers'
+        // IndirectHelper<OffsetT<T>> specialization, so hand it the struct
+        // type the images stand in for.
+        auto off =
+            fbb.CreateVectorOfStructs(reinterpret_cast<const T*>(elems.data()), elems.size());
         result_offset = off.o;
         return true;
     }

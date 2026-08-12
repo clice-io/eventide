@@ -194,6 +194,14 @@ struct schema_struct_trait {
     static consteval bool fields_supported() {
         if constexpr(!meta::reflectable_class<T>) {
             return false;
+        } else if constexpr(!std::is_empty_v<T> && meta::field_count<T>() == 0) {
+            // Past the reflection field limit meta::field_count() collapses
+            // to zero, indistinguishable from a genuinely empty struct: the
+            // padding sanitization would see no fields and zero the entire
+            // image. A nonempty struct whose fields reflection cannot see
+            // stays table-shaped — and, recursing through this trait, so
+            // does any struct containing one.
+            return false;
         } else {
             return []<std::size_t... I>(std::index_sequence<I...>) {
                 return (is_schema_struct_field_v<meta::field_type<T, I>> && ...);
@@ -202,9 +210,14 @@ struct schema_struct_trait {
     }
 
     // Trivially copyable is the exact bound the memcpy image needs; default
-    // member initializers (which break std::is_trivial) are fine.
+    // member initializers (which break std::is_trivial) are fine. Decode
+    // restores an inline struct by whole-object assignment, which trivially
+    // copyable alone does not promise: deleted assignment operators and
+    // const members are admitted. Such a struct stays table-shaped, where
+    // its fields decode individually.
     constexpr static bool value = meta::reflectable_class<T> && std::is_trivially_copyable_v<T> &&
-                                  std::is_standard_layout_v<T> && fields_supported();
+                                  std::is_copy_assignable_v<T> && std::is_standard_layout_v<T> &&
+                                  fields_supported();
 };
 
 template <typename T>

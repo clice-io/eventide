@@ -1,5 +1,6 @@
 #if __has_include(<flatbuffers/flatbuffers.h>)
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -1274,6 +1275,69 @@ TEST_CASE(optional_bearing_struct_stays_table_shaped) {
     EXPECT_EQ(output.entries, input.entries);
 }
 
+/// One past the reflection field limit: meta::field_count() collapses to
+/// zero, indistinguishable from an empty struct, so the padding
+/// sanitization would zero the whole image. Such a struct — and anything
+/// containing one — must stay table-shaped.
+struct over_limit_key {
+    std::int32_t f00, f01, f02, f03, f04, f05, f06, f07, f08, f09, f10, f11, f12, f13, f14, f15,
+        f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33,
+        f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46, f47, f48, f49, f50, f51,
+        f52, f53, f54, f55, f56, f57, f58, f59, f60, f61, f62, f63, f64, f65, f66, f67, f68, f69,
+        f70, f71, f72;
+};
+
+static_assert(std::is_trivially_copyable_v<over_limit_key> &&
+              std::is_standard_layout_v<over_limit_key>);
+static_assert(meta::field_count<over_limit_key>() == 0);
+static_assert(!fbs::can_inline_struct_v<over_limit_key>);
+
+struct holds_over_limit {
+    over_limit_key wide;
+};
+
+static_assert(!fbs::can_inline_struct_v<holds_over_limit>);
+
+/// Trivially copyable admits deleted assignment operators, but decode
+/// restores an inline struct by whole-object assignment, so a
+/// non-assignable struct must stay table-shaped, where its fields decode
+/// individually.
+struct pinned_key {
+    char tag = 0;
+    std::int32_t id = 0;
+
+    pinned_key& operator=(const pinned_key&) = delete;
+
+    friend bool operator==(const pinned_key&, const pinned_key&) = default;
+};
+
+static_assert(std::is_trivially_copyable_v<pinned_key>);
+static_assert(!std::is_copy_assignable_v<pinned_key>);
+static_assert(!fbs::can_inline_struct_v<pinned_key>);
+
+TEST_CASE(non_assignable_struct_decodes_field_by_field) {
+    // A solo field only: copying a pinned_key is deprecated (user-declared
+    // copy assignment), so the roundtrip must never need the whole object —
+    // exactly what the table shape provides.
+    struct holder {
+        pinned_key solo;
+        std::int32_t tail = 0;
+    };
+
+    const holder input{
+        .solo = {.tag = 's', .id = 7},
+        .tail = 3
+    };
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    holder output{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
+    EXPECT_EQ(output.solo, input.solo);
+    EXPECT_EQ(output.tail, input.tail);
+}
+
 /// char followed by int: three native padding bytes whose content must
 /// never reach the buffer.
 struct padded_key {
@@ -1299,9 +1363,15 @@ struct with_padded_structs {
 };
 
 /// A padded_key whose padding bytes hold fill before the fields are set.
+/// memcpy rather than memset: padded_key's default member initializers make
+/// it non-trivial, which GCC's -Wclass-memaccess rejects for memset, while
+/// memcpy into a trivially-copyable object is the sanctioned spelling and
+/// guarantees the exact object representation, padding included.
 auto scribbled(std::uint8_t fill, char tag, std::int32_t id) -> padded_key {
+    std::array<std::byte, sizeof(padded_key)> bytes;
+    bytes.fill(std::byte{fill});
     padded_key k;
-    std::memset(&k, fill, sizeof(k));
+    std::memcpy(&k, bytes.data(), sizeof(k));
     k.tag = tag;
     k.id = id;
     return k;
