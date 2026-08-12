@@ -3,6 +3,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "test_transport.h"
@@ -19,8 +20,14 @@ using test::write_fd;
 
 namespace {
 
-task<std::pair<std::optional<std::string>, std::optional<std::string>>>
-    read_two_messages(StreamTransport& transport) {
+std::optional<std::string> payload_of(ReadEvent result) {
+    if(auto* payload = std::get_if<std::string>(&result)) {
+        return std::move(*payload);
+    }
+    return std::nullopt;
+}
+
+task<std::pair<ReadEvent, ReadEvent>> read_two_results(StreamTransport& transport) {
     auto first = co_await transport.read_message();
     auto second = co_await transport.read_message();
     event_loop::current().stop();
@@ -49,15 +56,17 @@ TEST_CASE(consecutive_messages) {
               static_cast<ssize_t>(payload.size()));
     ASSERT_EQ(close_fd(fds[1]), 0);
 
-    auto reader = read_two_messages(transport);
+    auto reader = read_two_results(transport);
     loop.schedule(reader);
     loop.run();
 
-    const auto [first, second] = reader.result();
-    ASSERT_TRUE(first.has_value());
-    ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*first, first_payload);
-    EXPECT_EQ(*second, second_payload);
+    auto [first, second] = reader.result();
+    auto first_read = payload_of(std::move(first));
+    auto second_read = payload_of(std::move(second));
+    ASSERT_TRUE(first_read.has_value());
+    ASSERT_TRUE(second_read.has_value());
+    EXPECT_EQ(*first_read, first_payload);
+    EXPECT_EQ(*second_read, second_payload);
 }
 
 // 6.1 Content-Length: 0 → empty string payload
@@ -77,7 +86,7 @@ TEST_CASE(empty_payload) {
     ASSERT_EQ(close_fd(fds[1]), 0);
 
     auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
+        co_return payload_of(co_await transport.read_message());
     };
 
     auto read_task = reader();
@@ -89,7 +98,7 @@ TEST_CASE(empty_payload) {
     EXPECT_TRUE(result->empty());
 }
 
-// 6.2 Header exceeds 8KB limit → nullopt
+// 6.2 Header exceeds 8KB limit → TransportClosed
 TEST_CASE(header_too_large) {
     event_loop loop;
 
@@ -115,7 +124,7 @@ TEST_CASE(header_too_large) {
         writer_done.store(true, std::memory_order_release);
     });
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
+    auto reader = [&]() -> task<ReadEvent> {
         co_return co_await transport.read_message();
     };
 
@@ -126,11 +135,10 @@ TEST_CASE(header_too_large) {
     writer.join();
     EXPECT_TRUE(writer_done.load(std::memory_order_acquire));
 
-    auto result = read_task.result();
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(std::holds_alternative<TransportClosed>(read_task.result()));
 }
 
-// 6.4 Incomplete header (EOF before \r\n\r\n) → nullopt
+// 6.4 Incomplete header (EOF before \r\n\r\n) → TransportClosed
 TEST_CASE(incomplete_header) {
     event_loop loop;
 
@@ -147,7 +155,7 @@ TEST_CASE(incomplete_header) {
               static_cast<ssize_t>(partial.size()));
     ASSERT_EQ(close_fd(fds[1]), 0);
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
+    auto reader = [&]() -> task<ReadEvent> {
         co_return co_await transport.read_message();
     };
 
@@ -155,11 +163,10 @@ TEST_CASE(incomplete_header) {
     loop.schedule(read_task);
     loop.run();
 
-    auto result = read_task.result();
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(std::holds_alternative<TransportClosed>(read_task.result()));
 }
 
-// 6.5 Content-Length > actual body (EOF mid-body) → nullopt
+// 6.5 Content-Length > actual body (EOF mid-body) → TransportClosed
 TEST_CASE(length_mismatch) {
     event_loop loop;
 
@@ -176,7 +183,7 @@ TEST_CASE(length_mismatch) {
     ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
     ASSERT_EQ(close_fd(fds[1]), 0);
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
+    auto reader = [&]() -> task<ReadEvent> {
         co_return co_await transport.read_message();
     };
 
@@ -184,8 +191,7 @@ TEST_CASE(length_mismatch) {
     loop.schedule(read_task);
     loop.run();
 
-    auto result = read_task.result();
-    EXPECT_FALSE(result.has_value());
+    EXPECT_TRUE(std::holds_alternative<TransportClosed>(read_task.result()));
 }
 
 // 6.6 Rapid sequential writes → all correctly read
@@ -213,7 +219,7 @@ TEST_CASE(rapid_sequential) {
     auto reader = [&]() -> task<std::vector<std::string>> {
         std::vector<std::string> results;
         for(int i = 0; i < count; ++i) {
-            auto msg = co_await transport.read_message();
+            auto msg = payload_of(co_await transport.read_message());
             if(!msg)
                 break;
             results.push_back(std::move(*msg));
@@ -259,7 +265,7 @@ TEST_CASE(large_payload_single_chunk) {
     });
 
     auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
+        co_return payload_of(co_await transport.read_message());
     };
 
     auto read_task = reader();
@@ -271,6 +277,168 @@ TEST_CASE(large_payload_single_chunk) {
     auto result = read_task.result();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->size(), payload.size());
+}
+
+// An oversized frame is drained and reported without losing framing:
+// the message after it is delivered intact.
+TEST_CASE(oversized_payload_dropped) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+    transport.max_payload_bytes = 16;
+
+    const std::string oversized(48, 'x');
+    const std::string next_payload = R"({"ok":true})";
+    const auto data = frame(oversized) + frame(next_payload);
+
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto reader = read_two_results(transport);
+    loop.schedule(reader);
+    loop.run();
+
+    const auto [first, second] = reader.result();
+    auto* dropped = std::get_if<MessageDropped>(&first);
+    ASSERT_TRUE(dropped != nullptr);
+    EXPECT_EQ(dropped->announced_bytes, oversized.size());
+    EXPECT_EQ(dropped->limit_bytes, std::size_t(16));
+    ASSERT_TRUE(std::holds_alternative<std::string>(second));
+    EXPECT_EQ(std::get<std::string>(second), next_payload);
+}
+
+// A payload of exactly the limit is delivered, not dropped.
+TEST_CASE(payload_at_limit_delivered) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+    transport.max_payload_bytes = 16;
+
+    const std::string payload(16, 'x');
+    const auto data = frame(payload);
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto reader = [&]() -> task<std::optional<std::string>> {
+        co_return payload_of(co_await transport.read_message());
+    };
+
+    auto read_task = reader();
+    loop.schedule(read_task);
+    loop.run();
+
+    auto result = read_task.result();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, payload);
+}
+
+// A drain larger than the 64KB ring buffer takes several read_chunk rounds.
+TEST_CASE(oversized_multi_chunk_drain) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+    transport.max_payload_bytes = 64 * 1024;
+
+    const std::string oversized(200 * 1024, 'x');
+    const std::string next_payload = R"({"ok":true})";
+    const auto data = frame(oversized) + frame(next_payload);
+
+    // Write from a thread: the pipe buffer is far smaller than the frame,
+    // so a synchronous write would block before the loop starts draining.
+    std::thread writer([&] {
+        EXPECT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+        EXPECT_EQ(close_fd(fds[1]), 0);
+    });
+
+    auto reader = read_two_results(transport);
+    loop.schedule(reader);
+    loop.run();
+
+    writer.join();
+
+    const auto [first, second] = reader.result();
+    auto* dropped = std::get_if<MessageDropped>(&first);
+    ASSERT_TRUE(dropped != nullptr);
+    EXPECT_EQ(dropped->announced_bytes, oversized.size());
+    ASSERT_TRUE(std::holds_alternative<std::string>(second));
+    EXPECT_EQ(std::get<std::string>(second), next_payload);
+}
+
+// EOF in the middle of a drain → TransportClosed, like EOF mid-body.
+TEST_CASE(eof_mid_drain) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+    transport.max_payload_bytes = 16;
+
+    const std::string data = "Content-Length: 48\r\n\r\nonly-ten-b";
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto reader = [&]() -> task<ReadEvent> {
+        co_return co_await transport.read_message();
+    };
+
+    auto read_task = reader();
+    loop.schedule(read_task);
+    loop.run();
+
+    EXPECT_TRUE(std::holds_alternative<TransportClosed>(read_task.result()));
+}
+
+// Exactly 4x the limit still drains; one byte past it is indistinguishable
+// from framing corruption — draining could silently eat the stream — so it
+// closes.
+TEST_CASE(drain_ceiling_boundary) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+    transport.max_payload_bytes = 16;
+
+    const std::string at_ceiling(64, 'x');
+    const auto data = frame(at_ceiling) + "Content-Length: 65\r\n\r\n";
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto reader = read_two_results(transport);
+    loop.schedule(reader);
+    loop.run();
+
+    const auto [first, second] = reader.result();
+    auto* dropped = std::get_if<MessageDropped>(&first);
+    ASSERT_TRUE(dropped != nullptr);
+    EXPECT_EQ(dropped->announced_bytes, at_ceiling.size());
+    EXPECT_TRUE(std::holds_alternative<TransportClosed>(second));
 }
 
 };  // TEST_SUITE(ipc_transport)

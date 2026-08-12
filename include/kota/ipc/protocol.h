@@ -51,6 +51,11 @@ enum class ErrorCode : integer {
     InvalidParams = -32602,
     InternalError = -32603,
     RequestFailed = -32000,
+    /// An incoming message exceeded the transport's receive limit and was
+    /// dropped without being delivered.  -32010 dodges the codes LSP
+    /// assigns around here (UnknownErrorCode -32001, ServerNotInitialized
+    /// -32002).
+    MessageTooLarge = -32010,
     RequestCancelled = -32800,
 };
 

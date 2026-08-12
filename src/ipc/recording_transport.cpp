@@ -3,6 +3,7 @@
 #include <cassert>
 #include <format>
 #include <utility>
+#include <variant>
 
 namespace kota::ipc {
 
@@ -19,10 +20,10 @@ RecordingTransport::~RecordingTransport() {
     }
 }
 
-task<std::optional<std::string>> RecordingTransport::read_message() {
+task<ReadEvent> RecordingTransport::read_message() {
     auto msg = co_await inner->read_message();
-    if(msg.has_value()) {
-        write_record(*msg);
+    if(auto* payload = std::get_if<std::string>(&msg)) {
+        write_record(*payload);
     }
     co_return msg;
 }

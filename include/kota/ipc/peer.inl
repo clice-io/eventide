@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "kota/support/function_traits.h"
@@ -191,7 +192,7 @@ struct Peer<CodecT>::Self {
         pending->ready.set();
     }
 
-    void fail_pending_requests(const std::string& message) {
+    void fail_pending_requests(const Error& error) {
         if(pending_requests.empty()) {
             return;
         }
@@ -200,14 +201,14 @@ struct Peer<CodecT>::Self {
                    LogLevel::error,
                    "failing {} pending request(s): {}",
                    pending_requests.size(),
-                   message);
+                   error.message);
 
         auto values = pending_requests | std::views::values;
         std::vector<std::shared_ptr<PendingRequest>> pending(values.begin(), values.end());
         pending_requests.clear();
 
         for(auto& state: pending) {
-            state->response = outcome_error(Error(message));
+            state->response = outcome_error(error);
             state->ready.set();
         }
     }
@@ -333,12 +334,28 @@ task<> Peer<CodecT>::run() {
     auto read_and_dispatch = [this, &request_group]() -> task<> {
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop started");
         while(self->transport) {
-            auto payload = co_await self->transport->read_message();
-            if(!payload.has_value()) {
+            auto incoming = co_await self->transport->read_message();
+
+            if(auto* dropped = std::get_if<MessageDropped>(&incoming)) {
+                auto description = std::format("incoming message dropped: {} bytes exceeds limit {}",
+                                               dropped->announced_bytes,
+                                               dropped->limit_bytes);
+                ET_IPC_LOG(self.get(), LogLevel::error, "{}", description);
+                // The dropped frame could have carried a response to any
+                // pending request — its id went down the drain with the
+                // payload — so all of them fail. The stream itself is still
+                // in sync; keep reading.
+                self->fail_pending_requests(
+                    Error(protocol::ErrorCode::MessageTooLarge, std::move(description)));
+                continue;
+            }
+
+            if(std::holds_alternative<TransportClosed>(incoming)) {
                 self->fail_pending_requests("transport closed");
                 break;
             }
-            self->dispatch_incoming_message(*payload, request_group);
+
+            self->dispatch_incoming_message(std::get<std::string>(incoming), request_group);
         }
         ET_IPC_LOG(self.get(), LogLevel::info, "{}", "read loop ended");
     };

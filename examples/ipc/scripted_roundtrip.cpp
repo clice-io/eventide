@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <print>
 #include <string>
 #include <string_view>
@@ -45,10 +44,10 @@ public:
         }
     }
 
-    et::task<std::optional<std::string>> read_message() override {
+    et::task<ipc::ReadEvent> read_message() override {
         while(read_index >= incoming_messages.size()) {
             if(closed) {
-                co_return std::nullopt;
+                co_return ipc::TransportClosed{};
             }
 
             co_await readable.wait();
