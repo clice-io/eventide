@@ -653,23 +653,19 @@ constexpr bool ordering_less(const T& a, const U& b) {
     if constexpr(meta::reflectable_class<T>) {
         static_assert(std::same_as<T, U>, "a reflected key compares against its own type");
         bool less = false;
-        bool decided = false;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (
-                [&] {
-                    if(decided) {
-                        return;
-                    }
-                    const auto& lhs = meta::field_of<Is>(a);
-                    const auto& rhs = meta::field_of<Is>(b);
-                    if(ordering_less(lhs, rhs)) {
-                        less = true;
-                        decided = true;
-                    } else if(ordering_less(rhs, lhs)) {
-                        decided = true;
-                    }
-                }(),
-                ...);
+            // The fold walks fields while they compare equal; the first
+            // differing field decides.
+            ([&] {
+                const auto& lhs = meta::field_of<Is>(a);
+                const auto& rhs = meta::field_of<Is>(b);
+                if(ordering_less(lhs, rhs)) {
+                    less = true;
+                    return false;
+                }
+                return !ordering_less(rhs, lhs);
+            }() &&
+             ...);
         }(std::make_index_sequence<meta::field_count<T>()>{});
         return less;
     } else {
@@ -677,6 +673,10 @@ constexpr bool ordering_less(const T& a, const U& b) {
     }
 }
 
+/// Equality derived from ordering_less, so struct keys need no operator==.
+/// A NaN float field ties with every value under this equality (it is never
+/// less in either direction); NaN keys are garbage-in, exactly as they are
+/// for scalar float keys, where the encoder's sort already cannot order them.
 template <typename T, typename U>
 constexpr bool ordering_equal(const T& a, const U& b) {
     if constexpr(meta::reflectable_class<T>) {
@@ -686,13 +686,18 @@ constexpr bool ordering_equal(const T& a, const U& b) {
     }
 }
 
-/// A key a map_view lookup accepts: anything totally ordered with the
-/// decoded key, or — for inline-struct keys, which carry no operator< —
-/// the key's own type, compared field-wise via ordering_less.
+/// A key a map_view lookup accepts. Reflected keys compare field-wise via
+/// ordering_less and take only their own type — user-supplied comparisons
+/// are ignored on both the encode and the lookup side, so admitting
+/// heterogeneous queries through them would promise an ordering the search
+/// does not use. Every other key takes anything totally ordered with its
+/// decoded form.
 template <typename K, typename U>
 concept map_lookup_key =
-    std::totally_ordered_with<field_return_type_t<deep_clean_t<K>>, const U&> ||
-    (can_inline_struct_v<deep_clean_t<K>> && std::same_as<std::remove_cvref_t<U>, deep_clean_t<K>>);
+    (meta::reflectable_class<deep_clean_t<K>> && can_inline_struct_v<deep_clean_t<K>> &&
+     std::same_as<U, deep_clean_t<K>>) ||
+    (!meta::reflectable_class<deep_clean_t<K>> &&
+     std::totally_ordered_with<field_return_type_t<deep_clean_t<K>>, const U&>);
 
 }  // namespace proxy_detail
 

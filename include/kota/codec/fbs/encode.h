@@ -501,9 +501,16 @@ constexpr auto ordering_key_impl() {
     } else if constexpr(std::is_enum_v<clean_k>) {
         return std::type_identity<std::underlying_type_t<clean_k>>{};
     } else {
-        static_assert(!meta::reflectable_class<clean_k> || can_inline_struct_v<clean_k>,
-                      "a struct map key must satisfy can_inline_struct_v; a table-shaped key "
-                      "has no canonical ordering for the sorted entry vector");
+        if constexpr(meta::reflectable_class<clean_k>) {
+            static_assert(can_inline_struct_v<clean_k>,
+                          "a struct map key must satisfy can_inline_struct_v; a table-shaped "
+                          "key has no canonical ordering for the sorted entry vector");
+            // Past the reflection field limit, field_count() collapses to zero
+            // and every key would order equal — reject instead of mis-sorting.
+            static_assert(std::is_empty_v<clean_k> || meta::field_count<clean_k>() > 0,
+                          "this struct map key has more fields than reflection supports; its "
+                          "entries cannot be ordered");
+        }
         return std::type_identity<clean_k>{};
     }
 }

@@ -1221,23 +1221,44 @@ TEST_CASE(roundtrip_root_vector_and_variant) {
 struct sentinel_range {
     std::uint32_t begin = static_cast<std::uint32_t>(-1);
     std::uint32_t end = static_cast<std::uint32_t>(-1);
+
+    friend bool operator==(const sentinel_range&, const sentinel_range&) = default;
 };
 
+/// The signed field pins the ordering to field values: -2 sorts before 3
+/// field-wise, after it byte-wise.
 struct occurrence_key {
     sentinel_range range;
     std::uint64_t target = 0;
+    std::int32_t weight = 0;
+
+    friend bool operator==(const occurrence_key&, const occurrence_key&) = default;
 };
 
 static_assert(fbs::can_inline_struct_v<sentinel_range>);
 static_assert(fbs::can_inline_struct_v<occurrence_key>);
+// A string member keeps a struct table-shaped even under the relaxed
+// trivially-copyable bound.
+static_assert(!fbs::can_inline_struct_v<address>);
 
 /// Deliberately the reverse of the reflected field order: the encoder must
 /// sort entries by its own canonical ordering, not trust the container's.
 struct reverse_key_less {
     bool operator()(const occurrence_key& a, const occurrence_key& b) const {
-        return std::tie(b.range.begin, b.range.end, b.target) <
-               std::tie(a.range.begin, a.range.end, a.target);
+        return std::tie(b.range.begin, b.range.end, b.target, b.weight) <
+               std::tie(a.range.begin, a.range.end, a.target, a.weight);
     }
+};
+
+struct occurrence_key_hash {
+    std::size_t operator()(const occurrence_key& k) const {
+        return std::hash<std::uint64_t>{}(k.target) ^ (k.range.begin * 31U) ^ k.range.end ^
+               static_cast<std::uint32_t>(k.weight);
+    }
+};
+
+struct with_struct_key_map {
+    std::map<occurrence_key, std::int32_t, reverse_key_less> data;
 };
 
 TEST_CASE(inline_struct_with_default_member_initializers_roundtrips) {
@@ -1247,9 +1268,9 @@ TEST_CASE(inline_struct_with_default_member_initializers_roundtrips) {
     };
 
     const route_log input{
-        .hits = {{.range = {.begin = 1, .end = 5}, .target = 9},
-                 {.range = {.begin = 2, .end = 3}, .target = 7}             },
-        .last = {.range = {.begin = 8, .end = 9},                .target = 1},
+        .hits = {{.range = {.begin = 1, .end = 5}, .target = 9, .weight = 0},
+                 {.range = {.begin = 2, .end = 3}, .target = 7, .weight = -1}},
+        .last = {.range = {.begin = 8, .end = 9}, .target = 1, .weight = 2},
     };
 
     auto encoded = to_bytes(input);
@@ -1273,25 +1294,33 @@ TEST_CASE(inline_struct_with_default_member_initializers_roundtrips) {
 }
 
 TEST_CASE(struct_keyed_map_sorts_by_reflected_order_and_looks_up) {
-    struct with_struct_key_map {
-        std::map<occurrence_key, std::int32_t, reverse_key_less> data;
-    };
-
+    // Each adjacent pair is decided by a different field, always against a
+    // contrary later field: k1/k2 by the signed weight, k2/k3 by target,
+    // k3/k4 by the nested range.end, k4/k5 by range.begin.
     const occurrence_key k1{
         .range = {.begin = 1, .end = 5},
-        .target = 9
+        .target = 9,
+        .weight = -2
     };
     const occurrence_key k2{
         .range = {.begin = 1, .end = 5},
-        .target = 10
+        .target = 9,
+        .weight = 3
     };
     const occurrence_key k3{
-        .range = {.begin = 1, .end = 6},
-        .target = 0
+        .range = {.begin = 1, .end = 5},
+        .target = 10,
+        .weight = -9
     };
     const occurrence_key k4{
+        .range = {.begin = 1, .end = 6},
+        .target = 0,
+        .weight = 0
+    };
+    const occurrence_key k5{
         .range = {.begin = 2, .end = 0},
-        .target = 0
+        .target = 0,
+        .weight = 0
     };
 
     with_struct_key_map input;
@@ -1299,75 +1328,142 @@ TEST_CASE(struct_keyed_map_sorts_by_reflected_order_and_looks_up) {
     input.data.emplace(k2, 2);
     input.data.emplace(k3, 3);
     input.data.emplace(k4, 4);
+    input.data.emplace(k5, 5);
 
     auto encoded = to_bytes(input);
     ASSERT_TRUE(encoded.has_value());
 
     with_struct_key_map output{};
     ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
-    ASSERT_EQ(output.data.size(), 4U);
-    EXPECT_EQ(output.data.find(k1)->second, 1);
-    EXPECT_EQ(output.data.find(k2)->second, 2);
-    EXPECT_EQ(output.data.find(k3)->second, 3);
-    EXPECT_EQ(output.data.find(k4)->second, 4);
+    EXPECT_EQ(output.data, input.data);
 
     auto root = table_view<with_struct_key_map>::from_bytes(*encoded);
     ASSERT_TRUE(root.valid());
     auto m = root[&with_struct_key_map::data];
-    ASSERT_EQ(m.size(), 4U);
+    ASSERT_EQ(m.size(), 5U);
 
     EXPECT_EQ(m[k1], 1);
     EXPECT_EQ(m[k2], 2);
     EXPECT_EQ(m[k3], 3);
     EXPECT_EQ(m[k4], 4);
-    EXPECT_TRUE(m.contains(k2));
-    EXPECT_FALSE(m.contains(occurrence_key{
+    EXPECT_EQ(m[k5], 5);
+
+    auto found = m.find(k3);
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->get<0>(), k3);
+    EXPECT_EQ(found->get<1>(), 3);
+
+    // Misses on every side of the entry range: before the first key,
+    // between two entries, after the last key.
+    const occurrence_key before{
         .range = {.begin = 0, .end = 0},
-        .target = 0
-    }));
+        .target = 0,
+        .weight = 0
+    };
+    const occurrence_key between{
+        .range = {.begin = 1, .end = 5},
+        .target = 9,
+        .weight = 0
+    };
+    const occurrence_key after{
+        .range = {.begin = 9, .end = 0},
+        .target = 0,
+        .weight = 0
+    };
+    EXPECT_FALSE(m.contains(before));
+    EXPECT_FALSE(m.contains(between));
+    EXPECT_FALSE(m.contains(after));
+    EXPECT_FALSE(m.find(between).has_value());
 
     // Entries land in field-wise lexicographic order regardless of the
-    // container's (reversed) iteration order: the first differing field
-    // decides, nested structs recurse.
-    EXPECT_EQ(m.at(0).get<0>().target, 9U);
-    EXPECT_EQ(m.at(1).get<0>().target, 10U);
-    EXPECT_EQ(m.at(2).get<0>().range.end, 6U);
-    EXPECT_EQ(m.at(3).get<0>().range.begin, 2U);
+    // container's (reversed) iteration order.
+    EXPECT_EQ(m.at(0).get<0>(), k1);
+    EXPECT_EQ(m.at(1).get<0>(), k2);
+    EXPECT_EQ(m.at(2).get<0>(), k3);
+    EXPECT_EQ(m.at(3).get<0>(), k4);
+    EXPECT_EQ(m.at(4).get<0>(), k5);
+}
+
+TEST_CASE(struct_keyed_unordered_map_encodes_sorted) {
+    struct with_struct_key_umap {
+        std::unordered_map<occurrence_key, std::int32_t, occurrence_key_hash> data;
+    };
+
+    with_struct_key_umap input;
+    input.data.emplace(
+        occurrence_key{
+            .range = {.begin = 2, .end = 1},
+            .target = 0,
+            .weight = 0
+    },
+        20);
+    input.data.emplace(
+        occurrence_key{
+            .range = {.begin = 1, .end = 1},
+            .target = 0,
+            .weight = 0
+    },
+        10);
+    input.data.emplace(
+        occurrence_key{
+            .range = {.begin = 3, .end = 1},
+            .target = 0,
+            .weight = 0
+    },
+        30);
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    with_struct_key_umap output{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
+    EXPECT_EQ(output.data, input.data);
+
+    auto root = table_view<with_struct_key_umap>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    auto m = root[&with_struct_key_umap::data];
+    ASSERT_EQ(m.size(), 3U);
+    EXPECT_EQ(m.at(0).get<1>(), 10);
+    EXPECT_EQ(m.at(1).get<1>(), 20);
+    EXPECT_EQ(m.at(2).get<1>(), 30);
 }
 
 TEST_CASE(struct_keyed_map_empty_and_single_entry) {
-    struct with_struct_key_map {
-        std::map<occurrence_key, std::int32_t, reverse_key_less> data;
-    };
-
     const with_struct_key_map empty{};
     auto encoded_empty = to_bytes(empty);
     ASSERT_TRUE(encoded_empty.has_value());
+
+    with_struct_key_map empty_out{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded_empty, empty_out).has_value());
+    EXPECT_TRUE(empty_out.data.empty());
+
     auto empty_root = table_view<with_struct_key_map>::from_bytes(*encoded_empty);
     ASSERT_TRUE(empty_root.valid());
-    EXPECT_FALSE(
-        empty_root[&with_struct_key_map::data].contains(occurrence_key{.range = {}, .target = 1}));
+    EXPECT_FALSE(empty_root[&with_struct_key_map::data].contains(
+        occurrence_key{.range = {}, .target = 1, .weight = 0}));
 
+    const occurrence_key only{
+        .range = {.begin = 3, .end = 4},
+        .target = 5,
+        .weight = 0
+    };
     with_struct_key_map single;
-    single.data.emplace(
-        occurrence_key{
-            .range = {.begin = 3, .end = 4},
-            .target = 5
-    },
-        42);
+    single.data.emplace(only, 42);
     auto encoded = to_bytes(single);
     ASSERT_TRUE(encoded.has_value());
+
+    with_struct_key_map single_out{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded, single_out).has_value());
+    EXPECT_EQ(single_out.data, single.data);
+
     auto root = table_view<with_struct_key_map>::from_bytes(*encoded);
     ASSERT_TRUE(root.valid());
     auto m = root[&with_struct_key_map::data];
-    EXPECT_EQ(m[occurrence_key{
-                  .range = {.begin = 3, .end = 4},
-                  .target = 5
-    }],
-              42);
+    EXPECT_EQ(m[only], 42);
     EXPECT_FALSE(m.contains(occurrence_key{
         .range = {.begin = 3, .end = 4},
-        .target = 6
+        .target = 6,
+        .weight = 0
     }));
 }
 
