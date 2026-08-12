@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <list>
 #include <map>
 #include <memory>
@@ -9,6 +10,7 @@
 #include <span>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -1241,6 +1243,99 @@ static_assert(fbs::can_inline_struct_v<occurrence_key>);
 // A string member keeps a struct table-shaped even under the relaxed
 // trivially-copyable bound.
 static_assert(!fbs::can_inline_struct_v<address>);
+
+/// std::optional<std::int32_t> passes the trivially-copyable bound, so only
+/// the explicit optional exclusion keeps this struct table-shaped; a memcpy
+/// image would let tampered buffers forge the engagement flag.
+struct with_optional_member {
+    std::optional<std::int32_t> cached;
+    std::int32_t id = 0;
+
+    friend bool operator==(const with_optional_member&, const with_optional_member&) = default;
+};
+
+static_assert(std::is_trivially_copyable_v<with_optional_member>);
+static_assert(!fbs::can_inline_struct_v<with_optional_member>);
+
+TEST_CASE(optional_bearing_struct_stays_table_shaped) {
+    struct holder {
+        std::vector<with_optional_member> entries;
+    };
+
+    const holder input{
+        .entries = {{.cached = 7, .id = 1}, {.cached = std::nullopt, .id = 2}}
+    };
+
+    auto encoded = to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    holder output{};
+    ASSERT_TRUE(fbs::from_bytes(*encoded, output).has_value());
+    EXPECT_EQ(output.entries, input.entries);
+}
+
+/// char followed by int: three native padding bytes whose content must
+/// never reach the buffer.
+struct padded_key {
+    char tag = 0;
+    std::int32_t id = 0;
+
+    friend bool operator==(const padded_key&, const padded_key&) = default;
+};
+
+static_assert(fbs::can_inline_struct_v<padded_key>);
+static_assert(sizeof(padded_key) > sizeof(std::int32_t) + sizeof(char));
+
+struct padded_key_less {
+    bool operator()(const padded_key& a, const padded_key& b) const {
+        return std::tie(a.tag, a.id) < std::tie(b.tag, b.id);
+    }
+};
+
+struct with_padded_structs {
+    std::vector<padded_key> items;
+    padded_key solo;
+    std::map<padded_key, std::int32_t, padded_key_less> scores;
+};
+
+/// A padded_key whose padding bytes hold fill before the fields are set.
+auto scribbled(std::uint8_t fill, char tag, std::int32_t id) -> padded_key {
+    padded_key k;
+    std::memset(&k, fill, sizeof(k));
+    k.tag = tag;
+    k.id = id;
+    return k;
+}
+
+TEST_CASE(inline_struct_padding_never_reaches_the_buffer) {
+    // The same logical value with two different paddings, covering every
+    // inline-struct write path: table field, vector element, map key.
+    with_padded_structs noisy;
+    noisy.solo = scribbled(0xFF, 'x', 7);
+    noisy.items.push_back(scribbled(0xFF, 'y', 9));
+    noisy.scores.emplace(scribbled(0xFF, 'k', 3), 1);
+
+    with_padded_structs quiet;
+    quiet.solo = scribbled(0x00, 'x', 7);
+    quiet.items.push_back(scribbled(0x00, 'y', 9));
+    quiet.scores.emplace(scribbled(0x00, 'k', 3), 1);
+
+    auto noisy_bytes = to_bytes(noisy);
+    auto quiet_bytes = to_bytes(quiet);
+    ASSERT_TRUE(noisy_bytes.has_value());
+    ASSERT_TRUE(quiet_bytes.has_value());
+
+    // Anything short of byte-identical output would disclose the memory
+    // previously occupying the padding and break encode determinism.
+    EXPECT_EQ(*noisy_bytes, *quiet_bytes);
+
+    with_padded_structs output{};
+    ASSERT_TRUE(fbs::from_bytes(*noisy_bytes, output).has_value());
+    EXPECT_EQ(output.solo, noisy.solo);
+    EXPECT_EQ(output.items, noisy.items);
+    ASSERT_TRUE(output.scores.contains(padded_key{.tag = 'k', .id = 3}));
+    EXPECT_EQ(output.scores.at(padded_key{.tag = 'k', .id = 3}), 1);
+}
 
 /// Deliberately the reverse of the reflected field order: the encoder must
 /// sort entries by its own canonical ordering, not trust the container's.

@@ -60,7 +60,8 @@ using verifier_t = ::flatbuffers::Verifier;
 /// - structure → table with one slot per field; structs satisfying
 ///   can_inline_struct_v (trivially copyable, standard-layout, unannotated
 ///   fields that are scalars, enums, or nested inline structs) may instead
-///   inline as fixed-size structs inside vectors
+///   inline as fixed-size structs inside vectors, with padding bytes
+///   encoded as zero
 /// - array/set → vector; element storage follows element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
 ///   other table-shaped elements use their own layouts), or boxed tables
@@ -149,18 +150,10 @@ inline auto variant_payload_voffset(std::size_t index) -> object_result_t<voffse
 namespace schema_detail {
 
 template <typename T>
-struct remove_optional {
-    using type = T;
-};
+constexpr bool is_optional_v = false;
 
 template <typename T>
-struct remove_optional<std::optional<T>> {
-    using type = T;
-};
-
-/// meta::field_type yields const-qualified types, so strip cv before matching.
-template <typename T>
-using remove_optional_t = typename remove_optional<std::remove_cv_t<T>>::type;
+constexpr bool is_optional_v<std::optional<T>> = true;
 
 template <typename T>
 constexpr bool is_scalar_field_v =
@@ -172,8 +165,17 @@ struct schema_struct_trait;
 
 template <typename T>
 constexpr bool is_schema_struct_field_v = [] {
-    using U = remove_optional_t<T>;
-    if constexpr(meta::has_repr<U, format>) {
+    // meta::field_type yields const-qualified types, so strip cv before
+    // matching.
+    using U = std::remove_cv_t<T>;
+    if constexpr(is_optional_v<U>) {
+        // std::optional<int> is trivially copyable, yet not every byte image
+        // is a valid optional: the engagement flag admits only two values,
+        // and inline structs are verified for size/alignment alone. An
+        // optional field keeps the enclosing struct table-shaped, where
+        // disengagement is an absent slot instead of a raw flag byte.
+        return false;
+    } else if constexpr(meta::has_repr<U, format>) {
         // A repr replaces the raw layout, so the field cannot be part of an
         // inline struct's memcpy image; the enclosing type degrades to a
         // table, where the dispatch applies the repr.

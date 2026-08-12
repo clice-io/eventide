@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -27,6 +29,52 @@ namespace encode_detail {
 using fbs::builder_t;
 using fbs::table_offset_t;
 using proxy_detail::slot_id;
+
+/// The bytes an inline struct's fields occupy, recursing into nested inline
+/// structs; falling short of sizeof means the native image carries padding.
+template <typename T>
+consteval auto packed_size() -> std::size_t {
+    if constexpr(meta::reflectable_class<T>) {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (std::size_t{0} + ... + packed_size<std::remove_cv_t<meta::field_type<T, I>>>());
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else {
+        return sizeof(T);
+    }
+}
+
+template <typename T>
+constexpr bool has_padding_v = packed_size<T>() != sizeof(T);
+
+template <typename T>
+void copy_field_bytes(const T& value, std::byte* image) {
+    if constexpr(meta::reflectable_class<T>) {
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (copy_field_bytes(meta::field_of<I>(value), image + meta::field_offset<T>(I)), ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else {
+        std::memcpy(image, std::addressof(value), sizeof(T));
+    }
+}
+
+/// The image an inline struct writes to the buffer. A padded struct's native
+/// object representation would disclose the indeterminate padding bytes and
+/// make encoding nondeterministic, so its field bytes are copied one by one
+/// over a zeroed image (std::bit_cast cannot build it: the result's padding
+/// is unspecified). A padding-free struct is its own image.
+template <typename T>
+auto wire_image(const T& value) -> T {
+    static_assert(can_inline_struct_v<T>);
+    if constexpr(has_padding_v<T>) {
+        std::array<std::byte, sizeof(T)> bytes{};
+        copy_field_bytes(value, bytes.data());
+        T image;
+        std::memcpy(std::addressof(image), bytes.data(), sizeof(T));
+        return image;
+    } else {
+        return value;
+    }
+}
 
 struct AllocFieldVisitor;
 struct AllocTableVisitor;
@@ -210,7 +258,8 @@ struct WriteFieldVisitor : detail::VisitorBase {
     template <typename T, typename Body>
     bool visit_struct(const T& value, Body&&) {
         if constexpr(can_inline_struct_v<T>) {
-            fbb.AddStruct(sid, &value);
+            const T image = wire_image(value);
+            fbb.AddStruct(sid, &image);
         } else {
             fbb.AddOffset(sid, offset_t<void>(stored_offset));
         }
@@ -359,7 +408,7 @@ struct InlineStructElemVisitor : detail::VisitorBase {
     template <typename U, typename Body>
     bool visit_struct(const U& value, Body&&) {
         static_assert(std::is_same_v<U, T>);
-        elems.push_back(value);
+        elems.push_back(wire_image(value));
         return true;
     }
 };
@@ -761,7 +810,9 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
     } else if constexpr(layout == boxed) {
         return collect(BoxedTableCollector{.fbb = fbb});
     } else if constexpr(layout == inline_struct) {
-        if constexpr(identity && contiguous) {
+        // A padded element's native bytes must not be copied wholesale (see
+        // wire_image); such vectors build their elements one by one.
+        if constexpr(identity && contiguous && !has_padding_v<repr_t>) {
             out_offset = fbb.CreateVectorOfStructs(std::ranges::data(c), std::ranges::size(c)).o;
             return true;
         } else {
