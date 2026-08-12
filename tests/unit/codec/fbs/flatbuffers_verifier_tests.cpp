@@ -135,6 +135,16 @@ struct node {
     std::unique_ptr<node> next;
 };
 
+/// weak_ptr is the third nullable smart pointer the encoder locks and writes
+/// like shared_ptr; the classification (deep_clean_t) must peel it the same
+/// way or the verifier checks the slot as a table offset instead of the
+/// pointee's layout.
+struct weak_holder {
+    std::int32_t before = 0;
+    std::weak_ptr<std::int32_t> num;
+    std::string after;
+};
+
 auto make_chain(std::size_t depth) -> node {
     node head{.value = 0, .next = nullptr};
     node* tail = &head;
@@ -253,6 +263,29 @@ TEST_CASE(monostate_alternative_round_trips_both_paths) {
     ASSERT_TRUE(root.valid());
     EXPECT_EQ(root[&rich2::maybe].index(), 0U);
     [[maybe_unused]] auto unit = root[&rich2::maybe].get<0>();
+}
+
+TEST_CASE(weak_ptr_field_verifies_and_reads) {
+    auto owner = std::make_shared<std::int32_t>(77);
+    weak_holder input{.before = 5, .num = owner, .after = "tail"};
+
+    auto encoded = fbs::to_bytes(input);
+    ASSERT_TRUE(encoded.has_value());
+
+    auto root = table_view<weak_holder>::from_bytes(*encoded);
+    ASSERT_TRUE(root.valid());
+    EXPECT_EQ(root[&weak_holder::before], 5);
+    EXPECT_EQ(root[&weak_holder::num], 77);
+    EXPECT_EQ(root[&weak_holder::after], "tail");
+
+    // An expired weak_ptr leaves its slot absent; the view reads the default.
+    input.num.reset();
+    auto absent = fbs::to_bytes(input);
+    ASSERT_TRUE(absent.has_value());
+
+    auto root2 = table_view<weak_holder>::from_bytes(*absent);
+    ASSERT_TRUE(root2.valid());
+    EXPECT_EQ(root2[&weak_holder::num], 0);
 }
 
 TEST_CASE(undersized_buffers_are_rejected) {

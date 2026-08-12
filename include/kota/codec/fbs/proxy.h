@@ -113,7 +113,8 @@ constexpr auto deep_clean_impl() {
     if constexpr(is_optional_v<repr_t>) {
         return deep_clean_impl<typename repr_t::value_type>();
     } else if constexpr(is_specialization_of<std::unique_ptr, repr_t> ||
-                        is_specialization_of<std::shared_ptr, repr_t>) {
+                        is_specialization_of<std::shared_ptr, repr_t> ||
+                        is_specialization_of<std::weak_ptr, repr_t>) {
         return deep_clean_impl<typename repr_t::element_type>();
     } else {
         return std::type_identity<repr_t>{};
