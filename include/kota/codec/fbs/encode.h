@@ -489,9 +489,10 @@ struct BoxedTableCollector {
 };
 
 /// The owning key an encoded map entry is ordered by, matching the comparison
-/// map_view::find_entry applies to decoded keys: strings compare
-/// lexicographically (captured owning — the buffer is still being built),
-/// enums by their underlying value, every other scalar as itself.
+/// map_view::find_entry applies to decoded keys (proxy_detail::ordering_less):
+/// strings compare lexicographically (captured owning — the buffer is still
+/// being built), enums by their underlying value, reflected structs
+/// field-wise, every other scalar as itself.
 template <typename K>
 constexpr auto ordering_key_impl() {
     using clean_k = proxy_detail::deep_clean_t<K>;
@@ -500,6 +501,9 @@ constexpr auto ordering_key_impl() {
     } else if constexpr(std::is_enum_v<clean_k>) {
         return std::type_identity<std::underlying_type_t<clean_k>>{};
     } else {
+        static_assert(!meta::reflectable_class<clean_k> || can_inline_struct_v<clean_k>,
+                      "a struct map key must satisfy can_inline_struct_v; a table-shaped key "
+                      "has no canonical ordering for the sorted entry vector");
         return std::type_identity<clean_k>{};
     }
 }
@@ -509,9 +513,10 @@ using ordering_key_t = typename decltype(ordering_key_impl<K>())::type;
 
 /// Captures a map key as the ordering key its entry is sorted by. The events
 /// mirror how the key's resolved representation encodes: scalar keys fire
-/// exactly one scalar event, string keys fire visit_str. The visit_str guard
-/// exists because configs spelling non-finite floats as strings
-/// (nan_repr::String) instantiate visit_str for scalar keys too.
+/// exactly one scalar event, string keys fire visit_str, inline-struct keys
+/// fire visit_struct with the whole value. The visit_str guard exists
+/// because configs spelling non-finite floats as strings (nan_repr::String)
+/// instantiate visit_str for scalar keys too.
 template <typename Key>
 struct KeyCaptureVisitor : detail::VisitorBase {
     Key captured{};
@@ -545,6 +550,14 @@ struct KeyCaptureVisitor : detail::VisitorBase {
         if constexpr(std::same_as<Key, std::string>) {
             captured = std::string(std::string_view(v));
         }
+        return true;
+    }
+
+    /// The ordering wants the whole value; the body's field events are not
+    /// driven.
+    template <typename T, typename Body>
+    bool visit_struct(const T& v, Body&&) {
+        captured = v;
         return true;
     }
 
@@ -671,7 +684,7 @@ inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset
     KOTA_CODEC_TRY(body(coll));
 
     std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
-        return a.first < b.first;
+        return proxy_detail::ordering_less(a.first, b.first);
     });
 
     std::vector<table_offset_t> sorted_offsets;

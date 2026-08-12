@@ -19,6 +19,7 @@
 #include "kota/support/type_list.h"
 #include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
+#include "kota/meta/struct.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/encode.h"
@@ -642,6 +643,57 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
     }
 }
 
+/// The canonical ordering of encoded map entries: the encoder sorts by it
+/// and map_view::find_entry binary-searches with it. Reflected structs
+/// compare field-wise in declaration order (recursing); everything else
+/// through operator<, so strings stay lexicographic and heterogeneous
+/// scalar lookups keep working.
+template <typename T, typename U>
+constexpr bool ordering_less(const T& a, const U& b) {
+    if constexpr(meta::reflectable_class<T>) {
+        static_assert(std::same_as<T, U>, "a reflected key compares against its own type");
+        bool less = false;
+        bool decided = false;
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            (
+                [&] {
+                    if(decided) {
+                        return;
+                    }
+                    const auto& lhs = meta::field_of<Is>(a);
+                    const auto& rhs = meta::field_of<Is>(b);
+                    if(ordering_less(lhs, rhs)) {
+                        less = true;
+                        decided = true;
+                    } else if(ordering_less(rhs, lhs)) {
+                        decided = true;
+                    }
+                }(),
+                ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+        return less;
+    } else {
+        return a < b;
+    }
+}
+
+template <typename T, typename U>
+constexpr bool ordering_equal(const T& a, const U& b) {
+    if constexpr(meta::reflectable_class<T>) {
+        return !ordering_less(a, b) && !ordering_less(b, a);
+    } else {
+        return a == b;
+    }
+}
+
+/// A key a map_view lookup accepts: anything totally ordered with the
+/// decoded key, or — for inline-struct keys, which carry no operator< —
+/// the key's own type, compared field-wise via ordering_less.
+template <typename K, typename U>
+concept map_lookup_key =
+    std::totally_ordered_with<field_return_type_t<deep_clean_t<K>>, const U&> ||
+    (can_inline_struct_v<deep_clean_t<K>> && std::same_as<std::remove_cvref_t<U>, deep_clean_t<K>>);
+
 }  // namespace proxy_detail
 
 template <typename Element>
@@ -850,9 +902,7 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
-            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+        requires proxy_detail::map_lookup_key<K, U>
     auto operator[](const U& key) const
         -> proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<V>> {
         using clean_v = proxy_detail::deep_clean_t<V>;
@@ -866,9 +916,7 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
-            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+        requires proxy_detail::map_lookup_key<K, U>
     auto find(const U& key) const -> std::optional<tuple_view<K, V>> {
         auto entry = find_entry(key);
         if(!entry.valid()) {
@@ -878,9 +926,7 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
-            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+        requires proxy_detail::map_lookup_key<K, U>
     auto contains(const U& key) const -> bool {
         return find_entry(key).valid();
     }
@@ -905,7 +951,7 @@ private:
             const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_ref(entry),
                                                                proxy_detail::field_slot(0));
-            if(entry_key < key) {
+            if(proxy_detail::ordering_less(entry_key, key)) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -919,7 +965,7 @@ private:
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_ref(entry);
         auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
-        if(entry_key == key) {
+        if(proxy_detail::ordering_equal(entry_key, key)) {
             return entry_view;
         }
         return {};

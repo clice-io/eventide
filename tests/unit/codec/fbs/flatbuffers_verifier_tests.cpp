@@ -113,8 +113,6 @@ struct inner {
     auto operator==(const inner&) const -> bool = default;
 };
 
-// No default member initializers: they would cost the type its trivial
-// default constructor and with it the inline-struct layout under test.
 struct point {
     std::int32_t x;
     std::int32_t y;
@@ -216,6 +214,29 @@ struct weak_holder {
     std::int32_t before = 0;
     std::weak_ptr<std::int32_t> num;
     std::string after;
+};
+
+struct occ_key {
+    std::uint32_t begin = static_cast<std::uint32_t>(-1);
+    std::uint32_t end = static_cast<std::uint32_t>(-1);
+    std::uint64_t target = 0;
+
+    friend bool operator==(const occ_key&, const occ_key&) = default;
+};
+
+struct occ_key_less {
+    bool operator()(const occ_key& a, const occ_key& b) const {
+        return std::tie(a.begin, a.end, a.target) < std::tie(b.begin, b.end, b.target);
+    }
+};
+
+/// Struct-keyed map: the entry vector holds inline-struct key cells the
+/// binary search reads back, so tampered bytes reach both the key and the
+/// value slots.
+struct struct_keyed {
+    std::map<occ_key, std::int32_t, occ_key_less> hits;
+
+    friend bool operator==(const struct_keyed&, const struct_keyed&) = default;
 };
 
 auto make_chain(std::size_t depth) -> node {
@@ -446,6 +467,25 @@ TEST_CASE(hostile_bytes_never_read_out_of_bounds_rich2) {
         [[maybe_unused]] auto arr = root[&rich2::mixed].get<1>().get<0>();
         [[maybe_unused]] auto widened = root[&rich2::widened];
         [[maybe_unused]] auto level_name = root[&rich2::level_name];
+    });
+}
+
+TEST_CASE(hostile_bytes_never_read_out_of_bounds_struct_keyed_map) {
+    struct_keyed input;
+    input.hits.emplace(occ_key{.begin = 1, .end = 5, .target = 9}, 1);
+    input.hits.emplace(occ_key{.begin = 1, .end = 6, .target = 0}, 2);
+    input.hits.emplace(occ_key{.begin = 2, .end = 0, .target = 3}, 3);
+
+    expect_hostile_bytes_contained(input, [](const table_view<struct_keyed>& root) {
+        auto m = root[&struct_keyed::hits];
+        for(std::size_t i = 0; i < m.size(); ++i) {
+            auto entry = m.at(i);
+            [[maybe_unused]] auto key = entry.get<0>();
+            [[maybe_unused]] auto value = entry.get<1>();
+        }
+        // The binary search walks tampered key cells.
+        [[maybe_unused]] auto hit = m[occ_key{.begin = 1, .end = 5, .target = 9}];
+        [[maybe_unused]] bool present = m.contains(occ_key{.begin = 9, .end = 9, .target = 9});
     });
 }
 

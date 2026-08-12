@@ -58,9 +58,9 @@ using verifier_t = ::flatbuffers::Verifier;
 /// - string → flatbuffers string; bytes → vector of uint8
 /// - enumeration → underlying integer cell
 /// - structure → table with one slot per field; structs satisfying
-///   can_inline_struct_v (trivial, standard-layout, unannotated fields that
-///   are scalars, enums, or nested inline structs) may instead inline as
-///   fixed-size structs inside vectors
+///   can_inline_struct_v (trivially copyable, standard-layout, unannotated
+///   fields that are scalars, enums, or nested inline structs) may instead
+///   inline as fixed-size structs inside vectors
 /// - array/set → vector; element storage follows element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
 ///   other table-shaped elements use their own layouts), or boxed tables
@@ -199,7 +199,9 @@ struct schema_struct_trait {
         }
     }
 
-    constexpr static bool value = meta::reflectable_class<T> && std::is_trivial_v<T> &&
+    // Trivially copyable is the exact bound the memcpy image needs; default
+    // member initializers (which break std::is_trivial) are fine.
+    constexpr static bool value = meta::reflectable_class<T> && std::is_trivially_copyable_v<T> &&
                                   std::is_standard_layout_v<T> && fields_supported();
 };
 
