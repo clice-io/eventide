@@ -19,6 +19,7 @@
 #include "kota/support/type_list.h"
 #include "kota/meta/repr.h"
 #include "kota/meta/schema.h"
+#include "kota/meta/struct.h"
 #include "kota/meta/type_kind.h"
 #include "kota/codec/fbs/type.h"
 #include "kota/codec/visit/encode.h"
@@ -469,6 +470,49 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
 // views trust their pointers, so this walk is what makes from_bytes safe on
 // corrupt, truncated, or malicious input.
 
+/// Whether an inline struct's memcpy image contains bool fields, recursing
+/// into nested inline structs.
+template <typename T>
+consteval bool has_bool_field() {
+    if constexpr(meta::reflectable_class<T>) {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (has_bool_field<std::remove_cv_t<meta::field_type<T, I>>>() || ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else {
+        return std::same_as<T, bool>;
+    }
+}
+
+template <typename T>
+bool bool_bytes_valid(const std::byte* image) {
+    if constexpr(meta::reflectable_class<T>) {
+        return [&]<std::size_t... I>(std::index_sequence<I...>) {
+            return (bool_bytes_valid<std::remove_cv_t<meta::field_type<T, I>>>(
+                        image + meta::field_offset<T>(I)) &&
+                    ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else if constexpr(std::same_as<T, bool>) {
+        return std::to_integer<std::uint8_t>(*image) <= 1;
+    } else {
+        return true;
+    }
+}
+
+/// Size/alignment verification admits any byte image for an inline struct,
+/// but not every image is a valid T: a bool member's byte must be 0 or 1 —
+/// evaluating any other representation is undefined behavior, and both
+/// decode paths copy the whole object out of the buffer. Checks every bool
+/// byte through the raw image (never through a T lvalue, which would be the
+/// very UB being prevented); null — an absent field — verifies trivially.
+template <typename T>
+bool valid_inline_struct_bytes([[maybe_unused]] const T* ptr) {
+    if constexpr(has_bool_field<T>()) {
+        return ptr == nullptr || bool_bytes_valid<T>(reinterpret_cast<const std::byte*>(ptr));
+    } else {
+        return true;
+    }
+}
+
 /// Verify the value of view type T at a field slot, mirroring read_field's
 /// classification branch for branch. An absent slot always verifies (the
 /// views read it as a default), as does a present-but-null nested table.
@@ -526,6 +570,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
                 ...);
         }(std::make_index_sequence<std::tuple_size_v<T>>{});
     } else {
+        detail::assert_fields_reflected<T>();
         using slots = typename object_schema<T>::slots;
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (verify_slot<type_list_element_t<Is, slots>>(v, tbl, field_slot(Is)) && ...);
@@ -562,7 +607,8 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
         const auto* nested = tbl->template GetPointer<const Table*>(slot);
         return nested == nullptr || verify_table<T>(v, nested);
     } else if constexpr(can_inline_struct_v<T>) {
-        return tbl->VerifyField<T>(v, slot, alignof(T));
+        return tbl->VerifyField<T>(v, slot, alignof(T)) &&
+               valid_inline_struct_bytes(tbl->template GetStruct<const T*>(slot));
     } else if constexpr(is_map_range_v<T>) {
         using clean_key_t = deep_clean_t<typename T::key_type>;
         using clean_mapped_t = deep_clean_t<typename T::mapped_type>;
@@ -630,6 +676,15 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
             return true;
         } else {
             // scalar / inline_struct: VerifyVector covered the element data.
+            // An inline struct's bool bytes additionally need semantic
+            // checking — in-bounds is not the same as a valid bool.
+            if constexpr(layout == inline_struct) {
+                for(uoffset_t i = 0; i < vec->size(); ++i) {
+                    if(!valid_inline_struct_bytes(vec->Get(i))) {
+                        return false;
+                    }
+                }
+            }
             return true;
         }
     } else {
@@ -641,6 +696,64 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
         return nested == nullptr || verify_table<T>(v, nested);
     }
 }
+
+/// The canonical ordering of encoded map entries: the encoder sorts by it
+/// and map_view::find_entry binary-searches with it. Reflected structs
+/// compare field-wise in declaration order (recursing); everything else
+/// through operator<, so strings stay lexicographic and heterogeneous
+/// scalar lookups keep working.
+template <typename T, typename U>
+constexpr bool ordering_less(const T& a, const U& b) {
+    if constexpr(meta::reflectable_class<T>) {
+        static_assert(std::same_as<T, U>, "a reflected key compares against its own type");
+        bool less = false;
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            // The fold walks fields while they compare equal; the first
+            // differing field decides.
+            ([&] {
+                const auto& lhs = meta::field_of<Is>(a);
+                const auto& rhs = meta::field_of<Is>(b);
+                if(ordering_less(lhs, rhs)) {
+                    less = true;
+                    return false;
+                }
+                return !ordering_less(rhs, lhs);
+            }() &&
+             ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+        return less;
+    } else {
+        return a < b;
+    }
+}
+
+/// Equality derived from ordering_less, so struct keys need no operator==.
+/// A NaN float field ties with every value under this equality (it is never
+/// less in either direction); NaN keys are garbage-in, exactly as they are
+/// for scalar float keys, where the encoder's sort already cannot order them.
+template <typename T, typename U>
+constexpr bool ordering_equal(const T& a, const U& b) {
+    if constexpr(meta::reflectable_class<T>) {
+        return !ordering_less(a, b) && !ordering_less(b, a);
+    } else {
+        return a == b;
+    }
+}
+
+/// A key a map_view lookup accepts. Reflected keys compare field-wise via
+/// ordering_less and take only their own type — user-supplied comparisons
+/// are ignored on both the encode and the lookup side, so admitting
+/// heterogeneous queries through them would promise an ordering the search
+/// does not use. Every other key takes anything totally ordered with its
+/// decoded form. can_inline_struct_v implies fields_reflected_v, so a key
+/// past the reflection field limit — whose field walk would visit nothing
+/// and tie every lookup — is rejected here as well as by the encoder.
+template <typename K, typename U>
+concept map_lookup_key =
+    (meta::reflectable_class<deep_clean_t<K>> && can_inline_struct_v<deep_clean_t<K>> &&
+     std::same_as<U, deep_clean_t<K>>) ||
+    (!meta::reflectable_class<deep_clean_t<K>> &&
+     std::totally_ordered_with<field_return_type_t<deep_clean_t<K>>, const U&>);
 
 }  // namespace proxy_detail
 
@@ -850,9 +963,7 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
-            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+        requires proxy_detail::map_lookup_key<K, U>
     auto operator[](const U& key) const
         -> proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<V>> {
         using clean_v = proxy_detail::deep_clean_t<V>;
@@ -866,9 +977,7 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
-            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+        requires proxy_detail::map_lookup_key<K, U>
     auto find(const U& key) const -> std::optional<tuple_view<K, V>> {
         auto entry = find_entry(key);
         if(!entry.valid()) {
@@ -878,9 +987,7 @@ public:
     }
 
     template <typename U = K>
-        requires std::totally_ordered_with<
-            proxy_detail::field_return_type_t<proxy_detail::deep_clean_t<K>>,
-            const U&>
+        requires proxy_detail::map_lookup_key<K, U>
     auto contains(const U& key) const -> bool {
         return find_entry(key).valid();
     }
@@ -905,7 +1012,7 @@ private:
             const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(mid));
             auto entry_key = proxy_detail::read_field<clean_k>(proxy_detail::table_ref(entry),
                                                                proxy_detail::field_slot(0));
-            if(entry_key < key) {
+            if(proxy_detail::ordering_less(entry_key, key)) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -919,7 +1026,7 @@ private:
         const auto* entry = vector->template GetAs<Table>(static_cast<uoffset_t>(lo));
         auto entry_view = proxy_detail::table_ref(entry);
         auto entry_key = proxy_detail::read_field<clean_k>(entry_view, proxy_detail::field_slot(0));
-        if(entry_key == key) {
+        if(proxy_detail::ordering_equal(entry_key, key)) {
             return entry_view;
         }
         return {};
@@ -973,6 +1080,22 @@ public:
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
         const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
         return from_bytes(std::span<const std::uint8_t>(data, bytes.size()));
+    }
+
+    /// Wraps a buffer that already passed from_bytes verification, without
+    /// re-verifying: the memory-map-once pattern verifies a blob when it is
+    /// opened and constructs views per query. The caller owns that contract —
+    /// on unverified bytes the view reads out of bounds.
+    static auto from_verified_bytes(std::span<const std::uint8_t> bytes) -> table_view {
+        static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
+                      "table_view reads T's own table layout; a type whose fbs representation "
+                      "differs from itself cannot be viewed — decode it with from_bytes instead");
+        return table_view(view_type(::flatbuffers::GetRoot<Table>(bytes.data())));
+    }
+
+    static auto from_verified_bytes(std::span<const std::byte> bytes) -> table_view {
+        const auto* data = reinterpret_cast<const std::uint8_t*>(bytes.data());
+        return from_verified_bytes(std::span<const std::uint8_t>(data, bytes.size()));
     }
 
     constexpr auto valid() const noexcept -> bool {

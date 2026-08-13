@@ -320,6 +320,7 @@ struct RootReader : FieldReader {
 
     template <typename U, typename Body>
     bool visit_struct(U&, Body&& body) {
+        detail::assert_fields_reflected<std::remove_const_t<U>>();
         TableFieldReader tfr{.tbl = tbl, .verifier = verifier};
         return body(tfr);
     }
@@ -354,10 +355,13 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
         if(!tbl->VerifyField<V>(*verifier, slot, alignof(V)))
             return fail_verify("inline struct field");
         const auto* ptr = tbl->GetStruct<const V*>(slot);
+        if(!proxy_detail::valid_inline_struct_bytes(ptr))
+            return fail_verify("inline struct bool byte");
         if(ptr != nullptr)
             out = *ptr;
         return true;
     } else {
+        detail::assert_fields_reflected<V>();
         const Table* child = nullptr;
         bool entered = false;
         if(!follow_table(child, entered, "struct field"))
@@ -481,6 +485,8 @@ bool VecReader<E>::visit_element(F&& reader) {
     } else if constexpr(layout == inline_struct) {
         const auto* ptr = vec->Get(static_cast<uoffset_t>(idx));
         ++idx;
+        if(!proxy_detail::valid_inline_struct_bytes(ptr))
+            return fail_verify("inline struct element bool byte");
         ScalarReader<repr_t> sr{.value = ptr ? *ptr : repr_t{}};
         return reader(sr);
     } else {

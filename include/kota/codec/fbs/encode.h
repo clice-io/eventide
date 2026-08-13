@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -27,6 +28,67 @@ namespace encode_detail {
 using fbs::builder_t;
 using fbs::table_offset_t;
 using proxy_detail::slot_id;
+
+/// The bytes an inline struct's fields occupy, recursing into nested inline
+/// structs; falling short of sizeof means the native image carries padding.
+/// Counting sizeof per leaf is exact because every admitted leaf scalar is
+/// internally padding-free — long double, the one scalar whose image can
+/// hold unspecified bytes, is excluded from inline structs entirely
+/// (is_scalar_field_v).
+template <typename T>
+consteval auto packed_size() -> std::size_t {
+    if constexpr(meta::reflectable_class<T>) {
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (std::size_t{0} + ... + packed_size<std::remove_cv_t<meta::field_type<T, I>>>());
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else {
+        return sizeof(T);
+    }
+}
+
+template <typename T>
+constexpr bool has_padding_v = packed_size<T>() != sizeof(T);
+
+template <typename T>
+void copy_field_bytes(const T& value, std::byte* image) {
+    if constexpr(meta::reflectable_class<T>) {
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (copy_field_bytes(meta::field_of<I>(value), image + meta::field_offset<T>(I)), ...);
+        }(std::make_index_sequence<meta::field_count<T>()>{});
+    } else {
+        std::memcpy(image, std::addressof(value), sizeof(T));
+    }
+}
+
+/// An inline struct's buffer image: T's size and alignment, byte-typed
+/// storage. The bytes stay byte-typed all the way to the builder because a
+/// copy of T itself may not survive intact — T's trivial copy operations
+/// copy members, not the object representation, so sanitized padding could
+/// come back unspecified (and the builder's push_small copies by
+/// assignment). A byte array has no padding: copying it preserves every
+/// byte.
+template <typename T>
+struct alignas(T) WireImage {
+    std::byte bytes[sizeof(T)];
+};
+
+/// The image an inline struct writes to the buffer. A padded struct's native
+/// object representation would disclose the indeterminate padding bytes and
+/// make encoding nondeterministic, so its field bytes are copied one by one
+/// over a zeroed image (std::bit_cast cannot build it: the result's padding
+/// is unspecified). A padding-free struct's image is its whole object
+/// representation.
+template <typename T>
+auto wire_image(const T& value) -> WireImage<T> {
+    static_assert(can_inline_struct_v<T>);
+    WireImage<T> image{};
+    if constexpr(has_padding_v<T>) {
+        copy_field_bytes(value, image.bytes);
+    } else {
+        std::memcpy(image.bytes, std::addressof(value), sizeof(T));
+    }
+    return image;
+}
 
 struct AllocFieldVisitor;
 struct AllocTableVisitor;
@@ -210,7 +272,8 @@ struct WriteFieldVisitor : detail::VisitorBase {
     template <typename T, typename Body>
     bool visit_struct(const T& value, Body&&) {
         if constexpr(can_inline_struct_v<T>) {
-            fbb.AddStruct(sid, &value);
+            const auto image = wire_image(value);
+            fbb.AddStruct(sid, &image);
         } else {
             fbb.AddOffset(sid, offset_t<void>(stored_offset));
         }
@@ -352,14 +415,14 @@ struct StringCollector {
 
 template <typename T>
 struct InlineStructElemVisitor : detail::VisitorBase {
-    std::vector<T>& elems;
+    std::vector<WireImage<T>>& elems;
 
     // The dispatch calls visit_struct for structures. For inline structs the
-    // value is simply copied into the element vector.
+    // sanitized image is simply appended to the element vector.
     template <typename U, typename Body>
     bool visit_struct(const U& value, Body&&) {
         static_assert(std::is_same_v<U, T>);
-        elems.push_back(value);
+        elems.push_back(wire_image(value));
         return true;
     }
 };
@@ -367,7 +430,7 @@ struct InlineStructElemVisitor : detail::VisitorBase {
 template <typename T>
 struct InlineStructCollector {
     builder_t& fbb;
-    std::vector<T> elems{};
+    std::vector<WireImage<T>> elems{};
     uoffset_t result_offset = 0;
 
     template <typename F>
@@ -377,7 +440,12 @@ struct InlineStructCollector {
     }
 
     bool finish() {
-        auto off = fbb.CreateVectorOfStructs(elems.data(), elems.size());
+        // The builder only memcpys the elements' bytes, but WireImage's
+        // single-parameter template shape would match flatbuffers'
+        // IndirectHelper<OffsetT<T>> specialization, so hand it the struct
+        // type the images stand in for.
+        auto off =
+            fbb.CreateVectorOfStructs(reinterpret_cast<const T*>(elems.data()), elems.size());
         result_offset = off.o;
         return true;
     }
@@ -489,9 +557,10 @@ struct BoxedTableCollector {
 };
 
 /// The owning key an encoded map entry is ordered by, matching the comparison
-/// map_view::find_entry applies to decoded keys: strings compare
-/// lexicographically (captured owning — the buffer is still being built),
-/// enums by their underlying value, every other scalar as itself.
+/// map_view::find_entry applies to decoded keys (proxy_detail::ordering_less):
+/// strings compare lexicographically (captured owning — the buffer is still
+/// being built), enums by their underlying value, reflected structs
+/// field-wise, every other scalar as itself.
 template <typename K>
 constexpr auto ordering_key_impl() {
     using clean_k = proxy_detail::deep_clean_t<K>;
@@ -500,6 +569,16 @@ constexpr auto ordering_key_impl() {
     } else if constexpr(std::is_enum_v<clean_k>) {
         return std::type_identity<std::underlying_type_t<clean_k>>{};
     } else {
+        if constexpr(meta::reflectable_class<clean_k>) {
+            static_assert(can_inline_struct_v<clean_k>,
+                          "a struct map key must satisfy can_inline_struct_v; a table-shaped "
+                          "key has no canonical ordering for the sorted entry vector");
+            // Past the reflection field limit the field walk visits nothing
+            // and every key would order equal — reject instead of mis-sorting.
+            static_assert(fields_reflected_v<clean_k>,
+                          "this struct map key has more fields than reflection supports; its "
+                          "entries cannot be ordered");
+        }
         return std::type_identity<clean_k>{};
     }
 }
@@ -509,9 +588,10 @@ using ordering_key_t = typename decltype(ordering_key_impl<K>())::type;
 
 /// Captures a map key as the ordering key its entry is sorted by. The events
 /// mirror how the key's resolved representation encodes: scalar keys fire
-/// exactly one scalar event, string keys fire visit_str. The visit_str guard
-/// exists because configs spelling non-finite floats as strings
-/// (nan_repr::String) instantiate visit_str for scalar keys too.
+/// exactly one scalar event, string keys fire visit_str, inline-struct keys
+/// fire visit_struct with the whole value. The visit_str guard exists
+/// because configs spelling non-finite floats as strings (nan_repr::String)
+/// instantiate visit_str for scalar keys too.
 template <typename Key>
 struct KeyCaptureVisitor : detail::VisitorBase {
     Key captured{};
@@ -545,6 +625,14 @@ struct KeyCaptureVisitor : detail::VisitorBase {
         if constexpr(std::same_as<Key, std::string>) {
             captured = std::string(std::string_view(v));
         }
+        return true;
+    }
+
+    /// The ordering wants the whole value; the body's field events are not
+    /// driven.
+    template <typename T, typename Body>
+    bool visit_struct(const T& v, Body&&) {
+        captured = v;
         return true;
     }
 
@@ -671,7 +759,7 @@ inline bool encode_sorted_map(builder_t& fbb, Body&& body, uoffset_t& out_offset
     KOTA_CODEC_TRY(body(coll));
 
     std::sort(coll.entries.begin(), coll.entries.end(), [](const auto& a, const auto& b) {
-        return a.first < b.first;
+        return proxy_detail::ordering_less(a.first, b.first);
     });
 
     std::vector<table_offset_t> sorted_offsets;
@@ -743,7 +831,9 @@ bool seq_encode_impl(builder_t& fbb, const Container& c, Body&& body, uoffset_t&
     } else if constexpr(layout == boxed) {
         return collect(BoxedTableCollector{.fbb = fbb});
     } else if constexpr(layout == inline_struct) {
-        if constexpr(identity && contiguous) {
+        // A padded element's native bytes must not be copied wholesale (see
+        // wire_image); such vectors build their elements one by one.
+        if constexpr(identity && contiguous && !has_padding_v<repr_t>) {
             out_offset = fbb.CreateVectorOfStructs(std::ranges::data(c), std::ranges::size(c)).o;
             return true;
         } else {
@@ -761,6 +851,7 @@ bool AllocFieldVisitor::visit_struct(const T&, Body&& body) {
         // No allocation needed.
         return true;
     } else {
+        detail::assert_fields_reflected<T>();
         auto off = two_pass(fbb, std::forward<Body>(body));
         stored_offset = off.o;
         return true;
@@ -791,6 +882,7 @@ bool AllocFieldVisitor::visit_variant(std::size_t index, Body&& body) {
 
 template <typename T, typename Body>
 bool TableElemVisitor::visit_struct(const T&, Body&& body) {
+    detail::assert_fields_reflected<T>();
     auto off = two_pass(fbb, std::forward<Body>(body));
     table_offsets.push_back(off);
     return true;
@@ -855,6 +947,7 @@ bool MapEntryCollector<Key>::visit_entry(KF&& key_fn, VF&& value_fn) {
 
 template <typename T, typename Body>
 bool RootVisitor::visit_struct(const T&, Body&& body) {
+    detail::assert_fields_reflected<T>();
     root_off = two_pass(fbb, std::forward<Body>(body));
     return true;
 }
