@@ -20,11 +20,10 @@ Never push anything unverified — "it compiles" is not verified, and CI is not 
 
 ## Self-review (before opening)
 
-Commit all work first — the review diff only sees commits, so a dirty worktree means the reviewers inspect an incomplete patch (`git status` must be clean). Then launch **3 parallel subagents** to review the full diff (`git diff origin/main...HEAD` — never against the local `main`, which goes stale) independently, and fix everything they report before opening:
+Commit all work first — the review diff only sees commits, so a dirty worktree means the reviewers inspect an incomplete patch (`git status` must be clean). Then review the full diff (`git diff origin/main...HEAD` — never against the local `main`, which goes stale) and fix everything confirmed before opening:
 
-1. **Correctness reviewer**: logic errors, edge cases, undefined behavior, off-by-one mistakes — coroutine lifetime and cancellation paths deserve extra suspicion.
-2. **Style reviewer**: naming conventions, coding style, cpp-style skill rules.
-3. **Test reviewer**: new functionality has tests, edge cases are covered, no existing tests were broken or weakened.
+1. **Primary: codex review** (the codex skill) — `codex exec review --base origin/main` with gpt-5.6-sol at xhigh, with a prompt telling it to first read `.claude/CLAUDE.md` and the cpp-style skill and apply their rules (codex does not auto-load `.claude/` docs). Treat findings as hypotheses: verify each concrete claim before fixing it.
+2. **Supplement** — when codex is unavailable, or as an extra pass on high-risk diffs: 3 parallel subagents reviewing independently — correctness (logic errors, edge cases, undefined behavior; coroutine lifetime and cancellation paths deserve extra suspicion), style (naming, cpp-style skill rules), tests (new functionality covered, no existing tests broken or weakened).
 
 ## Opening
 

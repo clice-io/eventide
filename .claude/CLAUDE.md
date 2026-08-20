@@ -29,4 +29,6 @@ CI workflow — never use xmake for local development.
 
 Read the relevant skill before acting: `cpp-style` before writing C++,
 `build`/`test` to build and run suites, `pr` before committing or opening a
-PR, `format` (`pixi run format`) before every commit.
+PR, `format` (`pixi run format`) before every commit, `codex` before
+delegating work to the codex CLI (plan/code review, debugging, test writing,
+scoped implementation).
