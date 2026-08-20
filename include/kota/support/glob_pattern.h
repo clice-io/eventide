@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <bitset>
 #include <cstdint>
 #include <expected>
@@ -42,9 +43,9 @@ struct GlobError {
 ///
 /// Note: Use only `/` for path segment separator
 ///
-/// A pattern that is exactly `*` or `**` matches every path, including
-/// across `/` (see is_trivial_match_all); anywhere else `*` stays within
-/// one segment.
+/// A pattern whose body — or any brace-expanded arm of it — is exactly
+/// `*` or `**` matches every path, including across `/` (see
+/// is_trivial_match_all); anywhere else `*` stays within one segment.
 ///
 /// Only supports single-byte characters (ASCII/Latin-1). Multi-byte encodings
 /// like UTF-8 are matched byte-by-byte.
@@ -57,11 +58,13 @@ public:
         if(!prefix.empty() || prefix_at_seg_end) {
             return false;
         }
-        if(sub_globs.size() == 1) {
-            auto pat = sub_globs[0].pattern();
+        // Brace arms are independent OR alternatives, so one match-all arm
+        // makes the whole pattern match-all: `{*,foo}` accepts no less
+        // than `*`.
+        return std::ranges::any_of(sub_globs, [](const SubGlobPattern& glob) {
+            auto pat = glob.pattern();
             return pat == "*" || pat == "**";
-        }
-        return false;
+        });
     }
 
     [[nodiscard]] bool match(std::string_view s) const;

@@ -314,6 +314,23 @@ TEST_CASE(brace_expr) {
     EXPECT_FALSE(pat11.match("prefix/bar.5"));
     EXPECT_FALSE(pat11.match("prefix/foo.f"));
     EXPECT_TRUE(pat11.match("prefix/foo.js"));
+
+    // Adding a brace arm never narrows the match: a bare `*` arm stays
+    // match-all just like the standalone pattern `*`.
+    PATDEF(pat12, "{*,foo}")
+    EXPECT_TRUE(pat12.match("foo"));
+    EXPECT_TRUE(pat12.match("bar"));
+    EXPECT_TRUE(pat12.match("a/b"));
+    EXPECT_TRUE(pat12.match("/foo"));
+
+    PATDEF(pat13, "{foo,**}")
+    EXPECT_TRUE(pat13.match("a/b/c"));
+
+    // With a prefix the star arm is `a*`: segment-bounded as usual.
+    PATDEF(pat14, "a{*,foo}")
+    EXPECT_TRUE(pat14.match("ab"));
+    EXPECT_TRUE(pat14.match("afoo"));
+    EXPECT_FALSE(pat14.match("a/b"));
 }
 
 TEST_CASE(globstar_prefix) {
@@ -651,6 +668,25 @@ TEST_CASE(is_trivial_match_all) {
     auto p8 = kota::GlobPattern::create("/**");
     EXPECT_TRUE(p8.has_value());
     EXPECT_FALSE(p8->is_trivial_match_all());
+
+    // A `*` or `**` brace arm keeps its match-all semantics; the other
+    // arms only add matches.
+    auto p9 = kota::GlobPattern::create("{*,foo}");
+    EXPECT_TRUE(p9.has_value());
+    EXPECT_TRUE(p9->is_trivial_match_all());
+
+    auto p10 = kota::GlobPattern::create("{foo,**}");
+    EXPECT_TRUE(p10.has_value());
+    EXPECT_TRUE(p10->is_trivial_match_all());
+
+    // With a prefix the `*` arm means `a*`, which is segment-bounded.
+    auto p11 = kota::GlobPattern::create("a{*,foo}");
+    EXPECT_TRUE(p11.has_value());
+    EXPECT_FALSE(p11->is_trivial_match_all());
+
+    auto p12 = kota::GlobPattern::create("{*.js,foo}");
+    EXPECT_TRUE(p12.has_value());
+    EXPECT_FALSE(p12->is_trivial_match_all());
 }
 
 TEST_CASE(single_star) {
