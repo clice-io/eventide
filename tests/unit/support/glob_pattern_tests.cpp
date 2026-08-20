@@ -641,6 +641,16 @@ TEST_CASE(is_trivial_match_all) {
     auto p6 = kota::GlobPattern::create("{a,b}");
     EXPECT_TRUE(p6.has_value());
     EXPECT_FALSE(p6->is_trivial_match_all());
+
+    // The leading `/` is a real constraint even though the literal prefix
+    // it leaves behind is empty.
+    auto p7 = kota::GlobPattern::create("/*");
+    EXPECT_TRUE(p7.has_value());
+    EXPECT_FALSE(p7->is_trivial_match_all());
+
+    auto p8 = kota::GlobPattern::create("/**");
+    EXPECT_TRUE(p8.has_value());
+    EXPECT_FALSE(p8->is_trivial_match_all());
 }
 
 TEST_CASE(single_star) {
@@ -763,7 +773,8 @@ TEST_CASE(matches_empty_tail) {
     EXPECT_FALSE(pat10.match("aa"));
     EXPECT_TRUE(pat10.match("aa/b"));
 
-    // Only a lone trailing globstar absorbs the separator after the prefix.
+    // A trailing globstar chain absorbs the separator after the prefix; any
+    // non-globstar atom in the tail still demands real input.
     PATDEF(pat11, "foo/**/*")
     EXPECT_FALSE(pat11.match("foo"));
     EXPECT_TRUE(pat11.match("foo/a"));
@@ -772,12 +783,18 @@ TEST_CASE(matches_empty_tail) {
     EXPECT_FALSE(pat12.match("foo"));
     EXPECT_TRUE(pat12.match("foo/bar"));
 
+    // Prefix stripping must not change matches: `a/**/**` behaves exactly
+    // like its brace-wrapped twin, whose arm keeps the leading literal.
     PATDEF(pat13, "a/**/**")
-    EXPECT_FALSE(pat13.match("a"));
+    EXPECT_TRUE(pat13.match("a"));
     EXPECT_TRUE(pat13.match("a/b"));
 
+    PATDEF(pat13b, "{a/**/**}")
+    EXPECT_TRUE(pat13b.match("a"));
+    EXPECT_TRUE(pat13b.match("a/b"));
+
     // Brace arms expand into independent alternatives, so the `**` arm
-    // keeps its lone-globstar behavior.
+    // absorbs the separator while the literal arm does not.
     PATDEF(pat14, "foo/{**,x}")
     EXPECT_TRUE(pat14.match("foo"));
     EXPECT_TRUE(pat14.match("foo/x"));
@@ -1006,6 +1023,31 @@ TEST_CASE(globstar_slash) {
     EXPECT_TRUE(pat2.match("a/b/c/x"));
     EXPECT_FALSE(pat2.match("ax"));
     EXPECT_FALSE(pat2.match("a/bx"));
+
+    // A leading `/` must be matched by the input.
+    PATDEF(pat3, "/*")
+    EXPECT_TRUE(pat3.match("/foo"));
+    EXPECT_TRUE(pat3.match("/"));
+    EXPECT_FALSE(pat3.match("foo"));
+    EXPECT_FALSE(pat3.match("foo/bar"));
+    EXPECT_FALSE(pat3.match("/foo/bar"));
+
+    PATDEF(pat4, "/**")
+    EXPECT_TRUE(pat4.match("/foo"));
+    EXPECT_TRUE(pat4.match("/foo/bar"));
+    EXPECT_FALSE(pat4.match("foo"));
+    EXPECT_FALSE(pat4.match("foo/bar"));
+
+    // A trailing `/` requires the input to end at that segment boundary; a
+    // preceding `**` keeps retrying until the last segment lines up.
+    PATDEF(pat5, "**/a/")
+    EXPECT_TRUE(pat5.match("a/"));
+    EXPECT_TRUE(pat5.match("x/a/"));
+    EXPECT_TRUE(pat5.match("a/a/"));
+    EXPECT_TRUE(pat5.match("a/b/a/"));
+    EXPECT_FALSE(pat5.match("a"));
+    EXPECT_FALSE(pat5.match("a/b/"));
+    EXPECT_FALSE(pat5.match("a/a"));
 }
 
 TEST_CASE(backslash_in_input) {

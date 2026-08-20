@@ -54,7 +54,7 @@ public:
         create(std::string_view s, size_t max_subpattern_num = 100);
 
     [[nodiscard]] bool is_trivial_match_all() const {
-        if(!prefix.empty()) {
+        if(!prefix.empty() || prefix_at_seg_end) {
             return false;
         }
         if(sub_globs.size() == 1) {
