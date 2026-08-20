@@ -1010,6 +1010,47 @@ TEST_CASE(question_with_globstar) {
     EXPECT_FALSE(pat2.match("foo/ab"));
 }
 
+TEST_CASE(prefix_strip_boundary) {
+    // Stripping the literal prefix must not turn a mid-segment position
+    // into a segment boundary: each pattern behaves exactly like its
+    // brace-wrapped twin, whose arm keeps the leading literal.
+    PATDEF(pat1, "a**/?")
+    EXPECT_FALSE(pat1.match("aa"));
+    EXPECT_FALSE(pat1.match("ab"));
+    EXPECT_FALSE(pat1.match("a"));
+    EXPECT_TRUE(pat1.match("a/c"));
+    EXPECT_TRUE(pat1.match("aa/c"));
+
+    PATDEF(pat1b, "{a**/?}")
+    EXPECT_FALSE(pat1b.match("aa"));
+    EXPECT_FALSE(pat1b.match("ab"));
+    EXPECT_FALSE(pat1b.match("a"));
+    EXPECT_TRUE(pat1b.match("a/c"));
+    EXPECT_TRUE(pat1b.match("aa/c"));
+
+    PATDEF(pat2, "x**/y")
+    EXPECT_FALSE(pat2.match("xy"));
+    EXPECT_TRUE(pat2.match("x/y"));
+    EXPECT_TRUE(pat2.match("xx/y"));
+
+    PATDEF(pat3, "a**/[bc]")
+    EXPECT_FALSE(pat3.match("ab"));
+    EXPECT_TRUE(pat3.match("a/b"));
+
+    PATDEF(pat4, R"(a**/\?)")
+    EXPECT_FALSE(pat4.match("a?"));
+    EXPECT_TRUE(pat4.match("a/?"));
+
+    // Pattern segment 0 continues the prefix's input segment, so
+    // mid-segment continuation there stays legal.
+    PATDEF(pat5, "a?")
+    EXPECT_TRUE(pat5.match("ab"));
+    EXPECT_FALSE(pat5.match("a/"));
+
+    PATDEF(pat6, "a[bc]")
+    EXPECT_TRUE(pat6.match("ab"));
+}
+
 TEST_CASE(globstar_slash) {
     PATDEF(pat1, "**/")
     EXPECT_TRUE(pat1.match("foo/bar"));

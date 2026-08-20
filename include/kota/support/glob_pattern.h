@@ -72,7 +72,11 @@ private:
 
     struct SubGlobPattern {
         [[nodiscard]] static std::expected<SubGlobPattern, GlobError> create(std::string_view s);
-        [[nodiscard]] bool match(std::string_view str) const;
+
+        /// `start_at_seg_boundary` says whether `str` begins at a path
+        /// segment boundary of the original input; it is false when a
+        /// literal prefix was stripped mid-segment.
+        [[nodiscard]] bool match(std::string_view str, bool start_at_seg_boundary) const;
 
         [[nodiscard]] std::string_view pattern() const {
             return std::string_view{pat.data(), pat.size()};

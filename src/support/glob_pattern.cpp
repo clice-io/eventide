@@ -455,8 +455,9 @@ bool GlobPattern::match(std::string_view sv) const {
         str = str.substr(1);
     }
 
+    bool at_seg_boundary = prefix.empty() || prefix_at_seg_end;
     for(auto& glob: sub_globs) {
-        if(glob.match(str)) {
+        if(glob.match(str, at_seg_boundary)) {
             return true;
         }
     }
@@ -468,7 +469,7 @@ bool GlobPattern::match(std::string_view sv) const {
 /// attacks where crafted patterns and inputs could cause exponential backtracking.
 constexpr static size_t max_backtrack_iterations = 65536;
 
-bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
+bool GlobPattern::SubGlobPattern::match(std::string_view str, bool start_at_seg_boundary) const {
     const char* s = str.data();
     const char* const s_start = s;
     const char* const s_end = s + str.size();
@@ -498,6 +499,18 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                                        .seg_end = seg_end,
                                        .seg_start = seg_start});
         };
+
+    // A pattern segment must begin where an input segment begins. `s_start`
+    // qualifies only when the prefix was stripped at a boundary; otherwise
+    // segment 0 alone may continue the prefix's segment there (`a?` vs
+    // `ab`), while a globstar handing over to a later segment may not
+    // (`a**/?` vs `aa`).
+    auto at_input_seg_start = [&] {
+        if(s == s_start) {
+            return start_at_seg_boundary || current_glob_seg == 0;
+        }
+        return *(s - 1) == '/';
+    };
 
     while(true) {
         if(s == s_end) {
@@ -569,7 +582,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 case '?': {
                     if(s != s_end && *s != '/') {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         ++p;
@@ -581,7 +594,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 case '[': {
                     if(b < brackets.size() && brackets[b].bytes[std::uint8_t(*s)]) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         p = pat.data() + brackets[b].next_offset;
@@ -594,7 +607,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 case '\\': {
                     if(p + 1 != seg_end && *(p + 1) == *s) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         p += 2;
@@ -606,7 +619,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 default: {
                     if(*p == *s) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         ++p;
