@@ -12,80 +12,153 @@ namespace kota {
 
 namespace {
 
-using GlobCharSet = std::bitset<256>;
+/// One matching unit: a decoded Unicode scalar value, or a byte that is
+/// not valid UTF-8 mapped above the Unicode range so it only compares
+/// equal to the same byte. Patterns are validated to be UTF-8 at create(),
+/// so invalid atoms can only come from the matched path.
+struct Utf8Atom {
+    char32_t cp;
+    std::uint32_t len;
+};
 
-std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) {
-    GlobCharSet bv{};
+constexpr char32_t invalid_atom_base = 0x110000;
 
-    // Index of the last character consumed as a range end, so the dash in
-    // `[a-c-e]` reads as a literal `-` instead of chaining a `c-e` range.
-    std::uint32_t last_range_end = std::numeric_limits<std::uint32_t>::max();
+Utf8Atom decode_utf8_atom(const char* it, const char* end) {
+    const auto lead = static_cast<std::uint8_t>(*it);
+    if(lead < 0x80) [[likely]] {
+        return {lead, 1};
+    }
 
-    for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(s.size()); i < e; ++i) {
-        switch(s[i]) {
-            case '\\': {
-                auto backslash_pos = i;
-                ++i;
-                if(i == e) [[unlikely]] {
-                    return std::unexpected{
-                        GlobError{GlobError::StrayBackslash,
-                                  backslash_pos, backslash_pos + 1,
-                                  "stray `\\`"}
-                    };
-                }
-                if(s[i] != '/') {
-                    bv.set(static_cast<std::uint8_t>(s[i]), true);
-                }
-                break;
+    const auto invalid = Utf8Atom{invalid_atom_base + lead, 1};
+
+    std::uint32_t len;
+    char32_t cp;
+    if((lead & 0xE0) == 0xC0) {
+        len = 2;
+        cp = lead & 0x1F;
+    } else if((lead & 0xF0) == 0xE0) {
+        len = 3;
+        cp = lead & 0x0F;
+    } else if((lead & 0xF8) == 0xF0) {
+        len = 4;
+        cp = lead & 0x07;
+    } else {
+        return invalid;
+    }
+
+    if(end - it < static_cast<std::ptrdiff_t>(len)) {
+        return invalid;
+    }
+    for(std::uint32_t k = 1; k < len; ++k) {
+        const auto cont = static_cast<std::uint8_t>(it[k]);
+        if((cont & 0xC0) != 0x80) {
+            return invalid;
+        }
+        cp = (cp << 6) | (cont & 0x3F);
+    }
+
+    // Reject overlong encodings, surrogates and out-of-range values so a
+    // decoded atom never aliases a differently-spelled byte sequence.
+    constexpr char32_t min_for_len[] = {0, 0, 0x80, 0x800, 0x10000};
+    if(cp < min_for_len[len] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+        return invalid;
+    }
+    return {cp, len};
+}
+
+/// Byte offset of the first ill-formed UTF-8 subsequence, or nullopt.
+std::optional<std::uint32_t> find_invalid_utf8(std::string_view s) {
+    const char* it = s.data();
+    const char* const end = it + s.size();
+    while(it != end) {
+        const auto atom = decode_utf8_atom(it, end);
+        if(atom.cp >= invalid_atom_base) {
+            return static_cast<std::uint32_t>(it - s.data());
+        }
+        it += atom.len;
+    }
+    return std::nullopt;
+}
+
+using CharClassRanges = small_vector<std::pair<char32_t, char32_t>, 2>;
+
+std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view s) {
+    CharClassRanges ranges;
+    const char* it = s.data();
+    const char* const end = it + s.size();
+    auto offset = [&](const char* q) {
+        return static_cast<std::uint32_t>(q - s.data());
+    };
+
+    // Decode one class member, resolving a leading `\` escape.
+    auto next_member = [&]() -> std::expected<char32_t, GlobError> {
+        if(*it == '\\') {
+            auto backslash_pos = offset(it);
+            ++it;
+            if(it == end) [[unlikely]] {
+                return std::unexpected{
+                    GlobError{GlobError::StrayBackslash,
+                              backslash_pos, backslash_pos + 1,
+                              "stray `\\`"}
+                };
             }
+        }
+        const auto atom = decode_utf8_atom(it, end);
+        it += atom.len;
+        return atom.cp;
+    };
 
-            case '-': {
-                if(i == 0 || i + 1 == e || i - 1 == last_range_end) {
-                    bv.set('-', true);
-                    break;
-                }
-                auto dash_pos = i;
-                auto c_begin = static_cast<std::uint8_t>(s[i - 1]);
-                auto c_end = static_cast<std::uint8_t>(s[i + 1]);
-                ++i;
-                if(c_end == '\\') {
-                    auto backslash_pos = i;
-                    ++i;
-                    if(i == e) [[unlikely]] {
-                        return std::unexpected{
-                            GlobError{GlobError::StrayBackslash,
-                                      backslash_pos, backslash_pos + 1,
-                                      "stray `\\`"}
-                        };
-                    }
-                    c_end = static_cast<std::uint8_t>(s[i]);
-                }
-                if(c_begin > c_end) [[unlikely]] {
-                    return std::unexpected{
-                        GlobError{GlobError::InvalidRange,
-                                  dash_pos - 1,
-                                  dash_pos + 2,
-                                  std::format("`{}` is larger than `{}`", c_begin, c_end)}
-                    };
-                }
-                for(std::uint32_t c = c_begin; c <= c_end; ++c) {
-                    if(c != '/') {
-                        bv.set(static_cast<std::uint8_t>(c), true);
-                    }
-                }
-                last_range_end = i;
-                break;
-            }
+    // A member is held back one step so a following `-` can turn it into
+    // the lower bound of a range. `-` first or last in the class stays a
+    // literal member, and so does the `-` right after a completed range:
+    // `[a-c-e]` reads as `a-c`, literal `-`, `e`.
+    std::optional<char32_t> pending;
+    std::uint32_t pending_begin = 0;
 
-            default: {
-                if(s[i] != '/') {
-                    bv.set(static_cast<std::uint8_t>(s[i]), true);
-                }
+    while(it != end) {
+        if(*it == '-' && pending.has_value() && it + 1 != end) {
+            ++it;
+            KOTA_EXPECTED_TRY_V(auto hi, next_member());
+            if(*pending > hi) [[unlikely]] {
+                return std::unexpected{
+                    GlobError{GlobError::InvalidRange,
+                              pending_begin, offset(it),
+                              std::format("`U+{:04X}` is larger than `U+{:04X}`",
+                              static_cast<std::uint32_t>(*pending),
+                              static_cast<std::uint32_t>(hi))}
+                };
             }
+            ranges.push_back({*pending, hi});
+            pending.reset();
+            continue;
+        }
+
+        auto member_begin = offset(it);
+        KOTA_EXPECTED_TRY_V(auto cp, next_member());
+        if(pending.has_value()) {
+            ranges.push_back({*pending, *pending});
+        }
+        pending = cp;
+        pending_begin = member_begin;
+    }
+    if(pending.has_value()) {
+        ranges.push_back({*pending, *pending});
+    }
+
+    // Sort and coalesce so lookup can binary-search and the per-test cost
+    // is bounded by the distinct span count, not the written member count
+    // (the backtrack cap counts retries, not range comparisons).
+    std::ranges::sort(ranges);
+    CharClassRanges merged;
+    for(auto range: ranges) {
+        if(!merged.empty() && range.first <= merged.back().second + 1) {
+            merged.back().second = std::max(merged.back().second, range.second);
+        } else {
+            merged.push_back(range);
         }
     }
 
-    return bv;
+    return merged;
 }
 
 std::expected<small_vector<std::string, 1>, GlobError>
@@ -227,6 +300,16 @@ std::expected<small_vector<std::string, 1>, GlobError>
 
 std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
                                                           size_t max_subpattern_num) {
+    // Validate the whole pattern before any processing. Prefix extraction
+    // and brace expansion only cut at ASCII bytes, so every derived
+    // sub-pattern of a valid string is itself valid — matching can then
+    // decode pattern bytes without ever seeing an ill-formed sequence.
+    if(auto pos = find_invalid_utf8(s)) [[unlikely]] {
+        return std::unexpected{
+            GlobError{GlobError::InvalidUtf8, *pos, *pos + 1, "pattern is not valid UTF-8"}
+        };
+    }
+
     GlobPattern pat;
     size_t prefix_size = s.find_first_of("?*[{\\");
     auto check_consecutive_slashes = [](std::string_view str) -> std::optional<std::uint32_t> {
@@ -324,15 +407,16 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
 
         std::string_view chars = s.substr(i, j - i);
         bool invert = s[i] == '^' || s[i] == '!';
-        auto bv = invert ? parse_bracket_charset(chars.substr(1)) : parse_bracket_charset(chars);
-        if(!bv.has_value()) [[unlikely]] {
-            return std::unexpected{std::move(bv.error())};
+        auto ranges = parse_bracket_charset(invert ? chars.substr(1) : chars);
+        if(!ranges.has_value()) [[unlikely]] {
+            // The class parser reports offsets relative to the class body;
+            // rebase onto this sub-pattern (the negation prefix counts).
+            auto base = i + (invert ? 1 : 0);
+            ranges.error().begin += base;
+            ranges.error().end += base;
+            return std::unexpected{std::move(ranges.error())};
         }
-        if(invert) {
-            bv->flip();
-            bv->set('/', false);
-        }
-        pat.brackets.push_back(Bracket{j + 1, std::move(*bv)});
+        pat.brackets.push_back(Bracket{j + 1, invert, std::move(*ranges)});
         return j;
     };
 
@@ -354,6 +438,16 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
                     GlobError{GlobError::StrayBackslash,
                               backslash_pos, backslash_pos + 1,
                               "stray `\\`"}
+                };
+            }
+            // An escaped `/` would slip past segment splitting and let
+            // `\/\/` match `//` while a bare `//` is rejected; the
+            // separator is structure, not a matchable character.
+            if(s[i] == '/') [[unlikely]] {
+                return std::unexpected{
+                    GlobError{GlobError::InvalidEscape,
+                              backslash_pos, backslash_pos + 2,
+                              "`/` cannot be escaped"}
                 };
             }
         } else if(s[i] == '/') {
@@ -382,6 +476,18 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
 
     pat.glob_segments.assign(std::move(glob_segments));
     return pat;
+}
+
+bool GlobPattern::SubGlobPattern::Bracket::contains(char32_t cp) const {
+    // A bracket never matches the segment separator, negated or not.
+    if(cp == U'/') {
+        return false;
+    }
+    // Ranges are sorted and disjoint: the candidate range is the first one
+    // whose upper bound reaches cp.
+    auto it = std::ranges::lower_bound(ranges, cp, {}, &std::pair<char32_t, char32_t>::second);
+    const bool hit = it != ranges.end() && it->first <= cp;
+    return negated ? !hit : hit;
 }
 
 /// Whether the pattern tail matches the empty input: every star run matches
@@ -586,33 +692,40 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str, bool start_at_seg_
                             break;
                         }
                         ++p;
-                        ++s;
+                        s += decode_utf8_atom(s, s_end).len;
                         continue;
                     }
                     break;
                 }
 
                 case '[': {
-                    if(b < brackets.size() && brackets[b].bytes[std::uint8_t(*s)]) {
-                        if(p == seg_start && !at_input_seg_start()) {
-                            break;
+                    if(b < brackets.size()) {
+                        const auto atom = decode_utf8_atom(s, s_end);
+                        if(brackets[b].contains(atom.cp)) {
+                            if(p == seg_start && !at_input_seg_start()) {
+                                break;
+                            }
+                            p = pat.data() + brackets[b].next_offset;
+                            ++b;
+                            s += atom.len;
+                            continue;
                         }
-                        p = pat.data() + brackets[b].next_offset;
-                        ++b;
-                        ++s;
-                        continue;
                     }
                     break;
                 }
 
                 case '\\': {
-                    if(p + 1 != seg_end && *(p + 1) == *s) {
-                        if(p == seg_start && !at_input_seg_start()) {
-                            break;
+                    if(p + 1 != seg_end) {
+                        const auto escaped = decode_utf8_atom(p + 1, seg_end);
+                        const auto atom = decode_utf8_atom(s, s_end);
+                        if(escaped.cp == atom.cp) {
+                            if(p == seg_start && !at_input_seg_start()) {
+                                break;
+                            }
+                            p += 1 + escaped.len;
+                            s += atom.len;
+                            continue;
                         }
-                        p += 2;
-                        ++s;
-                        continue;
                     }
                     break;
                 }
@@ -651,7 +764,10 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str, bool start_at_seg_
             continue;
         }
 
-        state.s += 1;
+        // Whole atoms, not bytes: a star stopping inside a multi-byte
+        // character would let the following `?`/`[]` decode its
+        // continuation bytes as extra characters (`*?[!X]X` vs `中X`).
+        state.s += decode_utf8_atom(state.s, s_end).len;
         s = state.s;
         p = state.p;
         b = state.b;
