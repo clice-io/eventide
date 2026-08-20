@@ -43,8 +43,10 @@ struct GlobError {
 /// - `[]` to declare a range of characters (e.g., `example.[0-9]`)
 /// - `[!...]` to negate a range (e.g., `example.[!0-9]`)
 ///
-/// Note: Use only `/` for path segment separator. `/` cannot be escaped;
-/// `\/` is rejected at create() with InvalidEscape.
+/// Note: Use only `/` for path segment separator. `/` cannot be escaped:
+/// outside a bracket expression `\/` is rejected at create() with
+/// InvalidEscape; inside one it parses as a class member that never
+/// matches, because a bracket never matches `/`.
 ///
 /// A pattern whose body — or any brace-expanded arm of it — is exactly
 /// `*` or `**` matches every path, including across `/` (see

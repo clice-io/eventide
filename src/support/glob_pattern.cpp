@@ -5,6 +5,7 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <utility>
 
 #include "kota/support/expected_try.h"
 
