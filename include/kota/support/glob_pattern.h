@@ -42,6 +42,10 @@ struct GlobError {
 ///
 /// Note: Use only `/` for path segment separator
 ///
+/// A pattern that is exactly `*` or `**` matches every path, including
+/// across `/` (see is_trivial_match_all); anywhere else `*` stays within
+/// one segment.
+///
 /// Only supports single-byte characters (ASCII/Latin-1). Multi-byte encodings
 /// like UTF-8 are matched byte-by-byte.
 class GlobPattern {

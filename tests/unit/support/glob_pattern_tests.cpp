@@ -205,6 +205,14 @@ TEST_CASE(bracket_expr) {
     EXPECT_TRUE(pat14.match("foo.8"));
     EXPECT_FALSE(pat14.match("bar.5"));
     EXPECT_FALSE(pat14.match("foo.f"));
+
+    // A dash right after a completed range is a literal, not a new range
+    // start chained off the previous range's end.
+    PATDEF(pat15, "[a-c-e]")
+    EXPECT_TRUE(pat15.match("b"));
+    EXPECT_TRUE(pat15.match("-"));
+    EXPECT_TRUE(pat15.match("e"));
+    EXPECT_FALSE(pat15.match("d"));
 }
 
 TEST_CASE(brace_expr) {
@@ -386,13 +394,10 @@ TEST_CASE(globstar_prefix) {
     EXPECT_FALSE(pat10.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
 
     // **/?*.{cc,cpp} — question then wildcard before extension
-    // After ?* special case removal, ? matches one char and * matches rest independently.
-    // With ** backtracking, the * can hop across / boundaries, so .cc after a / is matched
-    // when ** absorbs enough of the prefix.
     PATDEF(pat11, "**/?*.{cc,cpp}")
     EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/aaa.cc"));
     EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/a.cc"));
-    EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
+    EXPECT_FALSE(pat11.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
 
     // **/*.js — JS file at any depth
     PATDEF(pat12, "**/*.js")
@@ -662,6 +667,93 @@ TEST_CASE(single_star) {
     EXPECT_FALSE(pat3.match("/b"));
 }
 
+TEST_CASE(star_stays_in_segment) {
+    // Backtracking must not let a single * swallow a `/`.
+    PATDEF(pat1, "**/a*.cc")
+    EXPECT_TRUE(pat1.match("x/ab.cc"));
+    EXPECT_TRUE(pat1.match("x/y/a.cc"));
+    EXPECT_FALSE(pat1.match("x/a/b.cc"));
+    EXPECT_FALSE(pat1.match("a/b.cc"));
+
+    PATDEF(pat2, "?*.cc")
+    EXPECT_TRUE(pat2.match("ab.cc"));
+    EXPECT_FALSE(pat2.match("a/.cc"));
+    EXPECT_FALSE(pat2.match("a/b.cc"));
+
+    // A terminal star is still bounded by its segment; only a whole
+    // pattern of exactly `*` matches across `/`.
+    PATDEF(pat3, "a*")
+    EXPECT_TRUE(pat3.match("abc"));
+    EXPECT_FALSE(pat3.match("abc/"));
+    EXPECT_FALSE(pat3.match("abc/d"));
+
+    PATDEF(pat4, "foo/*")
+    EXPECT_TRUE(pat4.match("foo/bar"));
+    EXPECT_FALSE(pat4.match("foo/a/b"));
+}
+
+TEST_CASE(segment_boundary) {
+    // The input segment must end exactly where the pattern segment does; a
+    // mismatch there backtracks into an earlier star instead of aborting.
+    PATDEF(pat1, "*a/b")
+    EXPECT_TRUE(pat1.match("aa/b"));
+    EXPECT_TRUE(pat1.match("xya/b"));
+    EXPECT_FALSE(pat1.match("ab/b"));
+
+    // One pattern `/` consumes exactly one input `/`.
+    PATDEF(pat2, "?/b")
+    EXPECT_FALSE(pat2.match("a//b"));
+
+    PATDEF(pat3, "*/b")
+    EXPECT_FALSE(pat3.match("a//b"));
+
+    // A segment following `**` matches whole input segments; ** absorbs
+    // full segments only.
+    PATDEF(pat4, "**/a/b")
+    EXPECT_TRUE(pat4.match("a/b"));
+    EXPECT_TRUE(pat4.match("q/a/b"));
+    EXPECT_FALSE(pat4.match("aX/b"));
+    EXPECT_FALSE(pat4.match("q/aX/b"));
+
+    PATDEF(pat5, "**/?x")
+    EXPECT_TRUE(pat5.match("ax"));
+    EXPECT_TRUE(pat5.match("aa/ax"));
+    EXPECT_FALSE(pat5.match("aax"));
+}
+
+TEST_CASE(matches_empty_tail) {
+    // Star runs match empty input; a `/` does so only when absorbed by an
+    // adjacent globstar.
+    PATDEF(pat1, "foo/**")
+    EXPECT_TRUE(pat1.match("foo"));
+    EXPECT_TRUE(pat1.match("foo/a/b"));
+
+    PATDEF(pat2, "foo/*")
+    EXPECT_FALSE(pat2.match("foo"));
+
+    PATDEF(pat3, "*/*")
+    EXPECT_FALSE(pat3.match(""));
+    EXPECT_TRUE(pat3.match("a/b"));
+
+    PATDEF(pat4, "?/*")
+    EXPECT_FALSE(pat4.match("a"));
+    EXPECT_TRUE(pat4.match("a/"));
+
+    PATDEF(pat5, "**/*")
+    EXPECT_TRUE(pat5.match(""));
+
+    PATDEF(pat6, "x*/**")
+    EXPECT_TRUE(pat6.match("x"));
+
+    PATDEF(pat7, "x*/*")
+    EXPECT_FALSE(pat7.match("x"));
+
+    PATDEF(pat8, "foo/{,x}")
+    EXPECT_FALSE(pat8.match("foo"));
+    EXPECT_TRUE(pat8.match("foo/"));
+    EXPECT_TRUE(pat8.match("foo/x"));
+}
+
 TEST_CASE(single_question) {
     PATDEF(pat1, "?")
     EXPECT_TRUE(pat1.match("a"));
@@ -849,19 +941,18 @@ TEST_CASE(question_with_globstar) {
     EXPECT_TRUE(pat1.match("a.js"));
     EXPECT_TRUE(pat1.match("foo/b.js"));
     EXPECT_TRUE(pat1.match("a/b/c.js"));
-    // ** can absorb leading chars in the segment, so ab.js matches
-    // because ** absorbs 'a' and ?.js matches 'b.js'
-    EXPECT_TRUE(pat1.match("ab.js"));
-    EXPECT_TRUE(pat1.match("foo/ab.js"));
+    EXPECT_FALSE(pat1.match("ab.js"));
+    EXPECT_FALSE(pat1.match("foo/ab.js"));
     EXPECT_FALSE(pat1.match(".js"));
 
     PATDEF(pat2, "**/?")
     EXPECT_TRUE(pat2.match("a"));
     EXPECT_TRUE(pat2.match("foo/a"));
     EXPECT_TRUE(pat2.match("a/b/c/d"));
-    // ** absorbs leading chars, so 'ab' matches (** absorbs 'a', ? matches 'b')
-    EXPECT_TRUE(pat2.match("ab"));
-    EXPECT_TRUE(pat2.match("foo/ab"));
+    // ** absorbs whole segments only, so the two-char basename 'ab' does not
+    // match: ? must start at a segment boundary like every other atom.
+    EXPECT_FALSE(pat2.match("ab"));
+    EXPECT_FALSE(pat2.match("foo/ab"));
 }
 
 TEST_CASE(globstar_slash) {
