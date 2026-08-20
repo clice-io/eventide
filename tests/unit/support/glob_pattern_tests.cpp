@@ -1155,6 +1155,292 @@ TEST_CASE(globstar_intermediate) {
     EXPECT_FALSE(pat2.match("foo/test"));
 }
 
+TEST_CASE(unicode_question) {
+    PATDEF(pat1, "?文.txt")
+    EXPECT_TRUE(pat1.match("中文.txt"));
+    EXPECT_FALSE(pat1.match("文.txt"));
+    EXPECT_FALSE(pat1.match("中中文.txt"));
+
+    PATDEF(pat2, "?.txt")
+    EXPECT_TRUE(pat2.match("中.txt"));
+    EXPECT_TRUE(pat2.match("🚀.txt"));
+    EXPECT_FALSE(pat2.match("中文.txt"));
+
+    PATDEF(pat3, "??.txt")
+    EXPECT_TRUE(pat3.match("中文.txt"));
+    EXPECT_FALSE(pat3.match("中.txt"));
+}
+
+TEST_CASE(unicode_bracket) {
+    PATDEF(pat1, "[中文].txt")
+    EXPECT_TRUE(pat1.match("中.txt"));
+    EXPECT_TRUE(pat1.match("文.txt"));
+    EXPECT_FALSE(pat1.match("英.txt"));
+    EXPECT_FALSE(pat1.match("a.txt"));
+
+    // 中 (U+4E2D) lies inside the range 一 (U+4E00) .. 十 (U+5341).
+    PATDEF(pat2, "[一-十].txt")
+    EXPECT_TRUE(pat2.match("中.txt"));
+    EXPECT_FALSE(pat2.match("a.txt"));
+
+    PATDEF(pat3, "[!一-十].txt")
+    EXPECT_FALSE(pat3.match("中.txt"));
+    EXPECT_TRUE(pat3.match("a.txt"));
+
+    PATDEF(pat4, "[a-z中]?")
+    EXPECT_TRUE(pat4.match("中文"));
+    EXPECT_TRUE(pat4.match("x文"));
+    EXPECT_FALSE(pat4.match("文文"));
+
+    // α-γ then a literal dash then ε: the dash after a completed range
+    // stays literal for multi-byte members too.
+    PATDEF(pat5, "[α-γ-ε]")
+    EXPECT_TRUE(pat5.match("β"));
+    EXPECT_TRUE(pat5.match("-"));
+    EXPECT_TRUE(pat5.match("ε"));
+    EXPECT_FALSE(pat5.match("δ"));
+}
+
+TEST_CASE(unicode_escape_star) {
+    PATDEF(pat1, "\\中.txt")
+    EXPECT_TRUE(pat1.match("中.txt"));
+    EXPECT_FALSE(pat1.match("文.txt"));
+
+    PATDEF(pat2, "*文.txt")
+    EXPECT_TRUE(pat2.match("中文.txt"));
+    EXPECT_TRUE(pat2.match("文.txt"));
+    EXPECT_FALSE(pat2.match("中英.txt"));
+
+    PATDEF(pat3, "**/中.txt")
+    EXPECT_TRUE(pat3.match("a/b/中.txt"));
+    EXPECT_TRUE(pat3.match("中.txt"));
+}
+
+TEST_CASE(unicode_segments) {
+    PATDEF(pat1, "中/文.txt")
+    EXPECT_TRUE(pat1.match("中/文.txt"));
+    EXPECT_FALSE(pat1.match("中文.txt"));
+
+    PATDEF(pat2, "*/文*")
+    EXPECT_TRUE(pat2.match("中/文x"));
+    EXPECT_FALSE(pat2.match("中/x文"));
+
+    // The stripped literal prefix ends mid-segment; segment 0 continues it.
+    PATDEF(pat3, "中?")
+    EXPECT_TRUE(pat3.match("中文"));
+    EXPECT_FALSE(pat3.match("x文"));
+}
+
+TEST_CASE(star_atom_alignment) {
+    // A star retry must extend by whole characters. Byte-wise stepping
+    // would stop inside 中 and let `?`/`[!X]` consume its continuation
+    // bytes as two extra characters, wrongly matching two-character
+    // inputs against three-atom tails.
+    PATDEF(pat1, "*?[!X]X")
+    EXPECT_FALSE(pat1.match("中X"));
+    EXPECT_TRUE(pat1.match("中aX"));
+
+    PATDEF(pat2, "**?[!X]X")
+    EXPECT_FALSE(pat2.match("/中X"));
+    EXPECT_TRUE(pat2.match("/中aX"));
+
+    PATDEF(pat3, "*?[!X]X/**")
+    EXPECT_FALSE(pat3.match("中X"));
+    EXPECT_TRUE(pat3.match("中aX"));
+}
+
+TEST_CASE(invalid_utf8_input) {
+    // A path byte that does not decode counts as one character that only
+    // wildcards and negated classes can cover.
+    PATDEF(pat1, "*.txt")
+    EXPECT_TRUE(pat1.match("\xFF\xFE.txt"));
+
+    PATDEF(pat2, "??.txt")
+    EXPECT_TRUE(pat2.match("\xFF\xFE.txt"));
+
+    PATDEF(pat3, "?.txt")
+    EXPECT_FALSE(pat3.match("\xFF\xFE.txt"));
+    EXPECT_TRUE(pat3.match("\x80.txt"));
+
+    PATDEF(pat4, "[!a].txt")
+    EXPECT_TRUE(pat4.match("\xFF.txt"));
+    EXPECT_FALSE(pat4.match("a.txt"));
+
+    // é (U+00E9) never equals the raw Latin-1 byte E9, in any construct.
+    PATDEF(pat5, "é.txt")
+    EXPECT_FALSE(pat5.match("\xE9.txt"));
+
+    PATDEF(pat6, "[é].txt")
+    EXPECT_FALSE(pat6.match("\xE9.txt"));
+
+    PATDEF(pat7, "[!é].txt")
+    EXPECT_TRUE(pat7.match("\xE9.txt"));
+}
+
+TEST_CASE(invalid_utf8_pattern) {
+    auto expect_invalid = [](std::string_view pattern, std::uint32_t at) {
+        auto res = kota::GlobPattern::create(pattern);
+        EXPECT_FALSE(res.has_value());
+        if(!res.has_value()) {
+            EXPECT_EQ(res.error().kind, kota::GlobError::InvalidUtf8);
+            EXPECT_EQ(res.error().begin, at);
+        }
+    };
+
+    expect_invalid("\x80", 0);
+    expect_invalid("caf\xC3", 3);
+    expect_invalid("caf\xE9*", 3);
+    expect_invalid("\xC0\x80", 0);
+    expect_invalid("\xED\xA0\x80", 0);
+    expect_invalid("\xE1\x80\x41", 0);
+    expect_invalid("a[\xFF]", 2);
+}
+
+TEST_CASE(escaped_slash) {
+    auto expect_rejected = [](std::string_view pattern) {
+        auto res = kota::GlobPattern::create(pattern);
+        EXPECT_FALSE(res.has_value());
+        if(!res.has_value()) {
+            EXPECT_EQ(res.error().kind, kota::GlobError::InvalidEscape);
+        }
+    };
+
+    expect_rejected(R"(\/)");
+    expect_rejected(R"(a\/b)");
+    expect_rejected(R"({a\/b,c})");
+    expect_rejected(R"(**\/a)");
+
+    // Escape parity: the first backslash escapes the second, the slash is
+    // a real separator.
+    PATDEF(pat1, R"(\\/)")
+    EXPECT_TRUE(pat1.match("\\/"));
+
+    // Inside a class the slash is accepted but can never match.
+    PATDEF(pat2, R"([\/])")
+    EXPECT_FALSE(pat2.match("/"));
+    EXPECT_FALSE(pat2.match("a"));
+}
+
+TEST_CASE(empty_class) {
+    EXPECT_FALSE(kota::GlobPattern::create("[]").has_value());
+
+    PATDEF(pat1, "[]]")
+    EXPECT_TRUE(pat1.match("]"));
+
+    // A negated empty class covers everything but the separator.
+    PATDEF(pat2, "[!]")
+    EXPECT_TRUE(pat2.match("a"));
+    EXPECT_FALSE(pat2.match("/"));
+
+    PATDEF(pat3, "[!]]")
+    EXPECT_TRUE(pat3.match("a]"));
+    EXPECT_FALSE(pat3.match("a"));
+}
+
+TEST_CASE(bracket_lookup) {
+    // Disjoint ranges: membership must be found in the range whose upper
+    // bound is the first to reach the probe.
+    PATDEF(pat1, "[a-cx-z]")
+    EXPECT_TRUE(pat1.match("b"));
+    EXPECT_TRUE(pat1.match("y"));
+    EXPECT_FALSE(pat1.match("d"));
+
+    PATDEF(pat2, "[!a-cx-z]")
+    EXPECT_FALSE(pat2.match("b"));
+    EXPECT_TRUE(pat2.match("d"));
+
+    // Duplicates and overlaps coalesce without changing membership.
+    PATDEF(pat3, "[aaa]")
+    EXPECT_TRUE(pat3.match("a"));
+    EXPECT_FALSE(pat3.match("b"));
+
+    PATDEF(pat4, "[a-mh-z]")
+    EXPECT_TRUE(pat4.match("h"));
+    EXPECT_TRUE(pat4.match("z"));
+    EXPECT_FALSE(pat4.match("A"));
+}
+
+TEST_CASE(backtrack_budget_atoms) {
+    // The retry budget counts atoms, not bytes: exactly max_backtrack
+    // retries are needed to walk the star past N four-byte emojis.
+    auto rocket_input = [](size_t count) {
+        std::string input;
+        input.reserve(count * 4 + 1);
+        for(size_t i = 0; i < count; i += 1) {
+            input += "🚀";
+        }
+        input += "Z";
+        return input;
+    };
+
+    PATDEF(pat1, "*Z")
+    EXPECT_TRUE(pat1.match(rocket_input(65535)));
+    EXPECT_TRUE(pat1.match(rocket_input(65536)));
+    EXPECT_FALSE(pat1.match(rocket_input(65537)));
+}
+
+// The wildcard and range cases below are ported from rust-lang/glob's
+// test suite (MIT/Apache-2.0).
+TEST_CASE(ported_wildcards) {
+    PATDEF(pat1, "a*b")
+    EXPECT_TRUE(pat1.match("a_b"));
+
+    PATDEF(pat2, "a*b*c")
+    EXPECT_TRUE(pat2.match("abc"));
+    EXPECT_FALSE(pat2.match("abcd"));
+    EXPECT_TRUE(pat2.match("a_b_c"));
+    EXPECT_TRUE(pat2.match("a___b___c"));
+
+    PATDEF(pat3, "abc*abc*abc")
+    EXPECT_TRUE(pat3.match("abcabcabcabcabcabcabc"));
+    EXPECT_FALSE(pat3.match("abcabcabcabcabcabcabca"));
+
+    PATDEF(pat4, "a*a*a*a*a*a*a*a*a")
+    EXPECT_TRUE(pat4.match("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+    PATDEF(pat5, "a*b[xyz]c*d")
+    EXPECT_TRUE(pat5.match("abxcdbxcddd"));
+}
+
+TEST_CASE(ported_ranges) {
+    PATDEF(pat1, "a[0-9]b")
+    for(char digit = '0'; digit <= '9'; digit += 1) {
+        EXPECT_TRUE(pat1.match(std::string("a") + digit + "b"));
+    }
+    EXPECT_FALSE(pat1.match("a_b"));
+
+    PATDEF(pat2, "a[!0-9]b")
+    for(char digit = '0'; digit <= '9'; digit += 1) {
+        EXPECT_FALSE(pat2.match(std::string("a") + digit + "b"));
+    }
+    EXPECT_TRUE(pat2.match("a_b"));
+
+    for(std::string_view p: {"[a-z123]", "[1a-z23]", "[123a-z]"}) {
+        PATDEF(pat, p)
+        for(char c = 'a'; c <= 'z'; c += 1) {
+            EXPECT_TRUE(pat.match(std::string_view(&c, 1)));
+        }
+        EXPECT_TRUE(pat.match("1"));
+        EXPECT_TRUE(pat.match("2"));
+        EXPECT_TRUE(pat.match("3"));
+    }
+
+    for(std::string_view p: {"[abc-]", "[-abc]", "[a-c-]"}) {
+        PATDEF(pat, p)
+        EXPECT_TRUE(pat.match("a"));
+        EXPECT_TRUE(pat.match("b"));
+        EXPECT_TRUE(pat.match("c"));
+        EXPECT_TRUE(pat.match("-"));
+        EXPECT_FALSE(pat.match("d"));
+    }
+
+    PATDEF(pat3, "[-]")
+    EXPECT_TRUE(pat3.match("-"));
+
+    PATDEF(pat4, "[!-]")
+    EXPECT_FALSE(pat4.match("-"));
+}
+
 };  // TEST_SUITE(glob_pattern)
 
 }  // namespace

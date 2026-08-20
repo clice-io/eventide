@@ -1,11 +1,11 @@
 #pragma once
 
 #include <algorithm>
-#include <bitset>
 #include <cstdint>
 #include <expected>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "kota/support/small_vector.h"
 #include "kota/support/string_ref.h"
@@ -23,6 +23,8 @@ struct GlobError {
         MultipleSlash,
         MultipleStar,
         TooManyExpansions,
+        InvalidUtf8,
+        InvalidEscape,
     };
 
     Kind kind;
@@ -41,14 +43,23 @@ struct GlobError {
 /// - `[]` to declare a range of characters (e.g., `example.[0-9]`)
 /// - `[!...]` to negate a range (e.g., `example.[!0-9]`)
 ///
-/// Note: Use only `/` for path segment separator
+/// Note: Use only `/` for path segment separator. `/` cannot be escaped:
+/// outside a bracket expression `\/` is rejected at create() with
+/// InvalidEscape; inside one it parses as a class member that never
+/// matches, because a bracket never matches `/`.
 ///
 /// A pattern whose body — or any brace-expanded arm of it — is exactly
 /// `*` or `**` matches every path, including across `/` (see
 /// is_trivial_match_all); anywhere else `*` stays within one segment.
 ///
-/// Only supports single-byte characters (ASCII/Latin-1). Multi-byte encodings
-/// like UTF-8 are matched byte-by-byte.
+/// Patterns must be valid UTF-8; create() rejects anything else with
+/// InvalidUtf8. Matching is Unicode-aware: `?`, `[]` and escaped literals
+/// consume one decoded code point at a time, while `*`, `**` and literal
+/// runs stay byte-level (UTF-8 is self-synchronizing, so this cannot
+/// change which code points they cover). Matched paths need not be valid
+/// UTF-8: an input byte that does not decode counts as one character that
+/// `?`, `*`, `**` and negated classes can cover, but no literal or
+/// positive range can name it.
 class GlobPattern {
 public:
     [[nodiscard]] static std::expected<GlobPattern, GlobError>
@@ -87,7 +98,11 @@ private:
 
         struct Bracket {
             size_t next_offset;
-            std::bitset<256> bytes;
+            bool negated = false;
+            /// Inclusive code-point ranges, sorted and non-overlapping.
+            small_vector<std::pair<char32_t, char32_t>, 2> ranges;
+
+            [[nodiscard]] bool contains(char32_t cp) const;
         };
 
         small_vector<Bracket, 0> brackets;
