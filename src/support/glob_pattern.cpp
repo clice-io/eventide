@@ -1,5 +1,6 @@
 #include "kota/support/glob_pattern.h"
 
+#include <algorithm>
 #include <format>
 #include <limits>
 #include <optional>
@@ -15,6 +16,10 @@ using GlobCharSet = std::bitset<256>;
 
 std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) {
     GlobCharSet bv{};
+
+    // Index of the last character consumed as a range end, so the dash in
+    // `[a-c-e]` reads as a literal `-` instead of chaining a `c-e` range.
+    std::uint32_t last_range_end = std::numeric_limits<std::uint32_t>::max();
 
     for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(s.size()); i < e; ++i) {
         switch(s[i]) {
@@ -35,7 +40,7 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
             }
 
             case '-': {
-                if(i == 0 || i + 1 == e) {
+                if(i == 0 || i + 1 == e || i - 1 == last_range_end) {
                     bv.set('-', true);
                     break;
                 }
@@ -68,6 +73,7 @@ std::expected<GlobCharSet, GlobError> parse_bracket_charset(std::string_view s) 
                         bv.set(static_cast<std::uint8_t>(c), true);
                     }
                 }
+                last_range_end = i;
                 break;
             }
 
@@ -378,7 +384,53 @@ std::expected<GlobPattern::SubGlobPattern, GlobError>
     return pat;
 }
 
+/// Whether the pattern tail matches the empty input: every star run matches
+/// nothing and every `/` is absorbed by an adjacent globstar, each globstar
+/// absorbing at most one separator: `x*` and `x*/**` accept a bare `x`,
+/// `x*/*` and `x*/**/*` do not. With `leading_separator`, a `/` already
+/// stripped before `tail` must be absorbed by its leading globstar as well.
+static bool glob_tail_matches_empty(std::string_view tail, bool leading_separator) {
+    const char* q = tail.data();
+    const char* const q_end = q + tail.size();
+    size_t run = 0;
+    while(q != q_end && *q == '*') {
+        q += 1;
+        run += 1;
+    }
+    bool used = false;
+    if(leading_separator) {
+        if(run < 2) {
+            return false;
+        }
+        used = true;
+    }
+    while(q != q_end) {
+        if(*q != '/') {
+            return false;
+        }
+        q += 1;
+        size_t next = 0;
+        while(q != q_end && *q == '*') {
+            q += 1;
+            next += 1;
+        }
+        if(run >= 2 && !used) {
+            used = false;
+        } else if(next >= 2) {
+            used = true;
+        } else {
+            return false;
+        }
+        run = next;
+    }
+    return true;
+}
+
 bool GlobPattern::match(std::string_view sv) const {
+    if(is_trivial_match_all()) {
+        return true;
+    }
+
     string_ref str(sv);
     if(!str.consume_front(prefix)) {
         return false;
@@ -388,15 +440,24 @@ bool GlobPattern::match(std::string_view sv) const {
         return true;
     }
 
-    if(!str.empty() && prefix_at_seg_end) {
+    if(prefix_at_seg_end) {
+        if(str.empty()) {
+            // The `/` after the prefix went unmatched; a sub glob absorbs it
+            // only when its whole pattern matches empty behind a separator,
+            // exactly as if the prefix had never been split off.
+            return std::ranges::any_of(sub_globs, [](const SubGlobPattern& glob) {
+                return glob_tail_matches_empty(glob.pattern(), true);
+            });
+        }
         if(str[0] != '/') {
             return false;
         }
         str = str.substr(1);
     }
 
+    bool at_seg_boundary = prefix.empty() || prefix_at_seg_end;
     for(auto& glob: sub_globs) {
-        if(glob.match(str)) {
+        if(glob.match(str, at_seg_boundary)) {
             return true;
         }
     }
@@ -408,7 +469,7 @@ bool GlobPattern::match(std::string_view sv) const {
 /// attacks where crafted patterns and inputs could cause exponential backtracking.
 constexpr static size_t max_backtrack_iterations = 65536;
 
-bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
+bool GlobPattern::SubGlobPattern::match(std::string_view str, bool start_at_seg_boundary) const {
     const char* s = str.data();
     const char* const s_start = s;
     const char* const s_end = s + str.size();
@@ -419,7 +480,6 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
     const char* seg_end = p + glob_segments[0].end;
     size_t b = 0;
     size_t current_glob_seg = 0;
-    bool wild_mode = false;
 
     small_vector<BacktrackState, 6> backtrack_stack;
     const size_t seg_num = glob_segments.size();
@@ -430,56 +490,55 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
     };
 
     auto push_backtrack =
-        [&backtrack_stack, &b, &current_glob_seg, &wild_mode, &p, &s, &seg_end, &seg_start]() {
+        [&backtrack_stack, &b, &current_glob_seg, &p, &s, &seg_end, &seg_start](bool wild) {
             backtrack_stack.push_back({.b = b,
                                        .glob_seg = current_glob_seg,
-                                       .wild_mode = wild_mode,
+                                       .wild_mode = wild,
                                        .p = p,
                                        .s = s,
                                        .seg_end = seg_end,
                                        .seg_start = seg_start});
         };
 
-    while(current_glob_seg < seg_num) {
+    // A pattern segment must begin where an input segment begins. `s_start`
+    // qualifies only when the prefix was stripped at a boundary; otherwise
+    // segment 0 alone may continue the prefix's segment there (`a?` vs
+    // `ab`), while a globstar handing over to a later segment may not
+    // (`a**/?` vs `aa`).
+    auto at_input_seg_start = [&] {
+        if(s == s_start) {
+            return start_at_seg_boundary || current_glob_seg == 0;
+        }
+        return *(s - 1) == '/';
+    };
+
+    while(true) {
         if(s == s_end) {
-            return pattern().find_first_not_of("*/", p - pat.data()) == std::string_view::npos;
+            return glob_tail_matches_empty({p, p_end}, false);
         }
 
         // Handle segment boundary first (early-continue)
         if(p == seg_end && seg_end != p_end) {
-            if(wild_mode) {
-                ++current_glob_seg;
-                while(s != s_end && *s != '/') {
-                    ++s;
+            // The pattern segment is complete, so the input segment must end
+            // here too; on mismatch fall through to backtracking so an
+            // earlier star can retry (`*a/b` vs `aa/b`).
+            if(*s == '/') {
+                if(current_glob_seg + 1 < seg_num) {
+                    s += 1;
+                    current_glob_seg += 1;
+                    auto [new_start, new_end] = segment_range(current_glob_seg);
+                    p = new_start;
+                    seg_start = new_start;
+                    seg_end = new_end;
+                    continue;
                 }
-                if(s != s_end && *s == '/') {
-                    ++s;
+                // Trailing `/` in the pattern: done only if the input ends
+                // here too; otherwise fall through untouched so backtracking
+                // can realign an earlier `**` (`**/a/` vs `a/a/`).
+                if(s + 1 == s_end) {
+                    return true;
                 }
-                if(current_glob_seg >= seg_num) [[unlikely]] {
-                    return s == s_end;
-                }
-                auto [new_start, new_end] = segment_range(current_glob_seg);
-                p = new_start;
-                seg_start = new_start;
-                seg_end = new_end;
-                continue;
             }
-            // non-wild segment transition
-            if(*seg_end != *s) {
-                return false;
-            }
-            while(s != s_end && *s == '/') {
-                ++s;
-            }
-            ++current_glob_seg;
-            if(current_glob_seg >= seg_num) [[unlikely]] {
-                break;
-            }
-            auto [new_start, new_end] = segment_range(current_glob_seg);
-            p = new_start;
-            seg_start = new_start;
-            seg_end = new_end;
-            continue;
         }
 
         if(p != seg_end) {
@@ -488,32 +547,21 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                     // Handle single `*` first (simpler case)
                     if(p + 1 == p_end || *(p + 1) != '*') {
                         ++p;
-                        wild_mode = false;
                         if(p == seg_end) {
+                            // The star is the segment's tail: consuming
+                            // exactly up to the next `/` (or the end of the
+                            // input) is the only possible span, so no
+                            // backtrack state is needed.
                             while(s != s_end && *s != '/') {
                                 ++s;
                             }
-                            if(s == s_end) {
-                                continue;
-                            }
-                            if(s + 1 != s_end) {
-                                ++s;
-                            }
-                            if(current_glob_seg + 1 == seg_num) {
-                                return true;
-                            }
-                            ++current_glob_seg;
-                            auto [new_start, new_end] = segment_range(current_glob_seg);
-                            p = new_start;
-                            seg_start = new_start;
-                            seg_end = new_end;
+                        } else {
+                            push_backtrack(false);
                         }
-                        push_backtrack();
                         continue;
                     }
                     // Handle `**` case
                     p += 2;
-                    wild_mode = true;
                     // Consume additional stars within this segment only
                     while(p != seg_end && *p == '*') {
                         ++p;
@@ -523,20 +571,20 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
                             return true;
                         }
                         ++current_glob_seg;
-                        while(s != s_end && *s == '/') {
-                            ++s;
-                        }
                         auto [new_start, new_end] = segment_range(current_glob_seg);
                         p = new_start;
                         seg_start = new_start;
                         seg_end = new_end;
                     }
-                    push_backtrack();
+                    push_backtrack(true);
                     continue;
                 }
 
                 case '?': {
                     if(s != s_end && *s != '/') {
+                        if(p == seg_start && !at_input_seg_start()) {
+                            break;
+                        }
                         ++p;
                         ++s;
                         continue;
@@ -546,7 +594,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 case '[': {
                     if(b < brackets.size() && brackets[b].bytes[std::uint8_t(*s)]) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         p = pat.data() + brackets[b].next_offset;
@@ -559,7 +607,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 case '\\': {
                     if(p + 1 != seg_end && *(p + 1) == *s) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         p += 2;
@@ -571,7 +619,7 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
                 default: {
                     if(*p == *s) {
-                        if(p == seg_start && !(s == s_start || *(s - 1) == '/')) {
+                        if(p == seg_start && !at_input_seg_start()) {
                             break;
                         }
                         ++p;
@@ -594,30 +642,23 @@ bool GlobPattern::SubGlobPattern::match(std::string_view str) const {
 
         auto& state = backtrack_stack.back();
 
-        if(state.s >= s_end) [[unlikely]] {
+        // Each retry extends the star's match by the character at state.s.
+        // A single `*` may not consume `/`, so once that character is a
+        // slash (or the input is exhausted) the state is dead; only `**`
+        // (wild) extends across segment boundaries.
+        if(state.s >= s_end || (!state.wild_mode && *state.s == '/')) {
             backtrack_stack.pop_back();
             continue;
         }
-        s = ++state.s;
+
+        state.s += 1;
+        s = state.s;
         p = state.p;
         b = state.b;
         current_glob_seg = state.glob_seg;
-        wild_mode = state.wild_mode;
         seg_start = state.seg_start;
         seg_end = state.seg_end;
-
-        if(s > s_end) [[unlikely]] {
-            backtrack_stack.pop_back();
-            continue;
-        }
-
-        if(!wild_mode && (s == s_end || *s == '/')) {
-            backtrack_stack.pop_back();
-            continue;
-        }
     }
-
-    return s == s_end;
 }
 
 }  // namespace kota

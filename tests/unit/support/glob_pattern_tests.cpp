@@ -205,6 +205,14 @@ TEST_CASE(bracket_expr) {
     EXPECT_TRUE(pat14.match("foo.8"));
     EXPECT_FALSE(pat14.match("bar.5"));
     EXPECT_FALSE(pat14.match("foo.f"));
+
+    // A dash right after a completed range is a literal, not a new range
+    // start chained off the previous range's end.
+    PATDEF(pat15, "[a-c-e]")
+    EXPECT_TRUE(pat15.match("b"));
+    EXPECT_TRUE(pat15.match("-"));
+    EXPECT_TRUE(pat15.match("e"));
+    EXPECT_FALSE(pat15.match("d"));
 }
 
 TEST_CASE(brace_expr) {
@@ -306,6 +314,23 @@ TEST_CASE(brace_expr) {
     EXPECT_FALSE(pat11.match("prefix/bar.5"));
     EXPECT_FALSE(pat11.match("prefix/foo.f"));
     EXPECT_TRUE(pat11.match("prefix/foo.js"));
+
+    // Adding a brace arm never narrows the match: a bare `*` arm stays
+    // match-all just like the standalone pattern `*`.
+    PATDEF(pat12, "{*,foo}")
+    EXPECT_TRUE(pat12.match("foo"));
+    EXPECT_TRUE(pat12.match("bar"));
+    EXPECT_TRUE(pat12.match("a/b"));
+    EXPECT_TRUE(pat12.match("/foo"));
+
+    PATDEF(pat13, "{foo,**}")
+    EXPECT_TRUE(pat13.match("a/b/c"));
+
+    // With a prefix the star arm is `a*`: segment-bounded as usual.
+    PATDEF(pat14, "a{*,foo}")
+    EXPECT_TRUE(pat14.match("ab"));
+    EXPECT_TRUE(pat14.match("afoo"));
+    EXPECT_FALSE(pat14.match("a/b"));
 }
 
 TEST_CASE(globstar_prefix) {
@@ -386,13 +411,10 @@ TEST_CASE(globstar_prefix) {
     EXPECT_FALSE(pat10.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
 
     // **/?*.{cc,cpp} — question then wildcard before extension
-    // After ?* special case removal, ? matches one char and * matches rest independently.
-    // With ** backtracking, the * can hop across / boundaries, so .cc after a / is matched
-    // when ** absorbs enough of the prefix.
     PATDEF(pat11, "**/?*.{cc,cpp}")
     EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/aaa.cc"));
     EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/a.cc"));
-    EXPECT_TRUE(pat11.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
+    EXPECT_FALSE(pat11.match("foo/bar/baz/xxx/yyy/zzz/.cc"));
 
     // **/*.js — JS file at any depth
     PATDEF(pat12, "**/*.js")
@@ -636,6 +658,35 @@ TEST_CASE(is_trivial_match_all) {
     auto p6 = kota::GlobPattern::create("{a,b}");
     EXPECT_TRUE(p6.has_value());
     EXPECT_FALSE(p6->is_trivial_match_all());
+
+    // The leading `/` is a real constraint even though the literal prefix
+    // it leaves behind is empty.
+    auto p7 = kota::GlobPattern::create("/*");
+    EXPECT_TRUE(p7.has_value());
+    EXPECT_FALSE(p7->is_trivial_match_all());
+
+    auto p8 = kota::GlobPattern::create("/**");
+    EXPECT_TRUE(p8.has_value());
+    EXPECT_FALSE(p8->is_trivial_match_all());
+
+    // A `*` or `**` brace arm keeps its match-all semantics; the other
+    // arms only add matches.
+    auto p9 = kota::GlobPattern::create("{*,foo}");
+    EXPECT_TRUE(p9.has_value());
+    EXPECT_TRUE(p9->is_trivial_match_all());
+
+    auto p10 = kota::GlobPattern::create("{foo,**}");
+    EXPECT_TRUE(p10.has_value());
+    EXPECT_TRUE(p10->is_trivial_match_all());
+
+    // With a prefix the `*` arm means `a*`, which is segment-bounded.
+    auto p11 = kota::GlobPattern::create("a{*,foo}");
+    EXPECT_TRUE(p11.has_value());
+    EXPECT_FALSE(p11->is_trivial_match_all());
+
+    auto p12 = kota::GlobPattern::create("{*.js,foo}");
+    EXPECT_TRUE(p12.has_value());
+    EXPECT_FALSE(p12->is_trivial_match_all());
 }
 
 TEST_CASE(single_star) {
@@ -660,6 +711,141 @@ TEST_CASE(single_star) {
     EXPECT_TRUE(pat3.match("x/b"));
     EXPECT_FALSE(pat3.match("ab/b"));
     EXPECT_FALSE(pat3.match("/b"));
+}
+
+TEST_CASE(star_stays_in_segment) {
+    // Backtracking must not let a single * swallow a `/`.
+    PATDEF(pat1, "**/a*.cc")
+    EXPECT_TRUE(pat1.match("x/ab.cc"));
+    EXPECT_TRUE(pat1.match("x/y/a.cc"));
+    EXPECT_FALSE(pat1.match("x/a/b.cc"));
+    EXPECT_FALSE(pat1.match("a/b.cc"));
+
+    PATDEF(pat2, "?*.cc")
+    EXPECT_TRUE(pat2.match("ab.cc"));
+    EXPECT_FALSE(pat2.match("a/.cc"));
+    EXPECT_FALSE(pat2.match("a/b.cc"));
+
+    // A terminal star is still bounded by its segment; only a whole
+    // pattern of exactly `*` matches across `/`.
+    PATDEF(pat3, "a*")
+    EXPECT_TRUE(pat3.match("abc"));
+    EXPECT_FALSE(pat3.match("abc/"));
+    EXPECT_FALSE(pat3.match("abc/d"));
+
+    PATDEF(pat4, "foo/*")
+    EXPECT_TRUE(pat4.match("foo/bar"));
+    EXPECT_FALSE(pat4.match("foo/a/b"));
+}
+
+TEST_CASE(segment_boundary) {
+    // The input segment must end exactly where the pattern segment does; a
+    // mismatch there backtracks into an earlier star instead of aborting.
+    PATDEF(pat1, "*a/b")
+    EXPECT_TRUE(pat1.match("aa/b"));
+    EXPECT_TRUE(pat1.match("xya/b"));
+    EXPECT_FALSE(pat1.match("ab/b"));
+
+    // One pattern `/` consumes exactly one input `/`.
+    PATDEF(pat2, "?/b")
+    EXPECT_FALSE(pat2.match("a//b"));
+
+    PATDEF(pat3, "*/b")
+    EXPECT_FALSE(pat3.match("a//b"));
+
+    // A segment following `**` matches whole input segments; ** absorbs
+    // full segments only.
+    PATDEF(pat4, "**/a/b")
+    EXPECT_TRUE(pat4.match("a/b"));
+    EXPECT_TRUE(pat4.match("q/a/b"));
+    EXPECT_FALSE(pat4.match("aX/b"));
+    EXPECT_FALSE(pat4.match("q/aX/b"));
+
+    PATDEF(pat5, "**/?x")
+    EXPECT_TRUE(pat5.match("ax"));
+    EXPECT_TRUE(pat5.match("aa/ax"));
+    EXPECT_FALSE(pat5.match("aax"));
+}
+
+TEST_CASE(matches_empty_tail) {
+    // Star runs match empty input; a `/` does so only when absorbed by an
+    // adjacent globstar.
+    PATDEF(pat1, "foo/**")
+    EXPECT_TRUE(pat1.match("foo"));
+    EXPECT_TRUE(pat1.match("foo/a/b"));
+
+    PATDEF(pat2, "foo/*")
+    EXPECT_FALSE(pat2.match("foo"));
+
+    PATDEF(pat3, "*/*")
+    EXPECT_FALSE(pat3.match(""));
+    EXPECT_TRUE(pat3.match("a/b"));
+
+    PATDEF(pat4, "?/*")
+    EXPECT_FALSE(pat4.match("a"));
+    EXPECT_TRUE(pat4.match("a/"));
+
+    PATDEF(pat5, "**/*")
+    EXPECT_TRUE(pat5.match(""));
+
+    PATDEF(pat6, "x*/**")
+    EXPECT_TRUE(pat6.match("x"));
+
+    PATDEF(pat7, "x*/*")
+    EXPECT_FALSE(pat7.match("x"));
+
+    PATDEF(pat8, "foo/{,x}")
+    EXPECT_FALSE(pat8.match("foo"));
+    EXPECT_TRUE(pat8.match("foo/"));
+    EXPECT_TRUE(pat8.match("foo/x"));
+
+    // Each globstar absorbs at most one separator, so a `/**/` between two
+    // required segments still demands a real `/`.
+    PATDEF(pat9, "x*/**/*")
+    EXPECT_FALSE(pat9.match("x"));
+    EXPECT_TRUE(pat9.match("x/y"));
+
+    PATDEF(pat10, "*a/**/*")
+    EXPECT_FALSE(pat10.match("aa"));
+    EXPECT_TRUE(pat10.match("aa/b"));
+
+    // A trailing globstar chain absorbs the separator after the prefix; any
+    // non-globstar atom in the tail still demands real input.
+    PATDEF(pat11, "foo/**/*")
+    EXPECT_FALSE(pat11.match("foo"));
+    EXPECT_TRUE(pat11.match("foo/a"));
+
+    PATDEF(pat12, "foo/**/bar")
+    EXPECT_FALSE(pat12.match("foo"));
+    EXPECT_TRUE(pat12.match("foo/bar"));
+
+    // Prefix stripping must not change matches: `a/**/**` behaves exactly
+    // like its brace-wrapped twin, whose arm keeps the leading literal.
+    PATDEF(pat13, "a/**/**")
+    EXPECT_TRUE(pat13.match("a"));
+    EXPECT_TRUE(pat13.match("a/b"));
+
+    PATDEF(pat13b, "{a/**/**}")
+    EXPECT_TRUE(pat13b.match("a"));
+    EXPECT_TRUE(pat13b.match("a/b"));
+
+    // Brace arms expand into independent alternatives, so the `**` arm
+    // absorbs the separator while the literal arm does not.
+    PATDEF(pat14, "foo/{**,x}")
+    EXPECT_TRUE(pat14.match("foo"));
+    EXPECT_TRUE(pat14.match("foo/x"));
+
+    // ** may match zero segments, letting later stars take the empty
+    // segments around a bare `/`.
+    PATDEF(pat15, "**/*/*")
+    EXPECT_TRUE(pat15.match("/"));
+    EXPECT_TRUE(pat15.match("a/b"));
+    EXPECT_FALSE(pat15.match(""));
+
+    PATDEF(pat16, "x/**/*/*")
+    EXPECT_TRUE(pat16.match("x//"));
+    EXPECT_TRUE(pat16.match("x/a/b"));
+    EXPECT_FALSE(pat16.match("x/a"));
 }
 
 TEST_CASE(single_question) {
@@ -731,14 +917,11 @@ TEST_CASE(boundary_edge_cases) {
 }
 
 TEST_CASE(match_empty_string) {
-    PATDEF(pat1, "**")
     // ** matches any number of path segments including none
-    // For empty string: s == s_end immediately, remaining pattern is "**"
-    // find_first_not_of("*/") on "**" is npos, so returns true
+    PATDEF(pat1, "**")
     EXPECT_TRUE(pat1.match(""));
 
     PATDEF(pat2, "*")
-    // * at s_end: find_first_not_of("*/", 0) on "*" is npos => true
     EXPECT_TRUE(pat2.match(""));
 
     PATDEF(pat3, "foo")
@@ -849,19 +1032,59 @@ TEST_CASE(question_with_globstar) {
     EXPECT_TRUE(pat1.match("a.js"));
     EXPECT_TRUE(pat1.match("foo/b.js"));
     EXPECT_TRUE(pat1.match("a/b/c.js"));
-    // ** can absorb leading chars in the segment, so ab.js matches
-    // because ** absorbs 'a' and ?.js matches 'b.js'
-    EXPECT_TRUE(pat1.match("ab.js"));
-    EXPECT_TRUE(pat1.match("foo/ab.js"));
+    EXPECT_FALSE(pat1.match("ab.js"));
+    EXPECT_FALSE(pat1.match("foo/ab.js"));
     EXPECT_FALSE(pat1.match(".js"));
 
     PATDEF(pat2, "**/?")
     EXPECT_TRUE(pat2.match("a"));
     EXPECT_TRUE(pat2.match("foo/a"));
     EXPECT_TRUE(pat2.match("a/b/c/d"));
-    // ** absorbs leading chars, so 'ab' matches (** absorbs 'a', ? matches 'b')
-    EXPECT_TRUE(pat2.match("ab"));
-    EXPECT_TRUE(pat2.match("foo/ab"));
+    // ** absorbs whole segments only, so the two-char basename 'ab' does not
+    // match: ? must start at a segment boundary like every other atom.
+    EXPECT_FALSE(pat2.match("ab"));
+    EXPECT_FALSE(pat2.match("foo/ab"));
+}
+
+TEST_CASE(prefix_strip_boundary) {
+    // Stripping the literal prefix must not turn a mid-segment position
+    // into a segment boundary: each pattern behaves exactly like its
+    // brace-wrapped twin, whose arm keeps the leading literal.
+    PATDEF(pat1, "a**/?")
+    EXPECT_FALSE(pat1.match("aa"));
+    EXPECT_FALSE(pat1.match("ab"));
+    EXPECT_FALSE(pat1.match("a"));
+    EXPECT_TRUE(pat1.match("a/c"));
+    EXPECT_TRUE(pat1.match("aa/c"));
+
+    PATDEF(pat1b, "{a**/?}")
+    EXPECT_FALSE(pat1b.match("aa"));
+    EXPECT_FALSE(pat1b.match("ab"));
+    EXPECT_FALSE(pat1b.match("a"));
+    EXPECT_TRUE(pat1b.match("a/c"));
+    EXPECT_TRUE(pat1b.match("aa/c"));
+
+    PATDEF(pat2, "x**/y")
+    EXPECT_FALSE(pat2.match("xy"));
+    EXPECT_TRUE(pat2.match("x/y"));
+    EXPECT_TRUE(pat2.match("xx/y"));
+
+    PATDEF(pat3, "a**/[bc]")
+    EXPECT_FALSE(pat3.match("ab"));
+    EXPECT_TRUE(pat3.match("a/b"));
+
+    PATDEF(pat4, R"(a**/\?)")
+    EXPECT_FALSE(pat4.match("a?"));
+    EXPECT_TRUE(pat4.match("a/?"));
+
+    // Pattern segment 0 continues the prefix's input segment, so
+    // mid-segment continuation there stays legal.
+    PATDEF(pat5, "a?")
+    EXPECT_TRUE(pat5.match("ab"));
+    EXPECT_FALSE(pat5.match("a/"));
+
+    PATDEF(pat6, "a[bc]")
+    EXPECT_TRUE(pat6.match("ab"));
 }
 
 TEST_CASE(globstar_slash) {
@@ -877,6 +1100,31 @@ TEST_CASE(globstar_slash) {
     EXPECT_TRUE(pat2.match("a/b/c/x"));
     EXPECT_FALSE(pat2.match("ax"));
     EXPECT_FALSE(pat2.match("a/bx"));
+
+    // A leading `/` must be matched by the input.
+    PATDEF(pat3, "/*")
+    EXPECT_TRUE(pat3.match("/foo"));
+    EXPECT_TRUE(pat3.match("/"));
+    EXPECT_FALSE(pat3.match("foo"));
+    EXPECT_FALSE(pat3.match("foo/bar"));
+    EXPECT_FALSE(pat3.match("/foo/bar"));
+
+    PATDEF(pat4, "/**")
+    EXPECT_TRUE(pat4.match("/foo"));
+    EXPECT_TRUE(pat4.match("/foo/bar"));
+    EXPECT_FALSE(pat4.match("foo"));
+    EXPECT_FALSE(pat4.match("foo/bar"));
+
+    // A trailing `/` requires the input to end at that segment boundary; a
+    // preceding `**` keeps retrying until the last segment lines up.
+    PATDEF(pat5, "**/a/")
+    EXPECT_TRUE(pat5.match("a/"));
+    EXPECT_TRUE(pat5.match("x/a/"));
+    EXPECT_TRUE(pat5.match("a/a/"));
+    EXPECT_TRUE(pat5.match("a/b/a/"));
+    EXPECT_FALSE(pat5.match("a"));
+    EXPECT_FALSE(pat5.match("a/b/"));
+    EXPECT_FALSE(pat5.match("a/a"));
 }
 
 TEST_CASE(backslash_in_input) {
