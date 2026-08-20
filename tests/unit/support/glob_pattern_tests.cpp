@@ -752,6 +752,47 @@ TEST_CASE(matches_empty_tail) {
     EXPECT_FALSE(pat8.match("foo"));
     EXPECT_TRUE(pat8.match("foo/"));
     EXPECT_TRUE(pat8.match("foo/x"));
+
+    // Each globstar absorbs at most one separator, so a `/**/` between two
+    // required segments still demands a real `/`.
+    PATDEF(pat9, "x*/**/*")
+    EXPECT_FALSE(pat9.match("x"));
+    EXPECT_TRUE(pat9.match("x/y"));
+
+    PATDEF(pat10, "*a/**/*")
+    EXPECT_FALSE(pat10.match("aa"));
+    EXPECT_TRUE(pat10.match("aa/b"));
+
+    // Only a lone trailing globstar absorbs the separator after the prefix.
+    PATDEF(pat11, "foo/**/*")
+    EXPECT_FALSE(pat11.match("foo"));
+    EXPECT_TRUE(pat11.match("foo/a"));
+
+    PATDEF(pat12, "foo/**/bar")
+    EXPECT_FALSE(pat12.match("foo"));
+    EXPECT_TRUE(pat12.match("foo/bar"));
+
+    PATDEF(pat13, "a/**/**")
+    EXPECT_FALSE(pat13.match("a"));
+    EXPECT_TRUE(pat13.match("a/b"));
+
+    // Brace arms expand into independent alternatives, so the `**` arm
+    // keeps its lone-globstar behavior.
+    PATDEF(pat14, "foo/{**,x}")
+    EXPECT_TRUE(pat14.match("foo"));
+    EXPECT_TRUE(pat14.match("foo/x"));
+
+    // ** may match zero segments, letting later stars take the empty
+    // segments around a bare `/`.
+    PATDEF(pat15, "**/*/*")
+    EXPECT_TRUE(pat15.match("/"));
+    EXPECT_TRUE(pat15.match("a/b"));
+    EXPECT_FALSE(pat15.match(""));
+
+    PATDEF(pat16, "x/**/*/*")
+    EXPECT_TRUE(pat16.match("x//"));
+    EXPECT_TRUE(pat16.match("x/a/b"));
+    EXPECT_FALSE(pat16.match("x/a"));
 }
 
 TEST_CASE(single_question) {
@@ -823,14 +864,11 @@ TEST_CASE(boundary_edge_cases) {
 }
 
 TEST_CASE(match_empty_string) {
-    PATDEF(pat1, "**")
     // ** matches any number of path segments including none
-    // For empty string: s == s_end immediately, remaining pattern is "**"
-    // find_first_not_of("*/") on "**" is npos, so returns true
+    PATDEF(pat1, "**")
     EXPECT_TRUE(pat1.match(""));
 
     PATDEF(pat2, "*")
-    // * at s_end: find_first_not_of("*/", 0) on "*" is npos => true
     EXPECT_TRUE(pat2.match(""));
 
     PATDEF(pat3, "foo")
