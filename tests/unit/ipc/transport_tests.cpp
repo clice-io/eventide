@@ -19,12 +19,24 @@ using test::write_fd;
 
 namespace {
 
-task<std::pair<std::optional<std::string>, std::optional<std::string>>>
-    read_two_messages(StreamTransport& transport) {
+using ReadResult = Result<std::optional<std::string>>;
+
+task<std::pair<ReadResult, ReadResult>> read_two_messages(StreamTransport& transport) {
     auto first = co_await transport.read_message();
     auto second = co_await transport.read_message();
     event_loop::current().stop();
     co_return std::pair{std::move(first), std::move(second)};
+}
+
+/// Read one message, driving `loop` until it completes.
+ReadResult read_one(StreamTransport& transport, event_loop& loop) {
+    auto reader = [&]() -> task<ReadResult> {
+        co_return co_await transport.read_message();
+    };
+    auto read_task = reader();
+    loop.schedule(read_task);
+    loop.run();
+    return read_task.result();
 }
 
 TEST_SUITE(ipc_transport) {
@@ -53,11 +65,13 @@ TEST_CASE(consecutive_messages) {
     loop.schedule(reader);
     loop.run();
 
-    const auto [first, second] = reader.result();
+    const auto& [first, second] = reader.result();
     ASSERT_TRUE(first.has_value());
     ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*first, first_payload);
-    EXPECT_EQ(*second, second_payload);
+    ASSERT_TRUE(first->has_value());
+    ASSERT_TRUE(second->has_value());
+    EXPECT_EQ(**first, first_payload);
+    EXPECT_EQ(**second, second_payload);
 }
 
 // 6.1 Content-Length: 0 → empty string payload
@@ -76,20 +90,13 @@ TEST_CASE(empty_payload) {
     ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
     ASSERT_EQ(close_fd(fds[1]), 0);
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
-    };
-
-    auto read_task = reader();
-    loop.schedule(read_task);
-    loop.run();
-
-    auto result = read_task.result();
+    auto result = read_one(transport, loop);
     ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->empty());
+    ASSERT_TRUE(result->has_value());
+    EXPECT_TRUE((*result)->empty());
 }
 
-// 6.2 Header exceeds 8KB limit → nullopt
+// 6.2 Header exceeds 8KB limit → a header-size error
 TEST_CASE(header_too_large) {
     event_loop loop;
 
@@ -115,22 +122,16 @@ TEST_CASE(header_too_large) {
         writer_done.store(true, std::memory_order_release);
     });
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
-    };
-
-    auto read_task = reader();
-    loop.schedule(read_task);
-    loop.run();
+    auto result = read_one(transport, loop);
 
     writer.join();
     EXPECT_TRUE(writer_done.load(std::memory_order_acquire));
 
-    auto result = read_task.result();
-    EXPECT_FALSE(result.has_value());
+    ASSERT_TRUE(result.has_error());
+    EXPECT_TRUE(result.error().message.contains("header exceeds"));
 }
 
-// 6.4 Incomplete header (EOF before \r\n\r\n) → nullopt
+// 6.4 Incomplete header (EOF before \r\n\r\n) → an incomplete-header error
 TEST_CASE(incomplete_header) {
     event_loop loop;
 
@@ -147,19 +148,12 @@ TEST_CASE(incomplete_header) {
               static_cast<ssize_t>(partial.size()));
     ASSERT_EQ(close_fd(fds[1]), 0);
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
-    };
-
-    auto read_task = reader();
-    loop.schedule(read_task);
-    loop.run();
-
-    auto result = read_task.result();
-    EXPECT_FALSE(result.has_value());
+    auto result = read_one(transport, loop);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_TRUE(result.error().message.contains("incomplete frame header"));
 }
 
-// 6.5 Content-Length > actual body (EOF mid-body) → nullopt
+// 6.5 Content-Length > actual body (EOF mid-body) → a truncated-frame error
 TEST_CASE(length_mismatch) {
     event_loop loop;
 
@@ -176,16 +170,32 @@ TEST_CASE(length_mismatch) {
     ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
     ASSERT_EQ(close_fd(fds[1]), 0);
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
-    };
+    auto result = read_one(transport, loop);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_TRUE(result.error().message.contains("incomplete frame payload, got 5 of 100 bytes"));
+}
 
-    auto read_task = reader();
-    loop.schedule(read_task);
-    loop.run();
+// 6.7 Content-Length above max_payload_bytes → an oversized-payload error
+TEST_CASE(payload_too_large) {
+    event_loop loop;
 
-    auto result = read_task.result();
-    EXPECT_FALSE(result.has_value());
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+    transport.max_payload_bytes = 8;
+
+    // Header is valid; the announced payload alone trips the configured limit.
+    const std::string data = frame(std::string(9, 'x'));
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto result = read_one(transport, loop);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_TRUE(result.error().message.contains("exceeds the 8 byte limit"));
 }
 
 // 6.6 Rapid sequential writes → all correctly read
@@ -214,9 +224,9 @@ TEST_CASE(rapid_sequential) {
         std::vector<std::string> results;
         for(int i = 0; i < count; ++i) {
             auto msg = co_await transport.read_message();
-            if(!msg)
+            if(!msg || !msg->has_value())
                 break;
-            results.push_back(std::move(*msg));
+            results.push_back(std::move(**msg));
         }
         co_return results;
     };
@@ -258,19 +268,13 @@ TEST_CASE(large_payload_single_chunk) {
         EXPECT_EQ(close_fd(fds[1]), 0);
     });
 
-    auto reader = [&]() -> task<std::optional<std::string>> {
-        co_return co_await transport.read_message();
-    };
-
-    auto read_task = reader();
-    loop.schedule(read_task);
-    loop.run();
+    auto result = read_one(transport, loop);
 
     writer.join();
 
-    auto result = read_task.result();
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->size(), payload.size());
+    ASSERT_TRUE(result->has_value());
+    EXPECT_EQ((*result)->size(), payload.size());
 }
 
 };  // TEST_SUITE(ipc_transport)
