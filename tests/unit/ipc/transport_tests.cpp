@@ -175,6 +175,86 @@ TEST_CASE(length_mismatch) {
     EXPECT_TRUE(result.error().message.contains("incomplete frame payload, got 5 of 100 bytes"));
 }
 
+// 6.6 A header without a parsable Content-Length → an invalid-header error
+TEST_CASE(invalid_content_length) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+
+    const std::string data = "Content-Type: text\r\nX-Broken-Length: abc\r\n\r\nhello";
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto result = read_one(transport, loop);
+    ASSERT_TRUE(result.has_error());
+    EXPECT_TRUE(result.error().message.contains("no valid Content-Length"));
+}
+
+// Clean end-of-stream at a frame boundary is a close, not a refusal
+TEST_CASE(clean_close_between_frames) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+
+    const std::string payload = R"({"i":1})";
+    const auto data = frame(payload);
+    ASSERT_EQ(write_fd(fds[1], data.data(), data.size()), static_cast<ssize_t>(data.size()));
+    ASSERT_EQ(close_fd(fds[1]), 0);
+
+    auto reader = read_two_messages(transport);
+    loop.schedule(reader);
+    loop.run();
+
+    const auto& [first, second] = reader.result();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(first->has_value());
+    EXPECT_EQ(**first, payload);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_FALSE(second->has_value());
+}
+
+// A read aborted by close() ends the stream without an error
+TEST_CASE(close_during_read) {
+    event_loop loop;
+
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(create_pipe(fds), 0);
+
+    auto input = pipe::open(fds[0], pipe::options{}, loop);
+    ASSERT_TRUE(input.has_value());
+
+    StreamTransport transport(stream(std::move(*input)));
+
+    ReadResult result = outcome_error(Error("not completed"));
+    auto reader = [&]() -> task<> {
+        result = co_await transport.read_message();
+        event_loop::current().stop();
+    };
+    auto closer = [&]() -> task<> {
+        co_await sleep(1, loop);
+        EXPECT_TRUE(transport.close().has_value());
+    };
+
+    loop.schedule(reader());
+    loop.schedule(closer());
+    loop.run();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->has_value());
+}
+
 // 6.7 Content-Length above max_payload_bytes → an oversized-payload error
 TEST_CASE(payload_too_large) {
     event_loop loop;

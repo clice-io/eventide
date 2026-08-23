@@ -187,8 +187,10 @@ task<std::optional<std::string>, Error> StreamTransport::read_message() {
                 read_stream.stop();
                 co_return std::nullopt;
             }
-            co_await fail(
-                abort_read(std::format("incomplete frame header: {}", chunk.error().message())));
+            co_await fail(abort_read(
+                header.empty()
+                    ? std::format("stream read failed between frames: {}", chunk.error().message())
+                    : std::format("incomplete frame header: {}", chunk.error().message())));
         }
 
         const auto old_size = header.size();
