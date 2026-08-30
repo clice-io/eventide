@@ -1,24 +1,28 @@
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <expected>
 #include <functional>
+#include <optional>
 #include <print>
+#include <random>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#include "worker.h"
 #include "kota/deco/deco.h"
 #include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
 #include "kota/zest/runner/run.h"
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
+#include "kota/async/io/loop.h"
+#include "kota/async/io/stream.h"
+#include "kota/async/io/system.h"
 
 namespace {
 
@@ -214,7 +218,22 @@ void print_summary(const RunSummary& summary) {
 namespace kota::zest {
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    auto args = kota::deco::util::argvify(argc, argv);
+    // Worker subprocesses are spawned as `<program> --zest-worker=<token> ...`.
+    // Recognize the flag only at argv[1] so values of other options (e.g. a
+    // separate-form `--test-filter <value>`) can never flip us into worker mode.
+    constexpr std::string_view worker_flag = "--zest-worker=";
+    std::optional<std::string> worker_token;
+    std::vector<char*> clean_argv;
+    clean_argv.reserve(static_cast<std::size_t>(argc));
+    for(int i = 0; i < argc; ++i) {
+        if(i == 1 && std::string_view(argv[i]).starts_with(worker_flag)) {
+            worker_token = std::string_view(argv[i]).substr(worker_flag.size());
+            continue;
+        }
+        clean_argv.push_back(argv[i]);
+    }
+
+    auto args = kota::deco::util::argvify(static_cast<int>(clean_argv.size()), clean_argv.data());
     auto renderer = kota::deco::cli::text::ModernRenderer();
     kota::deco::cli::Command<CliOptions> command(command_overview);
     command.render_with(renderer);
@@ -226,6 +245,10 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto parsed = command.invoke(args);
     if(!parsed.has_value()) {
         std::println(stderr, "Error parsing options: {}", parsed.error().message);
+        if(worker_token.has_value()) {
+            // The parent observes stdout EOF and reports the dispatched test.
+            return 1;
+        }
         std::exit(1);
     }
 
@@ -241,6 +264,10 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
 
     if(cli.test_filter_input.has_value()) {
         cli.zest.test_filter = std::move(*cli.test_filter_input);
+    }
+
+    if(worker_token.has_value()) {
+        return Runner::instance().run_as_worker(std::move(cli.zest), *worker_token);
     }
 
     return run_tests(std::move(cli.zest));
@@ -259,7 +286,98 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
     suites.emplace_back(std::string(name), cases);
 }
 
+int Runner::run_as_worker(Options options, std::string_view result_token) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    set_update_snapshots(*options.update_snapshots);
+    set_snapshot_dir(*options.snapshot_dir);
+
+    const auto result_prefix = detail::make_result_prefix(result_token);
+
+    auto grouped = group_suites(suites);
+
+    std::unordered_map<std::string, TestCase*> test_map;
+    for(auto& [suite_name, test_cases]: grouped) {
+        for(auto& tc: test_cases) {
+            test_map[make_display_name(suite_name, tc.name)] = &tc;
+        }
+    }
+
+    bool pipe_failed = false;
+
+    auto worker_fn = [&]() -> task<void> {
+        auto in = pipe::open(0);
+        if(!in.has_value()) {
+            pipe_failed = true;
+            co_return;
+        }
+
+        std::string buffer;
+        while(true) {
+            auto data = co_await in->read();
+            if(!data.has_value()) {
+                break;
+            }
+
+            buffer += *data;
+            std::size_t pos;
+            while((pos = buffer.find('\n')) != std::string::npos) {
+                auto line = buffer.substr(0, pos);
+                buffer.erase(0, pos + 1);
+
+                if(!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                if(line.empty()) {
+                    continue;
+                }
+
+                auto it = test_map.find(line);
+                if(it == test_map.end()) {
+                    std::println("[worker] unknown test: {}", line);
+                    std::println("{}",
+                                 detail::format_result_line(result_prefix,
+                                                            TestState::Fatal,
+                                                            std::chrono::milliseconds{0}));
+                    continue;
+                }
+
+                auto& tc = *it->second;
+                if(tc.attrs.skip) {
+                    std::println("{}",
+                                 detail::format_result_line(result_prefix,
+                                                            TestState::Skipped,
+                                                            std::chrono::milliseconds{0}));
+                    continue;
+                }
+
+                using namespace std::chrono;
+                auto begin = system_clock::now();
+                auto state = tc.test();
+                auto end = system_clock::now();
+                auto dur = duration_cast<milliseconds>(end - begin);
+
+                std::println("{}", detail::format_result_line(result_prefix, state, dur));
+            }
+        }
+    };
+    auto worker = worker_fn();
+
+    event_loop loop;
+    loop.schedule(worker);
+    loop.run();
+    return pipe_failed ? 1 : 0;
+}
+
 int Runner::run_tests(Options options) {
+    if(*options.parallel && *options.cleanup_snapshots) {
+        // Snapshot usage is tracked per process; workers record their accesses
+        // in their own address space, so the parent would treat every parallel
+        // test's snapshot as an orphan and delete it.
+        std::println("{}Error: --cleanup-snapshots is not supported with --parallel{}", red, clear);
+        return 1;
+    }
+
     set_update_snapshots(*options.update_snapshots);
     set_snapshot_dir(*options.snapshot_dir);
 
@@ -377,7 +495,10 @@ int Runner::run_tests(Options options) {
             return;
         }
         const bool failed = is_failure(result.state);
-        if(failed && !result.output.empty()) {
+        // Parallel mode captures test output via the worker pipe; surface it
+        // for every state so passing tests' diagnostics aren't swallowed.
+        // (Sequential mode writes straight to the terminal; output is empty.)
+        if(!result.output.empty()) {
             std::println("{}", result.output);
         }
         print_run_result(result.display_name, failed, result.duration, verbose);
@@ -397,44 +518,78 @@ int Runner::run_tests(Options options) {
         using namespace std::chrono;
         auto wall_begin = system_clock::now();
 
+        // Workers address tests by display name, so duplicate names would
+        // collapse in the worker's lookup table; run them serially instead.
+        std::unordered_map<std::string_view, std::size_t> name_counts;
+        for(const auto& test: runnable) {
+            name_counts[test.display_name] += 1;
+        }
+
         // Partition: parallel-safe tests first, serial tests after.
         std::vector<std::size_t> parallel_indices;
         std::vector<std::size_t> serial_indices;
         for(std::size_t i = 0; i < runnable.size(); ++i) {
-            if(runnable[i].serial) {
+            if(runnable[i].serial || name_counts[runnable[i].display_name] > 1) {
                 serial_indices.push_back(i);
             } else {
                 parallel_indices.push_back(i);
             }
         }
 
-        // Run parallel-safe tests across the thread pool.
-        const unsigned pw = *options.parallel_workers;
-        const auto num_workers = std::min(
-            static_cast<std::size_t>(std::max(1u, pw ? pw : std::thread::hardware_concurrency())),
-            parallel_indices.size());
-
-        std::atomic<std::size_t> next_task{0};
-
-        auto worker = [&]() {
-            while(true) {
-                auto idx = next_task.fetch_add(1, std::memory_order_relaxed);
-                if(idx >= parallel_indices.size()) {
-                    break;
-                }
-                auto i = parallel_indices[idx];
-                results[i] = run_single(runnable[i], false);
+        if(!parallel_indices.empty()) {
+            // Re-spawn the current executable as worker processes. argv[0] is
+            // unreliable (relative paths break after chdir), so resolve the
+            // real executable path from the OS.
+            auto program = sys::exe_path();
+            if(!program.has_value()) {
+                std::println("{}[  ERROR ] cannot resolve the runner executable path{}",
+                             red,
+                             clear);
+                return 1;
             }
-        };
 
-        {
-            std::vector<std::thread> pool;
-            pool.reserve(num_workers);
-            for(unsigned w = 0; w < num_workers; ++w) {
-                pool.emplace_back(worker);
+            const unsigned requested = *options.parallel_workers;
+            const auto num_workers = static_cast<unsigned>(
+                std::min(static_cast<std::size_t>(
+                             std::max(1u, requested != 0 ? requested : sys::parallelism())),
+                         parallel_indices.size()));
+
+            std::vector<std::string> base_args;
+            if(!options.snapshot_dir->empty()) {
+                base_args.push_back("--snapshot-dir=" + *options.snapshot_dir);
             }
-            for(auto& t: pool) {
-                t.join();
+            if(*options.update_snapshots) {
+                base_args.push_back("--update-snapshots");
+            }
+
+            std::vector<std::string> test_names;
+            test_names.reserve(parallel_indices.size());
+            for(auto i: parallel_indices) {
+                test_names.push_back(runnable[i].display_name);
+            }
+
+            // Per-run token so test output cannot forge protocol result lines.
+            std::random_device rd;
+            const auto result_token = std::format("{:08x}{:08x}", rd(), rd());
+
+            std::vector<detail::WorkerResult> worker_results;
+            detail::run_parallel_workers(*program,
+                                         base_args,
+                                         num_workers,
+                                         test_names,
+                                         result_token,
+                                         worker_results);
+
+            for(std::size_t j = 0; j < parallel_indices.size(); ++j) {
+                auto i = parallel_indices[j];
+                results[i] = TestResult{
+                    .display_name = runnable[i].display_name,
+                    .path = runnable[i].path,
+                    .line = runnable[i].line,
+                    .state = worker_results[j].state,
+                    .duration = worker_results[j].duration,
+                    .output = std::move(worker_results[j].output),
+                };
             }
         }
 
@@ -445,11 +600,12 @@ int Runner::run_tests(Options options) {
 
         summary.duration = duration_cast<milliseconds>(system_clock::now() - wall_begin);
 
-        // Print all results in original order.
+        // Print all results in original order (parallel mode defers printing).
         for(const auto& result: results) {
             record_result(result);
         }
     } else {
+        // Sequential mode: run all tests in-process, in order.
         for(std::size_t i = 0; i < runnable.size(); ++i) {
             results[i] = run_single(runnable[i], true);
             record_result(results[i]);

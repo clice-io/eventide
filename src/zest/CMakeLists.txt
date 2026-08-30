@@ -50,6 +50,7 @@ target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/expr.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/worker.cpp"
 )
 
 target_include_directories(kota_zest PUBLIC
@@ -61,5 +62,7 @@ target_link_libraries(kota_zest PUBLIC
     kota::deco
     kota::support
 )
+
+target_link_libraries(kota_zest PRIVATE kota::async)
 
 kota_apply_project_options(kota_zest)

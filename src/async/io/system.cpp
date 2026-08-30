@@ -125,6 +125,13 @@ result<std::string> temp_directory() {
                           1024);
 }
 
+result<std::string> exe_path() {
+    // uv_exepath truncates silently instead of reporting ENOBUFS, so start
+    // with a buffer large enough for any realistic executable path.
+    return read_uv_string([](char* buf, std::size_t& size) { return uv::exepath(buf, size); },
+                          4096);
+}
+
 result<int> priority(int pid) {
     int value = 0;
     if(auto err = uv::os_getpriority(static_cast<uv_pid_t>(pid), value)) {

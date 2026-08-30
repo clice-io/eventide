@@ -60,6 +60,8 @@ public:
 
     int run_tests(Options options);
 
+    int run_as_worker(Options options, std::string_view result_token);
+
 private:
     std::vector<TestSuite> suites;
 };
