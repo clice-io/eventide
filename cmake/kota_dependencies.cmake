@@ -125,7 +125,9 @@ function(kota_add_git_dependency name)
         message(FATAL_ERROR "kota_add_git_dependency(${name}) requires GIT_TAG.")
     endif()
 
-    if(KOTA_USE_CPM_FOR_TESTS AND KOTA_ENABLE_TEST)
+    # A parent project that already bootstrapped CPM (and usually a
+    # CPM_SOURCE_CACHE) gets kotatsu's dependencies through it as well.
+    if((KOTA_USE_CPM_FOR_TESTS AND KOTA_ENABLE_TEST) OR COMMAND CPMAddPackage)
         kota_ensure_cpm()
         kota_make_cpm_options(cpm_options "kota_add_git_dependency(${name}) OPTIONS" ${ARG_OPTIONS})
 
