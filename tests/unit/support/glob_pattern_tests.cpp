@@ -1,3 +1,9 @@
+#include <algorithm>
+#include <array>
+#include <memory>
+#include <random>
+#include <vector>
+
 #include "kota/zest/zest.h"
 #include "kota/support/glob_pattern.h"
 
@@ -315,13 +321,12 @@ TEST_CASE(brace_expr) {
     EXPECT_FALSE(pat11.match("prefix/foo.f"));
     EXPECT_TRUE(pat11.match("prefix/foo.js"));
 
-    // Adding a brace arm never narrows the match: a bare `*` arm stays
-    // match-all just like the standalone pattern `*`.
+    // A bare single-star alternative remains segment-bounded.
     PATDEF(pat12, "{*,foo}")
     EXPECT_TRUE(pat12.match("foo"));
     EXPECT_TRUE(pat12.match("bar"));
-    EXPECT_TRUE(pat12.match("a/b"));
-    EXPECT_TRUE(pat12.match("/foo"));
+    EXPECT_FALSE(pat12.match("a/b"));
+    EXPECT_FALSE(pat12.match("/foo"));
 
     PATDEF(pat13, "{foo,**}")
     EXPECT_TRUE(pat13.match("a/b/c"));
@@ -362,13 +367,13 @@ TEST_CASE(globstar_prefix) {
     EXPECT_TRUE(pat4.match("include/foo/bar/baz/include/test/bbb.hh"));
     EXPECT_TRUE(pat4.match("include/include/include/include/include/test/bbb.hpp"));
 
-    // **include/test/*.{cc,...} — globstar attached to literal (no slash after **)
+    // Embedded ** is a single-segment wildcard, as in VS Code and Git.
     PATDEF(pat5, "**include/test/*.{cc,hh,c,h,cpp,hpp}")
     EXPECT_TRUE(pat5.match("include/test/fff.hpp"));
     EXPECT_TRUE(pat5.match("xxx-yyy-include/test/fff.hpp"));
     EXPECT_TRUE(pat5.match("xxx-yyy-include/test/.hpp"));
-    EXPECT_TRUE(pat5.match("/include/test/aaa.cc"));
-    EXPECT_TRUE(pat5.match("include/foo/bar/baz/include/test/bbb.hh"));
+    EXPECT_FALSE(pat5.match("/include/test/aaa.cc"));
+    EXPECT_FALSE(pat5.match("include/foo/bar/baz/include/test/bbb.hh"));
 
     // **/*foo.{c,cpp} — globstar prefix with wildcard suffix
     PATDEF(pat6, "**/*foo.{c,cpp}")
@@ -539,7 +544,7 @@ TEST_CASE(error_paths) {
     auto e2 = kota::GlobPattern::create("{a,[}");
     EXPECT_FALSE(e2.has_value());
 
-    // Stray '\' at end of pattern (in SubGlobPattern)
+    // Stray '\' at end of pattern
     auto e3 = kota::GlobPattern::create("foo\\");
     EXPECT_FALSE(e3.has_value());
 
@@ -579,11 +584,11 @@ TEST_CASE(error_paths) {
     auto e12 = kota::GlobPattern::create("//foo");
     EXPECT_FALSE(e12.has_value());
 
-    // Multiple consecutive slashes in glob pattern (detected by SubGlobPattern)
+    // Multiple consecutive slashes after the literal prefix
     auto e13 = kota::GlobPattern::create("**/foo//*.cc");
     EXPECT_FALSE(e13.has_value());
 
-    // Unmatched '[' in SubGlobPattern
+    // Unmatched '[' after a wildcard
     auto e14 = kota::GlobPattern::create("*[");
     EXPECT_FALSE(e14.has_value());
 
@@ -598,6 +603,18 @@ TEST_CASE(error_paths) {
     // Range end is stray backslash
     auto e17 = kota::GlobPattern::create("[a-\\]");
     EXPECT_FALSE(e17.has_value());
+
+    // Brace expansion is textual: an arm starting with `/` right after the
+    // literal prefix's separator spells `//`, escaped prefix or not.
+    for(std::string_view source: {"a/{/}", "a/{/b}", "a/{b,/c}", R"(a\*/{/})"}) {
+        auto res = kota::GlobPattern::create(source);
+        EXPECT_FALSE(res.has_value());
+        if(!res.has_value()) {
+            EXPECT_EQ(res.error().kind, kota::GlobError::MultipleSlash);
+        }
+    }
+    EXPECT_TRUE(kota::GlobPattern::create("{/a}")->match("/a"));
+    EXPECT_TRUE(kota::GlobPattern::create("a{/b}")->match("a/b"));
 }
 
 TEST_CASE(empty_and_trivial) {
@@ -641,7 +658,7 @@ TEST_CASE(is_trivial_match_all) {
 
     auto p2 = kota::GlobPattern::create("*");
     EXPECT_TRUE(p2.has_value());
-    EXPECT_TRUE(p2->is_trivial_match_all());
+    EXPECT_FALSE(p2->is_trivial_match_all());
 
     auto p3 = kota::GlobPattern::create("**/*");
     EXPECT_TRUE(p3.has_value());
@@ -669,11 +686,10 @@ TEST_CASE(is_trivial_match_all) {
     EXPECT_TRUE(p8.has_value());
     EXPECT_FALSE(p8->is_trivial_match_all());
 
-    // A `*` or `**` brace arm keeps its match-all semantics; the other
-    // arms only add matches.
+    // Only a whole-segment ** brace arm is match-all.
     auto p9 = kota::GlobPattern::create("{*,foo}");
     EXPECT_TRUE(p9.has_value());
-    EXPECT_TRUE(p9->is_trivial_match_all());
+    EXPECT_FALSE(p9->is_trivial_match_all());
 
     auto p10 = kota::GlobPattern::create("{foo,**}");
     EXPECT_TRUE(p10.has_value());
@@ -694,11 +710,11 @@ TEST_CASE(single_star) {
     EXPECT_TRUE(pat1.match("foo"));
     EXPECT_TRUE(pat1.match("bar.txt"));
     EXPECT_TRUE(pat1.match("a"));
-    // In this implementation, standalone * is is_trivial_match_all and matches across segments
-    EXPECT_TRUE(pat1.match("foo/bar"));
-    EXPECT_TRUE(pat1.match("/foo"));
+    // Like VS Code, a standalone single star is segment-bounded.
+    EXPECT_FALSE(pat1.match("foo/bar"));
+    EXPECT_FALSE(pat1.match("/foo"));
 
-    // * in a segment (was rejected by old SubGlobPattern bug)
+    // * in a segment
     PATDEF(pat2, "*/b")
     EXPECT_TRUE(pat2.match("a/b"));
     EXPECT_TRUE(pat2.match("foo/b"));
@@ -726,8 +742,7 @@ TEST_CASE(star_stays_in_segment) {
     EXPECT_FALSE(pat2.match("a/.cc"));
     EXPECT_FALSE(pat2.match("a/b.cc"));
 
-    // A terminal star is still bounded by its segment; only a whole
-    // pattern of exactly `*` matches across `/`.
+    // A terminal single star is bounded by its segment.
     PATDEF(pat3, "a*")
     EXPECT_TRUE(pat3.match("abc"));
     EXPECT_FALSE(pat3.match("abc/"));
@@ -892,12 +907,11 @@ TEST_CASE(trailing_slash) {
 }
 
 TEST_CASE(boundary_edge_cases) {
-    // [^]] — in this implementation, ] immediately after ^ closes the bracket
-    // because ^ is not ], so the ]-as-first-char rule doesn't apply.
-    // The result is [^] (all non-/ chars) followed by literal ].
+    // A leading ] is a literal member even after the negation operator.
     PATDEF(pat1, "[^]]")
-    EXPECT_TRUE(pat1.match("a]"));
-    EXPECT_TRUE(pat1.match("0]"));
+    EXPECT_TRUE(pat1.match("a"));
+    EXPECT_TRUE(pat1.match("0"));
+    EXPECT_FALSE(pat1.match("a]"));
     EXPECT_FALSE(pat1.match("]"));
     EXPECT_FALSE(pat1.match("/]"));
 
@@ -908,7 +922,7 @@ TEST_CASE(boundary_edge_cases) {
 
     // {a\,b,c} — escaped comma treated as literal inside brace
     // The brace parser sees \ and skips next char, so {a\,b,c} has terms: "a\,b" and "c"
-    // SubGlobPattern::create then sees "a\,b" and treats \, as escaped comma
+    // The arm parser then sees "a\,b" and treats \, as escaped comma
     PATDEF(pat3, R"({a\,b,c})")
     EXPECT_TRUE(pat3.match("a,b"));
     EXPECT_TRUE(pat3.match("c"));
@@ -1240,7 +1254,7 @@ TEST_CASE(star_atom_alignment) {
     EXPECT_FALSE(pat1.match("中X"));
     EXPECT_TRUE(pat1.match("中aX"));
 
-    PATDEF(pat2, "**?[!X]X")
+    PATDEF(pat2, "**/*?[!X]X")
     EXPECT_FALSE(pat2.match("/中X"));
     EXPECT_TRUE(pat2.match("/中aX"));
 
@@ -1327,14 +1341,18 @@ TEST_CASE(empty_class) {
     PATDEF(pat1, "[]]")
     EXPECT_TRUE(pat1.match("]"));
 
-    // A negated empty class covers everything but the separator.
-    PATDEF(pat2, "[!]")
-    EXPECT_TRUE(pat2.match("a"));
-    EXPECT_FALSE(pat2.match("/"));
+    EXPECT_FALSE(kota::GlobPattern::create("[!]").has_value());
+    EXPECT_FALSE(kota::GlobPattern::create("[^]").has_value());
 
     PATDEF(pat3, "[!]]")
-    EXPECT_TRUE(pat3.match("a]"));
-    EXPECT_FALSE(pat3.match("a"));
+    EXPECT_FALSE(pat3.match("a]"));
+    EXPECT_TRUE(pat3.match("a"));
+    EXPECT_FALSE(pat3.match("]"));
+
+    PATDEF(pat4, "{[!]],[]]}")
+    EXPECT_TRUE(pat4.match("a"));
+    EXPECT_TRUE(pat4.match("]"));
+    EXPECT_FALSE(pat4.match("/"));
 }
 
 TEST_CASE(bracket_lookup) {
@@ -1360,9 +1378,9 @@ TEST_CASE(bracket_lookup) {
     EXPECT_FALSE(pat4.match("A"));
 }
 
-TEST_CASE(backtrack_budget_atoms) {
-    // The retry budget counts atoms, not bytes: exactly max_backtrack
-    // retries are needed to walk the star past N four-byte emojis.
+TEST_CASE(unbounded_unicode_retries) {
+    // Crossing the old retry threshold must not turn a true match into false.
+    // The general class plan and direct suffix plan have the same semantics.
     auto rocket_input = [](size_t count) {
         std::string input;
         input.reserve(count * 4 + 1);
@@ -1373,10 +1391,457 @@ TEST_CASE(backtrack_budget_atoms) {
         return input;
     };
 
-    PATDEF(pat1, "*Z")
+    PATDEF(pat1, "*[Z]")
     EXPECT_TRUE(pat1.match(rocket_input(65535)));
     EXPECT_TRUE(pat1.match(rocket_input(65536)));
-    EXPECT_FALSE(pat1.match(rocket_input(65537)));
+    EXPECT_TRUE(pat1.match(rocket_input(65537)));
+
+    PATDEF(pat2, "*Z")
+    EXPECT_TRUE(pat2.match(rocket_input(65537)));
+}
+
+TEST_CASE(vscode_star_semantics) {
+    PATDEF(single, "*")
+    EXPECT_TRUE(single.match(""));
+    EXPECT_FALSE(single.match("/"));
+    EXPECT_FALSE(single.match("x/y"));
+
+    for(std::string_view source: {"**.cpp", "a**b"}) {
+        PATDEF(pattern, source)
+        EXPECT_FALSE(pattern.match("a/x/b.cpp"));
+        EXPECT_FALSE(pattern.match("a/x/b"));
+    }
+    PATDEF(embedded, "a**")
+    EXPECT_TRUE(embedded.match("a"));
+    EXPECT_TRUE(embedded.match("abc"));
+    EXPECT_FALSE(embedded.match("a/b"));
+    PATDEF(embedded_slash, "a**/")
+    EXPECT_FALSE(embedded_slash.match("a"));
+    EXPECT_TRUE(embedded_slash.match("abc/"));
+    EXPECT_FALSE(embedded_slash.match("a/b/"));
+}
+
+TEST_CASE(compiled_string_predicates) {
+    PATDEF(suffix, "**/*说明.cpp")
+    EXPECT_TRUE(suffix.match("文档/说明.cpp"));
+    EXPECT_FALSE(suffix.match("文档/说明.cpp/"));
+    PATDEF(segment, "foo**.cpp")
+    EXPECT_TRUE(segment.match("foo.cpp"));
+    EXPECT_FALSE(segment.match("foo/x.cpp"));
+    PATDEF(path, "**/中/文")
+    EXPECT_TRUE(path.match("x/中/文"));
+    EXPECT_FALSE(path.match("x中/文"));
+    PATDEF(tree, "**/中/文/**")
+    EXPECT_TRUE(tree.match("中/文"));
+    EXPECT_TRUE(tree.match("x/中/文/y"));
+    EXPECT_TRUE(tree.match("x中/文z/中/文/y"));
+    EXPECT_FALSE(tree.match("x中/文/y"));
+    EXPECT_FALSE(tree.match("中/文字/y"));
+    PATDEF(escaped, R"(**/\*.cpp)")
+    EXPECT_TRUE(escaped.match("x/*.cpp"));
+    EXPECT_FALSE(escaped.match("x/a.cpp"));
+    PATDEF(leading_slash, "/**/*.cpp")
+    EXPECT_TRUE(leading_slash.match("/x/a.cpp"));
+    EXPECT_FALSE(leading_slash.match("x/a.cpp"));
+    PATDEF(basename_class, "src/**/test[0-9].cpp")
+    EXPECT_TRUE(basename_class.match("src/a/b/test1.cpp"));
+    EXPECT_FALSE(basename_class.match("src/test1.cpp/child"));
+    EXPECT_FALSE(basename_class.match("src/a/test10.cpp"));
+    EXPECT_FALSE(basename_class.match("other/test1.cpp"));
+}
+
+TEST_CASE(packed_suffix_boundaries) {
+    std::vector<std::string> literals = {"", "说明.cpp", "🚀", std::string("\0z", 2)};
+    for(size_t length: {1, 7, 8, 9, 15, 16, 17, 24}) {
+        literals.emplace_back(length, 'x');
+    }
+    for(const auto& literal: literals) {
+        PATDEF(recursive, "**/*" + literal)
+        PATDEF(segment, "*" + literal)
+        auto copied = recursive;
+        for(size_t padding = 0; padding < 25; ++padding) {
+            for(const auto& text: {std::string(padding, 'q'),
+                                   std::string(padding, 'q') + literal,
+                                   "/" + std::string(padding, 'q') + literal,
+                                   std::string(padding, 'q') + literal + 'q'}) {
+                // An exact allocation gives ASan redzones immediately before
+                // and after the view, including inputs shorter than a word.
+                auto storage = std::make_unique<char[]>(text.size());
+                std::copy(text.begin(), text.end(), storage.get());
+                std::string_view view(storage.get(), text.size());
+                EXPECT_EQ(recursive.match(view), view.ends_with(literal));
+                EXPECT_EQ(copied.match(view), view.ends_with(literal));
+                EXPECT_EQ(segment.match(view), view.ends_with(literal) && !view.contains('/'));
+            }
+        }
+    }
+}
+
+TEST_CASE(extension_set_boundaries) {
+    for(size_t count: {15, 16, 17, 50, 100}) {
+        std::vector<std::string> extensions = {".", ".中", ".🚀", ".abcdefg"};
+        while(extensions.size() < count) {
+            extensions.push_back(std::format(".e{}", extensions.size()));
+        }
+        auto check = [&] {
+            std::string source = "**/*.{";
+            for(size_t i = 0; i < extensions.size(); ++i) {
+                if(i != 0)
+                    source += ',';
+                source += extensions[i].substr(1);
+            }
+            source += '}';
+            PATDEF(pattern, source)
+            auto moved = std::move(pattern);
+            for(const auto& extension: extensions) {
+                for(const auto& path: {extension,
+                                       "file" + extension,
+                                       "路径/file" + extension,
+                                       "dir" + extension + "/file",
+                                       "file" + extension + 'q'}) {
+                    bool expected = std::ranges::any_of(extensions, [&](const auto& suffix) {
+                        return path.ends_with(suffix);
+                    });
+                    EXPECT_EQ(moved.match(path), expected);
+                }
+            }
+            EXPECT_FALSE(moved.match("no_extension"));
+        };
+        check();
+        // These must select the general suffix set rather than treating the
+        // last dot as the only possible extension boundary.
+        extensions.back() = ".d.ts";
+        check();
+        extensions.back() = ".abcdefgh";
+        check();
+    }
+}
+
+TEST_CASE(redundant_star_backtracking) {
+    // The first candidate matches through 'b' but fails at /x. Retrying
+    // every distribution among the single stars used to exhaust the
+    // budget before the globstar could reach the second candidate.
+    PATDEF(pat1, "**/*a*a*a*ab/x")
+    EXPECT_TRUE(pat1.match(std::string(32, 'a') + "b/y/aaaab/x"));
+    EXPECT_FALSE(pat1.match(std::string(32, 'a') + "b/y/aaaab/y"));
+
+    // Dropping a star must preserve the bracket index of the newer state,
+    // and Unicode characters must still be consumed as whole atoms.
+    PATDEF(pat2, "**/*[中]*?*[中]*[中]b/x")
+    std::string prefix;
+    for(size_t i = 0; i < 32; i += 1) {
+        prefix += "中";
+    }
+    EXPECT_TRUE(pat2.match(prefix + "b/y/中中中中b/x"));
+    EXPECT_FALSE(pat2.match(prefix + "b/y/中中中b/x"));
+
+    PATDEF(pat3, "**/*a*a/**/b/x")
+    EXPECT_TRUE(pat3.match("aaaa/other/b/x"));
+    EXPECT_FALSE(pat3.match("aaaa/other/b/y"));
+}
+
+TEST_CASE(globstar_boundary_retries) {
+    // Directory length must not spend one retry per character when the
+    // next pattern segment can only start after a separator.
+    auto long_directory = std::string(70000, 'a');
+    PATDEF(pat1, "**/目标.cpp")
+    EXPECT_TRUE(pat1.match(long_directory + "/目标.cpp"));
+    EXPECT_FALSE(pat1.match(long_directory + "目标.cpp"));
+
+    PATDEF(pat2, "源**/?.cpp")
+    EXPECT_TRUE(pat2.match("源" + long_directory + "/中.cpp"));
+    EXPECT_FALSE(pat2.match("源中.cpp"));
+    EXPECT_FALSE(pat2.match("源" + long_directory + "/中文.cpp"));
+
+    PATDEF(pat3, "**/[!a].cpp")
+    EXPECT_TRUE(pat3.match(std::string("\xFF\x80/\xFE.cpp")));
+    EXPECT_FALSE(pat3.match(std::string("\xFF\x80\xFE.cpp")));
+
+    PATDEF(pat4, "**/a/")
+    EXPECT_TRUE(pat4.match("a/a/"));
+    EXPECT_FALSE(pat4.match("a/a/x"));
+}
+
+TEST_CASE(completed_segment_retries) {
+    // A final star fixes the segment endpoint. Redistributing earlier stars
+    // in already matched segments used to exhaust the budget before **
+    // could reach the valid suffix.
+    PATDEF(pat1, "**/*a*/*a*/*a*/c")
+    auto segment = std::string(48, 'a') + '/';
+    EXPECT_TRUE(pat1.match(segment + segment + segment + "y/a/a/a/c"));
+    EXPECT_FALSE(pat1.match(segment + segment + segment + "y/a/a/a/d"));
+
+    PATDEF(pat2, "**/*a*/b")
+    EXPECT_TRUE(pat2.match(std::string(70000, 'a') + "/c/a/b"));
+    EXPECT_FALSE(pat2.match(std::string(70000, 'a') + "/c/a/c"));
+
+    PATDEF(pat3, "**/[中]*[文]*/[🚀]*/目标")
+    EXPECT_TRUE(pat3.match("中文/🚀/错/中文/🚀/目标"));
+    EXPECT_FALSE(pat3.match("中文/🚀/错/中文/x/目标"));
+}
+
+TEST_CASE(latest_globstar_checkpoint) {
+    PATDEF(pat1, "**/a/**/b/**/c")
+    EXPECT_TRUE(pat1.match("a/x/a/b/y/b/c"));
+    EXPECT_FALSE(pat1.match("a/x/a/b/y/b/d"));
+
+    PATDEF(pat2, "**/[中]*[文]/**/[🚀]/目标")
+    EXPECT_TRUE(pat2.match("中文/中x文/🚀/错/🚀/目标"));
+    EXPECT_FALSE(pat2.match("中文/中x文/🚀/错/x/目标"));
+
+    // More checkpoints than the old stack's inline capacity, including a
+    // deep copy of the compiled pattern. The new matcher has no stack.
+    std::string source;
+    std::string input;
+    for(size_t i = 0; i < 24; i += 1) {
+        source += "**/a/";
+        input += "x/a/";
+    }
+    source += "目标";
+    PATDEF(pat3, source)
+    auto copy = pat3;
+    EXPECT_TRUE(copy.match(input + "目标"));
+    EXPECT_FALSE(copy.match(input + "错"));
+}
+
+TEST_CASE(globstar_single_star_handover) {
+    PATDEF(pat1, "**/a*b")
+    EXPECT_TRUE(pat1.match(std::string(1000, 'a') + "/ab"));
+    EXPECT_FALSE(pat1.match(std::string(1000, 'a') + "/ac"));
+
+    PATDEF(pat2, "**/中*?b")
+    std::string prefix;
+    for(size_t i = 0; i < 1000; i += 1) {
+        prefix += "中";
+    }
+    EXPECT_TRUE(pat2.match(prefix + "/中🚀b"));
+    EXPECT_FALSE(pat2.match(prefix + "/中b"));
+
+    // A pattern separator between the checkpoints prevents skipping: the
+    // second 'a' must be reconsidered as the start of the whole suffix.
+    PATDEF(pat3, "**/a/*b/c")
+    EXPECT_TRUE(pat3.match("a/a/b/c"));
+
+    PATDEF(pat4, "**/[a/]*b")
+    EXPECT_TRUE(pat4.match("aaaa/ac/ab"));
+    EXPECT_FALSE(pat4.match("aaaa/ac/ac"));
+}
+
+TEST_CASE(separator_token_boundaries) {
+    // Slashes inside a character class must never be mistaken for pattern
+    // separators when deriving boundaries directly from the pattern bytes.
+    PATDEF(pat1, "**/[a/]b/目标")
+    EXPECT_TRUE(pat1.match("x/ab/目标"));
+    EXPECT_FALSE(pat1.match("x//b/目标"));
+
+    PATDEF(pat2, R"(**/[\/]*/目标)")
+    EXPECT_FALSE(pat2.match("x//目标"));
+
+    PATDEF(pat3, R"(**/\\/目标)")
+    EXPECT_TRUE(pat3.match("x/\\/目标"));
+    EXPECT_FALSE(pat3.match("x/目标"));
+
+    PATDEF(pat4, "**/{中,文}/")
+    EXPECT_TRUE(pat4.match("x/中/文/"));
+    EXPECT_FALSE(pat4.match("x/中/文"));
+}
+
+TEST_CASE(generated_segment_reference) {
+    // Independent dynamic programming over generated tokens/atoms: no
+    // production parser, decoder, prefix extraction or backtracking is
+    // used by the oracle. This covers normalized paths, with whole-segment
+    // globstars; separate examples pin the extended glob syntax.
+    struct Token {
+        std::string_view text;
+        unsigned mask;
+        bool star = false;
+    };
+
+    constexpr std::array<std::string_view, 5> atoms = {"a", "b", "中", "🚀", "\xFF"};
+    constexpr std::array<Token, 9> tokens = {
+        {{"a", 1},
+         {"b", 2},
+         {"中", 4},
+         {"🚀", 8},
+         {"?", 31},
+         {"[ab]", 3},
+         {"[!中]", 27},
+         {R"(\中)", 4},
+         {"*", 31, true}}
+    };
+
+    struct Segment {
+        bool globstar;
+        std::vector<size_t> members;
+    };
+
+    auto segment_match = [&](const Segment& segment, const std::vector<size_t>& word) {
+        std::vector<bool> previous(word.size() + 1);
+        previous[0] = true;
+        for(auto member: segment.members) {
+            const auto& token = tokens[member];
+            std::vector<bool> next(word.size() + 1);
+            next[0] = token.star && previous[0];
+            for(size_t j = 1; j <= word.size(); j += 1) {
+                next[j] = token.star ? previous[j] || next[j - 1]
+                                     : previous[j - 1] && (token.mask & (1u << word[j - 1]));
+            }
+            previous = std::move(next);
+        }
+        return bool(previous.back());
+    };
+
+    std::mt19937 random(205);
+    for(size_t trial = 0; trial < 4000; trial += 1) {
+        std::vector<Segment> segments;
+        std::string source;
+        size_t segment_count = 1 + random() % 5;
+        for(size_t i = 0; i < segment_count; i += 1) {
+            if(i != 0) {
+                source += '/';
+            }
+            auto& segment = segments.emplace_back(random() % 4 == 0, std::vector<size_t>{});
+            if(segment.globstar) {
+                source += "**";
+                continue;
+            }
+            size_t count = 1 + random() % 5;
+            for(size_t j = 0; j < count; j += 1) {
+                auto member = random() % tokens.size();
+                // Adjacent single stars would spell a different operator.
+                if(!segment.members.empty() && tokens[segment.members.back()].star &&
+                   tokens[member].star) {
+                    member = 0;
+                }
+                segment.members.push_back(member);
+                source += tokens[member].text;
+            }
+        }
+        PATDEF(pattern, source)
+        for(size_t sample = 0; sample < 16; sample += 1) {
+            std::vector<std::vector<size_t>> words(1 + random() % 5);
+            std::string input;
+            for(auto& word: words) {
+                if(!input.empty()) {
+                    input += '/';
+                }
+                size_t count = 1 + random() % 6;
+                for(size_t j = 0; j < count; j += 1) {
+                    auto atom = random() % atoms.size();
+                    word.push_back(atom);
+                    input += atoms[atom];
+                }
+            }
+            std::vector<bool> previous(words.size() + 1);
+            previous[0] = true;
+            for(const auto& segment: segments) {
+                std::vector<bool> next(words.size() + 1);
+                next[0] = segment.globstar && previous[0];
+                for(size_t j = 1; j <= words.size(); j += 1) {
+                    next[j] = segment.globstar
+                                  ? previous[j] || next[j - 1]
+                                  : previous[j - 1] && segment_match(segment, words[j - 1]);
+                }
+                previous = std::move(next);
+            }
+            bool expected = source == "**" || previous.back();
+            if(auto actual = pattern.match(input); actual != expected) {
+                EXPECT_EQ(std::format("{} / {} -> {}", source, input, actual),
+                          std::format("{} / {} -> {}", source, input, expected));
+                return;
+            }
+        }
+    }
+}
+
+TEST_CASE(compiled_segments_without_retry_cutoff) {
+    for(size_t width: {20, 80}) {
+        for(size_t count: {80, 160}) {
+            std::string source = "**/";
+            for(size_t i = 0; i < 60; ++i) {
+                source += "*a/";
+            }
+            source += "Z";
+            std::string input;
+            for(size_t i = 0; i < count; ++i) {
+                input += std::string(width, 'b') + "a/";
+            }
+            input += 'Z';
+            PATDEF(pattern, source)
+            EXPECT_TRUE(pattern.match(input));
+            input.back() = 'Y';
+            EXPECT_FALSE(pattern.match(input));
+        }
+    }
+    // The segment matcher must not inherit the old per-byte retry cap either.
+    PATDEF(long_segment, "{*a?Z,never}")
+    std::string input(70000, 'b');
+    EXPECT_TRUE(long_segment.match(input + "a中Z"));
+    EXPECT_FALSE(long_segment.match(input + "a中Y"));
+}
+
+TEST_CASE(compiled_segment_literals_and_copy) {
+    PATDEF(pattern, R"(src/*/test_\[中\]*.cpp)")
+    EXPECT_TRUE(pattern.match("src/目录/test_[中]文.cpp"));
+    EXPECT_TRUE(pattern.match("src//test_[中].cpp"));
+    EXPECT_FALSE(pattern.match("src/目录/sub/test_[中].cpp"));
+    EXPECT_FALSE(pattern.match("src/目录/test_中.cpp"));
+    auto copy = pattern;
+    auto moved = std::move(copy);
+    EXPECT_TRUE(moved.match("src/x/test_[中].cpp"));
+    pattern = *GlobPattern::create("other");
+    EXPECT_TRUE(moved.match("src/x/test_[中].cpp"));
+    PATDEF(classes, "src/*/[中a]?*.cpp")
+    EXPECT_TRUE(classes.match(std::string("src/x/a") + '\xff' + ".cpp"));
+    EXPECT_FALSE(classes.match("src/x/a.cpp"));
+}
+
+TEST_CASE(escaped_literal_prefix_plans) {
+    PATDEF(tree, R"(/work/项目\[demo\]/src/**/*.cpp)")
+    EXPECT_TRUE(tree.match("/work/项目[demo]/src/test.cpp"));
+    EXPECT_TRUE(tree.match("/work/项目[demo]/src/目录/test.cpp"));
+    EXPECT_FALSE(tree.match("/work/项目[demo]/srcx/test.cpp"));
+    EXPECT_FALSE(tree.match("/work/项目d/src/test.cpp"));
+    PATDEF(exact, R"(\中\文\*\?\[\{\\)")
+    EXPECT_TRUE(exact.match("中文*?[{\\"));
+    EXPECT_FALSE(exact.match("中文*?[{\\x"));
+    EXPECT_FALSE(GlobPattern::create(R"(a\[//b)").has_value());
+    EXPECT_FALSE(GlobPattern::create(R"(a\[\/b)").has_value());
+    EXPECT_FALSE(GlobPattern::create(R"(a\[b\)").has_value());
+    auto copy = tree;
+    auto moved = std::move(copy);
+    EXPECT_TRUE(moved.match("/work/项目[demo]/src/test.cpp"));
+}
+
+TEST_CASE(affix_and_brace_tree_plans) {
+    PATDEF(affix, "**/foo*foo")
+    EXPECT_FALSE(affix.match("foo"));
+    EXPECT_FALSE(affix.match("foo/foo"));
+    EXPECT_TRUE(affix.match("foofoo"));
+    EXPECT_TRUE(affix.match("目录/foo中文foo"));
+    EXPECT_FALSE(affix.match("目录/foofoo/"));
+    PATDEF(prefix, "**/test_*")
+    EXPECT_TRUE(prefix.match("目录/test_"));
+    EXPECT_FALSE(prefix.match("目录/test_/child"));
+    PATDEF(arms, "{test_*.cpp,foo**foo}")
+    EXPECT_TRUE(arms.match("test_.cpp"));
+    EXPECT_TRUE(arms.match("foofoo"));
+    EXPECT_FALSE(arms.match("foo/foo"));
+    PATDEF(tree, "{src,include}/**")
+    for(std::string_view input: {"src", "src/", "src/中文.cpp", "include/a/b"}) {
+        EXPECT_TRUE(tree.match(input));
+    }
+    for(std::string_view input: {"", "/src", "srcx/a", "x/include/a"}) {
+        EXPECT_FALSE(tree.match(input));
+    }
+    PATDEF(root, "{,src}/**")
+    EXPECT_TRUE(root.match(""));
+    EXPECT_TRUE(root.match("/foo"));
+    EXPECT_FALSE(root.match("foo"));
+    std::string source("**/中*\0文", 11);
+    PATDEF(binary, source)
+    EXPECT_TRUE(binary.match(std::string("中\0文", 7)));
+    EXPECT_FALSE(binary.match("中文"));
 }
 
 // The wildcard and range cases below are ported from rust-lang/glob's

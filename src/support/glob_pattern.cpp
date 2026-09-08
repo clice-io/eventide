@@ -1,10 +1,13 @@
 #include "kota/support/glob_pattern.h"
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <format>
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <utility>
 
 #include "kota/support/expected_try.h"
@@ -24,8 +27,8 @@ struct Utf8Atom {
 
 constexpr char32_t invalid_atom_base = 0x110000;
 
-Utf8Atom decode_utf8_atom(const char* it, const char* end) {
-    const auto lead = static_cast<std::uint8_t>(*it);
+Utf8Atom decode_utf8_atom(std::string_view s, size_t at) {
+    const auto lead = static_cast<std::uint8_t>(s[at]);
     if(lead < 0x80) [[likely]] {
         return {lead, 1};
     }
@@ -47,11 +50,11 @@ Utf8Atom decode_utf8_atom(const char* it, const char* end) {
         return invalid;
     }
 
-    if(end - it < static_cast<std::ptrdiff_t>(len)) {
+    if(s.size() - at < len) {
         return invalid;
     }
     for(std::uint32_t k = 1; k < len; ++k) {
-        const auto cont = static_cast<std::uint8_t>(it[k]);
+        const auto cont = static_cast<std::uint8_t>(s[at + k]);
         if((cont & 0xC0) != 0x80) {
             return invalid;
         }
@@ -69,42 +72,64 @@ Utf8Atom decode_utf8_atom(const char* it, const char* end) {
 
 /// Byte offset of the first ill-formed UTF-8 subsequence, or nullopt.
 std::optional<std::uint32_t> find_invalid_utf8(std::string_view s) {
-    const char* it = s.data();
-    const char* const end = it + s.size();
-    while(it != end) {
-        const auto atom = decode_utf8_atom(it, end);
+    for(size_t at = 0; at != s.size();) {
+        const auto atom = decode_utf8_atom(s, at);
         if(atom.cp >= invalid_atom_base) {
-            return static_cast<std::uint32_t>(it - s.data());
+            return static_cast<std::uint32_t>(at);
         }
-        it += atom.len;
+        at += atom.len;
     }
     return std::nullopt;
+}
+
+/// Index of the `]` closing the bracket expression opened at `open`. A
+/// leading `]`, right after the optional negation, is a member.
+std::expected<std::uint32_t, GlobError> scan_bracket(std::string_view s, std::uint32_t open) {
+    const auto e = static_cast<std::uint32_t>(s.size());
+    auto unmatched = [&] {
+        return std::unexpected{
+            GlobError{GlobError::UnmatchedBracket, open, open + 1, "unmatched `[`"}
+        };
+    };
+    auto j = open + 1;
+    if(j == e) [[unlikely]] {
+        return unmatched();
+    }
+    if(s[j] == '!' || s[j] == '^') {
+        ++j;
+    }
+    if(j != e && s[j] == ']') {
+        ++j;
+    }
+    while(j != e && s[j] != ']') {
+        if(s[j] == '\\' && ++j == e) [[unlikely]] {
+            return std::unexpected{
+                GlobError{GlobError::StrayBackslash,
+                          j - 1,
+                          j, "unmatched `[` with stray `\\` inside"}
+            };
+        }
+        ++j;
+    }
+    if(j == e) [[unlikely]] {
+        return unmatched();
+    }
+    return j;
 }
 
 using CharClassRanges = small_vector<std::pair<char32_t, char32_t>, 2>;
 
 std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view s) {
     CharClassRanges ranges;
-    const char* it = s.data();
-    const char* const end = it + s.size();
-    auto offset = [&](const char* q) {
-        return static_cast<std::uint32_t>(q - s.data());
-    };
+    size_t it = 0;
 
-    // Decode one class member, resolving a leading `\` escape.
-    auto next_member = [&]() -> std::expected<char32_t, GlobError> {
-        if(*it == '\\') {
-            auto backslash_pos = offset(it);
+    // Decode one class member, resolving a leading `\` escape; the bracket
+    // scan already rejected an escape with nothing after it.
+    auto next_member = [&] {
+        if(s[it] == '\\') {
             ++it;
-            if(it == end) [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::StrayBackslash,
-                              backslash_pos, backslash_pos + 1,
-                              "stray `\\`"}
-                };
-            }
         }
-        const auto atom = decode_utf8_atom(it, end);
+        const auto atom = decode_utf8_atom(s, it);
         it += atom.len;
         return atom.cp;
     };
@@ -116,14 +141,14 @@ std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view
     std::optional<char32_t> pending;
     std::uint32_t pending_begin = 0;
 
-    while(it != end) {
-        if(*it == '-' && pending.has_value() && it + 1 != end) {
+    while(it != s.size()) {
+        if(s[it] == '-' && pending.has_value() && it + 1 != s.size()) {
             ++it;
-            KOTA_EXPECTED_TRY_V(auto hi, next_member());
+            auto hi = next_member();
             if(*pending > hi) [[unlikely]] {
                 return std::unexpected{
                     GlobError{GlobError::InvalidRange,
-                              pending_begin, offset(it),
+                              pending_begin, static_cast<std::uint32_t>(it),
                               std::format("`U+{:04X}` is larger than `U+{:04X}`",
                               static_cast<std::uint32_t>(*pending),
                               static_cast<std::uint32_t>(hi))}
@@ -134,8 +159,8 @@ std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view
             continue;
         }
 
-        auto member_begin = offset(it);
-        KOTA_EXPECTED_TRY_V(auto cp, next_member());
+        auto member_begin = static_cast<std::uint32_t>(it);
+        auto cp = next_member();
         if(pending.has_value()) {
             ranges.push_back({*pending, *pending});
         }
@@ -147,8 +172,7 @@ std::expected<CharClassRanges, GlobError> parse_bracket_charset(std::string_view
     }
 
     // Sort and coalesce so lookup can binary-search and the per-test cost
-    // is bounded by the distinct span count, not the written member count
-    // (the backtrack cap counts retries, not range comparisons).
+    // is bounded by the distinct span count, not the written member count.
     std::ranges::sort(ranges);
     CharClassRanges merged;
     for(auto range: ranges) {
@@ -182,39 +206,7 @@ std::expected<small_vector<std::string, 1>, GlobError>
     std::uint32_t term_begin = 0;
     for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(s.size()); i != e; ++i) {
         if(s[i] == '[') {
-            auto bracket_pos = i;
-            ++i;
-            if(i == e) [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::UnmatchedBracket,
-                              bracket_pos, bracket_pos + 1,
-                              "unmatched `[`"}
-                };
-            }
-            if(s[i] == ']') {
-                ++i;
-            }
-            while(i != e && s[i] != ']') {
-                if(s[i] == '\\') {
-                    auto backslash_pos = i;
-                    ++i;
-                    if(i == e) [[unlikely]] {
-                        return std::unexpected{
-                            GlobError{GlobError::StrayBackslash,
-                                      backslash_pos, backslash_pos + 1,
-                                      "unmatched `[` with stray `\\` inside"}
-                        };
-                    }
-                }
-                ++i;
-            }
-            if(i == e) [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::UnmatchedBracket,
-                              bracket_pos, bracket_pos + 1,
-                              "unmatched `[`"}
-                };
-            }
+            KOTA_EXPECTED_TRY_V(i, scan_bracket(s, i));
         } else if(s[i] == '{') {
             if(current_be) [[unlikely]] {
                 return std::unexpected{
@@ -297,10 +289,37 @@ std::expected<small_vector<std::string, 1>, GlobError>
     return subpatterns;
 }
 
+std::string_view basename(std::string_view path) {
+    auto slash = path.find_last_of('/');
+    return slash == std::string_view::npos ? path : path.substr(slash + 1);
+}
+
+/// First segment start at or after `from` whose segment begins with
+/// `first` and, when `text` is given, equals it as a whole; `first` is then
+/// the first byte of `text`. Jumps between candidates with memchr.
+size_t find_segment(std::string_view str, size_t from, char first, std::string_view text) {
+    for(auto at = str.find(first, from); at != std::string_view::npos;
+        at = str.find(first, at + 1)) {
+        auto end = at + text.size();
+        if(end > str.size()) {
+            break;
+        }
+        if((at == 0 || str[at - 1] == '/') &&
+           (text.empty() ||
+            ((end == str.size() || str[end] == '/') && str.compare(at, text.size(), text) == 0))) {
+            return at;
+        }
+    }
+    return std::string_view::npos;
+}
+
 }  // namespace
 
 std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
                                                           size_t max_subpattern_num) {
+    // Offsets into the pattern, its literals and its tokens are 32-bit.
+    assert(s.size() <= std::numeric_limits<std::uint32_t>::max());
+
     // Validate the whole pattern before any processing. Prefix extraction
     // and brace expansion only cut at ASCII bytes, so every derived
     // sub-pattern of a valid string is itself valid — matching can then
@@ -313,177 +332,328 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
 
     GlobPattern pat;
     size_t prefix_size = s.find_first_of("?*[{\\");
-    auto check_consecutive_slashes = [](std::string_view str) -> std::optional<std::uint32_t> {
-        bool prev_was_slash = false;
-        for(std::uint32_t i = 0, e = static_cast<std::uint32_t>(str.size()); i < e; ++i) {
-            if(str[i] == '/') {
-                if(prev_was_slash) {
-                    return i;
-                }
-                prev_was_slash = true;
-            } else {
-                prev_was_slash = false;
-            }
-        }
-        return std::nullopt;
-    };
-
     if(prefix_size == std::string_view::npos) {
-        pat.prefix = std::string(s);
-        if(auto pos = check_consecutive_slashes(pat.prefix)) [[unlikely]] {
+        prefix_size = s.size();
+    }
+    pat.prefix.assign(s.substr(0, prefix_size));
+    if(prefix_size < s.size() && s[prefix_size] == '\\') {
+        // Escapes name literal characters, not a dynamic pattern. Decode the
+        // literal prefix once, retaining raw offsets for validation/errors.
+        size_t i = prefix_size;
+        while(i < s.size()) {
+            if(s[i] == '\\') {
+                auto backslash = i++;
+                if(i == s.size()) {
+                    return std::unexpected{
+                        GlobError{GlobError::StrayBackslash,
+                                  static_cast<std::uint32_t>(backslash),
+                                  static_cast<std::uint32_t>(i),
+                                  "stray `\\`"}
+                    };
+                }
+                if(s[i] == '/') {
+                    return std::unexpected{
+                        GlobError{GlobError::InvalidEscape,
+                                  static_cast<std::uint32_t>(backslash),
+                                  static_cast<std::uint32_t>(i + 1),
+                                  "`/` cannot be escaped"}
+                    };
+                }
+            } else if(std::string_view("?*[{").contains(s[i])) {
+                break;
+            }
+            pat.prefix += s[i++];
+        }
+        prefix_size = i;
+    }
+    for(size_t i = 1; i < prefix_size; ++i) {
+        if(s[i] == '/' && s[i - 1] == '/') [[unlikely]] {
             return std::unexpected{
                 GlobError{GlobError::MultipleSlash,
-                          *pos - 1,
-                          *pos + 1,
+                          static_cast<std::uint32_t>(i - 1),
+                          static_cast<std::uint32_t>(i + 1),
                           "multiple `/` is not allowed"}
             };
         }
+    }
+    if(prefix_size == s.size()) {
         return pat;
     }
-    if(auto pos = check_consecutive_slashes(s.substr(0, prefix_size))) [[unlikely]] {
-        return std::unexpected{
-            GlobError{GlobError::MultipleSlash, *pos - 1, *pos + 1, "multiple `/` is not allowed"}
-        };
-    }
-    if(prefix_size != 0 && s[prefix_size - 1] == '/') {
+    if(!pat.prefix.empty() && pat.prefix.back() == '/') {
         pat.prefix_at_seg_end = true;
-        --prefix_size;
+        pat.prefix.pop_back();
     }
-    pat.prefix = std::string(s.substr(0, prefix_size));
-    s = s.substr(pat.prefix_at_seg_end ? prefix_size + 1 : prefix_size);
+    s = s.substr(prefix_size);
 
     KOTA_EXPECTED_TRY_V(auto sub_pats, glob_parse_brace_expansions(s, max_subpattern_num));
+    // Every alternative adds at most its own size in literal bytes and
+    // tokens, and one more segment; the pools index with 32 bits too.
+    assert(sub_pats.size() * (s.size() + 1) <= std::numeric_limits<std::uint32_t>::max());
 
+    const bool root = pat.prefix.empty() && !pat.prefix_at_seg_end;
+    const bool at_segment_start = pat.prefix.empty() || pat.prefix_at_seg_end;
+    bool match_all = false;
     for(auto& sub_pat: sub_pats) {
-        KOTA_EXPECTED_TRY_V(auto res, SubGlobPattern::create(sub_pat));
-        pat.sub_globs.push_back(std::move(res));
+        // Expansion is textual: an arm starting with `/` right after the
+        // prefix's separator spells `//`, which neither scan sees.
+        if(pat.prefix_at_seg_end && sub_pat.starts_with('/')) [[unlikely]] {
+            return std::unexpected{
+                GlobError{GlobError::MultipleSlash,
+                          static_cast<std::uint32_t>(prefix_size - 1),
+                          static_cast<std::uint32_t>(prefix_size + 1),
+                          "multiple `/` is not allowed"}
+            };
+        }
+        KOTA_EXPECTED_TRY(pat.compile_arm(sub_pat, at_segment_start));
+        match_all |= root && (sub_pat == "**" || sub_pat == "**/");
     }
 
-    return pat;
-}
-
-std::expected<GlobPattern::SubGlobPattern, GlobError>
-    GlobPattern::SubGlobPattern::create(std::string_view s) {
-    SubGlobPattern pat;
-    small_vector<GlobSegment, 6> glob_segments;
-    GlobSegment* current_gs = &glob_segments.emplace_back();
-    current_gs->start = 0;
-    pat.pat.assign(s);
-
-    std::uint32_t e = static_cast<std::uint32_t>(s.size());
-
-    auto parse_bracket = [&](std::uint32_t i) -> std::expected<std::uint32_t, GlobError> {
-        auto bracket_pos = i - 1;
-        std::uint32_t j = i;
-        if(j == e) [[unlikely]] {
-            return std::unexpected{
-                GlobError{GlobError::UnmatchedBracket,
-                          bracket_pos, bracket_pos + 1,
-                          "unmatched `[`"}
-            };
-        }
-        if(s[j] == ']') {
-            ++j;
-        }
-        while(j != e && s[j] != ']') {
-            ++j;
-            if(s[j - 1] == '\\') {
-                if(j == e) [[unlikely]] {
-                    return std::unexpected{
-                        GlobError{GlobError::StrayBackslash,
-                                  j - 1,
-                                  j, "unmatched `[` with stray `\\` inside"}
-                    };
-                }
-                ++j;
-            }
-        }
-        if(j == e) [[unlikely]] {
-            return std::unexpected{
-                GlobError{GlobError::UnmatchedBracket,
-                          bracket_pos, bracket_pos + 1,
-                          "unmatched `[`"}
-            };
-        }
-
-        std::string_view chars = s.substr(i, j - i);
-        bool invert = s[i] == '^' || s[i] == '!';
-        auto ranges = parse_bracket_charset(invert ? chars.substr(1) : chars);
-        if(!ranges.has_value()) [[unlikely]] {
-            // The class parser reports offsets relative to the class body;
-            // rebase onto this sub-pattern (the negation prefix counts).
-            auto base = i + (invert ? 1 : 0);
-            ranges.error().begin += base;
-            ranges.error().end += base;
-            return std::unexpected{std::move(ranges.error())};
-        }
-        pat.brackets.push_back(Bracket{j + 1, invert, std::move(*ranges)});
-        return j;
+    pat.mode = Mode::Arms;
+    auto all = [&](Arm::Plan plan) {
+        return std::ranges::all_of(pat.arms, [plan](const Arm& arm) { return arm.plan == plan; });
     };
-
-    for(std::uint32_t i = 0; i < e; ++i) {
-        if(!current_gs) {
-            current_gs = &glob_segments.emplace_back();
-            current_gs->start = i;
+    const auto& arm = pat.arms.front();
+    if(match_all) {
+        pat.mode = Mode::Any;
+    } else if(pat.arms.size() == 1 && pat.prefix_at_seg_end && arm.end == arm.begin + 1 &&
+              pat.segments[arm.begin].kind == Segment::Kind::Recursive) {
+        pat.mode = Mode::PrefixTree;
+    } else if(pat.arms.size() == 1 && root && arm.plan == Arm::Plan::Suffix) {
+        pat.mode = Mode::Suffix;
+    } else if(pat.arms.size() == 1 && root && arm.plan == Arm::Plan::PathSuffix) {
+        pat.mode = Mode::PathSuffix;
+    } else if(pat.arms.size() == 1 && root && arm.plan == Arm::Plan::SegmentSuffix) {
+        pat.mode = Mode::SegmentSuffix;
+    } else if(all(Arm::Plan::Suffix)) {
+        pat.mode = Mode::SuffixArms;
+        // A large set of simple extensions benefits from one extension
+        // extraction and integer binary search; small sets are faster inline.
+        if(pat.arms.size() >= 16 && std::ranges::all_of(pat.arms, [&](const Arm& arm) {
+               auto text =
+                   std::string_view(pat.literals).substr(arm.literal.begin, arm.literal.size);
+               return text.size() <= 8 && text.starts_with('.') && !text.substr(1).contains('.');
+           })) {
+            std::ranges::sort(pat.arms, {}, [](const Arm& arm) {
+                return std::pair(arm.literal.size, arm.literal.word);
+            });
+            pat.mode = Mode::ExtensionArms;
         }
-        if(s[i] == '[') {
-            auto result = parse_bracket(i + 1);
-            if(!result.has_value()) [[unlikely]] {
-                return std::unexpected{std::move(result.error())};
-            }
-            i = *result;
-        } else if(s[i] == '\\') {
-            auto backslash_pos = i;
-            if(++i == e) [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::StrayBackslash,
-                              backslash_pos, backslash_pos + 1,
-                              "stray `\\`"}
-                };
-            }
-            // An escaped `/` would slip past segment splitting and let
-            // `\/\/` match `//` while a bare `//` is rejected; the
-            // separator is structure, not a matchable character.
-            if(s[i] == '/') [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::InvalidEscape,
-                              backslash_pos, backslash_pos + 2,
-                              "`/` cannot be escaped"}
-                };
-            }
-        } else if(s[i] == '/') {
-            if(i > 0 && s[i - 1] == '/') [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::MultipleSlash,
-                              i - 1,
-                              i + 1,
-                              "multiple `/` is not allowed"}
-                };
-            }
-            current_gs->end = i;
-            current_gs = nullptr;
-        } else if(s[i] == '*') {
-            if(i + 2 < e && s[i + 1] == '*' && s[i + 2] == '*') [[unlikely]] {
-                return std::unexpected{
-                    GlobError{GlobError::MultipleStar, i, i + 3, "multiple `*` is not allowed"}
-                };
-            }
-        }
+    } else if(all(Arm::Plan::SegmentSuffix)) {
+        pat.mode = Mode::SegmentSuffixArms;
     }
 
-    if(current_gs) {
-        current_gs->end = e;
-    }
-
-    pat.glob_segments.assign(std::move(glob_segments));
     return pat;
 }
 
-bool GlobPattern::SubGlobPattern::Bracket::contains(char32_t cp) const {
-    // A bracket never matches the segment separator, negated or not.
-    if(cp == U'/') {
-        return false;
+std::expected<void, GlobError> GlobPattern::compile_arm(std::string_view s, bool at_segment_start) {
+    const auto e = static_cast<std::uint32_t>(s.size());
+    Arm arm;
+    arm.begin = static_cast<std::uint32_t>(segments.size());
+
+    std::uint32_t i = 0;
+    while(true) {
+        const auto raw_begin = i;
+        const auto token_begin = static_cast<std::uint32_t>(tokens.size());
+        auto push_literal = [&](char c) {
+            if(tokens.size() == token_begin || tokens.back().kind != Token::Kind::Literal) {
+                tokens.push_back(
+                    {Token::Kind::Literal, static_cast<std::uint32_t>(literals.size())});
+            }
+            tokens.back().size += 1;
+            literals += c;
+        };
+        while(i != e && s[i] != '/') {
+            switch(s[i]) {
+                case '[': {
+                    KOTA_EXPECTED_TRY_V(auto close, scan_bracket(s, i));
+                    auto body = s.substr(i + 1, close - i - 1);
+                    const bool negated = body[0] == '!' || body[0] == '^';
+                    auto ranges = parse_bracket_charset(negated ? body.substr(1) : body);
+                    if(!ranges.has_value()) [[unlikely]] {
+                        // The class parser reports offsets relative to the
+                        // class body; rebase onto this sub-pattern.
+                        auto base = i + 1 + negated;
+                        ranges.error().begin += base;
+                        ranges.error().end += base;
+                        return std::unexpected{std::move(ranges.error())};
+                    }
+                    tokens.push_back(
+                        {Token::Kind::Class, static_cast<std::uint32_t>(classes.size())});
+                    classes.push_back({negated, std::move(*ranges)});
+                    i = close + 1;
+                    break;
+                }
+                case '*': {
+                    const auto run = i;
+                    while(i != e && s[i] == '*') {
+                        ++i;
+                    }
+                    if(i - run > 2) [[unlikely]] {
+                        return std::unexpected{
+                            GlobError{GlobError::MultipleStar,
+                                      run, run + 3,
+                                      "multiple `*` is not allowed"}
+                        };
+                    }
+                    // Embedded ** has exactly the same operation as *.
+                    if(tokens.size() == token_begin || tokens.back().kind != Token::Kind::Star) {
+                        tokens.push_back({Token::Kind::Star});
+                    }
+                    break;
+                }
+                case '?': {
+                    tokens.push_back({Token::Kind::Any});
+                    ++i;
+                    break;
+                }
+                case '\\': {
+                    if(++i == e) [[unlikely]] {
+                        return std::unexpected{
+                            GlobError{GlobError::StrayBackslash, i - 1, i, "stray `\\`"}
+                        };
+                    }
+                    // An escaped `/` would bypass separator matching and let
+                    // `\/\/` match `//` while a bare `//` is rejected; the
+                    // separator is structure, not a matchable character.
+                    if(s[i] == '/') [[unlikely]] {
+                        return std::unexpected{
+                            GlobError{GlobError::InvalidEscape,
+                                      i - 1,
+                                      i + 1,
+                                      "`/` cannot be escaped"}
+                        };
+                    }
+                    [[fallthrough]];
+                }
+                default: push_literal(s[i++]);
+            }
+        }
+
+        Segment segment;
+        segment.begin = token_begin;
+        segment.end = static_cast<std::uint32_t>(tokens.size());
+        if((raw_begin != 0 || at_segment_start) && s.substr(raw_begin, i - raw_begin) == "**") {
+            segment.kind = Segment::Kind::Recursive;
+            tokens.pop_back();
+            segment.end = segment.begin;
+        } else {
+            // Literal runs merge, so a segment without `?`/classes holds at
+            // most one literal on each side of a star.
+            auto ops = std::span(tokens).subspan(segment.begin, segment.end - segment.begin);
+            auto stars = std::ranges::count(ops, Token::Kind::Star, &Token::kind);
+            bool simple = std::ranges::none_of(ops, [](const Token& op) {
+                return op.kind == Token::Kind::Any || op.kind == Token::Kind::Class;
+            });
+            segment.kind = !simple || stars > 1 ? Segment::Kind::General
+                           : stars == 1         ? Segment::Kind::Affix
+                                                : Segment::Kind::Literal;
+            if(!ops.empty() && ops.front().kind == Token::Kind::Literal) {
+                segment.has_first = true;
+                segment.first = literals[ops.front().begin];
+            }
+        }
+        segments.push_back(segment);
+        if(i == e) {
+            break;
+        }
+        if(i + 1 != e && s[i + 1] == '/') [[unlikely]] {
+            return std::unexpected{
+                GlobError{GlobError::MultipleSlash, i, i + 2, "multiple `/` is not allowed"}
+            };
+        }
+        ++i;
     }
+    arm.end = static_cast<std::uint32_t>(segments.size());
+
+    // A trailing `**/` matches exactly like `**/*`: the separator before the
+    // globstar is required, and then anything goes.
+    if(arm.end - arm.begin >= 2 && segments[arm.end - 2].kind == Segment::Kind::Recursive &&
+       segments.back().kind == Segment::Kind::Literal &&
+       segments.back().begin == segments.back().end) {
+        tokens.push_back({Token::Kind::Star});
+        segments.back().end = static_cast<std::uint32_t>(tokens.size());
+        segments.back().kind = Segment::Kind::Affix;
+    }
+
+    // A recursive segment can absorb the separator before or after it, but
+    // not both. Compute both nullable states backwards once, in linear time.
+    bool following_nullable = true, following_absorbs = false;
+    for(auto index = arm.end; index-- > arm.begin;) {
+        auto& segment = segments[index];
+        const bool last = index + 1 == arm.end;
+        const bool recursive = segment.kind == Segment::Kind::Recursive;
+        segment.optional_rest = last || following_absorbs;
+        if(recursive) {
+            segment.nullable = last || following_nullable;
+        } else {
+            auto ops = std::span(tokens).subspan(segment.begin, segment.end - segment.begin);
+            segment.nullable =
+                segment.optional_rest && std::ranges::all_of(ops, [](const Token& op) {
+                    return op.kind == Token::Kind::Star;
+                });
+        }
+        following_absorbs = recursive && segment.optional_rest;
+        following_nullable = segment.nullable;
+    }
+    arm.absorbs_separator = following_absorbs;
+
+    const auto count = arm.end - arm.begin;
+    const auto& first = segments[arm.begin];
+    const auto& last = segments[arm.end - 1];
+    const bool prefix_tree =
+        count == 2 && first.kind == Segment::Kind::Literal && last.kind == Segment::Kind::Recursive;
+    const bool directory_tree = count == 3 && first.kind == Segment::Kind::Recursive &&
+                                segments[arm.begin + 1].kind == Segment::Kind::Literal &&
+                                last.kind == Segment::Kind::Recursive;
+    arm.basename = count == 2 && first.kind == Segment::Kind::Recursive &&
+                   last.kind != Segment::Kind::Recursive;
+    auto head = [&](const Token& token) {
+        arm.head_begin = token.begin;
+        arm.head_size = token.size;
+    };
+    if(prefix_tree) {
+        arm.plan = Arm::Plan::PrefixTree;
+        if(first.begin != first.end) {
+            head(tokens[first.begin]);
+        }
+    } else if(directory_tree) {
+        // `**//**` is rejected, so the directory literal is never empty.
+        arm.plan = Arm::Plan::DirectoryTree;
+        head(tokens[segments[arm.begin + 1].begin]);
+    } else if(arm.basename || (count == 1 && first.kind != Segment::Kind::Recursive)) {
+        if(last.kind == Segment::Kind::Affix && tokens[last.begin].kind == Token::Kind::Star) {
+            arm.plan = arm.basename ? Arm::Plan::Suffix : Arm::Plan::SegmentSuffix;
+        } else if(last.kind == Segment::Kind::Affix) {
+            arm.plan = Arm::Plan::Affix;
+            head(tokens[last.begin]);
+        } else if(arm.basename && last.kind == Segment::Kind::Literal) {
+            arm.plan = Arm::Plan::PathSuffix;
+        } else {
+            arm.plan = Arm::Plan::Final;
+        }
+    }
+    if(last.kind != Segment::Kind::Recursive && last.begin != last.end &&
+       tokens[last.end - 1].kind == Token::Kind::Literal) {
+        const auto& text = tokens[last.end - 1];
+        arm.literal.begin = text.begin;
+        arm.literal.size = text.size;
+        if(text.size <= 16) {
+            std::array<unsigned char, 16> value{}, mask{};
+            std::memcpy(value.data() + value.size() - text.size,
+                        literals.data() + text.begin,
+                        text.size);
+            std::fill(mask.end() - text.size, mask.end(), 0xff);
+            std::memcpy(&arm.literal.word, value.data() + 8, 8);
+            std::memcpy(&arm.literal.mask, mask.data() + 8, 8);
+            std::memcpy(&arm.literal.lead_word, value.data(), 8);
+            std::memcpy(&arm.literal.lead_mask, mask.data(), 8);
+        }
+    }
+    arms.push_back(arm);
+    return {};
+}
+
+bool GlobPattern::CharClass::contains(char32_t cp) const {
     // Ranges are sorted and disjoint: the candidate range is the first one
     // whose upper bound reaches cp.
     auto it = std::ranges::lower_bound(ranges, cp, {}, &std::pair<char32_t, char32_t>::second);
@@ -491,290 +661,294 @@ bool GlobPattern::SubGlobPattern::Bracket::contains(char32_t cp) const {
     return negated ? !hit : hit;
 }
 
-/// Whether the pattern tail matches the empty input: every star run matches
-/// nothing and every `/` is absorbed by an adjacent globstar, each globstar
-/// absorbing at most one separator: `x*` and `x*/**` accept a bare `x`,
-/// `x*/*` and `x*/**/*` do not. With `leading_separator`, a `/` already
-/// stripped before `tail` must be absorbed by its leading globstar as well.
-static bool glob_tail_matches_empty(std::string_view tail, bool leading_separator) {
-    const char* q = tail.data();
-    const char* const q_end = q + tail.size();
-    size_t run = 0;
-    while(q != q_end && *q == '*') {
-        q += 1;
-        run += 1;
-    }
-    bool used = false;
-    if(leading_separator) {
-        if(run < 2) {
+bool GlobPattern::match_arms(std::string_view str) const {
+    if(!prefix.empty()) {
+        if(!str.starts_with(prefix)) {
             return false;
         }
-        used = true;
+        str.remove_prefix(prefix.size());
     }
-    while(q != q_end) {
-        if(*q != '/') {
-            return false;
-        }
-        q += 1;
-        size_t next = 0;
-        while(q != q_end && *q == '*') {
-            q += 1;
-            next += 1;
-        }
-        if(run >= 2 && !used) {
-            used = false;
-        } else if(next >= 2) {
-            used = true;
-        } else {
-            return false;
-        }
-        run = next;
-    }
-    return true;
-}
-
-bool GlobPattern::match(std::string_view sv) const {
-    if(is_trivial_match_all()) {
-        return true;
-    }
-
-    string_ref str(sv);
-    if(!str.consume_front(prefix)) {
-        return false;
-    }
-
-    if(str.empty() && sub_globs.empty()) {
-        return true;
-    }
-
     if(prefix_at_seg_end) {
         if(str.empty()) {
-            // The `/` after the prefix went unmatched; a sub glob absorbs it
+            // The `/` after the prefix went unmatched; an arm absorbs it
             // only when its whole pattern matches empty behind a separator,
             // exactly as if the prefix had never been split off.
-            return std::ranges::any_of(sub_globs, [](const SubGlobPattern& glob) {
-                return glob_tail_matches_empty(glob.pattern(), true);
-            });
+            return std::ranges::any_of(arms, &Arm::absorbs_separator);
         }
         if(str[0] != '/') {
             return false;
         }
-        str = str.substr(1);
+        str.remove_prefix(1);
     }
-
-    bool at_seg_boundary = prefix.empty() || prefix_at_seg_end;
-    for(auto& glob: sub_globs) {
-        if(glob.match(str, at_seg_boundary)) {
+    switch(mode) {
+        case Mode::ExtensionArms: return match_extension_set(str);
+        case Mode::SegmentSuffixArms:
+            if(str.contains('/')) {
+                return false;
+            }
+            [[fallthrough]];
+        case Mode::SuffixArms:
+            for(const auto& arm: arms) {
+                if(arm.literal.matches(str, literals)) {
+                    return true;
+                }
+            }
+            return false;
+        default: break;
+    }
+    for(const auto& arm: arms) {
+        bool hit = false;
+        switch(arm.plan) {
+            case Arm::Plan::PrefixTree: {
+                auto text = head(arm);
+                hit =
+                    str.starts_with(text) && (str.size() == text.size() || str[text.size()] == '/');
+                break;
+            }
+            case Arm::Plan::DirectoryTree: {
+                auto text = head(arm);
+                hit = find_segment(str, 0, text.front(), text) != std::string_view::npos;
+                break;
+            }
+            case Arm::Plan::Suffix: hit = arm.literal.matches(str, literals); break;
+            case Arm::Plan::PathSuffix:
+                hit = arm.literal.matches(str, literals) &&
+                      (str.size() == arm.literal.size ||
+                       str[str.size() - arm.literal.size - 1] == '/');
+                break;
+            case Arm::Plan::SegmentSuffix:
+                hit = arm.literal.matches(str, literals) && !str.contains('/');
+                break;
+            case Arm::Plan::Affix:
+            case Arm::Plan::Final: hit = match_final(arm, str); break;
+            case Arm::Plan::General:
+                hit = arm.literal.matches(str, literals) && execute(arm, str);
+                break;
+        }
+        if(hit) {
             return true;
         }
     }
     return false;
 }
 
-/// Maximum number of backtrack iterations before aborting a match.
-/// This provides protection against ReDoS (Regular expression Denial of Service)
-/// attacks where crafted patterns and inputs could cause exponential backtracking.
-constexpr static size_t max_backtrack_iterations = 65536;
-
-bool GlobPattern::SubGlobPattern::match(std::string_view str, bool start_at_seg_boundary) const {
-    const char* s = str.data();
-    const char* const s_start = s;
-    const char* const s_end = s + str.size();
-    const char* p = pat.data();
-    const char* seg_start = p;
-    const char* const p_start = p;
-    const char* const p_end = p + pat.size();
-    const char* seg_end = p + glob_segments[0].end;
-    size_t b = 0;
-    size_t current_glob_seg = 0;
-
-    small_vector<BacktrackState, 6> backtrack_stack;
-    const size_t seg_num = glob_segments.size();
-    size_t backtrack_iterations = 0;
-
-    auto segment_range = [&](size_t idx) -> std::pair<const char*, const char*> {
-        return {p_start + glob_segments[idx].start, p_start + glob_segments[idx].end};
-    };
-
-    auto push_backtrack =
-        [&backtrack_stack, &b, &current_glob_seg, &p, &s, &seg_end, &seg_start](bool wild) {
-            backtrack_stack.push_back({.b = b,
-                                       .glob_seg = current_glob_seg,
-                                       .wild_mode = wild,
-                                       .p = p,
-                                       .s = s,
-                                       .seg_end = seg_end,
-                                       .seg_start = seg_start});
-        };
-
-    // A pattern segment must begin where an input segment begins. `s_start`
-    // qualifies only when the prefix was stripped at a boundary; otherwise
-    // segment 0 alone may continue the prefix's segment there (`a?` vs
-    // `ab`), while a globstar handing over to a later segment may not
-    // (`a**/?` vs `aa`).
-    auto at_input_seg_start = [&] {
-        if(s == s_start) {
-            return start_at_seg_boundary || current_glob_seg == 0;
+bool GlobPattern::match_extension_set(std::string_view str) const {
+    auto dot = str.find_last_of('.');
+    if(dot == std::string_view::npos || str.size() - dot > 8) {
+        return false;
+    }
+    auto length = static_cast<std::uint32_t>(str.size() - dot);
+    std::uint64_t word = 0;
+    if(str.size() >= sizeof(word)) {
+        std::memcpy(&word, str.data() + str.size() - sizeof(word), sizeof(word));
+    } else {
+        std::memcpy(reinterpret_cast<char*>(&word) + sizeof(word) - str.size(),
+                    str.data(),
+                    str.size());
+    }
+    size_t first = 0, last = arms.size();
+    while(first < last) {
+        auto middle = first + (last - first) / 2;
+        const auto& literal = arms[middle].literal;
+        auto candidate = std::pair(length, word & literal.mask);
+        auto key = std::pair(literal.size, literal.word);
+        if(candidate == key) {
+            return true;
         }
-        return *(s - 1) == '/';
-    };
-
-    while(true) {
-        if(s == s_end) {
-            return glob_tail_matches_empty({p, p_end}, false);
+        if(candidate < key) {
+            last = middle;
+        } else {
+            first = middle + 1;
         }
+    }
+    return false;
+}
 
-        // Handle segment boundary first (early-continue)
-        if(p == seg_end && seg_end != p_end) {
-            // The pattern segment is complete, so the input segment must end
-            // here too; on mismatch fall through to backtracking so an
-            // earlier star can retry (`*a/b` vs `aa/b`).
-            if(*s == '/') {
-                if(current_glob_seg + 1 < seg_num) {
-                    s += 1;
-                    current_glob_seg += 1;
-                    auto [new_start, new_end] = segment_range(current_glob_seg);
-                    p = new_start;
-                    seg_start = new_start;
-                    seg_end = new_end;
-                    continue;
-                }
-                // Trailing `/` in the pattern: done only if the input ends
-                // here too; otherwise fall through untouched so backtracking
-                // can realign an earlier `**` (`**/a/` vs `a/a/`).
-                if(s + 1 == s_end) {
-                    return true;
-                }
+/// The arm's last segment must match the input's final segment: the whole
+/// input for a single-segment arm, the basename after a leading `**`.
+bool GlobPattern::match_final(const Arm& arm, std::string_view str) const {
+    if(!arm.literal.matches(str, literals)) {
+        return false;
+    }
+    auto name = arm.basename ? basename(str) : str;
+    if(!arm.basename && name.contains('/')) {
+        return false;
+    }
+    if(arm.plan == Arm::Plan::Affix) {
+        return name.size() >= arm.head_size + arm.literal.size && name.starts_with(head(arm));
+    }
+    const auto& last = segments[arm.end - 1];
+    if(last.kind == Segment::Kind::Literal) {
+        // Verified as a suffix, and a literal never contains `/`.
+        return name.size() == arm.literal.size;
+    }
+    return match_tokens(last, name);
+}
+
+bool GlobPattern::execute(const Arm& arm, std::string_view str) const {
+    size_t segment = arm.begin, offset = 0;
+    size_t retry_segment = arm.end, retry_offset = 0;
+    size_t seen_offset = std::string_view::npos, seen_end = 0;
+    auto segment_end = [&](size_t begin) {
+        if(seen_offset != begin) {
+            seen_offset = begin;
+            seen_end = str.find('/', begin);
+            if(seen_end == std::string_view::npos) {
+                seen_end = str.size();
             }
         }
-
-        if(p != seg_end) {
-            switch(*p) {
-                case '*': {
-                    // Handle single `*` first (simpler case)
-                    if(p + 1 == p_end || *(p + 1) != '*') {
-                        ++p;
-                        if(p == seg_end) {
-                            // The star is the segment's tail: consuming
-                            // exactly up to the next `/` (or the end of the
-                            // input) is the only possible span, so no
-                            // backtrack state is needed.
-                            while(s != s_end && *s != '/') {
-                                ++s;
-                            }
-                        } else {
-                            push_backtrack(false);
-                        }
-                        continue;
-                    }
-                    // Handle `**` case
-                    p += 2;
-                    // Consume additional stars within this segment only
-                    while(p != seg_end && *p == '*') {
-                        ++p;
-                    }
-                    if(p == seg_end) {
-                        if(current_glob_seg + 1 == seg_num) {
+        return seen_end;
+    };
+    while(true) {
+        if(offset == str.size()) {
+            return segments[segment].nullable;
+        }
+        const auto& part = segments[segment];
+        // Where to look for the retry segment next: right here after a
+        // globstar, past the failed candidate otherwise.
+        size_t from;
+        if(part.kind == Segment::Kind::Recursive) {
+            if(++segment == arm.end) {
+                return true;
+            }
+            retry_segment = segment;
+            retry_offset = offset;
+            if(!segments[segment].has_first) {
+                continue;
+            }
+            from = offset;
+        } else {
+            if(!part.has_first || str[offset] == part.first) {
+                size_t end;
+                bool matched;
+                if(part.kind == Segment::Kind::Literal) {
+                    // A literal fixes where the segment ends: no separator search.
+                    auto text =
+                        part.begin == part.end ? std::string_view{} : literal(tokens[part.begin]);
+                    end = offset + text.size();
+                    matched = end <= str.size() && (end == str.size() || str[end] == '/') &&
+                              str.compare(offset, text.size(), text) == 0;
+                } else {
+                    end = segment_end(offset);
+                    auto input = str.substr(offset, end - offset);
+                    matched = part.kind == Segment::Kind::Affix ? match_affix(part, input)
+                                                                : match_tokens(part, input);
+                }
+                if(matched) {
+                    if(end == str.size()) {
+                        if(part.optional_rest) {
                             return true;
                         }
-                        ++current_glob_seg;
-                        auto [new_start, new_end] = segment_range(current_glob_seg);
-                        p = new_start;
-                        seg_start = new_start;
-                        seg_end = new_end;
+                    } else if(segment + 1 != arm.end) {
+                        ++segment;
+                        offset = end + 1;
+                        continue;
                     }
-                    push_backtrack(true);
+                }
+            }
+            if(retry_segment == arm.end) {
+                return false;
+            }
+            // The latest globstar subsumes earlier ones. Its retry cursor
+            // moves strictly forward by whole segments; fixed-depth plans
+            // never retry.
+            if(!segments[retry_segment].has_first) {
+                auto end = segment_end(retry_offset);
+                retry_offset = end == str.size() ? end : end + 1;
+                offset = retry_offset;
+                segment = retry_segment;
+                continue;
+            }
+            from = retry_offset + 1;
+        }
+        // Only a segment starting with the retry segment's literal head can
+        // match, so jump between candidates with memchr; such a segment is
+        // never nullable, so running out of candidates is a mismatch.
+        retry_offset = find_segment(str, from, segments[retry_segment].first, {});
+        if(retry_offset == std::string_view::npos) {
+            return false;
+        }
+        offset = retry_offset;
+        segment = retry_segment;
+    }
+}
+
+bool GlobPattern::match_affix(const Segment& segment, std::string_view input) const {
+    const auto& head = tokens[segment.begin];
+    const auto& tail = tokens[segment.end - 1];
+    auto prefix = head.kind == Token::Kind::Literal ? literal(head) : std::string_view{};
+    auto suffix = tail.kind == Token::Kind::Literal ? literal(tail) : std::string_view{};
+    return input.size() >= prefix.size() + suffix.size() && input.starts_with(prefix) &&
+           input.ends_with(suffix);
+}
+
+bool GlobPattern::match_tokens(const Segment& segment, std::string_view input) const {
+    size_t token = segment.begin, offset = 0;
+    // Where the latest star resumes: the token after it, with the star
+    // absorbing everything before `retry_offset`.
+    size_t retry_token = segment.end, retry_offset = 0;
+    while(true) {
+        if(token == segment.end) {
+            if(offset == input.size()) {
+                return true;
+            }
+        } else {
+            const auto& op = tokens[token];
+            switch(op.kind) {
+                case Token::Kind::Star: {
+                    retry_token = ++token;
+                    retry_offset = offset;
+                    if(token == segment.end) {
+                        return true;
+                    }
                     continue;
                 }
-
-                case '?': {
-                    if(s != s_end && *s != '/') {
-                        if(p == seg_start && !at_input_seg_start()) {
-                            break;
+                case Token::Kind::Literal: {
+                    auto text = literal(op);
+                    if(token == retry_token) {
+                        // Right after the latest star: the star absorbs up to
+                        // the next occurrence. Searching bytes is exact since
+                        // a valid UTF-8 literal cannot start inside a
+                        // multi-byte character of the input.
+                        if(token + 1 == segment.end) {
+                            return input.size() - offset >= text.size() && input.ends_with(text);
                         }
-                        ++p;
-                        s += decode_utf8_atom(s, s_end).len;
+                        auto at = input.find(text, offset);
+                        if(at == std::string_view::npos) {
+                            return false;
+                        }
+                        retry_offset = at;
+                        offset = at + text.size();
+                        ++token;
+                        continue;
+                    }
+                    if(input.substr(offset).starts_with(text)) {
+                        offset += text.size();
+                        ++token;
                         continue;
                     }
                     break;
                 }
-
-                case '[': {
-                    if(b < brackets.size()) {
-                        const auto atom = decode_utf8_atom(s, s_end);
-                        if(brackets[b].contains(atom.cp)) {
-                            if(p == seg_start && !at_input_seg_start()) {
-                                break;
-                            }
-                            p = pat.data() + brackets[b].next_offset;
-                            ++b;
-                            s += atom.len;
+                case Token::Kind::Any:
+                case Token::Kind::Class: {
+                    if(offset != input.size()) {
+                        auto atom = decode_utf8_atom(input, offset);
+                        if(op.kind == Token::Kind::Any || classes[op.begin].contains(atom.cp)) {
+                            offset += atom.len;
+                            ++token;
                             continue;
                         }
-                    }
-                    break;
-                }
-
-                case '\\': {
-                    if(p + 1 != seg_end) {
-                        const auto escaped = decode_utf8_atom(p + 1, seg_end);
-                        const auto atom = decode_utf8_atom(s, s_end);
-                        if(escaped.cp == atom.cp) {
-                            if(p == seg_start && !at_input_seg_start()) {
-                                break;
-                            }
-                            p += 1 + escaped.len;
-                            s += atom.len;
-                            continue;
-                        }
-                    }
-                    break;
-                }
-
-                default: {
-                    if(*p == *s) {
-                        if(p == seg_start && !at_input_seg_start()) {
-                            break;
-                        }
-                        ++p;
-                        ++s;
-                        continue;
                     }
                     break;
                 }
             }
         }
-        // p == seg_end == p_end, or switch fell through: backtrack
-
-        if(backtrack_stack.empty()) [[unlikely]] {
+        if(retry_token == segment.end || retry_offset == input.size()) {
             return false;
         }
-
-        if(++backtrack_iterations > max_backtrack_iterations) [[unlikely]] {
-            return false;
-        }
-
-        auto& state = backtrack_stack.back();
-
-        // Each retry extends the star's match by the character at state.s.
-        // A single `*` may not consume `/`, so once that character is a
-        // slash (or the input is exhausted) the state is dead; only `**`
-        // (wild) extends across segment boundaries.
-        if(state.s >= s_end || (!state.wild_mode && *state.s == '/')) {
-            backtrack_stack.pop_back();
-            continue;
-        }
-
-        // Whole atoms, not bytes: a star stopping inside a multi-byte
-        // character would let the following `?`/`[]` decode its
-        // continuation bytes as extra characters (`*?[!X]X` vs `中X`).
-        state.s += decode_utf8_atom(state.s, s_end).len;
-        s = state.s;
-        p = state.p;
-        b = state.b;
-        current_glob_seg = state.glob_seg;
-        seg_start = state.seg_start;
-        seg_end = state.seg_end;
+        retry_offset += decode_utf8_atom(input, retry_offset).len;
+        offset = retry_offset;
+        token = retry_token;
     }
 }
 
