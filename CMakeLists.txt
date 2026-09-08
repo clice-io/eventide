@@ -194,6 +194,9 @@ if(MSVC)
         /external:W0
         $<$<NOT:$<BOOL:${KOTA_ENABLE_EXCEPTIONS}>>:/wd4530>
         $<$<CXX_COMPILER_ID:MSVC>:/wd4033>
+        # A local named like a member is deliberate wherever it happens;
+        # GCC and Clang do not warn at -Wall -Wextra either.
+        $<$<CXX_COMPILER_ID:MSVC>:/wd4458>
         $<$<CXX_COMPILER_ID:MSVC>:/wd4459>
     )
 else()
