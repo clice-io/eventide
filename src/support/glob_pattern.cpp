@@ -394,6 +394,16 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s,
     const bool at_segment_start = pat.prefix.empty() || pat.prefix_at_seg_end;
     bool match_all = false;
     for(auto& sub_pat: sub_pats) {
+        // Expansion is textual: an arm starting with `/` right after the
+        // prefix's separator spells `//`, which neither scan sees.
+        if(pat.prefix_at_seg_end && sub_pat.starts_with('/')) [[unlikely]] {
+            return std::unexpected{
+                GlobError{GlobError::MultipleSlash,
+                          static_cast<std::uint32_t>(prefix_size - 1),
+                          static_cast<std::uint32_t>(prefix_size + 1),
+                          "multiple `/` is not allowed"}
+            };
+        }
         KOTA_EXPECTED_TRY(pat.compile_arm(sub_pat, at_segment_start));
         match_all |= root && (sub_pat == "**" || sub_pat == "**/");
     }

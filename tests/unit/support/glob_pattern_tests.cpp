@@ -603,6 +603,18 @@ TEST_CASE(error_paths) {
     // Range end is stray backslash
     auto e17 = kota::GlobPattern::create("[a-\\]");
     EXPECT_FALSE(e17.has_value());
+
+    // Brace expansion is textual: an arm starting with `/` right after the
+    // literal prefix's separator spells `//`, escaped prefix or not.
+    for(std::string_view source: {"a/{/}", "a/{/b}", "a/{b,/c}", R"(a\*/{/})"}) {
+        auto res = kota::GlobPattern::create(source);
+        EXPECT_FALSE(res.has_value());
+        if(!res.has_value()) {
+            EXPECT_EQ(res.error().kind, kota::GlobError::MultipleSlash);
+        }
+    }
+    EXPECT_TRUE(kota::GlobPattern::create("{/a}")->match("/a"));
+    EXPECT_TRUE(kota::GlobPattern::create("a{/b}")->match("a/b"));
 }
 
 TEST_CASE(empty_and_trivial) {
@@ -1780,7 +1792,7 @@ TEST_CASE(compiled_segment_literals_and_copy) {
     pattern = *GlobPattern::create("other");
     EXPECT_TRUE(moved.match("src/x/test_[中].cpp"));
     PATDEF(classes, "src/*/[中a]?*.cpp")
-    EXPECT_TRUE(classes.match(std::string("src/x/a") + char(0xff) + ".cpp"));
+    EXPECT_TRUE(classes.match(std::string("src/x/a") + '\xff' + ".cpp"));
     EXPECT_FALSE(classes.match("src/x/a.cpp"));
 }
 
