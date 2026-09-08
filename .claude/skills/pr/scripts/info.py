@@ -45,7 +45,9 @@ def main():
         checks = gh(
             "pr", "checks", str(pr), "--json", "name,bucket,link", status_codes=(8,)
         )
-    except SystemExit:
+    except SystemExit as failure:
+        if "no checks reported" not in str(failure.code):
+            raise
         checks = []
     owner, name = repo()
     _, threads = fetch_threads(owner, name, pr)

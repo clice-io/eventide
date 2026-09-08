@@ -19,13 +19,13 @@ BOTS = {"chatgpt-codex-connector", "coderabbitai", "github-actions"}
 
 # <details> blocks whose summary starts with one of these (after any emoji)
 # are dropped with their content; every other block — a per-file group such
-# as `src/support/foo.cpp (2)` included — is unwrapped so nested findings
-# stay visible.
+# as `support/foo.cpp (2)` or `docs/design.md (1)` included — is unwrapped so
+# nested findings stay visible.
 NOISE_DETAILS = re.compile(
     r"\W*(?:Prompt for|About Codex|Walkthrough|Review details|Review info|Run configuration"
     r"|Autofix|Commits|Configuration used|Files selected|Files ignored|Files skipped"
     r"|Additional context|Additional comments|Learnings|Tips|Support|Docs|Pre-merge checks"
-    r"|Finishing touches|Comment @coderabbitai)\b",
+    r"|Finishing touches|Comment @coderabbitai)\b(?![./])",
     re.I,
 )
 
